@@ -75,7 +75,7 @@ Use the three CI recordings to establish that the registry can be emptied.
 
 ```shell
 make test-path-independence    # the harness's own tests; no build needed
-make path-independence         # the subset, against target/debug/fdu and .venv-parity
+make path-independence         # the subset, against cargo’s debug fdu and .venv-parity
 python tests/path_independence/runner.py --tier full --out /tmp/pi-diffs
 ```
 

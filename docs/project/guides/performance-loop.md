@@ -712,13 +712,15 @@ Commit the run beside its record as `evidence/exp-NNN/run.json.gz`, and record f
 path so `run_artifact` names it.
 A run is hundreds of kilobytes of JSON that no reviewer reads line by line; fifteen of
 them committed plain were most of one pull request’s diff.
-Compress it deterministically, as
+`make perf-store RUN=<run.json> OUT=docs/project/experiments/evidence/exp-NNN/run.json.gz`
+compresses it deterministically, as
 `gzip.GzipFile(filename="", mode="wb", fileobj=out, compresslevel=9, mtime=0)` does:
 with an `mtime` of 0 and no file name, nothing about when or where it was written lands
-in the file.
-Every reader of a run goes through one loader that accepts both forms, which
-is why the plain `.json` artifacts recorded earlier stay as they are, and `perf-test`
-fails if a committed `run_artifact` does not load.
+in the file. It also writes the file whole, so a crash cannot leave a truncated artifact
+for a record to name.
+Every reader of a run goes through one loader that accepts both forms, which is why the
+plain `.json` artifacts recorded earlier stay as they are, and `perf-test` fails if a
+committed `run_artifact` does not load.
 
 Three properties of the page are worth preserving deliberately, because each was got
 wrong once and each fails silently.
@@ -1046,6 +1048,16 @@ make perf-compare PERF_TREE=/path/to/tree PERF_LABEL=mytree \
   CONTROL=/tmp/fdu-realtree/perf_probe.control \
   JOBS="cold-scan-index warm-revalidate" TRIALS=12 NAME=exp-067-parallel-producer
 ```
+
+The candidate is the probe `perf-probe-release` just built, found where cargo put it
+(`CARGO_TARGET_DIR` and `build.target-dir` move it).
+A target directory shared with another worktree could hand that build a probe compiled
+from the other worktree’s sources: cargo judges freshness by modification time, and
+nothing prints `Compiling` (`fdu-8whh`). The build’s `target-owner` step prevents that
+by discarding the workspace crates’ fingerprints whenever another checkout built there
+last, so a candidate built through Make is always this checkout’s. Build a control by
+hand with `cargo` and the guard does not run; give it its own target directory, or
+confirm it recompiled.
 
 The targets run `python -m benchmarks.realtree` through
 `uv run --project explorations/benchmarks` with `PYTHONPATH=explorations`; invoking the

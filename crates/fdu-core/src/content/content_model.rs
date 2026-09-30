@@ -388,7 +388,9 @@ impl ContentProvenance {
         }
         if request.profile.includes_words() {
             analyzers.push((TEXT_LOGICAL, VERSION_ONE));
-            analyzers.push((MARKDOWN_PROSE, VERSION_ONE));
+            // 2: a Markdown file over the exact bound is counted as plain text and its
+            // record says so (fdu-b2qz); a record from 1 held the rendered count.
+            analyzers.push((MARKDOWN_PROSE, AnalyzerVersion(2)));
         }
         Self {
             type_rules_fingerprint,
@@ -464,10 +466,15 @@ impl<T> AnalyzerOutcome<T> {
     /// A unit that could not produce a value for the named reason.
     pub(crate) fn unavailable(coverage: CoverageReason) -> Self {
         assert!(
-            !matches!(coverage, CoverageReason::Analyzed),
-            "an analyzed outcome must carry a value"
+            !matches!(coverage, CoverageReason::Analyzed | CoverageReason::TextOnly),
+            "an outcome with a value must carry one"
         );
         Self { coverage, value: None }
+    }
+
+    /// A value counted from the file as plain text ([`CoverageReason::TextOnly`]).
+    pub(crate) const fn text_only(value: T) -> Self {
+        Self { coverage: CoverageReason::TextOnly, value: Some(value) }
     }
 
     /// Coverage outcome for this unit.
@@ -475,7 +482,8 @@ impl<T> AnalyzerOutcome<T> {
         self.coverage
     }
 
-    /// Successful measured value, absent for every unavailable outcome.
+    /// Measured value: present for an analyzed outcome and for one counted as plain
+    /// text, absent for every unavailable outcome.
     pub const fn value(self) -> Option<T>
     where
         T: Copy,
@@ -484,7 +492,9 @@ impl<T> AnalyzerOutcome<T> {
     }
 
     pub(crate) fn from_parts(coverage: CoverageReason, value: Option<T>) -> Option<Self> {
-        if matches!(coverage, CoverageReason::Analyzed) == value.is_some() {
+        if matches!(coverage, CoverageReason::Analyzed | CoverageReason::TextOnly)
+            == value.is_some()
+        {
             Some(Self { coverage, value })
         } else {
             None
@@ -565,6 +575,10 @@ pub enum CoverageReason {
     IoError,
     /// Metadata changed while the file was being read.
     ChangedDuringRead,
+    /// The unit produced a value by counting the file as plain text rather than as the
+    /// document it is: a Markdown file over the exact bound under the words unit, whose
+    /// every word is counted visible and whose paragraphs are its blank-line runs.
+    TextOnly,
 }
 
 /// Sparse analysis record for one regular file.
@@ -599,6 +613,7 @@ impl FileAnalysis {
             CoverageReason::IoError => Some(CoverageReason::IoError),
             CoverageReason::ChangedDuringRead => Some(CoverageReason::ChangedDuringRead),
             CoverageReason::Analyzed
+            | CoverageReason::TextOnly
             | CoverageReason::Binary
             | CoverageReason::InvalidUtf8
             | CoverageReason::UnsupportedEncoding
@@ -697,7 +712,7 @@ mod tests {
     };
 
     #[test]
-    #[should_panic(expected = "an analyzed outcome must carry a value")]
+    #[should_panic(expected = "an outcome with a value must carry one")]
     fn unavailable_outcome_cannot_claim_success() {
         let _: AnalyzerOutcome<()> = AnalyzerOutcome::unavailable(CoverageReason::Analyzed);
     }

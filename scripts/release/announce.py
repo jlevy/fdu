@@ -12,6 +12,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.atomic_write import write_text_atomic
 from scripts.release import maintainer, registry_state, release_body
 from scripts.release.maintainer import CommandError, Host, Release, StepError
 
@@ -64,8 +65,10 @@ def announce(host: Host, release: Release) -> None:
     )
     if registry_state.exit_status(states, require_identical=True):
         raise StepError("every registry must match before announcing")
-    (release.directory / "registry-state.json").write_text(
-        registry_state.registry_document(release.version, states), encoding="utf-8"
+    write_text_atomic(
+        release.directory / "registry-state.json",
+        registry_state.registry_document(release.version, states),
+        encoding="utf-8",
     )
     record = release_record(host, release)
     if record is None:

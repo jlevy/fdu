@@ -206,7 +206,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: -7.348
     reason: "cold-scan-index -7.35% [-10.42%, -6.12%] over 20 interleaved trials, clearing the 3% bar with the whole interval below zero; the index-build component itself fell 16.6%. warm-revalidate is unchanged (+0.54%, interval spans zero). normalize instructions fell 89%, confirming the memo hits."
-    commit: null
+    commit: 2475c82
 ---
 ## What was measured
 
@@ -280,6 +280,12 @@ Warm revalidation walks all 421,690 files and does reach this code, so a regress
 mechanically plausible rather than obviously spurious — which is exactly why it needed
 three measurements instead of an argument.
 Recorded because the first number was believable and wrong.
+
+Record correction, 2026-09-30 (`fdu-zs89`): `verdict.commit` was first left empty.
+The change landed in `2475c82`, “perf: resolve an upsert’s parent once per directory,
+not once per entry”, whose diff adds the one-slot parent memo to the index and adds this
+record with the same −7.35% [−10.42%, −6.12%] result.
+No measurement or verdict changed.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

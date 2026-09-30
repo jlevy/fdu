@@ -810,6 +810,13 @@ pub struct ScanBackendDiagnostics {
     pub macos_bulk_fallbacks: Option<u64>,
     /// Why macOS fields are null.
     pub unavailable_reason: Option<&'static str>,
+    /// Linux native `getdents64` listing attempts, or null off Linux (and on a Linux
+    /// build without glibc, where the native reader is not compiled).
+    pub linux_dents_attempts: Option<u64>,
+    /// Successful Linux native listings, or null off Linux.
+    pub linux_dents_successes: Option<u64>,
+    /// Linux native attempts that fell back to portable enumeration, or null off Linux.
+    pub linux_dents_fallbacks: Option<u64>,
 }
 
 impl ScanDiagnostics {
@@ -858,7 +865,9 @@ impl ScanDiagnostics {
         windows.push(']');
         format!(
             concat!(
-                "{{\"backend\":{{\"macos_bulk_attempts\":{},",
+                "{{\"backend\":{{\"linux_dents_attempts\":{},",
+                "\"linux_dents_fallbacks\":{},\"linux_dents_successes\":{},",
+                "\"macos_bulk_attempts\":{},",
                 "\"macos_bulk_fallbacks\":{},\"macos_bulk_successes\":{},",
                 "\"portable_attempts\":{},\"portable_directory_reads\":{},",
                 "\"unavailable_reason\":{}}},",
@@ -874,6 +883,9 @@ impl ScanDiagnostics {
                 "\"ready_directories_at_finish\":{},\"slow_threshold_ns_per_entry\":{},",
                 "\"windows\":{},\"worker_expansions\":{},\"workers_spawned\":{}}}}}"
             ),
+            json_optional_u64(backend.linux_dents_attempts),
+            json_optional_u64(backend.linux_dents_fallbacks),
+            json_optional_u64(backend.linux_dents_successes),
             json_optional_u64(backend.macos_bulk_attempts),
             json_optional_u64(backend.macos_bulk_fallbacks),
             json_optional_u64(backend.macos_bulk_successes),
@@ -1639,12 +1651,23 @@ pub(crate) fn list_directory<'r>(
     {
         // Plain `if`, not `bool::then(|| …)`: the listing borrows the reader.
         if !walk_hook_covers(abs_dir) {
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.linux_dents_attempted();
+            }
             let native = linux_dents::StatPolicy {
                 skip_dir_symlink_stat: policy.skip_dir_symlink_stat,
                 one_filesystem: policy.one_filesystem,
             };
             if let Some(listing) = readers.dents.read(abs_dir, native) {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.linux_dents_succeeded();
+                }
                 return Ok(Listing::Native(listing));
+            }
+            // A declined directory is counted as a fallback here and as the portable
+            // attempt below, as the walker counts it.
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.linux_dents_fell_back();
             }
         }
     }
@@ -2268,6 +2291,12 @@ pub(crate) struct ScanDiagnosticsRecorder {
     macos_bulk_successes: std::sync::atomic::AtomicU64,
     #[cfg(target_os = "macos")]
     macos_bulk_fallbacks: std::sync::atomic::AtomicU64,
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    linux_dents_attempts: std::sync::atomic::AtomicU64,
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    linux_dents_successes: std::sync::atomic::AtomicU64,
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    linux_dents_fallbacks: std::sync::atomic::AtomicU64,
 }
 
 impl ScanDiagnosticsRecorder {
@@ -2314,6 +2343,12 @@ impl ScanDiagnosticsRecorder {
             macos_bulk_successes: std::sync::atomic::AtomicU64::new(0),
             #[cfg(target_os = "macos")]
             macos_bulk_fallbacks: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_attempts: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_successes: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_fallbacks: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -2467,6 +2502,21 @@ impl ScanDiagnosticsRecorder {
         self.macos_bulk_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn linux_dents_attempted(&self) {
+        self.linux_dents_attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn linux_dents_succeeded(&self) {
+        self.linux_dents_successes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn linux_dents_fell_back(&self) {
+        self.linux_dents_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn finish(&self) -> ScanDiagnostics {
         let trace = self.trace.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let calibration = self.pool.calibration;
@@ -2499,6 +2549,24 @@ impl ScanDiagnosticsRecorder {
             unavailable_reason: Some(
                 "macOS bulk directory enumeration is unavailable on this platform",
             ),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_attempts: Some(
+                self.linux_dents_attempts.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+            linux_dents_attempts: None,
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_successes: Some(
+                self.linux_dents_successes.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+            linux_dents_successes: None,
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_fallbacks: Some(
+                self.linux_dents_fallbacks.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+            linux_dents_fallbacks: None,
         };
         ScanDiagnostics {
             schema: SCAN_DIAGNOSTICS_SCHEMA,
@@ -3740,11 +3808,14 @@ fn walk_worker_with<E: WalkEmission>(
                     diagnostics.macos_bulk_fell_back();
                 }
             }
-            // Recorded in no backend diagnostic field: `ScanBackendDiagnostics` has none for
-            // this reader yet, so a native listing is neither a portable attempt nor a
-            // portable read, and `dirs_read` less the portable reads is what it served.
+            // Counted in the Linux backend fields: an attempt, then a success or a
+            // fallback, and a fallback goes on to count as a portable attempt below, so
+            // `dirs_read` is the native successes plus the portable reads.
             #[cfg(all(target_os = "linux", target_env = "gnu"))]
             {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.linux_dents_attempted();
+                }
                 let policy = linux_dents::StatPolicy {
                     skip_dir_symlink_stat: emission.skip_dir_symlink_stat(),
                     one_filesystem: config.one_filesystem,
@@ -3757,6 +3828,9 @@ fn walk_worker_with<E: WalkEmission>(
                     dents_reader.read(&abs_dir, policy)
                 };
                 if let Some(listing) = listing {
+                    if let Some(diagnostics) = diagnostics {
+                        diagnostics.linux_dents_succeeded();
+                    }
                     report.dirs_read += 1;
                     for entry in listing {
                         let (kind, attrs) = match entry.outcome {
@@ -3791,6 +3865,9 @@ fn walk_worker_with<E: WalkEmission>(
                     }
                     emission.finish_directory(directory);
                     continue;
+                }
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.linux_dents_fell_back();
                 }
             }
 
@@ -7578,6 +7655,7 @@ mod tests {
         write_file(&dir.path().join("a.txt"), b"hello");
         write_file(&dir.path().join("src/main.rs"), b"fn main() {}");
         write_file(&dir.path().join("src/deep/nested.rs"), b"// nested");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -8644,20 +8722,28 @@ mod tests {
         assert!(!diagnostics.worker_policy.events_truncated);
         assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
         assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
-        // On glibc the serial walk lists through the native reader too, which no backend
-        // field counts, so its directories are `dirs_read` less the portable reads.
+        // On glibc the serial walk lists through the native reader too, and the Linux
+        // backend fields count it: every attempt is a success or a fallback, and the
+        // directories read are the native successes plus the portable reads.
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
-            assert_eq!(
-                diagnostics.backend.portable_attempts,
-                diagnostics.backend.portable_directory_reads
-            );
+            let backend = &diagnostics.backend;
+            assert_eq!(backend.portable_attempts, backend.portable_directory_reads);
             assert!(
-                diagnostics.backend.portable_directory_reads < report.dirs_read,
-                "native listings are not portable reads: {:?}, {} read",
-                diagnostics.backend,
+                backend.portable_directory_reads < report.dirs_read,
+                "native listings are not portable reads: {backend:?}, {} read",
                 report.dirs_read
             );
+            let (Some(attempts), Some(successes), Some(fallbacks)) = (
+                backend.linux_dents_attempts,
+                backend.linux_dents_successes,
+                backend.linux_dents_fallbacks,
+            ) else {
+                panic!("Linux native counts are present: {backend:?}");
+            };
+            assert_eq!(attempts, successes + fallbacks);
+            assert!(successes > 0, "the serial walk lists natively: {backend:?}");
+            assert_eq!(successes + backend.portable_directory_reads, report.dirs_read);
         }
         #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
         assert_eq!(diagnostics.backend.portable_directory_reads, report.dirs_read);
@@ -8680,9 +8766,7 @@ mod tests {
             );
         }
 
-        // The Linux native reader has no backend fields: a parallel walk's native
-        // listings are counted in neither portable field, and every portable attempt is
-        // a directory it declined or never tried.
+        // A parallel walk counts the same way, worker by worker.
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
             let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
@@ -8700,6 +8784,22 @@ mod tests {
                 backend.unavailable_reason,
                 Some("macOS bulk directory enumeration is unavailable on this platform")
             );
+            let (Some(attempts), Some(successes), Some(fallbacks)) = (
+                backend.linux_dents_attempts,
+                backend.linux_dents_successes,
+                backend.linux_dents_fallbacks,
+            ) else {
+                panic!("Linux native counts are present: {backend:?}");
+            };
+            assert_eq!(attempts, successes + fallbacks);
+            assert!(successes > 0, "a parallel walk lists natively: {backend:?}");
+            assert_eq!(successes + backend.portable_directory_reads, report.dirs_read);
+        }
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        {
+            assert_eq!(diagnostics.backend.linux_dents_attempts, None);
+            assert_eq!(diagnostics.backend.linux_dents_successes, None);
+            assert_eq!(diagnostics.backend.linux_dents_fallbacks, None);
         }
     }
 
@@ -9129,6 +9229,7 @@ mod tests {
             &dir.path().join("a-guard/.gitignore"),
             &vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1],
         );
+        crate::test_support::settle_allocations(dir.path());
         let observing =
             ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
         let blind = ScanConfig { read_controls: false, ..observing.clone() };
@@ -9199,6 +9300,7 @@ mod tests {
             // exercised by the same walk.
             write_file(&dir.path().join(format!("t{top}/a/b/c/d/e/deep.txt")), b"deep");
         }
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -9210,6 +9312,7 @@ mod tests {
         write_file(&dir.path().join("t7/.gitignore"), b"!m0/leaf-1.dat\n");
         fs::create_dir_all(dir.path().join("t5/.gitignore")).expect("non-file control directory");
         write_file(&dir.path().join("t5/.gitignore/ordinary.txt"), b"ordinary child");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -9289,6 +9392,7 @@ mod tests {
         write_file(&dir.path().join("file-to-directory"), b"old file");
         write_file(&dir.path().join("removed-tree/nested/gone.md"), b"gone");
         write_file(&dir.path().join("stable/deep/kept.rs"), b"kept");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -9304,6 +9408,7 @@ mod tests {
 
         fs::remove_dir_all(root.join("removed-tree")).expect("remove nested tree");
         write_file(&root.join("added-tree/nested/new.md"), b"new nested file");
+        crate::test_support::settle_allocations(root);
     }
 
     fn effective_ops(commits: &[Commit]) -> Vec<Op> {
@@ -10763,6 +10868,7 @@ mod tests {
         let socket_path = dir.path().join("service.sock");
         let _listener = UnixListener::bind(&socket_path).expect("bind socket");
         write_file(&dir.path().join("replacement"), b"ordinary");
+        crate::test_support::settle_allocations(dir.path());
         let (kept, kept_report) =
             scan_into_index(dir.path(), &ScanConfig::default()).expect("default scan");
         assert!(kept_report.is_complete());
@@ -11295,6 +11401,7 @@ mod tests {
         fs::remove_file(dir.path().join("a.txt")).expect("remove file");
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
         write_file(&dir.path().join("src/added.md"), b"new file");
+        crate::test_support::settle_allocations(dir.path());
 
         let portable_report = reconcile(&mut portable, &portable_config, &mut |_| {})
             .expect("portable reconciliation");
@@ -11560,6 +11667,7 @@ mod tests {
             let dir = tempfile::tempdir().expect("tempdir");
             write_file(&dir.path().join("blocked/old.txt"), b"old");
             write_file(&dir.path().join("verified.txt"), b"verified");
+            crate::test_support::settle_allocations(dir.path());
             let config = ScanConfig { threads: Some(workers), ..ScanConfig::default() };
             let (mut warm, baseline) = scan_into_index(dir.path(), &config).expect("baseline");
             assert!(baseline.is_complete());
@@ -11592,6 +11700,7 @@ mod tests {
         fs::remove_file(dir.path().join("a.txt")).expect("remove file");
         write_file(&dir.path().join("added.md"), b"new file");
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
+        crate::test_support::settle_allocations(dir.path());
 
         let root = index.root_path().to_path_buf();
         let root_meta = {
@@ -11652,6 +11761,7 @@ mod tests {
                 b"changed after the first wave",
             );
         }
+        crate::test_support::settle_allocations(dir.path());
 
         let candidate_report = reconcile_target_inner(
             &mut ReconcileTarget::Direct(&mut candidate),
@@ -11787,6 +11897,7 @@ mod tests {
         for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
             write_file(&dir.path().join(format!("d{directory:04}/file.txt")), changed);
         }
+        crate::test_support::settle_allocations(dir.path());
 
         let progress = crate::Progress::new();
         let observed = ScanConfig { progress: Some(progress.clone()), ..parallel };

@@ -2,6 +2,9 @@
 # Ported: REVIEW (the scratch working directory) comes from the environment instead of an absolute path.
 """Nested-origin write amplification: 12 origins along a chain vs a plain chain. Paired, alternated."""
 import os, subprocess, sys, time, json
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 U="/System/Library/Filesystems/apfs.fs/Contents/Resources/apfs.util"
 base=sys.argv[1]; rounds=int(sys.argv[2])
 assert base.startswith(os.environ["REVIEW"] + "/catalog/fixtures/")
@@ -35,4 +38,4 @@ for r in range(rounds):
 for ph in ("create_500","append_500","delete_500"):
     mm=sorted(x["m"][ph] for x in res); pp=sorted(x["p"][ph] for x in res)
     print(f"{ph:12s} 13-origins median={mm[len(mm)//2]*1000:7.1f} ms min={mm[0]*1000:7.1f}  plain median={pp[len(pp)//2]*1000:7.1f} ms min={pp[0]*1000:7.1f}  ratio={mm[len(mm)//2]/pp[len(pp)//2]:.2f}")
-json.dump(res,open(sys.argv[3],"w"),indent=1)
+write_text_atomic(sys.argv[3], json.dumps(res,indent=1))

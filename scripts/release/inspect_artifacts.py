@@ -7,11 +7,18 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 import tarfile
 import zipfile
 from dataclasses import asdict, dataclass
 from email.parser import Parser
 from pathlib import Path
+
+if __package__ in (None, ""):
+    # Run as a script: make the repository root importable, as the tests have it.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.atomic_write import write_text_atomic
 
 RELEASE_WHEEL_PLATFORMS = {
     "manylinux x86-64": re.compile(r"manylinux[^-]*_x86_64\.whl$"),
@@ -185,14 +192,16 @@ def main() -> None:
         args.version,
         require_release_matrix=args.require_release_matrix,
     )
-    args.manifest.write_text(
+    write_text_atomic(
+        args.manifest,
         json.dumps(
             {"version": args.version, "artifacts": [asdict(item) for item in artifacts]}, indent=2
         )
         + "\n",
         encoding="utf-8",
     )
-    args.checksums.write_text(
+    write_text_atomic(
+        args.checksums,
         "".join(f"{artifact.sha256}  {artifact.filename}\n" for artifact in artifacts),
         encoding="utf-8",
     )

@@ -1630,6 +1630,9 @@ mod tests {
                 }
             }
         }
+        // Every test over a random tree walks it more than once and compares what each
+        // walk read, allocation included, so no block may still be moving under them.
+        crate::test_support::settle_allocations(root);
         directories
     }
 

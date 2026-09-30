@@ -156,7 +156,7 @@ def _positive_int(value: str) -> int:
 
 
 def _write_json(output: Any, value: Dict[str, Any]) -> None:
-    json.dump(value, output, ensure_ascii=True, sort_keys=True)
+    output.write(json.dumps(value, ensure_ascii=True, sort_keys=True))
     output.write("\n")
 
 

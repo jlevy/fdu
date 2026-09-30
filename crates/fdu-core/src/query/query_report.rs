@@ -1562,6 +1562,26 @@ pub(crate) fn report_in(
         notes.push("note: requested analysis is not displayed by the selected views".to_owned());
         tips.push(format!("tip: show analysis: {} families, languages, or full", query.axes.view));
     }
+    if content.includes_words() {
+        let wanted = index.content_identity(content);
+        let text_only = index.content().and_then(|held| held.admit(&wanted)).map_or(0, |held| {
+            held.records()
+                .filter(|(_, analysis)| {
+                    analysis.words.is_some_and(|words| {
+                        words.coverage() == crate::content::CoverageReason::TextOnly
+                    })
+                })
+                .count()
+        });
+        if text_only > 0 {
+            let files = if text_only == 1 { "file" } else { "files" };
+            notes.push(format!(
+                "note: {text_only} Markdown {files} over {} MiB counted as plain text: every \
+                 word counted visible, paragraphs are blank-line runs",
+                crate::content::MARKDOWN_EXACT_BYTES / (1024 * 1024)
+            ));
+        }
+    }
     tips.extend(retained_refusals_tip(query, &ignore_rules));
     if tree_measurements.is_some_and(|values| values.values().any(|value| !value.complete)) {
         notes.push("note: incomplete subtrees remain visible below the size threshold".to_owned());
@@ -3477,6 +3497,34 @@ mod tests {
         assert_eq!((summary.files, summary.dirs, summary.bytes), (3, 2, 350));
         let Section::Extensions { rows, .. } = &report.sections[2] else { panic!("extensions") };
         assert_eq!((rows[0].files, rows[0].bytes), (3, 350));
+    }
+
+    #[test]
+    fn a_selection_over_an_exactly_full_tree_sums_to_u64_max() {
+        // The index refuses any total a u64 cannot hold (fdu-sqyk), so every selected
+        // subset of it fits too; the filtered tier re-aggregates entry by entry and must
+        // reach the exact bound without saturating or wrapping.
+        let exact =
+            |size: u64, mtime_ns: i64| Attrs { size, allocated: size, ..attrs(1, mtime_ns) };
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("big", EntryKind::Dir, Attrs::default()),
+            upsert("big/half.bin", EntryKind::File, exact(1 << 63, 1)),
+            upsert("big/rest.bin", EntryKind::File, exact((1 << 63) - 1, 2)),
+            upsert("empty.txt", EntryKind::File, exact(0, 3)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        let selection = Selection {
+            include: vec![pattern("big")],
+            size: SizeMetric::Apparent,
+            min_size: Some(1),
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Summary, ViewSpec::Files], selection));
+        let Section::Summary(summary) = &report.sections[0] else { panic!("summary") };
+        assert_eq!((summary.files, summary.dirs, summary.bytes), (2, 1, u64::MAX));
+        let Section::Files { rows, .. } = &report.sections[1] else { panic!("files") };
+        assert_eq!(rows.iter().map(|row| row.bytes).sum::<u64>(), u64::MAX);
     }
 
     #[test]

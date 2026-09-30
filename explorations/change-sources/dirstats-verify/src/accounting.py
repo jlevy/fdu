@@ -17,6 +17,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi  # noqa: E402
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 
 def fileinfo(path):
@@ -131,8 +134,7 @@ def main():
     t = dsapi.get(root)
     log.append({"case": "final_totals", "fsctl": (t["gen"], t["desc"], t["phys"]), "walk_summary": r.stdout.strip()})
     print(log[-1])
-    with open(out, "w") as fh:
-        json.dump(log, fh, indent=1, default=str)
+    write_text_atomic(out, json.dumps(log, indent=1, default=str))
 
 
 if __name__ == "__main__":

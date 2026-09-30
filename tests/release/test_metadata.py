@@ -537,6 +537,7 @@ REVIEWED_PUBLISH_STEPS = """
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --require-identical
+          --wait 300
 """
 
 # The plan job's step that refuses, in release mode, a run whose ref is not the version's

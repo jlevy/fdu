@@ -1,5 +1,10 @@
 """Prototype policies: (B) strict scalar policy for a Rust utility, and a fixed frontmatter-format represent_str."""
 import io, json, re
+import os
+import sys
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
+from scripts.atomic_write import open_atomic  # noqa: E402
 corpus = json.load(open("corpus.json"))
 
 # ---- (B) strict policy: plain only when unambiguous under YAML 1.1 AND 1.2 (spec + known parsers) ----
@@ -55,7 +60,7 @@ y = fixed_frontmatter_yaml()
 def fm_fixed(s):
     b = io.StringIO(); y.dump({"path": s}, b); return b.getvalue()
 
-with open("emit-proto.tsv", "w") as f:
+with open_atomic("emit-proto.tsv") as f:
     for name, fn in [("proposed-B-strict-policy", lambda s: f"path: {b_scalar(s)}\n"), ("frontmatter-format-fixed-prototype", fm_fixed)]:
         for c in corpus:
             f.write(f"{name}\t{c['id']}\tOK\t{fn(c['s']).encode().hex()}\n")

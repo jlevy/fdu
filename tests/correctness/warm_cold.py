@@ -30,8 +30,14 @@ from answer import (
     source_of,
 )
 
-# Repository-relative so the runbook is not tied to one checkout.
-DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
+# Repository-relative so the runbook is not tied to one checkout, and under
+# CARGO_TARGET_DIR when that moves the build.
+DEFAULT_FDU = (
+    Path(__file__).resolve().parents[2]
+    / os.environ.get("CARGO_TARGET_DIR", "target")
+    / "debug"
+    / "fdu"
+)
 FDU = os.environ.get("FDU_BIN") or str(DEFAULT_FDU)
 
 # Each case is a request, named by what makes it interesting.

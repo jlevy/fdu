@@ -2,6 +2,10 @@
 """Diff two fdu JSON tree dumps by directory path: count changed directory roll-ups,
 report magnitudes (no private paths in the shareable summary)."""
 import json, sys, time
+import os
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")))
+from scripts.atomic_write import open_atomic  # noqa: E402
 a, b, out = sys.argv[1], sys.argv[2], sys.argv[3]
 def load(p):
     t0 = time.monotonic(); d = json.load(open(p)); t1 = time.monotonic()
@@ -25,7 +29,7 @@ for p, vb in B.items():
 changed.sort(key=lambda r: -abs(r[1]))
 tdiff = time.monotonic() - t0
 depth = lambda p: p.count('/')
-with open(out, 'w') as f:
+with open_atomic(out) as f:
     f.write(f"dirs A={len(A)} B={len(B)} changed_rollups={len(changed)} (added {added}, removed {removed})\n")
     f.write(f"load A {la:.2f}s+{ia:.2f}s, load B {lb:.2f}s+{ib:.2f}s, diff {tdiff:.3f}s\n")
     f.write(f"root allocated delta: {B.get('', (0,))[0] - A.get('', (0,))[0]} bytes\n")

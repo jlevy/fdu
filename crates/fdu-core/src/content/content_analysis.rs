@@ -19,6 +19,40 @@ use super::{
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 const CLASSIFICATION_PREFIX_BYTES: usize = 16 * 1024;
 const MAX_ERROR_BYTES: usize = 512;
+/// Candidates scheduled at once ([`analyze_index_in_batches`]): enough to keep every
+/// worker reading between two walks of the index, and a few megabytes of paths and
+/// classifications at most, whatever the tree holds.
+const ANALYSIS_BATCH_CANDIDATES: usize = 4096;
+/// The largest Markdown file the words unit renders exactly, in bytes.
+///
+/// Rendering needs the whole source and a document-wide parse beside it, so a worker's
+/// memory grows with the file. Up to this size that is a few hundred megabytes at most
+/// per worker; above it the file is counted as plain text and its record says so
+/// ([`CoverageReason::TextOnly`]). No Markdown document anyone writes is near it: the
+/// largest in common corpora are a few megabytes, so every real file is rendered
+/// exactly, and the bound exists for the generated or concatenated file that would
+/// otherwise exhaust memory (fdu-b2qz).
+pub(crate) const MARKDOWN_EXACT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Resource limits an analysis pass runs under.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AnalysisLimits {
+    /// [`MARKDOWN_EXACT_BYTES`], or a smaller bound in a test.
+    pub(crate) markdown_exact_bytes: u64,
+}
+
+impl Default for AnalysisLimits {
+    fn default() -> Self {
+        Self { markdown_exact_bytes: MARKDOWN_EXACT_BYTES }
+    }
+}
+
+/// The most bytes [`analyze_open_file`] held of each file beyond its read chunk, by
+/// absolute path: the classification prefix, a deferred code buffer, and a Markdown
+/// source. A test seam for the retention bounds.
+#[cfg(test)]
+static PEAK_RETAINED: std::sync::Mutex<std::collections::BTreeMap<std::path::PathBuf, usize>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 /// Operational counters from one content-analysis pass.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -98,7 +132,8 @@ impl AnalyzerCoverage {
 
     fn count(&mut self, reason: CoverageReason) {
         let counter = match reason {
-            CoverageReason::Analyzed => &mut self.analyzed,
+            // Counted as plain text is still a value the unit produced.
+            CoverageReason::Analyzed | CoverageReason::TextOnly => &mut self.analyzed,
             CoverageReason::Binary => &mut self.binary,
             CoverageReason::InvalidUtf8 => &mut self.invalid_utf8,
             CoverageReason::UnsupportedEncoding => &mut self.unsupported_encoding,
@@ -132,6 +167,31 @@ pub(crate) fn analyze_index_observed(
     request: AnalysisRequest,
     progress: Option<&crate::Progress>,
 ) -> AnalysisReport {
+    analyze_index_in_batches(
+        index,
+        request,
+        progress,
+        ANALYSIS_BATCH_CANDIDATES,
+        AnalysisLimits::default(),
+    )
+}
+
+/// [`analyze_index_observed`], scheduling at most `batch` candidates at a time.
+///
+/// The candidates are walked in batches rather than materialized whole: each holds two
+/// paths and a classification, so a million-file tree cost hundreds of megabytes before
+/// the first read (fdu-xjfk). The count is taken first, without building any, so the
+/// denominator is exact before the first read. Within a batch the workers pull from a
+/// shared cursor and the caller's thread applies every result as it arrives, so one
+/// batch bounds the candidates alive at once and nothing else changes: every result is
+/// still applied conditionally on the revision and fingerprint its candidate carried.
+pub(crate) fn analyze_index_in_batches(
+    index: &mut Index,
+    request: AnalysisRequest,
+    progress: Option<&crate::Progress>,
+    batch: usize,
+    limits: AnalysisLimits,
+) -> AnalysisReport {
     if !request.profile.is_enabled() {
         return AnalysisReport::default();
     }
@@ -139,9 +199,8 @@ pub(crate) fn analyze_index_observed(
         crate::query::system_time_to_nanos(std::time::SystemTime::now()).unwrap_or(0);
     let previous_state = index.content().and_then(super::ContentIndex::state);
     index.prepare_content_analysis(request);
-    let candidates = index.pending_analysis_candidates(request);
     let mut report = AnalysisReport {
-        candidates: u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+        candidates: index.count_pending_analysis_candidates(request),
         code: request.profile.includes_code().then(AnalyzerCoverage::default),
         words: request.profile.includes_words().then(AnalyzerCoverage::default),
         ..AnalysisReport::default()
@@ -150,16 +209,44 @@ pub(crate) fn analyze_index_observed(
         progress.enter(crate::ProgressPhase::Analyzing);
         progress.begin_analysis(report.candidates);
     }
-    if candidates.is_empty() {
+    if report.candidates == 0 {
         finish_content_tier(index, &report, previous_state, pass_started_at_ns);
         return report;
     }
 
     let started = std::time::Instant::now();
-    // Cloned out before the scope: the workers need the index's rules while the receive
+    // Cloned out before the scopes: the workers need the index's rules while the receive
     // loop holds the index mutably, and an `Arc` is what lets both be true.
     let types = index.types_shared();
-    let workers = worker_count(request.workers, candidates.len());
+    let workers =
+        worker_count(request.workers, usize::try_from(report.candidates).unwrap_or(usize::MAX));
+    let mut walk = crate::index::AnalysisWalk::start();
+    loop {
+        let candidates = index.next_analysis_candidates(request, &mut walk, batch.max(1));
+        if candidates.is_empty() {
+            break;
+        }
+        analyze_batch(index, &types, candidates, request, limits, workers, &mut report, progress);
+    }
+    report.elapsed_ns = elapsed_ns(started);
+    finish_content_tier(index, &report, previous_state, pass_started_at_ns);
+    report
+}
+
+/// Read one batch of candidates on `workers` threads and apply each result as it
+/// arrives.
+#[allow(clippy::too_many_arguments)] // One batch is one call; the limits ride with the request.
+fn analyze_batch(
+    index: &mut Index,
+    types: &Arc<TypeRegistry>,
+    candidates: Vec<AnalysisCandidate>,
+    request: AnalysisRequest,
+    limits: AnalysisLimits,
+    workers: usize,
+    report: &mut AnalysisReport,
+    progress: Option<&crate::Progress>,
+) {
+    let workers = workers.clamp(1, candidates.len().max(1));
     let next = AtomicUsize::new(0);
     let candidates = Arc::new(candidates);
     let (sender, receiver) = mpsc::sync_channel(workers.saturating_mul(2).max(1));
@@ -169,13 +256,12 @@ pub(crate) fn analyze_index_observed(
             let sender = sender.clone();
             let candidates = Arc::clone(&candidates);
             let next = &next;
-            let types = &types;
             scope.spawn(move || {
                 let _counter_guard = crate::counters::thread_flush_guard();
                 loop {
                     let slot = next.fetch_add(1, Ordering::Relaxed);
                     let Some(candidate) = candidates.get(slot).cloned() else { break };
-                    if sender.send(analyze_candidate(types, candidate, request)).is_err() {
+                    if sender.send(analyze_candidate(types, candidate, request, limits)).is_err() {
                         break;
                     }
                 }
@@ -184,7 +270,7 @@ pub(crate) fn analyze_index_observed(
         drop(sender);
         for (observation, bytes_read) in receiver {
             report.bytes_read = report.bytes_read.saturating_add(bytes_read);
-            count_coverage(&mut report, &observation.analysis);
+            count_coverage(report, &observation.analysis);
             match index.apply_analysis(observation) {
                 AnalysisApplyOutcome::Applied => report.applied = report.applied.saturating_add(1),
                 AnalysisApplyOutcome::Stale => report.stale = report.stale.saturating_add(1),
@@ -196,9 +282,6 @@ pub(crate) fn analyze_index_observed(
             }
         }
     });
-    report.elapsed_ns = elapsed_ns(started);
-    finish_content_tier(index, &report, previous_state, pass_started_at_ns);
-    report
 }
 
 fn finish_content_tier(
@@ -245,6 +328,7 @@ fn analyze_candidate(
     types: &TypeRegistry,
     candidate: AnalysisCandidate,
     request: AnalysisRequest,
+    limits: AnalysisLimits,
 ) -> (AnalysisObservation, u64) {
     let (analysis, bytes_read) = if candidate.classification.family == ContentFamily::Binary {
         (
@@ -259,7 +343,7 @@ fn analyze_candidate(
             0,
         )
     } else {
-        analyze_open_file(types, &candidate, request)
+        analyze_open_file(types, &candidate, request, limits)
     };
     let provenance = ContentProvenance::for_request(request, types.fingerprint());
     (AnalysisObservation { candidate, profile: request.profile, provenance, analysis }, bytes_read)
@@ -269,6 +353,7 @@ fn analyze_open_file(
     types: &TypeRegistry,
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
+    limits: AnalysisLimits,
 ) -> (FileAnalysis, u64) {
     crate::counters::bump(|c| c.file_opens += 1);
     let mut file = match File::open(&candidate.absolute_path) {
@@ -305,10 +390,15 @@ fn analyze_open_file(
     let mut deferred_code = (request.profile.includes_code()
         && candidate.classification.family == ContentFamily::Unknown)
         .then(Vec::new);
+    // A Markdown file over the exact bound is never held: it is counted as plain text.
+    let markdown_exact = candidate.attrs.size <= limits.markdown_exact_bytes;
     let mut markdown_source = (request.profile.includes_words()
+        && markdown_exact
         && (candidate.classification.file_type.as_str() == "markdown"
             || candidate.classification.family == ContentFamily::Unknown))
         .then(Vec::new);
+    #[cfg(test)]
+    let mut peak_retained = 0_usize;
     let mut prefix = Vec::with_capacity(CLASSIFICATION_PREFIX_BYTES);
     let mut chunk = vec![0_u8; READ_CHUNK_BYTES];
     let mut read_failure = None;
@@ -385,6 +475,14 @@ fn analyze_open_file(
                     &mut markdown_source,
                     body,
                 );
+                #[cfg(test)]
+                {
+                    peak_retained = peak_retained.max(
+                        prefix.len()
+                            + deferred_code.as_ref().map_or(0, Vec::len)
+                            + markdown_source.as_ref().map_or(0, Vec::len),
+                    );
+                }
             }
             Err(error) => {
                 read_failure = Some(error);
@@ -392,6 +490,11 @@ fn analyze_open_file(
             }
         }
     }
+    #[cfg(test)]
+    PEAK_RETAINED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(candidate.absolute_path.clone(), peak_retained);
 
     let after = match file.metadata() {
         Ok(metadata) => match crate::scan::attrs_from_file(&file, &metadata) {
@@ -507,14 +610,25 @@ fn analyze_open_file(
                     AnalyzerOutcome::unavailable(CoverageReason::Unsupported)
                 }
             });
-            let words = request.profile.includes_words().then_some(AnalyzerOutcome::analyzed(
-                WordMetrics {
+            let words = request.profile.includes_words().then(|| {
+                let words = WordMetrics {
                     paragraphs: metrics.paragraphs,
                     visible_words: metrics.visible_words,
                     logical_word_stats: metrics.logical_word_stats,
                     visible_logical_word_stats: metrics.visible_logical_word_stats,
-                },
-            ));
+                };
+                if classification.file_type.as_str() == "markdown" && !markdown_exact {
+                    // Counted as plain text, as a `.txt` of the same bytes is: every
+                    // word visible, the paragraphs its blank-line runs.
+                    AnalyzerOutcome::text_only(WordMetrics {
+                        visible_words: metrics.raw_words,
+                        visible_logical_word_stats: metrics.logical_word_stats,
+                        ..words
+                    })
+                } else {
+                    AnalyzerOutcome::analyzed(words)
+                }
+            });
             analyzed_record(candidate, classification, lines, code, words)
         }
         TextAdmission::Binary => {
@@ -666,6 +780,194 @@ mod tests {
                 "content analysis had operational failures (I/O errors: 1; changed during read: 2; stale results: 3). File and byte totals remain complete; content metrics omit affected files"
             )
         );
+    }
+
+    fn limits(markdown_exact_bytes: u64) -> AnalysisLimits {
+        AnalysisLimits { markdown_exact_bytes }
+    }
+
+    fn analyzed_under(
+        root: &Path,
+        request: AnalysisRequest,
+        limits: AnalysisLimits,
+    ) -> (Index, AnalysisReport) {
+        let (mut index, _) =
+            crate::scan::scan_into_index(root, &ScanConfig::default()).expect("scan");
+        let report = analyze_index_in_batches(&mut index, request, None, 4096, limits);
+        (index, report)
+    }
+
+    fn record(index: &Index, name: &str) -> FileAnalysis {
+        index.content().and_then(|content| content.file(Path::new(name))).cloned().expect(name)
+    }
+
+    fn peak_retained(root: &Path, name: &str) -> usize {
+        let path = root.canonicalize().expect("canonical root").join(name);
+        *PEAK_RETAINED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&path)
+            .unwrap_or_else(|| panic!("{name} was analyzed"))
+    }
+
+    /// A Markdown file over the exact bound is counted as plain text, as a `.txt` of the
+    /// same bytes is, and every surface says so: the record's words coverage, the
+    /// documents row, the machine coverage map, and a report note (fdu-b2qz). At and
+    /// below the bound the answer is the rendered one it always was.
+    #[test]
+    fn a_markdown_file_over_the_exact_bound_is_counted_as_plain_text_and_says_so() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let paragraph = "# Title\n\nRead [the label](https://example.test/very/long/url) and \
+                         ![alt](image.png).\n\n```rust\nlet fenced = \"hidden\";\n```\n\n\
+                         plain words here\n\n";
+        let markdown: Vec<u8> = paragraph.repeat(40).into_bytes();
+        fs::write(root.path().join("doc.md"), &markdown).expect("markdown");
+        fs::write(root.path().join("doc.txt"), &markdown).expect("text twin");
+        let size = u64::try_from(markdown.len()).expect("fits");
+        let request = AnalysisRequest { profile: AnalysisSet::ALL, workers: 2 };
+
+        let (exact, exact_report) = analyzed_under(root.path(), request, limits(size));
+        let rendered = record(&exact, "doc.md");
+        let rendered_words = rendered.words.expect("words").value().expect("rendered value");
+        assert_eq!(rendered.words.expect("words").coverage(), CoverageReason::Analyzed);
+        let twin_words = record(&exact, "doc.txt").words.expect("words").value().expect("twin");
+        assert!(
+            rendered_words.visible_words < rendered.lines.value().expect("lines").raw_words,
+            "rendering hides link destinations and code: {rendered_words:?}"
+        );
+
+        let (bounded, bounded_report) = analyzed_under(root.path(), request, limits(size - 1));
+        let counted = record(&bounded, "doc.md");
+        let words = counted.words.expect("words");
+        assert_eq!(words.coverage(), CoverageReason::TextOnly);
+        let counted_words = words.value().expect("a text-only outcome carries its value");
+        let raw_words = counted.lines.value().expect("lines").raw_words;
+        assert_eq!(counted_words.visible_words, raw_words, "every word is visible");
+        assert_eq!(counted_words.visible_logical_word_stats, twin_words.logical_word_stats);
+        assert_eq!(
+            counted_words.paragraphs, twin_words.paragraphs,
+            "paragraphs are blank-line runs"
+        );
+        assert_eq!(counted_words.logical_word_stats, twin_words.logical_word_stats);
+        assert_eq!(counted.lines, rendered.lines, "the lines unit is unchanged");
+        assert_eq!(counted.code, rendered.code, "the code unit is unchanged");
+        assert_eq!(bounded_report.candidates, exact_report.candidates);
+        assert_eq!(bounded_report.words, exact_report.words, "counted as text is still a value");
+        assert!(counted.is_reusable());
+        assert_eq!(counted.operational_failure(), None);
+
+        // The documents view says so, in text, in the machine coverage map, and in a note.
+        let request = crate::query::Request::new(
+            crate::query::Basis::held_by(&bounded),
+            crate::query::Query {
+                views: vec![crate::query::ViewSpec::Documents],
+                ..crate::query::Query::default()
+            },
+            std::time::UNIX_EPOCH,
+        );
+        let report =
+            crate::query::report(&bounded, &request, std::time::UNIX_EPOCH).expect("report");
+        assert!(
+            report.notes.iter().any(|note| note
+                == "note: 1 Markdown file over 64 MiB counted as plain text: every word counted \
+                    visible, paragraphs are blank-line runs"),
+            "{:?}",
+            report.notes
+        );
+        let text = crate::report_format::render(&report, crate::report_format::Format::Text, false)
+            .expect("text");
+        assert!(text.contains("1 counted as text"), "{text}");
+        let json = crate::report_format::render(&report, crate::report_format::Format::Json, false)
+            .expect("json");
+        assert!(json.contains("\"text_only\": 1"), "{json}");
+
+        let exact_request = crate::query::Request::new(
+            crate::query::Basis::held_by(&exact),
+            crate::query::Query {
+                views: vec![crate::query::ViewSpec::Documents],
+                ..crate::query::Query::default()
+            },
+            std::time::UNIX_EPOCH,
+        );
+        let exact_report =
+            crate::query::report(&exact, &exact_request, std::time::UNIX_EPOCH).expect("report");
+        assert!(exact_report.notes.iter().all(|note| !note.contains("counted as plain text")));
+    }
+
+    /// The other half of the bound (fdu-b2qz): a file of unknown type retains at most
+    /// its classification prefix and one read chunk once the prefix has settled its
+    /// type, a Markdown file over the exact bound retains the same, and only a Markdown
+    /// file within the bound holds its source, which the exact rendering needs.
+    #[test]
+    fn an_unknown_type_file_retains_at_most_the_prefix_and_a_chunk() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let line = b"2026-09-30T00:00:00Z info the quick brown fox jumps over the lazy dog\n";
+        let mut body = Vec::with_capacity(1024 * 1024 + line.len());
+        while body.len() < 1024 * 1024 {
+            body.extend_from_slice(line);
+        }
+        fs::write(root.path().join("service.log"), &body).expect("log");
+        fs::write(root.path().join("dump"), &body).expect("no extension");
+        fs::write(root.path().join("notes.md"), &body).expect("markdown");
+        let request = AnalysisRequest { profile: AnalysisSet::ALL, workers: 1 };
+        let bound = 2 * CLASSIFICATION_PREFIX_BYTES + READ_CHUNK_BYTES;
+
+        let (_, _) = analyzed_under(root.path(), request, limits(512 * 1024));
+        for name in ["service.log", "dump", "notes.md"] {
+            let peak = peak_retained(root.path(), name);
+            assert!(peak <= bound, "{name} retained {peak} bytes of a {}-byte file", body.len());
+        }
+
+        let (_, _) = analyzed_under(root.path(), request, AnalysisLimits::default());
+        assert!(peak_retained(root.path(), "service.log") <= bound);
+        assert!(
+            peak_retained(root.path(), "notes.md") >= body.len(),
+            "within the bound the rendered answer needs the whole source"
+        );
+    }
+
+    /// Batched scheduling changes what is alive at once and nothing else (fdu-xjfk):
+    /// one candidate at a time and every candidate at once leave the same records,
+    /// counts, and denominator.
+    #[test]
+    fn scheduling_in_batches_of_one_leaves_the_same_records_as_all_at_once() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(root.path().join("src/deep")).expect("directories");
+        fs::write(root.path().join("src/main.rs"), b"fn main() {\n    // hi\n}\n").expect("write");
+        fs::write(root.path().join("src/deep/lib.rs"), b"pub fn f() {}\n").expect("write");
+        fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
+        fs::write(root.path().join("blob.bin"), b"\x00\x01\x02").expect("write");
+        fs::write(root.path().join("latin.txt"), b"caf\xe9\n").expect("write");
+        let request = AnalysisRequest { profile: AnalysisSet::ALL, workers: 3 };
+        let records = |batch: usize| {
+            let (mut index, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            let report = analyze_index_in_batches(
+                &mut index,
+                request,
+                None,
+                batch,
+                AnalysisLimits::default(),
+            );
+            let content = index.content().expect("content");
+            let records: BTreeMap<_, _> = content
+                .records()
+                .map(|(path, analysis)| (path.to_path_buf(), format!("{analysis:?}")))
+                .collect();
+            (report, records)
+        };
+        let (one_at_a_time, singly) = records(1);
+        let (all_at_once, whole) = records(usize::MAX);
+        assert_eq!(singly.len(), 5);
+        assert_eq!(singly, whole);
+        assert_eq!(one_at_a_time.candidates, 5);
+        assert_eq!(all_at_once.candidates, 5);
+        assert_eq!(one_at_a_time.applied, all_at_once.applied);
+        assert_eq!(one_at_a_time.stale, all_at_once.stale);
+        assert_eq!(one_at_a_time.bytes_read, all_at_once.bytes_read);
+        assert_eq!(one_at_a_time.lines, all_at_once.lines);
+        assert_eq!(one_at_a_time.code, all_at_once.code);
+        assert_eq!(one_at_a_time.words, all_at_once.words);
     }
 
     /// Every words-unit metric is independent of whether code was also requested.

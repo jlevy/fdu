@@ -295,6 +295,159 @@ impl From<&InternedRollUp> for RollUpScalars {
     }
 }
 
+impl RollUpScalars {
+    /// What one entry adds to each of its ancestors' roll-ups on its own: a file's count
+    /// and bytes, a directory's count, nothing for a symlink or other object.
+    fn leaf(kind: EntryKind, attrs: &Attrs) -> Self {
+        match kind {
+            EntryKind::File => {
+                Self { files: 1, bytes: attrs.size, allocated: attrs.allocated, ..Self::default() }
+            }
+            EntryKind::Dir => Self { dirs: 1, ..Self::default() },
+            EntryKind::Symlink | EntryKind::Other => Self::default(),
+        }
+    }
+
+    /// The sum, or the name of the first counter a `u64` cannot hold it in.
+    fn checked_add(self, other: &Self) -> Result<Self, &'static str> {
+        Ok(Self {
+            files: self.files.checked_add(other.files).ok_or("files")?,
+            dirs: self.dirs.checked_add(other.dirs).ok_or("directories")?,
+            bytes: self.bytes.checked_add(other.bytes).ok_or("bytes")?,
+            allocated: self.allocated.checked_add(other.allocated).ok_or("allocated bytes")?,
+            newest_mtime_ns: self.newest_mtime_ns,
+        })
+    }
+
+    /// The difference, saturating at zero as [`InternedRollUp::unmerge`] does.
+    fn saturating_sub(self, other: &Self) -> Self {
+        Self {
+            files: self.files.saturating_sub(other.files),
+            dirs: self.dirs.saturating_sub(other.dirs),
+            bytes: self.bytes.saturating_sub(other.bytes),
+            allocated: self.allocated.saturating_sub(other.allocated),
+            newest_mtime_ns: self.newest_mtime_ns,
+        }
+    }
+}
+
+/// What a batch has done to the tree so far, for [`Index::replay_totals`]: which of the
+/// index's subtrees it has cut away and which entries it has put in their place.
+///
+/// The index is not touched; this is the projection a preflight reads instead. A cut is
+/// an index subtree the batch removed or replaced, recorded with what it contributed to
+/// every ancestor, and no cut lies beneath another. A live entry is one the batch
+/// inserted, recorded with what it contributes on its own; a directory the batch
+/// inserted has children only among the live entries beneath it.
+#[derive(Default)]
+struct TotalsOverlay {
+    cuts: BTreeMap<PathBuf, RollUpScalars>,
+    live: BTreeMap<PathBuf, (EntryKind, RollUpScalars)>,
+}
+
+impl TotalsOverlay {
+    /// The index's entry at `path`, if it still counts: it exists and no cut covers it.
+    fn index_alive(&self, index: &Index, path: &Path) -> Option<EntryId> {
+        let id = index.lookup(path)?;
+        let mut ancestor = Some(path);
+        while let Some(current) = ancestor {
+            if self.cuts.contains_key(current) {
+                return None;
+            }
+            ancestor = current.parent();
+        }
+        Some(id)
+    }
+
+    /// The kind the tree holds at `path` right now, if anything.
+    fn kind_at(&self, index: &Index, path: &Path) -> Option<EntryKind> {
+        if let Some((kind, _)) = self.live.get(path) {
+            return Some(*kind);
+        }
+        self.index_alive(index, path).map(|id| index.entry(id).kind)
+    }
+
+    /// The entries of `map` strictly beneath `path`. Paths order by component, so a
+    /// path's descendants follow it contiguously.
+    fn beneath<'a, V>(
+        map: &'a BTreeMap<PathBuf, V>,
+        path: &'a Path,
+    ) -> impl Iterator<Item = (&'a PathBuf, &'a V)> {
+        map.range::<Path, _>((std::ops::Bound::Excluded(path), std::ops::Bound::Unbounded))
+            .take_while(move |(candidate, _)| candidate.starts_with(path))
+    }
+
+    /// What the tree holds at and beneath `path` right now: the index's subtree there
+    /// less the cuts inside it, plus the batch's entries there. Every part of it is
+    /// already inside the running total, so the sum cannot leave `u64`.
+    fn subtree_at(&self, index: &Index, path: &Path) -> RollUpScalars {
+        let mut total = RollUpScalars::default();
+        if let Some(id) = self.index_alive(index, path) {
+            total = index.subtree_scalars(id);
+            for (_, cut) in Self::beneath(&self.cuts, path) {
+                total = total.saturating_sub(cut);
+            }
+        }
+        let live = self
+            .live
+            .range::<Path, _>((std::ops::Bound::Included(path), std::ops::Bound::Unbounded))
+            .take_while(|(candidate, _)| candidate.starts_with(path));
+        for (_, (_, own)) in live {
+            total = total.checked_add(own).unwrap_or_else(|_| {
+                unreachable!("a subtree the tree holds is within its representable total")
+            });
+        }
+        total
+    }
+
+    /// The batch has removed whatever the tree held at `path`, subtree and all.
+    fn cut(&mut self, index: &Index, path: &Path) {
+        if let Some(id) = self.index_alive(index, path) {
+            let covered: Vec<PathBuf> =
+                Self::beneath(&self.cuts, path).map(|(cut, _)| cut.clone()).collect();
+            for cut in covered {
+                self.cuts.remove(&cut);
+            }
+            self.cuts.insert(path.to_path_buf(), index.subtree_scalars(id));
+        }
+        let gone: Vec<PathBuf> = self
+            .live
+            .range::<Path, _>((std::ops::Bound::Included(path), std::ops::Bound::Unbounded))
+            .take_while(|(candidate, _)| candidate.starts_with(path))
+            .map(|(live, _)| live.clone())
+            .collect();
+        for live in gone {
+            self.live.remove(&live);
+        }
+    }
+
+    /// The batch has put an entry of `kind` at `path` in place of whatever was there.
+    fn replace(&mut self, index: &Index, path: &Path, kind: EntryKind, own: RollUpScalars) {
+        self.cut(index, path);
+        self.live.insert(path.to_path_buf(), (kind, own));
+    }
+}
+
+/// Where a batched walk of the files an analysis may read has got to
+/// ([`Index::next_analysis_candidates`]): the directories still to list, each with its
+/// path, and the listing in progress with how many of its children have been visited.
+///
+/// Resuming a listing by position is sound because nothing moves the tree between two
+/// batches of one walk: an analysis pass holds the index exclusively, and applying a
+/// result moves its content tier only.
+#[derive(Debug)]
+pub(crate) struct AnalysisWalk {
+    pending: Vec<(EntryId, PathBuf)>,
+    listing: Option<(EntryId, PathBuf, usize)>,
+}
+
+impl AnalysisWalk {
+    /// A walk that has visited nothing.
+    pub(crate) fn start() -> Self {
+        Self { pending: vec![(EntryId::ROOT, PathBuf::new())], listing: None }
+    }
+}
+
 /// The regular files a folded index counted directly in one directory without keeping
 /// them as entries ([`crate::execution::RetainedState::Tree`]).
 ///
@@ -2547,6 +2700,7 @@ impl Index {
             .unwrap_or(u64::MAX);
         self.validate_known_ancestry(&prepared.ops, &accepted)?;
         let projected_controls = self.projected_controls(&prepared.ops, &accepted)?;
+        self.preflight_totals(&prepared.ops, Some(&accepted), max_files)?;
 
         for (observed, accepted) in prepared.ops.iter().zip(accepted) {
             if !accepted {
@@ -2655,6 +2809,7 @@ impl Index {
                     counts.scanner_control_projection_us.saturating_add(elapsed);
             });
         }
+        self.preflight_totals(&prepared.ops, None, max_files)?;
         let mut stats = ApplyStats::default();
         let mut applied_ids = has_batch_parents.then(|| vec![None; prepared.ops.len()]);
 
@@ -2881,6 +3036,110 @@ impl Index {
         if previous != self.state {
             effects.state(|| StateTransition::IndexState { previous, current: self.state });
         }
+    }
+
+    /// What `id` and everything beneath it contribute to each ancestor's roll-up.
+    fn subtree_scalars(&self, id: EntryId) -> RollUpScalars {
+        let entry = self.entry(id);
+        match entry.kind {
+            EntryKind::Dir => {
+                let mut scalars = RollUpScalars::from(&entry.rollup().all);
+                scalars.dirs = scalars.dirs.saturating_add(1);
+                scalars
+            }
+            EntryKind::File => RollUpScalars::leaf(EntryKind::File, &entry.attrs),
+            EntryKind::Symlink | EntryKind::Other => RollUpScalars::default(),
+        }
+    }
+
+    /// Refuse a batch that would leave a whole-tree total no `u64` can hold, before it
+    /// moves anything ([`crate::Error::UnrepresentableTotal`]).
+    ///
+    /// The root's `all` roll-up bounds every other: each directory's is a sub-sum of it,
+    /// `unignored` is a part of `all`, an extension tally is a part of its directory's,
+    /// and a folded file's tally is a part of the roll-up that counted it. So the batch is
+    /// safe when the root's four counters stay representable after each accepted
+    /// operation, applied in order, which is exactly what the reducer computes.
+    ///
+    /// Two passes, because this runs for every scanner batch. The first adds what each
+    /// accepted upsert would contribute as a new entry and subtracts nothing, so it bounds
+    /// every intermediate total from above at four checked additions per upsert; when it
+    /// fits, nothing else is computed. Only a batch that fails that bound is replayed
+    /// exactly, which is where an exact-fit replacement or a removal that makes room is
+    /// told apart from an overflow.
+    fn preflight_totals(
+        &self,
+        ops: &[ObservationOp],
+        accepted: Option<&[bool]>,
+        max_files: Option<u64>,
+    ) -> crate::Result<()> {
+        let mut bound = self.total_scalars();
+        for (index, observed) in ops.iter().enumerate() {
+            if accepted.is_some_and(|accepted| !accepted[index]) {
+                continue;
+            }
+            if let Op::Upsert { kind, attrs, .. } = &observed.op {
+                match bound.checked_add(&RollUpScalars::leaf(*kind, attrs)) {
+                    Ok(next) => bound = next,
+                    Err(_) => return self.replay_totals(ops, accepted, max_files),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The exact pass of [`Self::preflight_totals`]: the root's totals after each
+    /// accepted operation, with replacements, kind changes, and removals netted in order
+    /// against a projection of the tree ([`TotalsOverlay`]) rather than the tree itself.
+    fn replay_totals(
+        &self,
+        ops: &[ObservationOp],
+        accepted: Option<&[bool]>,
+        max_files: Option<u64>,
+    ) -> crate::Result<()> {
+        let mut total = self.total_scalars();
+        let mut overlay = TotalsOverlay::default();
+        for (index, observed) in ops.iter().enumerate() {
+            if accepted.is_some_and(|accepted| !accepted[index]) {
+                continue;
+            }
+            match &observed.op {
+                Op::Upsert { path, kind, attrs } => {
+                    // The root only ever changes its own attributes, and so does any
+                    // entry re-observed with its kind unless it is a file: only a file's
+                    // attributes reach its ancestors' roll-ups.
+                    if path.as_os_str().is_empty()
+                        || (overlay.kind_at(self, path) == Some(*kind) && *kind != EntryKind::File)
+                    {
+                        continue;
+                    }
+                    let old = overlay.subtree_at(self, path);
+                    let new = RollUpScalars::leaf(*kind, attrs);
+                    let after =
+                        total.saturating_sub(&old).checked_add(&new).map_err(|counter| {
+                            crate::Error::UnrepresentableTotal { path: path.clone(), counter }
+                        })?;
+                    if max_files.is_some_and(|max_files| after.files > max_files) {
+                        // The reducer refuses this upsert for its file budget and moves on.
+                        continue;
+                    }
+                    overlay.replace(self, path, *kind, new);
+                    total = after;
+                }
+                Op::Remove { path } => {
+                    if path.as_os_str().is_empty() {
+                        continue;
+                    }
+                    let old = overlay.subtree_at(self, path);
+                    overlay.cut(self, path);
+                    total = total.saturating_sub(&old);
+                }
+                Op::ControlUpsert { .. }
+                | Op::ControlRemove { .. }
+                | Op::InvalidateSubtree { .. } => {}
+            }
+        }
+        Ok(())
     }
 
     /// Exact regular-file total that would remain after one upsert at the current
@@ -4402,20 +4661,36 @@ impl Index {
     /// [`AnalysisApplyOutcome::Stale`]; [`analyze_index`] is the entry that works.
     ///
     /// [`analyze_index`]: crate::content::analyze_index
+    #[cfg(test)]
     pub(crate) fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
         let root_files = self.entry(EntryId::ROOT).rollup().files;
         let mut candidates = Vec::with_capacity(usize::try_from(root_files).unwrap_or(0));
-        self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
-            candidates.push(AnalysisCandidate {
-                entry_id: id,
-                revision,
-                absolute_path: self.root_path.join(&relative_path),
-                classification: self.classify(&relative_path),
-                relative_path,
-                attrs,
-            });
-        });
+        self.walk_analysis_files(
+            profile,
+            &mut AnalysisWalk::start(),
+            |id, revision, attrs, relative_path| {
+                candidates.push(self.analysis_candidate(id, revision, attrs, relative_path));
+                true
+            },
+        );
         candidates
+    }
+
+    fn analysis_candidate(
+        &self,
+        entry_id: EntryId,
+        revision: u64,
+        attrs: Attrs,
+        relative_path: PathBuf,
+    ) -> AnalysisCandidate {
+        AnalysisCandidate {
+            entry_id,
+            revision,
+            absolute_path: self.root_path.join(&relative_path),
+            classification: self.classify(&relative_path),
+            relative_path,
+            attrs,
+        }
     }
 
     /// File identities restore matches against sidecar records, without classifying.
@@ -4445,17 +4720,46 @@ impl Index {
         profile: AnalysisSet,
         mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf),
     ) {
+        self.walk_analysis_files(
+            profile,
+            &mut AnalysisWalk::start(),
+            |id, revision, attrs, path| {
+                visit(id, revision, attrs, path);
+                true
+            },
+        );
+    }
+
+    /// Visit the files an analysis under `profile` may read, from where `walk` left off,
+    /// until `visit` answers `false`; the walk then resumes at the next file.
+    ///
+    /// Depth first, directories in listing order, so every call over one walk visits
+    /// each file once and in the order [`Self::for_each_analysis_file`] does. The parent
+    /// path the walk already holds is joined for each file; `path_of` would walk
+    /// ancestors per file for the same bytes.
+    fn walk_analysis_files(
+        &self,
+        profile: AnalysisSet,
+        walk: &mut AnalysisWalk,
+        mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf) -> bool,
+    ) {
         if !profile.is_enabled() {
             return;
         }
-        // Join the parent path this walk already holds. `path_of` would walk
-        // ancestors per file for the same bytes.
-        let mut stack = vec![(EntryId::ROOT, PathBuf::new())];
-        while let Some((parent, parent_path)) = stack.pop() {
-            for (name, id) in self.children_of(parent).into_iter().flatten() {
+        loop {
+            let (parent, parent_path, visited) = match walk.listing.take() {
+                Some(listing) => listing,
+                None => match walk.pending.pop() {
+                    Some((parent, parent_path)) => (parent, parent_path, 0),
+                    None => return,
+                },
+            };
+            let mut position = visited;
+            for (name, id) in self.children_of(parent).into_iter().flatten().skip(visited) {
+                position += 1;
                 let entry = self.entry(id);
                 if entry.kind == EntryKind::Dir {
-                    stack.push((id, parent_path.join(name)));
+                    walk.pending.push((id, parent_path.join(name)));
                     continue;
                 }
                 if entry.kind != EntryKind::File {
@@ -4468,9 +4772,10 @@ impl Index {
                 {
                     continue;
                 }
-                let revision = entry.revision;
-                let attrs = entry.attrs;
-                visit(id, revision, attrs, relative_path);
+                if !visit(id, entry.revision, entry.attrs, relative_path) {
+                    walk.listing = Some((parent, parent_path, position));
+                    return;
+                }
             }
         }
     }
@@ -4478,24 +4783,77 @@ impl Index {
     /// The candidates `request` still has to read: every one, unless the content tier
     /// holds exactly `request`'s identity, and then those without a record whose
     /// fingerprint matches.
+    ///
+    /// Every candidate at once. An analysis pass takes them in bounded batches through
+    /// [`Self::next_analysis_candidates`] instead, so this is for a caller that wants the
+    /// whole set, such as a test.
+    #[cfg(test)]
     pub(crate) fn pending_analysis_candidates(
         &self,
         request: crate::content::AnalysisRequest,
+    ) -> Vec<AnalysisCandidate> {
+        self.next_analysis_candidates(request, &mut AnalysisWalk::start(), usize::MAX)
+    }
+
+    /// Whether `request` still has to read the file at `relative_path` with `attrs`,
+    /// given what the content tier holds for `request`'s identity.
+    fn pending_analysis(
+        held: Option<crate::stored_state::ContentProjection<'_>>,
+        relative_path: &Path,
+        attrs: &Attrs,
+    ) -> bool {
+        held.and_then(|content| content.file(relative_path))
+            .is_none_or(|record| record.fingerprint != attrs.fingerprint() || !record.is_reusable())
+    }
+
+    /// The next batch of at most `limit` candidates `request` still has to read, from
+    /// where `walk` left off; empty once the walk is over.
+    ///
+    /// A candidate holds two paths and a classification, so materializing every one of a
+    /// million-file tree before the first read cost hundreds of megabytes that the bounded
+    /// worker channel then drained one at a time (fdu-xjfk). Handing them out in batches
+    /// keeps the scheduling memory at the batch, and each candidate still carries the
+    /// revision and fingerprint its result is conditionally applied under.
+    pub(crate) fn next_analysis_candidates(
+        &self,
+        request: crate::content::AnalysisRequest,
+        walk: &mut AnalysisWalk,
+        limit: usize,
     ) -> Vec<AnalysisCandidate> {
         let wanted = self.content_identity(request.profile);
         // The tier refuses a record of any identity but its own, so one comparison here
         // decides for every record it holds.
         let held = self.content().and_then(|content| content.admit(&wanted));
-        self.analysis_candidates(request.profile)
-            .into_iter()
-            .filter(|candidate| {
-                held.and_then(|content| content.file(&candidate.relative_path)).is_none_or(
-                    |record| {
-                        record.fingerprint != candidate.attrs.fingerprint() || !record.is_reusable()
-                    },
-                )
-            })
-            .collect()
+        let root_files = usize::try_from(self.entry(EntryId::ROOT).rollup().files).unwrap_or(0);
+        let mut candidates = Vec::with_capacity(limit.min(root_files));
+        self.walk_analysis_files(request.profile, walk, |id, revision, attrs, relative_path| {
+            if Self::pending_analysis(held, &relative_path, &attrs) {
+                candidates.push(self.analysis_candidate(id, revision, attrs, relative_path));
+            }
+            candidates.len() < limit
+        });
+        candidates
+    }
+
+    /// How many candidates `request` still has to read: what
+    /// [`Self::next_analysis_candidates`] hands out over a whole walk, counted without
+    /// building any of them, so an analysis knows its denominator before its first read.
+    pub(crate) fn count_pending_analysis_candidates(
+        &self,
+        request: crate::content::AnalysisRequest,
+    ) -> u64 {
+        let wanted = self.content_identity(request.profile);
+        let held = self.content().and_then(|content| content.admit(&wanted));
+        let mut count = 0_u64;
+        self.walk_analysis_files(
+            request.profile,
+            &mut AnalysisWalk::start(),
+            |_, _, attrs, path| {
+                count += u64::from(Self::pending_analysis(held, &path, &attrs));
+                true
+            },
+        );
+        count
     }
 
     /// Conditionally commit a worker result if its entry and metadata expectation still
@@ -10886,5 +11244,287 @@ mod tests {
         );
         assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
         assert!(index.active_reconciles.is_empty(), "closed passes retain no shadow history");
+    }
+
+    // A whole-tree total no u64 can hold is refused before any mutation (fdu-sqyk).
+
+    fn sized(size: u64) -> Attrs {
+        Attrs { size, allocated: size, mtime_ns: 1, ctime_ns: 1, inode: size ^ 7, dev: 1 }
+    }
+
+    fn assert_unrepresentable(error: &crate::Error, path: &str, counter: &str) {
+        match error {
+            crate::Error::UnrepresentableTotal { path: at, counter: which } => {
+                assert_eq!(at, Path::new(path));
+                assert_eq!(*which, counter);
+            }
+            other => panic!("expected an unrepresentable-total refusal, got {other:?}"),
+        }
+    }
+
+    /// Everything a refused batch must leave alone.
+    fn observable_state(index: &Index) -> (u64, Clock, RollUp, Vec<PathBuf>, usize) {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        let mut pending = vec![EntryId::ROOT];
+        while let Some(id) = pending.pop() {
+            paths.push(index.path_of(id).expect("live entry"));
+            if index.entry(id).kind.is_dir() {
+                pending.extend(index.child_ids(id));
+            }
+        }
+        paths.sort();
+        (index.len(), index.clock(), index.total(), paths, index.journal.len())
+    }
+
+    #[test]
+    fn a_batch_whose_byte_total_would_exceed_u64_is_refused_before_any_mutation() {
+        let mut index = Index::new("/root");
+        let before = observable_state(&index);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("a", EntryKind::File, sized(u64::MAX)),
+                upsert("b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("two files summing past u64::MAX cannot be represented");
+        assert_unrepresentable(&error, "b", "bytes");
+        assert_eq!(observable_state(&index), before, "a refused batch changes nothing");
+
+        // The first file alone fits exactly; the next byte does not, and the directory that
+        // would fit on its own is refused with it, because the batch is one commit.
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(u64::MAX))]));
+        let before = observable_state(&index);
+        assert_eq!(before.2.bytes, u64::MAX);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("one more byte is unrepresentable");
+        assert_unrepresentable(&error, "dir/b", "bytes");
+        assert_eq!(observable_state(&index), before);
+        assert!(index.lookup(Path::new("dir")).is_none(), "the batch is fault-atomic");
+
+        // Allocated bytes are checked as their own total.
+        let error = index
+            .apply(&Observation::new(vec![upsert(
+                "c",
+                EntryKind::File,
+                Attrs { size: 0, allocated: 1, ..sized(0) },
+            )]))
+            .expect_err("allocated bytes overflow on their own");
+        assert_unrepresentable(&error, "c", "allocated bytes");
+        assert_eq!(observable_state(&index), before);
+    }
+
+    #[test]
+    fn exact_fit_replacement_removal_and_kind_change_batches_are_accepted() {
+        // Replacing the largest file and adding another lands exactly on u64::MAX.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(u64::MAX))]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::File, sized(1)),
+            upsert("b", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!(index.total().files, 2);
+
+        // A removal first makes room for an insertion in the same batch; the batch is
+        // applied in order, so the reverse order is refused: the index would have to hold
+        // u64::MAX + 5 between the two operations.
+        let before = observable_state(&index);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("c", EntryKind::File, sized(5)),
+                Op::Remove { path: PathBuf::from("b") },
+            ]))
+            .expect_err("an insertion before the removal that makes room for it");
+        assert_unrepresentable(&error, "c", "bytes");
+        assert_eq!(observable_state(&index), before);
+        index.apply_ok(&Observation::new(vec![
+            Op::Remove { path: PathBuf::from("b") },
+            upsert("c", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+
+        // A kind change drops the subtree it replaces, and that room counts.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, Attrs::default()),
+            upsert("d/f", EntryKind::File, sized(u64::MAX)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::File, sized(5)),
+            upsert("e", EntryKind::File, sized(u64::MAX - 5)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!((index.total().files, index.total().dirs), (2, 0));
+
+        // A later operation on the same path supersedes an earlier one in the batch.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("x", EntryKind::File, sized(u64::MAX)),
+            upsert("x", EntryKind::File, sized(1)),
+            upsert("y", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+
+        // Removing a subtree that an earlier operation in the batch grew.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, Attrs::default()),
+            upsert("d/f", EntryKind::File, sized(u64::MAX - 10)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("d/g", EntryKind::File, sized(10)),
+            Op::Remove { path: PathBuf::from("d") },
+            upsert("z", EntryKind::File, sized(u64::MAX)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!((index.total().files, index.total().dirs), (1, 0));
+    }
+
+    #[test]
+    fn a_stale_conditional_upsert_does_not_count_toward_the_projected_total() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(5))]));
+        let stale = index.expectation(Path::new("b"));
+        index.apply_ok(&Observation::new(vec![upsert("b", EntryKind::File, sized(1))]));
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
+            ObservationOp::if_state(upsert("b", EntryKind::File, sized(u64::MAX)), stale),
+            ObservationOp::unconditional(upsert("c", EntryKind::File, sized(u64::MAX - 6))),
+        ]));
+        assert_eq!(outcome.stats.stale, 1);
+        assert_eq!(index.total().bytes, u64::MAX);
+    }
+
+    #[test]
+    fn the_baseline_and_scanner_lanes_refuse_unrepresentable_totals() {
+        let mut index = Index::new("/root");
+        let before = observable_state(&index);
+        let error = index
+            .apply_baseline(&Observation::new(vec![
+                upsert("a", EntryKind::File, sized(u64::MAX)),
+                upsert("b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("the baseline lane refuses too");
+        assert_unrepresentable(&error, "b", "bytes");
+        assert_eq!(observable_state(&index), before);
+
+        let error = index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a", EntryKind::File, sized(u64::MAX)),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("the scanner lane refuses too");
+        assert_unrepresentable(&error, "dir/b", "bytes");
+        assert_eq!(observable_state(&index), before);
+
+        // The scanner lane's exact projection accepts what fits.
+        index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a", EntryKind::File, sized(u64::MAX - 1)),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect("an exact fit");
+        assert_eq!(index.total().bytes, u64::MAX);
+    }
+
+    // Analysis candidates are handed out in bounded batches over one resumable walk
+    // (fdu-xjfk), in the order a whole walk gives them.
+
+    fn tree_for_analysis() -> Index {
+        let mut index = Index::new("/root");
+        let mut ops = vec![upsert("z.txt", EntryKind::File, file_attrs(3, 1))];
+        for directory in ["a", "b", "c"] {
+            ops.push(upsert(directory, EntryKind::Dir, Attrs::default()));
+            ops.push(upsert(&format!("{directory}/deep"), EntryKind::Dir, Attrs::default()));
+            for file in 0..4 {
+                ops.push(upsert(
+                    &format!("{directory}/f{file}.rs"),
+                    EntryKind::File,
+                    file_attrs(10 + file, 1),
+                ));
+            }
+            ops.push(upsert(&format!("{directory}/deep/d.md"), EntryKind::File, file_attrs(7, 2)));
+            ops.push(upsert(&format!("{directory}/link"), EntryKind::Symlink, Attrs::default()));
+        }
+        index.apply_ok(&Observation::new(ops));
+        index
+    }
+
+    #[test]
+    fn analysis_candidates_come_in_bounded_batches_in_walk_order() {
+        let index = tree_for_analysis();
+        let request = crate::content::AnalysisRequest {
+            profile: AnalysisSet::NONE.with_lines(),
+            ..crate::content::AnalysisRequest::default()
+        };
+        let whole: Vec<PathBuf> = index
+            .pending_analysis_candidates(request)
+            .into_iter()
+            .map(|candidate| candidate.relative_path)
+            .collect();
+        assert_eq!(whole.len(), 16, "one root file and five files under each directory");
+        assert_eq!(index.count_pending_analysis_candidates(request), 16);
+
+        for limit in [1, 3, 5, 16, 17, usize::MAX] {
+            let mut walk = AnalysisWalk::start();
+            let mut collected = Vec::new();
+            let mut batch_count = 0;
+            loop {
+                let batch = index.next_analysis_candidates(request, &mut walk, limit);
+                if batch.is_empty() {
+                    break;
+                }
+                assert!(batch.len() <= limit, "a batch is bounded by its limit");
+                batch_count += 1;
+                collected.extend(batch.into_iter().map(|candidate| candidate.relative_path));
+            }
+            assert_eq!(
+                collected, whole,
+                "batches of {limit} walk the same files in the same order"
+            );
+            assert_eq!(batch_count, whole.len().div_ceil(limit.min(whole.len())));
+            assert!(
+                index.next_analysis_candidates(request, &mut walk, limit).is_empty(),
+                "a finished walk stays finished"
+            );
+        }
+    }
+
+    #[test]
+    fn batches_skip_what_the_content_tier_already_holds() {
+        let root = tempfile::tempdir().expect("root");
+        for name in ["one.rs", "two.rs", "three.rs"] {
+            std::fs::write(root.path().join(name), b"fn main() {}\n").expect("file");
+        }
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        let request =
+            crate::content::AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 1 };
+        assert_eq!(index.count_pending_analysis_candidates(request), 3);
+        crate::content::analyze_index(&mut index, request);
+        assert_eq!(index.count_pending_analysis_candidates(request), 0);
+        assert!(index.next_analysis_candidates(request, &mut AnalysisWalk::start(), 2).is_empty());
+
+        std::fs::write(root.path().join("two.rs"), b"fn main() { changed(); }\n").expect("grow");
+        let (rescanned, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default())
+                .expect("rescan");
+        index
+            .apply(&Observation::new(vec![upsert(
+                "two.rs",
+                EntryKind::File,
+                *rescanned.attrs(Path::new("two.rs")).expect("attrs"),
+            )]))
+            .expect("apply");
+        assert_eq!(index.count_pending_analysis_candidates(request), 1);
+        let batch = index.next_analysis_candidates(request, &mut AnalysisWalk::start(), 2);
+        assert_eq!(
+            batch.iter().map(|candidate| candidate.relative_path.clone()).collect::<Vec<_>>(),
+            [PathBuf::from("two.rs")]
+        );
     }
 }

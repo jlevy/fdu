@@ -22,6 +22,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi  # noqa: E402
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 
 def now_us():
@@ -323,8 +326,7 @@ def main():
             break
         print(f"=== replicate {k} at {base}")
         results["replicates"].append({"k": k, "base": base, "log": run_matrix(fx, long_wait if k == 0 else 0)})
-    with open(out, "w") as fh:
-        json.dump(results, fh, indent=1, default=str)
+    write_text_atomic(out, json.dumps(results, indent=1, default=str))
     print("wrote", out)
 
 

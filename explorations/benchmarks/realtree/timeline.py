@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree.experiment import kept_arm
 from benchmarks.realtree.summary import (
     BASELINE_COMMIT,
@@ -496,7 +497,7 @@ def main(argv: Sequence[str]) -> int:
     if arguments.check:
         return _check(arguments.out, rendered)
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
-    arguments.out.write_text(rendered, encoding="utf-8")
+    write_text_atomic(arguments.out, rendered, encoding="utf-8")
     print(
         f"wrote {arguments.out} from {len(experiments)} experiments "
         f"across {len(dataset['subjects'])} subjects",

@@ -2127,6 +2127,7 @@ mod tests {
         fs::write(root.path().join("README.md"), b"read me").expect("file");
         #[cfg(unix)]
         std::os::unix::fs::symlink("README.md", root.path().join("readme-link")).expect("symlink");
+        crate::test_support::settle_allocations(root.path());
 
         let query = summary_query();
         // Two workers so the compact fold exercises StreamingEmission recycle even on

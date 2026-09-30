@@ -353,6 +353,25 @@ publishes them as one atomic commit.
 Snapshot and journal parsers check declared counts against the bytes actually present
 before allocating. A corrupt file must fail closed, not abort on an allocation.
 
+### Write Every File Whole
+
+A reader sees the whole old file or the whole new one, never part of either under the
+final name. Anything written for something else to read later (a snapshot, a release
+manifest, a run artifact, the ledger) goes to a temporary in the same directory, is
+flushed and synced, and is renamed over its target, and the temporary is removed if
+anything fails. A crash or a container restart mid-write then leaves the previous file,
+not a truncated one that parses as something else or fails a later step for a reason
+nobody can see.
+
+An append-only file, such as a log or a JSONL stream, cannot be renamed into place one
+record at a time, so its reader must detect and drop a torn last record instead.
+
+The engine’s `snapshot::write_atomically` and the helpers in `scripts/atomic_write.py`
+and `scripts/atomic-write.mjs` do this.
+`make atomic-writes` fails on a raw write anywhere else unless it lists the site with
+its reason. A test’s own inputs are exempt, because a crash fails the test that wrote
+them.
+
 ## Trust and the Cache
 
 ### The Cache May Never Silently Lie
@@ -676,8 +695,14 @@ read does; a repaint over a partial index is never labelled complete.
 Detection is event-driven — the OS notification backend, never polling — so an idle tree
 costs no filesystem work, a property asserted by test rather than described.
 `--interval` throttles only how often aggregate views repaint; it plays no part in
-detection. Overflow and subtree invalidation appear explicitly in the stream and are
-never dropped, because they say the consumer’s own view may have gaps.
+detection. A repaint that would show a reader nothing new is skipped: the session
+compares what the format renders of the answer, with its generation instant held fixed,
+plus its tree status, source, and freshness, so a touch that moves no size repaints no
+size-only tree, while machine output that carries the modification time repaints, and a
+change of status or freshness repaints on every format.
+Overflow and subtree invalidation appear explicitly in the stream and are never dropped,
+because they say the consumer’s own view may have gaps; change records are never
+deduplicated, only repaints.
 
 Two deliberate asymmetries in filtering: a removal is filtered only by path, since
 filtering a deletion on a size bound would hide the disappearance of something the

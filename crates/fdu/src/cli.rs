@@ -1042,7 +1042,6 @@ impl Cli {
         presentation: WatchPresentation,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::query::ViewSpec;
-        use fdu_core::watch_session::Session;
 
         let WatchPresentation { render, diagnostic_color, quiet } = presentation;
 
@@ -1054,20 +1053,8 @@ impl Cli {
             .expect("run() builds a watch delivery before it takes the watch path")
             .interval;
 
-        let mut session = match indicator {
-            Some((plan, progress_io)) => {
-                // The one place the line is stopped on this route: right after the start
-                // returns, with a session or with an error, and before the startup save's
-                // warning, the first report, or anything else reaches either stream.
-                let progress = Progress::new();
-                let mut ticker = Ticker::start(plan, progress.clone(), Instant::now(), progress_io);
-                let session =
-                    Session::start_with_progress(request.clone(), delivery.clone(), &progress);
-                ticker.stop();
-                session?
-            }
-            None => Session::start(request.clone(), delivery.clone())?,
-        };
+        let (mut session, initial) =
+            Self::start_watch(request, delivery, format, render, indicator)?;
         Self::persist_live(&mut session, diagnostic, diagnostic_color);
 
         // A streaming run keeps only the views it can render incrementally plus the
@@ -1083,11 +1070,12 @@ impl Cli {
         let has_aggregates =
             !streams_changes || request.query.views.iter().any(|view| *view != ViewSpec::Files);
 
-        // The initial answer, identical to a one-shot run's.
+        // The initial answer, identical to a one-shot run's, which the start above built
+        // as a repaint so the session holds it as the answer every later repaint is
+        // measured against.
         if format == report_format::Format::Yaml {
             write!(out, "{}", report_format::document_start(format))?;
         }
-        let initial = session.report(SystemTime::now())?;
         report_format::write_with_options(&initial, format, render, out)?;
         out.flush()?;
         write_report_diagnostics(diagnostic, &initial, format, diagnostic_color, None, quiet)?;
@@ -1102,7 +1090,7 @@ impl Cli {
                     Self::render_live(
                         out,
                         diagnostic,
-                        &session,
+                        &mut session,
                         format,
                         render,
                         diagnostic_color,
@@ -1128,7 +1116,7 @@ impl Cli {
                 Self::render_live(
                     out,
                     diagnostic,
-                    &session,
+                    &mut session,
                     format,
                     render,
                     diagnostic_color,
@@ -1146,6 +1134,50 @@ impl Cli {
             // the tree goes quiet.
             Self::persist_live(&mut session, diagnostic, diagnostic_color);
         }
+    }
+
+    /// Start the session and build its first answer, under the progress line when the
+    /// run draws one.
+    ///
+    /// The one place the line is stopped on this route: once the first answer exists, or
+    /// the start or the build has failed, and before the startup save's warning, that
+    /// answer, or anything else reaches either stream. The build is under the line
+    /// because it is part of the wait: a heavy view over a large tree takes seconds to
+    /// build, and a line stopped when the start returned went blank for them
+    /// (fdu-wku3). The answer is asked for as a repaint so the session holds it as the
+    /// one every later repaint is measured against.
+    #[cfg(feature = "watch")]
+    fn start_watch(
+        request: &Request,
+        delivery: &Delivery,
+        format: report_format::Format,
+        render: report_format::RenderOptions,
+        indicator: Option<(ProgressPlan, ProgressIo)>,
+    ) -> anyhow::Result<(fdu_core::watch_session::Session, Report)> {
+        use fdu_core::watch_session::Session;
+
+        let (session, answer) = if let Some((plan, progress_io)) = indicator {
+            let progress = Progress::new();
+            let mut ticker = Ticker::start(plan, progress.clone(), Instant::now(), progress_io);
+            let started =
+                Session::start_with_progress(request.clone(), delivery.clone(), &progress)
+                    .and_then(|mut session| {
+                        let answer = session.changed_report_with_progress(
+                            SystemTime::now(),
+                            format,
+                            render,
+                            &progress,
+                        )?;
+                        Ok((session, answer))
+                    });
+            ticker.stop();
+            started?
+        } else {
+            let mut session = Session::start(request.clone(), delivery.clone())?;
+            let answer = session.changed_report(SystemTime::now(), format, render)?;
+            (session, answer)
+        };
+        Ok((session, answer.expect("a session's first answer is always given")))
     }
 
     /// Surface a persistence failure without interrupting the live answer.
@@ -1190,18 +1222,23 @@ impl Cli {
     /// Repaint the aggregate views after a change.
     ///
     /// Only ever called for a repaint — the first answer is written by the caller before
-    /// the loop — so the rule below can be unconditional.
+    /// the loop — so the rule below can be unconditional. A change that leaves the answer
+    /// as the reader last saw it, such as a touch that moves no size, repaints nothing:
+    /// the session decides that (`Session::changed_report`), so every surface decides it
+    /// the same way (fdu-wb5n).
     fn render_live(
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
-        session: &fdu_core::watch_session::Session,
+        session: &mut fdu_core::watch_session::Session,
         format: report_format::Format,
         render: report_format::RenderOptions,
         diagnostic_color: bool,
         quiet: bool,
     ) -> anyhow::Result<()> {
         let generated_at = SystemTime::now();
-        let report = session.report(generated_at)?;
+        let Some(report) = session.changed_report(generated_at, format, render)? else {
+            return Ok(());
+        };
         // A watch run has no final answer and so no performance footer, which left text
         // repaints with nothing between them: the last row of one and the first row of
         // the next were adjacent lines. A blank line alone would not do, because that is
@@ -4161,6 +4198,72 @@ mod tests {
             "the erase is the last thing before the error:\n{text:?}"
         );
         assert_eq!(&text[error..], "fdu: output failed\n");
+    }
+
+    /// A watch start keeps its line up while the first answer is built (fdu-wku3): the
+    /// build is drawn as `Summarizing` under the line the start drew, and the line is
+    /// erased once the answer exists, before anything is written.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_watch_start_draws_through_its_first_answer_and_stops_before_writing_it() {
+        let root = wide_tree();
+        let command = parse(&[
+            "fdu",
+            "--watch",
+            "--view",
+            "files",
+            "--cache",
+            "off",
+            "--color",
+            "never",
+            "--progress",
+            "always",
+            root.path().to_str().expect("Unicode"),
+        ]);
+        let request = command.request(root.path(), SystemTime::now()).expect("request");
+        let delivery = Delivery {
+            cache: CachePolicy::Off,
+            stale_ok: false,
+            cache_path: None,
+            workers: fdu_core::query::Workers::default(),
+            batch_size: fdu_core::ScanConfig::default().batch_size,
+            order: fdu_core::ScanOrder::default(),
+            watch: command.watch_delivery().expect("watch delivery"),
+            accept_partial: false,
+        };
+        let render = report_format::RenderOptions { color: false, bar_size: 0 };
+
+        // Whether the ticker thread is scheduled during the build is up to the OS, as
+        // with the one-shot orderings above: a few runs, and a runner whose frames never
+        // reach the build in five is a result worth failing on.
+        let mut texts = Vec::new();
+        for _ in 0..5 {
+            let err = SharedBuffer::default();
+            let plan = command.progress_plan(&interactive_terminal(), &request);
+            assert!(plan.draw, "an interactive watch start draws");
+            let (session, answer) = Cli::start_watch(
+                &request,
+                &delivery,
+                report_format::Format::Text,
+                render,
+                Some((plan, drawing_io(&err))),
+            )
+            .expect("a watch start");
+            drop(session);
+            let text = err.text();
+            assert!(!answer.sections.is_empty(), "the start built the first answer");
+            if drawn_frames(&text) >= 1 {
+                assert!(
+                    text.ends_with(ERASE_LINE),
+                    "the line is erased once the answer exists:\n{text:?}"
+                );
+            }
+            if text.contains("Summarizing") {
+                return;
+            }
+            texts.push(text);
+        }
+        panic!("no frame showed the first answer's build in five runs: {texts:?}");
     }
 
     /// The same run, the same tree, and the same drawing resources, but no person at

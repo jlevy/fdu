@@ -6,6 +6,10 @@ usage: livewatch_stats.py livewatch.jsonl  -> JSON on stdout (no paths)
 import json
 import sys
 from collections import Counter
+import os
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import complete_lines  # noqa: E402
 
 FLAGS = {
     0x1: "MustScanSubDirs", 0x2: "UserDropped", 0x4: "KernelDropped", 0x100: "ItemCreated",
@@ -15,7 +19,7 @@ FLAGS = {
 }
 events = []
 ready = None
-for line in open(sys.argv[1]):
+for line in complete_lines(sys.argv[1]):
     d = json.loads(line)
     if d["type"] == "ready":
         ready = d

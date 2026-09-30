@@ -73,7 +73,12 @@ fn emit_version() {
         println!("cargo:rustc-env=FDU_BUILD_VERSION={semver}");
         return;
     }
-    let version = match git(&["rev-parse", "--short=9", "HEAD"]) {
+    // A Python sdist carries no `.cargo_vcs_info.json`, and pip or uv may unpack it inside
+    // any repository -- even a home directory kept in git. That repository encloses this
+    // package without describing it, so its HEAD is a stranger's commit too (fdu-h2bj).
+    // Only a repository that tracks this manifest can name the revision it was built from.
+    let tracked = git(&["ls-files", "--error-unmatch", "--", "Cargo.toml"]).is_some();
+    let version = match git(&["rev-parse", "--short=9", "HEAD"]).filter(|_| tracked) {
         Some(revision) => {
             // This preserves Cargo's default whole-package dirty tracking after adding
             // the narrower manifest and Git rerun directives below.

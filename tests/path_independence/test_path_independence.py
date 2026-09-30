@@ -1,7 +1,8 @@
 """The path-independence matrix against the builds under test.
 
 Environment:
-    FDU_BIN          absolute path to the fdu executable (default: target/debug/fdu)
+    FDU_BIN          absolute path to the fdu executable (default: debug/fdu under
+                     CARGO_TARGET_DIR, or under target/)
     FDU_PYTHON       absolute path to a Python with the fdu wheel installed
     FDU_PI_TIER      subset (default) or full
     FDU_PI_SURFACES  cli, or cli,python (default)

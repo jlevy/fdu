@@ -34,7 +34,12 @@ use crate::query::IgnoredEntries;
 /// `.GITIGNORE` governs on a case-insensitive volume (fdu-0w1b). A snapshot taken under 2
 /// recorded no rules for such a directory, and serving it would answer as the old rule
 /// did; the engine fingerprint differs, so it is not served.
-pub(crate) const IGNORE_RULES_VERSION: u64 = 3;
+///
+/// 4: a UTF-8 byte-order mark at the start of a `.gitignore` is skipped, and a pattern
+/// ends at the first NUL byte in its line, as git reads both (fdu-ifci). A snapshot taken
+/// under 3 classified entries with the first rule of such a file never matching, or with
+/// the bytes after the NUL as part of the rule.
+pub(crate) const IGNORE_RULES_VERSION: u64 = 4;
 
 /// Which entries a scan retains: its depth, symlink, filesystem-boundary, hidden-entry,
 /// and special-object settings.
