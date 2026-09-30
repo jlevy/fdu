@@ -22,12 +22,50 @@ Three views are generated from those artifacts and never edited by hand:
   from, committed so a reviewer can diff what the page claims.
 
 This document is the hand-written layer over them: where each platform stands, what each
-loop found, which results carry qualifications, and what is open.
+round asked and found, which results carry qualifications, and what is open.
 The protocol is [the performance loop](../guides/performance-loop.md); the next action
 is in [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30);
 the peer-tool rankings are in the tool comparisons
 [on macOS](report-2026-09-26-fdu-live-tool-comparison.md) and
 [on Linux](report-2026-09-27-fdu-linux-tool-comparison.md).
+
+## What the Whole Record Shows
+
+The record is 200 artifacts, exp-000 through exp-202, measured from 2026-08-10 to
+2026-09-30: 111 accepted verdicts, 61 rejected, 17 baselines, 5 superseded, 4 in
+progress and 2 blocked; 137 on macOS and 63 on Linux.
+exp-113, exp-168 and exp-169 are unused ids.
+[Every Round in Full](#every-round-in-full) places each artifact in the round that ran
+it.
+
+- **Linux, 4-vCPU virtualized guest, ext4, warm cache, quiet.** The 0.3.0 release
+  engine’s default `fdu PATH` takes 48.00% [−50.45%, −44.79%] less time than 0.2.1’s on
+  the Linux v6.12 source tree, 14.09% less on a directory-dense `node_modules` tree, and
+  14.57% less on a generated million-entry tree.
+  On all three it leads pdu’s default, `pdu --max-depth 2` and diskus, the narrowest
+  lead being +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree
+  ([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
+  Most of that is two rounds: the
+  [overnight round](#the-linux-overnight-round-2026-09-29), −39.00% end to end on the
+  kernel tree (exp-194), and the [pdu track](#the-pdu-track-2026-09-30), another −3.05%
+  (exp-201).
+- **Linux, the other tiers.** `content-cache-hit` on the kernel tree is about 588 ms
+  (exp-138, exp-155). The index tier on the 450k generated tree was 1.78× the syscall
+  floor against its 1.4× gate when last derived (exp-141), before the 0.2.1 and 0.3.0
+  work.
+- **macOS, one M1 Pro, APFS, warm cache, uncontrolled.** A pre-0.2.0 build (`a5c0ab46`)
+  built its reusable index and a ten-row tree in 6.4 s on the generated million-entry
+  tree, ahead of every peer, with dumac taking 9% longer
+  ([macOS comparison](report-2026-09-26-fdu-live-tool-comparison.md), 2026-09-28). The
+  ignore-aware default summary cut peak RSS 69.12% (exp-170); five restore changes took
+  `content-cache-hit` from 1,218.0 to 778.0 ms (exp-108 to exp-132); H153’s −47.01% on
+  `content-query` is provisional (exp-159). No macOS cell since 0.1.0 held the quiet
+  gate.
+- **Unmeasured this cycle.** No macOS cell has measured the 2026-09-29 round, the pdu
+  track or the 0.3.0 engine: the last macOS record is exp-172, of 2026-09-28, so the
+  release’s effect on macOS and its standing there against the peers are unknown.
+  Windows has never been benchmarked.
+  Nothing in the record is a cold-cache or a bare-metal Linux measurement.
 
 ## Where Each Platform Stands
 
@@ -41,7 +79,7 @@ a cold disk.
 
 ### macOS
 
-137 of the 199 experiments ran on one Apple M1 Pro (10 cores, 32 GiB), bare metal, APFS,
+137 of the 200 experiments ran on one Apple M1 Pro (10 cores, 32 GiB), bare metal, APFS,
 Darwin 25.5.0. No macOS cell since 0.1.0 is recorded as quiet: the desktop never held
 the gate for a whole cell, so every recent macOS result is uncontrolled.
 
@@ -81,7 +119,7 @@ the gate for a whole cell, so every recent macOS result is uncontrolled.
 
 Virtualized 4-core guests, Intel Xeon and ext4 where recorded: a KVM host on Linux
 6.12.94+ for exp-138–155, and Firecracker guests on 6.18.x for the cells before and
-after. Eight kernel builds, 62 experiments, counted in
+after. Eight kernel builds, 63 experiments, counted in
 [the ledger’s regime table](report-2026-08-10-fdu-performance-experiments.md#regime-coverage).
 Most Linux cells since 2026-09-20 are quiet.
 
@@ -226,7 +264,8 @@ paired steps; the paired figures are the claims.
 
 ## The Loops in Order
 
-Each row is one line of inquiry.
+Each row is one line of inquiry, and together they hold every artifact from exp-000 to
+exp-202; [Every Round in Full](#every-round-in-full) expands each row.
 The ledger has every verdict and
 [the campaign status report](report-2026-08-14-performance-campaign-status.md) the
 history through 2026-08-23.
@@ -250,9 +289,472 @@ history through 2026-08-23.
 | H159 listing recycle | exp-166–167, exp-188–190 | both | Neutral on macOS; per-directory saving, so absent on the sparse kernel tree and −8.6% on a dense one |
 | H161 ignore-aware summary | exp-170–172, exp-187 | both | macOS RSS −69% and −58%; Linux wall −6.9% |
 | pdu on a real tree | exp-173–174, exp-191 | Linux | `.gitignore` classification was the Linux default-command gap: H162 −47.0%, H163 −36.4%; H157 rejected again |
-| Linux overnight loop | exp-175–186, exp-192–196 | Linux | Two regimes of wall time; H171 −29.6%, H172 −13.5% and H183 −7.6% on the default tree, H180 and H169 on the summary; walker count and H181 with H182 rejected; the default tree −39.00% end to end (exp-194); 2.4× pdu’s default to level; the automount fix screened for non-regression in the round’s review (exp-196) |
+| Linux overnight loop | exp-175–186, exp-192–195 | Linux | Two regimes of wall time; H171 −29.6%, H172 −13.5% and H183 −7.6% on the default tree, H180 and H169 on the summary; walker count and H181 with H182 rejected; the default tree −39.00% end to end (exp-194); 2.4× pdu’s default to level |
 | pdu track | exp-197–201 | Linux | H185 −3.55% and H186 −4.91% on the dense tree’s default tree, H188 with H189 −6.15% on the kernel tree’s summary; H187 rejected, the tree route’s consumer having slack; the default tree −3.05% and −8.94% end to end, ahead of both pdu modes and diskus on both real trees (exp-201) |
+| Review rounds and the automount change | exp-196 | Linux | #161’s review put every route on the native reader (H184), a correctness change screened for non-regression: `warm-revalidate` −2.74%, the serial walk −5.14%; #163’s review made H185 prove a directory searchable before trusting its listing, keeping 83% and 89% of its `statx` saving |
 | 0.3.0 release standing | exp-202 | Linux | The release engine against 0.2.1: the default tree −48.00%, −14.09% and −14.57% on the kernel, dense and generated trees; ahead of both pdu modes and diskus on all three, the narrowest lead +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree |
+
+## Every Round in Full
+
+One entry per row of the table above, in the same order.
+Each gives the question the round asked, its verdicts with the paired change the record
+states on its primary job (wall time unless another metric is named), and where it left
+the product. The ledger has every other job and metric.
+Rounds from 2026-09-27 on also have dated sections below with their tables.
+
+### Campaign 1: Walker, Snapshot, Revalidation
+
+exp-000 to exp-039. macOS, 2026-08-10 to 2026-08-13, on a 60k-entry metabrowser
+checkout, a 720,805-entry cache-pressure tree, and a 1.0M-entry live workspace.
+
+**Question.** Where do a cold scan and a warm open spend their time on a real tree, and
+which single changes cut that by at least 3%? exp-000 set the baseline on the
+59,654-entry checkout.
+
+**Accepted.**
+
+- Walker and scheduling: a bounded parallel producer, H1, −50.03% `cold-scan-index`
+  (exp-001); breadth-first order, H48, −0.58%, kept for its monotone partial results
+  rather than for speed (exp-012); region-scheduled breadth-first, H49, peak RSS −3.77%
+  (exp-013); adaptive worker depth under metadata-cache pressure, H31, first as sixteen
+  workers, −11.72% (exp-015), then calibrated from the first 16k entries’ service time,
+  −5.31% (exp-021), both on the 720k tree.
+- macOS bulk metadata: `getattrlistbulk`, H3 with H26, −30.13% on the 720k tree
+  (exp-022), and the same reader during full reconciliation, H53, −34.39%
+  `warm-revalidate` (exp-026).
+- Index, snapshot, and reconciliation: borrowed path components, H5, −9.40%
+  `warm-revalidate` (exp-004); snapshot load through the parent, H10, −18.60%
+  `warm-snapshot-load` (exp-005); direct reconcile off entry ids, H14, −7.09% (exp-007);
+  extensions interned to integer ids, H18, −15.65% (exp-008); a single-pass checksum and
+  parse, H32, −12.38% on the pre-registered load component (exp-009); bounded parallel
+  reconciliation waves, H12 with H9, −59.53% `warm-revalidate` on the 720k tree
+  (exp-030).
+- Checkpoints against the pre-work binary `b565882`, on `cold-scan-index`: −48.91%
+  (exp-006), −53.49% (exp-023), −52.84% (exp-027), and −54.53% (exp-032). After the
+  composable command line merged, PR #8 against `main`: −42.26% `warm-revalidate`
+  (exp-033), −30.46% on the 720k tree (exp-034), and −31.35% on the 1.0M workspace
+  (exp-035).
+
+**Rejected.** Parallel revalidation, H9, −2.59% (exp-002); skipping bootstrap
+journalling, H8, +1.02% (exp-003); claim-list reconcile, H17, −0.03% (exp-010); one
+ancestor merge per insert run, H13, −2.53% (exp-011); moved producer paths, H51, −0.44%
+(exp-016); dormant reserve workers, H31, +2.01% `cold-scan-producer` (exp-017); a 100k
+worker trigger, +1.23% (exp-019), and a 262k one, −1.71% (exp-020); root-relative opens,
+H2 with H24, −0.07% (exp-024); sixteen workers after bulk metadata, H52, +19.19%
+(exp-025); reused bulk staging, H54, +0.21% (exp-028); a 256 KiB bulk buffer, H55,
+−1.80% (exp-029) and +2.22% on the 1.0M workspace (exp-039); 4096-directory
+reconciliation waves, H56, +1.64% (exp-031); fixed worker counts on the 1.0M workspace,
+H57, −1.30% for eight (exp-036); depth-first order, H4, +3.57% (exp-037); a
+parent-relative `openat` frontier, H24 with H29, −0.69% (exp-038).
+
+**Other verdicts.** exp-014, a baseline for H50, measured breadth-first against
+depth-first on the shipped scheduler: −3.04% `cold-scan-producer`. exp-018 (H31, reserve
+workers spawned after 100k entries, −4.04%) was superseded by exp-021.
+
+**Standing after.** exp-032, one interleaved run against the original binary: cold index
+54.53%, producer 60.05%, snapshot save 52.41%, warm revalidation 51.99%, and snapshot
+load 35.66% faster; the cold scan of the checkout went from 635.4 to 289.6 ms.
+
+### Summary Tier and Openers
+
+exp-040 to exp-046. macOS, 2026-08-13, on 0.72M- to 0.98M-entry trees.
+
+**Question.** Can the summary be answered exactly without building the reusable index,
+and does anything below the walk (reduction inside workers, a derived macOS record,
+directory-opener pools) beat it?
+
+**Accepted.** An exact summary derived from the scan without an index, H59: −14.56%
+`rich-summary-report` and peak RSS −95.28% (exp-040).
+
+**Rejected.** Worker-local reduction, H62, −1.38% (exp-041); a derived macOS bulk
+record, H63, +1.86% (exp-042); eight workers for the summary, H65, +0.67% (exp-043); a
+specialized selected total, H64, −1.15%, which did not beat dumac (exp-044).
+
+**Other verdicts.** Pipelined directory opens, H67 with H69, had an unusable interval,
+[−31.04%, +33.91%], and were superseded (exp-045); a shared two-thread opener pool, H70,
+cleared a short screen at −3.98% and is in progress, awaiting a quiet confirmation
+(exp-046).
+
+**Standing after.** The summary retains no index.
+None of H62 to H65 moved wall by 2%, although worker-local reduction alone cut user CPU
+36.23% and RSS 34.77% (exp-041): what remains is directory opens and kernel work.
+H70 is still open.
+
+### Content Analysis
+
+exp-047 to exp-050. macOS, 2026-08-13, on the fdu checkout (307 entries) and a generated
+2,000-file Markdown corpus.
+
+**Question.** Where can content analysis (lines, SLOC, prose metrics) shed work?
+
+**Accepted.** Decoding complete UTF-8 chunks in place, H82: −12.04% `markdown-prose`
+(exp-050).
+
+**Rejected.** Inline analysis of small trees, H79, +66.34% `content-basic`: the worker
+pool was doing useful parallel I/O (exp-047); prose-collector gating for code, H80,
++1.50% `code-sloc` (exp-048); a bounded Markdown buffer reserve, H81, −3.55% with an
+interval crossing zero (exp-049).
+
+### Linux Campaign 1
+
+exp-051 to exp-053 and exp-060 to exp-065. Linux, 4-vCPU Firecracker guests on
+6.18.5-fc-v20 and 6.18.44-fc-v21, 2026-08-14 to 2026-08-23, on the generated
+450,463-entry trees `meta450k` and `vm450k`, then two content subjects.
+
+**Question.** Where `getdents64` and `statx` are the walk, do the index consumer and the
+snapshot path yield the same kind of cuts, and what do per-layer counters cost?
+
+**Accepted.** A one-slot parent memo, S1, −7.35% `cold-scan-index` (exp-051); per-layer
+counters at +0.03%, which bounds their cost below about 3.3% (exp-052), and a runtime
+toggle at −1.26% (exp-053); CRC-32C slicing-by-8, H88, −12.20% on the pre-registered
+`cold-snapshot-save` component (exp-061); skipping unread journal capture on bootstrap,
+H90, −5.06% (exp-062); sharing the index with the snapshot writer, H87, −10.50%
+`cold-open-save` with peak RSS −35.26% (exp-063); hashed content roll-ups and indexed
+type-rule tiers, H94 with H95, −30.31% `content-cache-hit` on a generated subject
+(exp-064) and −25.78% on a dense real one (exp-065).
+
+**Rejected.** A one-slot extension memo, H89, +1.59% (exp-060).
+
+**Standing after.** Every accept but exp-065 rested on a generated tree, and exp-065
+showed why that matters: the warm content cut transferred, while the cold half read
+−2.38% on the dense tree against exp-064’s −13.40% on its sparse generated subject.
+
+### Transfer and Scheduling
+
+exp-054 to exp-059. macOS, 2026-08-14 to 2026-08-15.
+
+**Question.** Does the Linux campaign transfer to macOS, and can an adaptive-worker
+controller do better than the shipped one-shot controller on APFS?
+
+**Accepted.** The Linux campaign on macOS: `warm-revalidate` −15.68%, cold scan +1.39%
+and neutral (exp-054); its review fixes, −0.95%, no regression (exp-055); bounded scan
+diagnostics, H97, −0.55%, inside the +3% margin (exp-056).
+
+**Rejected.** On the adversarial `adaptive-fast-slow-100k` tree: repeated adaptive
+windows, H98, +58.49% (exp-057); staged expansion, H99, +60.73% (exp-058); eight fixed
+workers, H96, +35.55% (exp-059).
+
+**Standing after.** The shipped controller stayed;
+[the gap-closure report](report-2026-08-15-adaptive-worker-gap-closure.md) has the
+policy analysis.
+
+### Campaign 2: Default Command and Content Map
+
+exp-066 to exp-070, macOS, 2026-08-23 to 2026-08-24, and exp-104, Linux, 2026-09-14.
+Campaign 2 is
+[the floor-anchored plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md).
+
+**Question.** What does the default command, `fdu PATH`, cost end to end, which no
+record had measured, and what does a warm content open spend?
+
+**Baseline.** exp-066, on a 175k-entry rustup store: every repeated run rewrote a 13.9
+MB snapshot it never read.
+
+**Accepted.** Skipping the identical snapshot rewrite, H100, −10.61% `default-tree`
+(exp-067); flushing the report before joining the snapshot writer, H101: time to first
+byte −7.54% on a repeated run and −12.47% on a first run, total wall +1.24% and
+unchanged (exp-068); a byte-ordered content file map, H102, −31.00% `content-cache-hit`
+(exp-069); its separator fixes, −1.28%, non-inferior (exp-070).
+
+**Rejected.** A byte-hashed content roll-up map on Linux, H103, +0.05%: instructions
+fell and wall did not (exp-104).
+
+### Streaming Parity and the Detached Scanner
+
+exp-071 to exp-090. macOS, 2026-09-01, on the rustup store, an 11k-entry cargo registry
+cache, and a 114k-entry metabrowser checkout.
+H91 to H106 here reuse earlier ids; the loop guide lists the
+[numbering collisions](../guides/performance-loop.md#numbering-collisions).
+
+**Question.** PR #51’s streaming engine was slower than the pre-rewrite `main`; what
+closes the gap without changing an answer?
+
+**Blocked and baselines.** PR #51’s head halved its base’s cost, −49.55%
+`cold-scan-index` (exp-071, accepted as mechanism), and stayed at +144.46% against the
+pre-rewrite control (exp-073, blocked).
+Removing the path-keyed ancestry overlay cut the engine component 66.65% and could not
+ship without an equivalent proof (exp-072, blocked).
+On the registry cache the residual was +7.68% `default-tree` (exp-074); scoped counters
+measured +1.93% (exp-075), the correctness fixes +0.29% (exp-076), and scanner phase
+counters, H103, −0.12% (exp-086).
+
+**Accepted.** Detached consequences selected once per batch, H91, −6.57% `default-tree`
+(exp-077); the eager compatibility projection removed, H92, −1.55% `delta-apply-large`
+with peak RSS −7.09% (exp-078); scanner parents resolved before mutation, H93, −9.50%
+`opened-discovery` (exp-079); oversized journal clones skipped, H94, −3.46%
+`delta-apply-large` (exp-080); FullIndex scan diagnostics, H97, −3.48%, inside the +3%
+overhead ceiling (exp-090).
+
+**Rejected.** Borrowed impact paths, H95, −1.07% (exp-081); journal-owned scanner
+commits, H96, −0.01% (exp-082); skipping unignored roll-up maintenance, H97, −1.61%
+(exp-083); compact optional partitions, H98, −2.63% (exp-084), and with compact batches,
+H99, −2.56% (exp-085); fused preparation and reduction, H104, −1.11% (exp-087);
+coalesced causal fragments, H105, +0.13% (exp-088); suppressed causal publication, H106,
++0.68% on the producer component (exp-089).
+
+**Standing after.** With exp-079 the stack matched or beat the pre-rewrite control; the
+consumer representation was left to the H86 composite.
+
+### The H86 Structural Composite
+
+exp-091 to exp-103. macOS, 2026-09-01 to 2026-09-07, on the 113,794-entry checkout
+(97,587 entries for exp-102), and a Linux evidence stage on 2026-09-02.
+
+**Question.** Does a new consumer representation, H86, run as one structural composite
+under a differential oracle, reach the floor targets the campaign-2 plan pre-registered?
+
+**Accepted.** Five non-inferior steps: a shared walker, +1.13% (exp-092); transient
+hashed parents, +0.83% (exp-093); borrowed roll-ups, +0.19% (exp-094); moved names,
+−0.31% with allocated bytes −24% (exp-095); monomorphized consumption, +0.16% (exp-099).
+Two speed-ups: fixed controls applied once per detached directory, −33.55%
+`cold-scan-index` with controls on (exp-096), and compact child topology, −7.70%
+`default-tree` with RSS −37.79% (exp-101). And a point lookup for public mutation
+preflight, −49.78% `delta-apply-large` (exp-102).
+
+**Rejected.** A dynamically dispatched consumer, +0.82% (exp-098); out-of-line directory
+state, −0.83% despite RSS −24.63% (exp-100). The Linux evidence stage passed its
+relative gates, −31.70% `default-tree`, and failed its floor gates: 2.60× the syscall
+floor against 1.4×, and peak RSS 6.59× `arena_spike` against 3× (exp-103, which keeps
+neither arm, since the candidate stays in the stack).
+
+**Other verdicts.** The first pipelined builder, +2.48%, was superseded (exp-091); the
+lifecycle-parity audit is in progress on a 17–22% retained-memory gap (exp-097).
+
+**Standing after.** The composite landed on macOS. On Linux the index tier stayed far
+above its floor gate, the question exp-141 took up.
+
+### The Post-0.1.0 Darwin Revisit
+
+exp-105 to exp-137; exp-113 is unused.
+macOS, 2026-09-19, uncontrolled, on the ~146k-entry metabrowser checkout, the 77k-entry
+rustup store, and the 159k-entry system frameworks.
+
+**Question.** On the engine that shipped in 0.1.0, what is left in the default command
+and in a warm content open?
+
+**Accepted changes.** Six restore cuts on `content-cache-hit`: a bottom-up roll-up after
+restore, H115, −9.69% (exp-112); a streamed sidecar parse, H120, peak RSS −10.13%
+(exp-117); completeness from the restore count, H125, −8.03% (exp-124); restore without
+classify, H129, −13.11% (exp-128); a restore walk that joins the parent’s path, H131,
+−4.07% (exp-130); unused snapshot paths skipped, H133, −6.37% (exp-132). One shared walk
+for the unfiltered metric views, H138, −18.76% `content-query` (exp-137).
+
+**Accepted determinations.** Sixteen profiles and checks that changed no engine code,
+each naming what remained: the installed command’s second `fdu PATH` still cold-scans
+(H108, exp-107); an opened root’s second report takes 1.6 ms against 2,612 ms for a
+one-shot (H117, exp-116), and the index’s own second report 1.7 ms against 2,078 ms
+(H123, exp-119); the metadata walk is 97% of the default tree’s component on the
+frameworks and 93% on the checkout, its leftover `open` and `getattrlistbulk` (H122,
+exp-118 and exp-122; H128, exp-127); the restore mix after each cut (H121, exp-120;
+H113, exp-123; H126, exp-125; H130, exp-129; H132, exp-131; H134, exp-133); opened
+discovery against the first-pass walk (H127, exp-126); first-pass content is file I/O
+(H135, exp-134); the first-run default tree is still the walk (H136, exp-135); and
+`content-query` repeats one walk per view (H137, exp-136), which H138 then shared.
+
+**Rejected.** Reading `.gitignore` by default, H107, +1.64% on the checkout (exp-106);
+completeness by file count, H113, −7.59% with an interval crossing zero (exp-110); a
+type-id `get_mut`, H114, −0.56% (exp-111); restore lookup without the candidates map,
+H116, +8.70% (exp-114); insert-then-rebuild on first analysis, H118, −2.60% component
+(exp-115); a first-pass I/O gate, H124, where every admitted open is needed (exp-121).
+
+**Baselines.** The rustup store’s default tree at 149.8 ms (exp-105), the
+`content-cache-hit` profile at 1,218.0 ms (H109, exp-108), and restore stage timers
+(H112, exp-109), kept at +0.31%.
+
+**Standing after.** `content-cache-hit` on the checkout went from 1,218.0 ms (exp-108)
+to 778.0 ms (exp-132), over five separate pairs rather than one comparison.
+
+### Linux Validation and Iteration
+
+exp-138 to exp-155. Linux, a 4-vCPU KVM guest on 6.12.94+, 2026-09-20 to 2026-09-21,
+mostly quiet, on `linux-v6.12`, the generated `linux-450k`, and a 208k-entry `/usr`.
+
+**Question.** Do the Darwin wins transfer to Linux, what is the Linux leftover on each
+job, and does the engine pass the floor gates (H111)?
+
+**Accepted.** The Darwin cache-hit stack on Linux, H139, −22.48% `content-cache-hit`
+(exp-138), and the shared view walk, H141, −17.60% `content-query` (exp-140); drained
+batches returned to the walker that produced them, H147, −4.98% on the `--no-controls`
+summary (exp-151); directory and symlink `statx` skipped by `d_type`, H72, −9.01% on
+symlink-heavy `/usr` (exp-153); a PGO screen, H148, −8.35% `cold-scan-index`, accepted
+with the control kept, since the profile is host-specific and was not adopted (exp-154).
+Seven leftover determinations found no new userspace cut: the default tree (H140,
+exp-139), the index tier (H143, exp-142), and the first run (H146, exp-147) read as the
+`getdents64` and `statx` walk; first-pass content is file I/O (H142, exp-143); the
+cache-hit and opened-discovery leftovers match Darwin’s (H144, exp-144; H145, exp-145;
+H149, exp-155).
+
+**Rejected.** H111’s floor gates: the index tier 1.78× the floor against 1.4×, peak RSS
+5.20× `arena_spike` against 3×, and the aggregate tier 1.59× and 1.86× on the nominated
+real trees against 1.25× (exp-141); the batch recycle against H85’s 20% mimalloc bar,
+−4.98% (exp-150, the run exp-151 accepted at 3%); the `d_type` skip on `linux-v6.12`,
+−1.63% (exp-152).
+
+**Worker count (H84), recorded with neither arm kept.** Eight walkers are no 3% win on
+the named jobs, +1.75% on the summary (exp-146); with `.gitignore` off they gain 10.06%
+on `/usr` (exp-148), and with it on, the default, they regress 7.12% (exp-149).
+
+**Standing after.** `content-cache-hit` on `linux-v6.12` about 588 ms (exp-138,
+exp-155). The determinations read the default command as the walk; exp-173 later showed
+that most of it was `.gitignore` classification running during the walk.
+
+### Progress Handle
+
+exp-156 to exp-157. macOS, 2026-09-24, uncontrolled, on the frameworks tree.
+
+**Question.** Does the progress indicator cost anything, with and without a handle
+attached?
+
+**Accepted.** Without a handle, H150, −1.78%, non-inferior at +3% (exp-156).
+
+**In progress.** With a handle polled every 80 ms, H151, +5.75% [−5.34%, +10.91%]:
+neither non-inferior nor a cost on a busy host (exp-157).
+
+### Multi-View `content-query`
+
+exp-158 to exp-159. macOS, 2026-09-27, uncontrolled, on the 137k-entry checkout.
+
+**Question.** Can one pass resolve each file’s metrics for every unfiltered view?
+
+**Accepted.** An exact multi-view report oracle, H152, same binary in both arms
+(exp-158).
+
+**In progress.** One-pass shared metric resolution, H153, −47.01% `content-query`, 38.6
+to 20.6 s over 100 reports, retained provisionally: its major-fault gate is inconclusive
+and the quiet confirmation of 2026-09-28 failed to qualify (exp-159).
+
+### Linux Tool Comparison
+
+exp-160 to exp-163. Linux, a 4-vCPU Firecracker guest on 6.18.44-fc-v37, 2026-09-27,
+quiet, on the generated million-entry tree.
+[What the Linux Round Changed](#what-the-linux-round-changed) has the detail.
+
+**Question.** Why does fdu’s indexed tree trail pdu and diskus on the generated tree?
+
+**Accepted.** A large one-shot index freed off the answer path, H156, −3.19%
+`default-tree` (exp-160); no snapshot for a one-shot metadata report, H160, −13.81%
+(exp-163).
+
+**Rejected.** A direct file fold, H157, −2.22% `cold-scan-index` (exp-161); held
+leaf-only chunks, H158, +0.88% (exp-162).
+
+### macOS Rerun of Stack 141
+
+exp-164 to exp-165. macOS, 2026-09-28, uncontrolled, on the generated million-entry
+tree.
+
+**Question.** Do H156 and H160, accepted on Linux, gain or cost anything on macOS?
+
+**Rejected, change kept.** H156, −1.00% (exp-164); H160, −3.09% with an interval
+crossing zero and peak RSS −26.29% (exp-165). Both ship on their Linux accepts.
+
+### H159 Listing Recycle
+
+exp-166 to exp-167, macOS, and exp-188 to exp-190, Linux; 2026-09-28.
+
+**Question.** Does returning drained listings to the walker that allocated them pay?
+
+**Verdicts.** On macOS the unbounded pool, +1.32% with peak RSS up to +5.04%, was
+superseded (exp-166), and the bounded pool, −1.41%, rejected with the change kept
+(exp-167). On `linux-v6.12` it was rejected twice, −2.19% (exp-188) and +2.26%
+(exp-189); on `node-modules-dense` it was accepted, −8.61% (exp-190).
+
+**Standing after.** The saving is per directory: absent on the sparse kernel tree, 8.61%
+on the dense one (exp-190).
+
+### H161 Ignore-Aware Summary
+
+exp-170 to exp-172, macOS, and exp-187, Linux; 2026-09-28.
+
+**Question.** Can the default summary classify `.gitignore` while it counts, instead of
+falling back to the full index?
+
+**Accepted.** Peak RSS −69.12% on the 137k-entry checkout (exp-170) and −57.86% on the
+77k-entry rustup store (exp-171), the pre-registered primary on macOS; wall −6.93% on
+`linux-v6.12`, where the 50% RSS bar was missed (exp-187).
+
+**Superseded.** Holding whole listings, peak RSS −17.07% (exp-172).
+
+### pdu on a Real Tree
+
+exp-173 to exp-174 and exp-191. Linux, fc-v37, 2026-09-28, quiet, on `linux-v6.12`.
+[What the Linux Round Changed](#what-the-linux-round-changed) has the detail.
+
+**Question.** On a real repository, what separates fdu’s default command from pdu’s?
+
+**Accepted.** Allocation-free `.gitignore` matching, H162, −47.02% `aggregate-summary`
+and −46.19% on the default tree (exp-173); control chains resolved once per listing,
+H163, −36.43% and −35.86% (exp-174).
+
+**Rejected.** H157’s file fold again, on the product job its rerun pre-registered; the
+probe’s `cold-scan-index`, −5.51%, was secondary (exp-191).
+
+**Standing after.** The two took the default tree from 590.1 ms (exp-173’s control) to
+211.3 ms (exp-174’s candidate), still about three times pdu’s 70 ms (exp-174).
+
+### The Linux Overnight Round
+
+exp-175 to exp-186 and exp-192 to exp-195. Linux, fc-v49, 2026-09-29, quiet.
+[Its dated section](#the-linux-overnight-round-2026-09-29) has the tables.
+
+**Question.** Can fdu’s default `fdu PATH` beat pdu’s default on two real trees, with
+`.gitignore` on and no answer changed?
+
+**Baselines.** Four-arm A/A cells of the 0.2.1 engine on each subject (exp-175 to
+exp-177).
+
+**Accepted.** H171, −29.62% `default-tree` (exp-178); H175, −3.31% (exp-179); H172 with
+H176, −13.48% on `linux-v6.12` (exp-180) and −10.30% on `node-modules-dense` (exp-181);
+H180, −8.68% and −5.63% `aggregate-summary` (exp-183, exp-184); H169 phase 1, −6.25% and
+−7.90% on the `--no-controls` summary (exp-185, exp-186); H183, −7.62% `default-tree`
+(exp-193).
+
+**Rejected.** Three walkers, H165, +10.25% (exp-182); H181 with H182, +0.20% (exp-192).
+H166 was closed by its gate without a build.
+
+**Standing after.** Against the Q0 engine the default tree was 39.00% faster on
+`linux-v6.12` (exp-194) and 9.75% on `node-modules-dense` (exp-195); fdu’s default
+command went from 2.4 times pdu’s default to level with it on the kernel tree.
+
+### The pdu Track
+
+exp-197 to exp-201. Linux, fc-v50, 2026-09-30, quiet.
+[Its dated section](#the-pdu-track-2026-09-30) has the tables.
+
+**Question.** Can fdu get ahead of every pdu mode on both real trees?
+
+**Accepted.** H185, −3.55% `default-tree` on `node-modules-dense` (exp-197); H188 with
+H189, −6.15% `aggregate-summary` on `linux-v6.12` (exp-198); H186, −4.91% on
+`node-modules-dense` (exp-199).
+
+**Rejected.** H187, −0.35% on `linux-v6.12`: the tree route’s consumer has slack
+(exp-200).
+
+**Standing after.** Against the overnight round’s final head, −3.05% and −8.94% on the
+default tree (exp-201), with fdu ahead of pdu’s default, `pdu --max-depth 2`, and diskus
+on both real trees.
+
+### The Review Rounds and the Automount Change
+
+exp-196. Linux, fc-v50, 2026-09-29 and 2026-09-30.
+[Its dated section](#the-review-rounds-and-the-automount-change-2026-09-29-to-2026-09-30)
+has the detail.
+
+**Question.** Do the review findings’ fixes cost anything on the routes they move?
+
+**Rejected, change kept.** Every route on the native reader, H184, a correctness change
+recorded as a non-regression screen: `warm-revalidate` −2.74% (exp-196). R163-1’s
+searchability proof for H185 was counted, not timed.
+
+### The 0.3.0 Release Standing
+
+exp-202. Linux, fc-v50, 2026-09-30, quiet.
+[Its dated section](#the-030-release-standing-2026-09-30) has the tables.
+
+**Question.** What does the release engine do end to end, against 0.2.1 and the peers?
+
+**Baseline, two builds.** The default tree −48.00% on `linux-v6.12` against 0.2.1, and
+ahead of both pdu modes and diskus on all three subjects (exp-202).
 
 ## What the Linux Round Changed
 
@@ -558,6 +1060,114 @@ dense tree; on the kernel tree it is at the edge of what 20 pairs resolve.
 The generated million-entry tree and macOS were not measured against the peers in this
 track.
 
+## The Review Rounds and the Automount Change (2026-09-29 to 2026-09-30)
+
+The pull requests that carried the Linux work were reviewed before they merged, and two
+findings changed code that a record had already measured.
+Neither was a speed change, and each ships on correctness.
+
+**Every route on the native reader (R161-2, `fdu-d2fn`, H184).** The review of
+[#161](https://github.com/jlevy/fdu/pull/161) found that H169 phase 1 had put
+`AT_NO_AUTOMOUNT` on the parallel walk’s stats alone, so on a tree holding an unmounted
+autofs trigger directory the same request answered differently by route and by worker
+count. The fix lists every route (the serial and concurrent walks, revalidation,
+reconciliation, opened discovery) through the native reader, and stats with the same
+flags the paths a route verifies by itself; musl needed no code.
+Its non-regression screen ran quiet at 20 pairs on `linux-v6.12`, with the #161 layer
+head as control
+([exp-196](../experiments/exp-196-linux-every-route-lists-through-the-native-reader-and-no-sta.md)):
+
+| Job | Control | Every route on the reader | Change [95%] |
+| --- | ---: | ---: | --- |
+| `warm-revalidate` | 554.2 ms | 542.4 ms | −2.74% [−3.96%, +0.28%] |
+| `opened-discovery` | 2,108.3 ms | 2,158.7 ms | +1.19% [+0.56%, +3.51%] |
+| `default-tree` | 109.1 ms | 110.2 ms | +0.42% [−2.67%, +4.11%] |
+| The serial walk, `aggregate-summary --no-controls --threads 1` | 344.9 ms | 328.4 ms | −5.14% [−6.63%, −2.44%] |
+
+The reconciliation component gained 3.56%, the reader’s saving on a route that had taken
+the portable listing.
+Discovery’s own component moved +0.06%, so the +1.19% on its wall lies in the journal
+drain and validation the job times after the walk, and is worth a profile before it is
+called a cost. The serial walk, exp-185’s portable placebo, is now the reader.
+`strace` shows glibc’s per-`opendir` `fstat` gone (5,773 calls to 4) and every `statx`
+of a tree entry carrying `AT_NO_AUTOMOUNT`. The record is `rejected` with the candidate
+kept: nothing was accepted on speed.
+
+**A directory that lists but refuses search (R163-1, `fdu-wigy`).** The review of
+[#163](https://github.com/jlevy/fdu/pull/163) found that exp-197’s identical answers
+held on the three subjects, none of which has a directory with mode `0400`, and not on
+every tree: there H185’s measured build admitted a subdirectory and a symlink from
+`d_type` where the full index reports each child as an error.
+The shipped policy (`0e59c387`) stats a listing’s children until one stat succeeds,
+which proves the directory searchable, and only then takes kinds from `d_type`. It makes
+72,075 `statx` calls on `node-modules-dense` and 87,656 on `linux-v6.12`, against 70,416
+and 87,006 as measured, so it keeps 83% and 89% of exp-197’s saving
+([exp-197](../experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md),
+amended). The difference is below what a 20-pair cell resolves and was not timed alone;
+the release cell includes it.
+
+**Also in the release, first timed by exp-202.** The stability layer
+([#164](https://github.com/jlevy/fdu/pull/164)) adds a checked running total per file on
+every route (the every-route overflow check), and reads `.gitignore` byte-order marks
+and embedded NUL bytes as git reads them (`fdu-ifci`). exp-202’s record lists these,
+with H184 and the R163-1 latch, as what the release adds to exp-201’s engine.
+
+## The 0.3.0 Release Standing (2026-09-30)
+
+The last measurement before the release: the release engine (`b82f26e1`) end to end
+against 0.2.1 (`c1644575`) and against the peers, on every subject the host has
+([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
+It ran quiet on a 4-vCPU Firecracker guest (Linux 6.18.44-fc-v50, ext4, warm cache), 20
+pairs and 3 warm-ups per cell, with no invalid sample.
+It is a baseline record: no decision rests on it, and it states what the shipped engine
+does rather than what the development heads before it did.
+
+**Against 0.2.1, the engine.** Probe cells, paired change in wall time:
+
+| Subject | Job | 0.2.1 | Release | Change [95%] |
+| --- | --- | ---: | ---: | --- |
+| `linux-v6.12` | `default-tree` | 208.6 ms | 109.9 ms | −48.00% [−50.45%, −44.79%] |
+| `linux-v6.12` | `aggregate-summary` | 184.6 ms | 128.1 ms | −34.63% [−40.37%, −27.19%] |
+| `node-modules-dense` | `default-tree` | 135.0 ms | 115.6 ms | −14.09% [−21.53%, −11.50%] |
+| `node-modules-dense` | `aggregate-summary` | 115.3 ms | 99.5 ms | −12.44% [−15.85%, −11.28%] |
+| `linux-balanced-1m` | `default-tree` | 1,109.1 ms | 947.8 ms | −14.57% [−18.46%, −12.71%] |
+| `linux-balanced-1m` | `aggregate-summary` | 1,018.5 ms | 834.2 ms | −16.65% [−20.07%, −13.97%] |
+
+The development records compounded had predicted about −41%, −18% and −13% for the
+default tree; each prediction chains cells from different sessions, so the direct
+figures are the ones to quote.
+On the default tree user CPU fell 75%, 28% and 28% and system CPU far less (−1.6%,
+−5.6%, −8.0%): what remains is the walk’s kernel time.
+The million-entry default tree’s peak RSS fell 80.43%, from 292.7 to 57.3 MiB.
+
+**Against the peers.** Tool cells with the release’s `fdu --color never PATH` as the
+anchor; each competitor is paired 20 times with the adjacent anchor run, and positive
+means it took longer:
+
+| Subject | Release `fdu` | 0.2.1 `fdu` | pdu default | pdu `--max-depth 2` | diskus |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `linux-v6.12` | 0.110 s | 0.215 s, +94.7% [+85.8%, +112.4%] | 0.124 s, +15.3% [+12.0%, +19.3%] | 0.118 s, +9.7% [+1.8%, +12.2%] | 0.123 s, +16.8% [+3.3%, +20.5%] |
+| `node-modules-dense` | 0.106 s | 0.126 s, +20.5% [+18.3%, +22.4%] | 0.126 s, +18.2% [+15.2%, +23.0%] | 0.119 s, +11.5% [+1.9%, +18.9%] | 0.117 s, +12.1% [+9.3%, +16.5%] |
+| `linux-balanced-1m` | 0.951 s | 1.131 s, +20.6% [+17.9%, +21.7%] | 1.196 s, +25.3% [+20.5%, +27.7%] | 1.125 s, +18.8% [+15.0%, +19.7%] | 1.171 s, +23.9% [+20.4%, +28.4%] |
+
+Every interval excludes zero, and the release’s standard output was byte-identical to
+0.2.1’s in every sample.
+On the million-entry tree the release held 58.5 MiB at peak against 0.2.1’s 293.8 MiB
+and pdu’s default 93.4 MiB.
+
+**What the session adds.** Every tool’s median on the real trees was 29–38% above its
+exp-201 figure, so this was a slower session on the same kind of guest.
+The lead over pdu’s default is about where exp-201 left it (15% and 18%, against 13% and
+15%); the leads over `pdu --max-depth 2` (10% and 12%, against 3% and 10%) and over
+diskus are wider. The run carries no exp-201 engine, so it does not separate the
+release’s later changes from the session; they were expected to cost nothing, not to
+gain. On the million-entry tree 0.2.1 was level with `pdu --max-depth 2`, +0.8%
+[−2.4%, +1.7%], where the 2026-09-29 figures put pdu about 11% ahead of it, so about ten
+points of the release’s 18.8% lead there are the session’s, by an estimate across
+sessions. The release’s involuntary context switches rose from 56 to 273 on the kernel
+tree’s default tree, which fails the qualification block’s switch gate, as exp-198
+recorded for the summary.
+
 ## Qualifications on Current Results
 
 These do not overturn a verdict; they say what a verdict rests on.
@@ -601,6 +1211,9 @@ These do not overturn a verdict; they say what a verdict rests on.
   not clearing, on `linux-v6.12`, against a predicted 6–8%. The tree route stats every
   entry, directories included, and the rest of its time is the kernel’s `statx` and the
   consumer, which the reader does not touch.
+- **The release cell does not separate the release’s later changes from its session.**
+  exp-202 carries no exp-201 engine and ran in a session 29–38% slower for every tool on
+  the real trees; H184, the R163-1 latch, and the #164 changes were never timed alone.
 - **The generated tree screens only.** `linux-balanced-1m` decided nothing on
   2026-09-29. H172’s −3.20% wall and −79% peak RSS on it are a screen, and its base
   moved from 1,359 to 1,748 ms between two cells of the same night.
@@ -680,11 +1293,14 @@ Grouped by topic; the order to run them in is
   1. **H169 phase 3**, directories opened relative to the parent’s descriptor, which
      needs an fd budget sized to the breadth-first frontier, and **H177**, a per-listing
      name arena: walker-side cuts, which exp-200 ranks above any consumer cut.
-     The narrowest lead is over pdu `--max-depth 2` on `linux-v6.12`, +3% [+1%, +8%], at
-     the edge of what 20 pairs resolve.
+     The narrowest leads are over pdu `--max-depth 2` on the real trees, +10%
+     [+2%, +12%] and +12% [+2%, +19%] in exp-202, and +3% [+1%, +8%] on `linux-v6.12` in
+     exp-201’s session.
   2. **H178**, the consumer walking when its channel is empty, re-predicted at −1% to
      −3%, under the three-stage qualification a scheduling policy takes.
-  3. **The generated-tree peer table** on the shipped engine, still on `ebc06c78`.
+  3. **The full generated-tree peer table** on the shipped engine: exp-202 measured
+     pdu’s two modes, diskus and 0.2.1 there, not the other peers of
+     [the Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md).
   4. Behind their gates: **H190**, a consumer-only cut on the tree route, which has no
      wall to buy after exp-200; **H179**, which after H185 applies only to the
      full-index route; **H164**’s tree route (`fdu-emqf`) and **H174** (`fdu-sfse`).
@@ -697,8 +1313,8 @@ Grouped by topic; the order to run them in is
     `fdu-puk7` was closed for the reader’s path by exp-185;
   - the benchmark half of the matcher survey (`fdu-p6vc`).
 - **Confirm on real trees:** H156 and H160 (`fdu-b9ga`); H162 and H163 on macOS
-  (`fdu-dv07`), and the 2026-09-29 and pdu-track changes there; the Linux ×floor
-  scoreboard (`fdu-z2h6`).
+  (`fdu-dv07`), and the 2026-09-29, pdu-track and release changes there (the platform
+  review’s cells, exp-203 onward); the Linux ×floor scoreboard (`fdu-z2h6`).
 - **H167** (`fdu-lwsy`), **H168** (`fdu-mw2s`), **H170** (`fdu-lz25`): directory tokens
   in place of the path-keyed directory map, re-measured after H172 as its row asks; no
   per-file extension `String`, on the routes that still keep the full index; and a
@@ -738,6 +1354,9 @@ The paired effects at the final checkpoint are in exp-032.
 
 **Relative.** Every experiment’s paired effect on its primary job with its 95% interval,
 against the −3% accept threshold.
+A baseline that compares two builds is drawn and tabulated with its change, as the
+end-to-end and release cells are (exp-194, exp-195, exp-201, exp-202); a baseline of one
+build against itself has none to show.
 
 **Scale.** Cold-scan cost per entry per subject, largest first, from 307 entries to 1.01
 million. Milliseconds compare only within a subject; microseconds per entry compare
@@ -806,6 +1425,8 @@ would have to be pinned and audited for the life of the project.
 - **Other machines.** macOS is one M1 Pro; Linux is 4-vCPU Xeon guests.
   Which tuning constants that evidence supports is in
   [the platform tuning guide](../guides/platform-tuning.md).
+- **macOS since 2026-09-28.** The last macOS record is exp-172; no macOS cell has
+  measured the 2026-09-29 round, the pdu track, or the 0.3.0 engine.
 - **Windows.** It builds and passes tests; it has not been benchmarked.
 
 <!-- This document follows common-doc-guidelines.md.
