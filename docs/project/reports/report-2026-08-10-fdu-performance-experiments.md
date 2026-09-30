@@ -2028,7 +2028,7 @@ Full record:
 
 ### exp-051 — Memoize the parent resolved for the previous upsert
 
-✅ accepted · 2026-08-14 · S1
+✅ accepted · 2026-08-14 · S1 · commit `2475c82`
 
 Control: fdu at 855aa2e
 
@@ -2375,7 +2375,7 @@ Full record:
 
 ### exp-062 — Skip unread journal capture on the bootstrap apply path
 
-✅ accepted · 2026-08-15 · H90 · commit `8286c7e`
+✅ accepted · 2026-08-15 · H90 · commit `87fd0bd`
 
 Control: post-exp-061 head: bootstrap batches journalled then cleared
 
@@ -2406,7 +2406,7 @@ Full record:
 
 ### exp-063 — Share the index with the snapshot writer instead of deep-cloning it
 
-✅ accepted · 2026-08-15 · H87 · commit `bd9779d`
+✅ accepted · 2026-08-15 · H87 · commit `575db66`
 
 Control: post-exp-062 head: spawn_save deep-clones the index before rendering
 

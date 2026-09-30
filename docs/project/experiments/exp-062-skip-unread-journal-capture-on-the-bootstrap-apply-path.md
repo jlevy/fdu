@@ -205,7 +205,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: -5.058
     reason: "Cold wall -5.06% [-6.03%, -3.54%] on the confirming re-run after -4.62% [-8.45%, -1.02%] first time; the first run's RSS and warm-path alarms did not reproduce, and the reproducing context-switch increase costs no wall or CPU"
-    commit: 8286c7e
+    commit: 87fd0bd
 ---
 `apply_baseline` routed bootstrap batches through the live journalling apply: every
 changed op was cloned into the effective list, the delta was cloned again into the
@@ -230,3 +230,12 @@ What does reproduce is roughly double the involuntary context switches (+120.58%
 [+78.32%, +147.61%] from a base of a few hundred): the consumer finishes batches faster
 and the interleaving shifts.
 Recorded as a cost; wall and CPU say it is not a tax.
+
+Record correction, 2026-09-30 (`fdu-zs89`): `verdict.commit` first read `8286c7e`,
+“docs: regenerate the experiment ledger through exp-057”, a documentation-only commit
+and the control this change was measured against.
+It was captured because the record was written before the change was committed.
+The change landed in `87fd0bd`, “perf: skip unread journal capture on the bootstrap
+apply path (exp-058, H90)”, whose diff adds the `journal` flag to the index apply path
+and adds this record under its original number, exp-058. No measurement or verdict
+changed.

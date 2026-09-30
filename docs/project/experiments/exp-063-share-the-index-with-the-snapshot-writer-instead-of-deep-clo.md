@@ -206,7 +206,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: -10.503
     reason: "cold-open-save wall -10.50% [-21.96%, -8.11%], component -17.26%, peak RSS -35.26% [-38.16%, -33.08%] - the second copy of the index disappearing; cold-scan-index unmoved as the placebo at +1.69% [-0.86%, +3.07%]"
-    commit: bd9779d
+    commit: 575db66
 ---
 `spawn_save` deep-cloned the whole index — every boxed entry, both stored copies of
 every name, and every `BTreeMap` — on the caller’s thread, before rendering could begin,
@@ -235,3 +235,10 @@ return type is a breaking change for a library consumer using that entry point r
 than `open`. At 0.0.1, with the CLI and execution planner as the only in-tree callers,
 that is worth a third of the memory and a tenth of the wall on the default first run
 against a tree.
+
+Record correction, 2026-09-30 (`fdu-zs89`): `verdict.commit` first read `bd9779d`,
+“perf(harness): add the cold-open-save job”, the harness commit this change was measured
+from. It was captured because the record was written before the change was committed.
+The change landed in `575db66`, “perf: share the index with the snapshot writer
+(exp-059, H87)”, whose diff changes `open_with_pending_save` to return `Arc<Index>` and
+adds this record under its original number, exp-059. No measurement or verdict changed.
