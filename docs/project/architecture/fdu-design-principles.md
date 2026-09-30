@@ -386,9 +386,11 @@ record at a time, so its reader must detect and drop a torn last record instead.
 
 The engine’s `snapshot::write_atomically` and the helpers in `scripts/atomic_write.py`
 and `scripts/atomic-write.mjs` do this.
-`make atomic-writes` fails on a raw write anywhere else unless it lists the site with
-its reason. A test’s own inputs are exempt, because a crash fails the test that wrote
-them.
+`make atomic-writes` is a lint over the Rust, Python and Node sources: it fails on a raw
+write in any of them, or an open whose mode or flags it cannot read, unless it lists the
+site with its reason.
+Makefile, shell and workflow writes are reviewed by hand.
+A test’s own inputs are exempt, because a crash fails the test that wrote them.
 
 ## Trust and the Cache
 
