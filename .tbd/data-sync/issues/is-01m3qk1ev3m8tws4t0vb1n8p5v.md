@@ -3,9 +3,9 @@ type: is
 id: is-01m3qk1ev3m8tws4t0vb1n8p5v
 title: "H187: the tree tier's consumer as one structural composite (sort only kept kinds, scalar roll-up for folded files, byte-keyed directory map)"
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/research/research-2026-09-29-uniformly-faster-than-pdu.md
 delegate: claude-code@vm
 labels: []
@@ -14,8 +14,12 @@ parent_id: is-01m3qgck5yzpd603akhhkpw7t9
 hold: null
 hold_until: null
 created_at: 2026-09-29T22:02:23.459Z
-updated_at: 2026-09-29T23:15:50.276Z
+updated_at: 2026-09-30T01:55:07.033Z
 started_at: 2026-09-29T23:08:09.166Z
+closed_at: 2026-09-30T01:55:07.033Z
+close_reason: "Rejected in exp-200: a 20% and 38% consumer instruction cut with identical answers reached no wall on either tree, because the tree route's consumer has slack on four vCPUs, unlike the summary consumer H188 cut. Reverted in 5df306ee; cfae174e stays reachable."
+resolution: null
+duplicate_of: null
 ---
 60-75M consumer instructions on linux-v6.12: the name sort of every listing (28M) although the tier keeps 5.9k names, two empty by_ext maps per folded file (21M), and the PathBuf directory map hashed by component (19M). Predicted default-tree -3% to -5% (linux-v6.12) and -2% to -4% (node-modules-dense); secondary consumer instructions -35%; cold-scan-index non-inferior; answers identical including repeated names in a listing.
 
