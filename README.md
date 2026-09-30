@@ -491,7 +491,8 @@ See the
 [Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md#final-head-of-the-parity-round-2026-09-29)
 for versions, CPU time, and the protocol, and
 [the performance evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
-for the round that closed the gap.
+for the full record of every performance round, from the first experiment to this
+release’s standing.
 
 The macOS figures measure a pre-0.2.0 build (`a5c0ab46`); no macOS comparison has run on
 the current engine. On the same million-entry tree, that build made a reusable index and

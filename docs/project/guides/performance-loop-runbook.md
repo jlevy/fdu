@@ -1016,6 +1016,11 @@ less on `node-modules-dense` and 14.57% less on `linux-balanced-1m`
 ([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
 H171’s three public `Counts` fields are why the round ships in 0.3.0 rather than a
 patch. [The CHANGELOG](../../../CHANGELOG.md) says what a user sees.
+Every round from exp-000 to exp-202, with its question, verdicts and standing, is in
+[the evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md#every-round-in-full),
+beside [the charted page](../reports/performance-evidence/index.html) and
+[the ledger](../reports/report-2026-08-10-fdu-performance-experiments.md) generated from
+the records.
 
 - **Where it stands (exp-202, the 0.3.0 release engine).** On this 4-vCPU virtualized
   host, warm cache, with each competitor paired 20 times with the adjacent run of the

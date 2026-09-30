@@ -682,8 +682,11 @@ confirmed about which parts are invariant.
 
 Two documents are generated from the artifacts, and neither is ever edited by hand.
 `make perf-ledger` builds the per-experiment ledger; `make perf-report` builds
-[the charted evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md),
-which is what a reader outside the project is given.
+[the charted page](../reports/performance-evidence/index.html), which is what a reader
+outside the project is given.
+[The evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md) is the
+hand-written record over both: every round, what it found, and where each platform
+stands.
 
 Adding an experiment is therefore three commands and one judgement.
 

@@ -1405,7 +1405,8 @@ record whose headline is not its own measurement.
 Stamp a new preparation date only when republishing for readers,
 `make perf-report PREPARED=2026-09-29`; the date lives in the projection so regenerating
 does not redate the page.
-Revise this report when a loop closes or a standing result changes.
+Revise this report when a loop closes or a standing result changes, and give each new
+round an entry in [Every Round in Full](#every-round-in-full).
 The rules a new figure must respect are in
 [the performance loop](../guides/performance-loop.md#publishing-the-evidence).
 
