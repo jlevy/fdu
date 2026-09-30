@@ -8,23 +8,83 @@
 #![cfg(all(feature = "watch", unix))]
 
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 /// Generous: a cold scan, an event round trip, and a save all have to fit.
 const DEADLINE: Duration = Duration::from_secs(30);
 
-/// Reap a watcher even when an assertion fails before the test's explicit kill.
-struct WatchChild(Child);
+/// The watcher under test, with everything it has written to stderr so far.
+///
+/// Its stderr is kept rather than discarded because a watcher that stops persisting and
+/// a watcher that has exited look the same from the snapshot's side: nothing rewrites
+/// it. A failure has to say which one it saw (fdu-jqhd), so the exit status and the
+/// warnings the watcher printed are part of every assertion about it.
+struct WatchChild {
+    child: Child,
+    stderr: Arc<Mutex<Vec<u8>>>,
+}
 
+impl WatchChild {
+    /// Spawn `fdu --watch` over `tree` with the cache at `cache`, keeping its stderr.
+    fn spawn(tree: &Path, cache: &Path, args: &[&str], stdout: Stdio) -> Self {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .arg("--watch")
+            .args(args)
+            .arg(tree)
+            .env("XDG_CACHE_HOME", cache)
+            // FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real
+            // cache.
+            .env_remove("FDU_CACHE_DIR")
+            .stdout(stdout)
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn watching fdu");
+        let stderr = Arc::new(Mutex::new(Vec::new()));
+        let mut pipe = child.stderr.take().expect("watch stderr");
+        let sink = Arc::clone(&stderr);
+        // Appended as it arrives, so the evidence is readable while the watcher runs.
+        std::thread::spawn(move || {
+            let mut chunk = [0_u8; 4096];
+            while let Ok(read) = pipe.read(&mut chunk) {
+                if read == 0 {
+                    break;
+                }
+                if let Ok(mut buffer) = sink.lock() {
+                    buffer.extend_from_slice(&chunk[..read]);
+                }
+            }
+        });
+        Self { child, stderr }
+    }
+
+    /// What can be said about the watcher when a wait on it fails: whether it is still
+    /// running or how it exited, and what it wrote to stderr.
+    fn evidence(&mut self) -> String {
+        let status = match self.child.try_wait() {
+            Ok(None) => "still running".to_owned(),
+            Ok(Some(status)) => format!("exited with {status}"),
+            Err(error) => format!("in an unknown state ({error})"),
+        };
+        let stderr = self
+            .stderr
+            .lock()
+            .map(|buffer| String::from_utf8_lossy(&buffer).into_owned())
+            .unwrap_or_default();
+        format!("the watcher was {status}; its stderr was {stderr:?}")
+    }
+}
+
+/// Reap a watcher even when an assertion fails before the test's explicit kill.
 impl Drop for WatchChild {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -78,13 +138,35 @@ fn wait_for_rewrite(cache_dir: &Path, before: Option<(u64, std::time::SystemTime
 /// the watcher is demonstrably live and persisting, so the subject write that follows
 /// cannot fall into the setup window. The value returned is the fingerprint *after* the
 /// warm-up, which is the baseline a later rewrite must differ from.
-fn establish_watch(cache_dir: &Path, tree: &Path) -> Option<(u64, std::time::SystemTime)> {
-    let before = snapshot_fingerprint(cache_dir);
+///
+/// The baseline the warm-up must move is taken only once a snapshot exists. A cold open
+/// writes its own snapshot before the watcher is bound, and a baseline read before that
+/// write landed let it count as the warm-up's rewrite: the warm-up then proved the open
+/// had saved, which it always does, and nothing about the loop.
+fn establish_watch(
+    cache_dir: &Path,
+    tree: &Path,
+    child: &mut WatchChild,
+) -> Option<(u64, std::time::SystemTime)> {
+    let started = Instant::now();
+    let mut before = snapshot_fingerprint(cache_dir);
+    while before.is_none() && started.elapsed() < DEADLINE {
+        sleep(Duration::from_millis(100));
+        before = snapshot_fingerprint(cache_dir);
+    }
+    assert!(
+        before.is_some(),
+        "the open never left a snapshot within {DEADLINE:?}, so there is no baseline a \
+         watch loop's save could be told apart from; {}",
+        child.evidence(),
+    );
     fs::write(tree.join("warmup.txt"), b"warmup").expect("write warm-up file");
     assert!(
         wait_for_rewrite(cache_dir, before),
         "the watcher never persisted a warm-up change within {DEADLINE:?}, so it was never \
-         observed to be watching and nothing after this point would be evidence about fdu",
+         observed to be watching and nothing after this point would be evidence about fdu; \
+         {}",
+        child.evidence(),
     );
     snapshot_fingerprint(cache_dir)
 }
@@ -137,29 +219,28 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
         "expected the priming run to leave a usable snapshot, got: {usable}",
     );
 
-    let mut child = WatchChild(
-        Command::new(env!("CARGO_BIN_EXE_fdu"))
-            .args(["--watch", "--view", "files", "--interval", "1s"])
-            .arg(&tree)
-            .env("XDG_CACHE_HOME", cache.path())
-            .env_remove("FDU_CACHE_DIR")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn watching fdu"),
+    let mut child = WatchChild::spawn(
+        &tree,
+        cache.path(),
+        &["--view", "files", "--interval", "1s"],
+        Stdio::null(),
     );
 
     // Baseline *after* the watcher is provably registered, so a later rewrite is
     // provably the incremental one rather than that same startup file seen again.
-    let initial = establish_watch(cache.path(), &tree);
+    let initial = establish_watch(cache.path(), &tree, &mut child);
 
     fs::write(tree.join("second.txt"), b"second").expect("write second file");
     let rewritten = wait_for_rewrite(cache.path(), initial);
+    let evidence = child.evidence();
 
-    let _ = child.0.kill();
-    let _ = child.0.wait();
+    let _ = child.child.kill();
+    let _ = child.child.wait();
 
-    assert!(rewritten, "a warm-started watch never rewrote the snapshot after a change");
+    assert!(
+        rewritten,
+        "a warm-started watch never rewrote the snapshot after a change; {evidence}"
+    );
     let listed =
         report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--stale-ok"]);
     assert!(
@@ -181,27 +262,13 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
     report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "on"]);
     let stronger = snapshot_fingerprint(cache.path()).expect("controls-on snapshot");
 
-    let mut child = WatchChild(
-        Command::new(env!("CARGO_BIN_EXE_fdu"))
-            .args([
-                "--watch",
-                "--no-gitignore",
-                "--view",
-                "files",
-                "--format",
-                "jsonl",
-                "--interval",
-                "1s",
-            ])
-            .arg(&tree)
-            .env("XDG_CACHE_HOME", cache.path())
-            .env_remove("FDU_CACHE_DIR")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn projected watcher"),
+    let mut child = WatchChild::spawn(
+        &tree,
+        cache.path(),
+        &["--no-gitignore", "--view", "files", "--format", "jsonl", "--interval", "1s"],
+        Stdio::piped(),
     );
-    let stdout = child.0.stdout.take().expect("watch stdout");
+    let stdout = child.child.stdout.take().expect("watch stdout");
     let (sent, received) = mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines() {
@@ -213,14 +280,14 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
 
     let initial = received
         .recv_timeout(DEADLINE)
-        .expect("watch initial report")
+        .unwrap_or_else(|_| panic!("watch initial report; {}", child.evidence()))
         .expect("read initial report");
     assert!(initial.contains("fdu.report/"), "unexpected initial report: {initial}");
     let started = Instant::now();
     loop {
         let line = received
             .recv_timeout(DEADLINE.saturating_sub(started.elapsed()))
-            .expect("watch initial files section")
+            .unwrap_or_else(|_| panic!("watch initial files section; {}", child.evidence()))
             .expect("read initial files section");
         if line.contains("\"view\": \"files\"") {
             break;
@@ -249,13 +316,15 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
     // stronger image.
     sleep(Duration::from_millis(1_500));
     let after = snapshot_fingerprint(cache.path()).expect("snapshot remains");
+    let evidence = child.evidence();
 
-    let _ = child.0.kill();
-    let _ = child.0.wait();
+    let _ = child.child.kill();
+    let _ = child.child.wait();
 
     assert!(
         observed,
-        "the projected watcher did not report the change used to test its save guard"
+        "the projected watcher did not report the change used to test its save guard; \
+         {evidence}"
     );
     assert_eq!(after, stronger, "the projected watch replaced the controls-on snapshot");
 }
@@ -268,34 +337,30 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
     fs::create_dir(&tree).expect("create tree");
     fs::write(tree.join("first.txt"), b"first").expect("write first file");
 
-    let mut child = WatchChild(
-        Command::new(env!("CARGO_BIN_EXE_fdu"))
-            .args(["--watch", "--view", "files", "--interval", "1s"])
-            .arg(&tree)
-            .env("XDG_CACHE_HOME", cache.path())
-            .env_remove("FDU_CACHE_DIR")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn watching fdu"),
+    let mut child = WatchChild::spawn(
+        &tree,
+        cache.path(),
+        &["--view", "files", "--interval", "1s"],
+        Stdio::null(),
     );
 
     // Let the initial open's snapshot land and record it, so a later write is provably a
     // second one rather than that same file seen again.
-    let initial = establish_watch(cache.path(), &tree);
+    let initial = establish_watch(cache.path(), &tree, &mut child);
 
     fs::write(tree.join("second.txt"), b"second").expect("write second file");
     let rewritten = wait_for_rewrite(cache.path(), initial);
+    let evidence = child.evidence();
 
     // SIGKILL: the exit no signal handler can intercept. Whatever is on disk now is
     // exactly what a real interrupted session would have left.
-    let _ = child.0.kill();
-    let _ = child.0.wait();
+    let _ = child.child.kill();
+    let _ = child.child.wait();
 
     assert!(
         rewritten,
         "the watch loop never rewrote the snapshot after a change, so everything observed \
-         while watching would be lost",
+         while watching would be lost; {evidence}",
     );
 
     // The saved snapshot has to be usable, not merely present: a later run must accept
