@@ -10,13 +10,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 On Linux the default `fdu PATH` tree is faster, and uses much less memory on a large
 tree, and classifying entries against `.gitignore` is faster again.
 On Linux a stat of a directory’s child no longer mounts an unmounted autofs trigger, on
-any route. Three Rust API changes are breaking: `counters::Counts` gains three public
-fields and is non-exhaustive, `Error` gains a variant, `UnrepresentableTotal`, and
-`scan::ScanBackendDiagnostics` gains three public fields.
-A `.gitignore` that starts with a byte-order mark, or holds a NUL byte inside a line,
-now reads as git reads it, which changes the `.gitignore` semantics version: a snapshot
-written by an earlier release is rebuilt rather than served.
-No command-line option, report or cache schema, or Python API changed.
+any route. Four Rust API changes are breaking: `counters::Counts` gains three public
+fields and is non-exhaustive, `Error` gains a variant, `UnrepresentableTotal`,
+`scan::ScanBackendDiagnostics` gains three public fields, and `content::CoverageReason`
+gains a variant, `TextOnly`. A `.gitignore` that starts with a byte-order mark, or holds
+a NUL byte inside a line, now reads as git reads it, which changes the `.gitignore`
+semantics version: a snapshot written by an earlier release is rebuilt rather than
+served. A Markdown file over 64 MiB is counted as plain text under the words unit, and
+its row and report say so; content analysis of a one-line source or a large Markdown
+file no longer holds the file in memory.
+No command-line option, report or cache schema, or Python API changed; a report’s
+coverage map has one more possible key, `text_only`.
 
 ### Added
 
@@ -46,6 +50,11 @@ No command-line option, report or cache schema, or Python API changed.
 - **Breaking:** `fdu_core::Error` gains `UnrepresentableTotal { path, counter }`, which
   `Index::apply` returns for the batch below; code that matches `Error` exhaustively
   must name it or use a wildcard arm.
+- **Breaking:** `fdu_core::content::CoverageReason` gains `TextOnly`, the coverage of a
+  words record whose Markdown file was over the exact bound below and was counted as
+  plain text; such an outcome carries a value, as `Analyzed` does, and
+  `AnalyzerCoverage` counts it as analyzed.
+  Code that matches `CoverageReason` exhaustively must name it or use a wildcard arm.
   These are the only public API changes.
 - The package description on crates.io and PyPI, which `fdu --help` also prints, now
   reads “Fast native du replacement …” rather than “Fastest”: on Linux fdu’s default
@@ -106,15 +115,32 @@ No command-line option, report or cache schema, or Python API changed.
   The `.gitignore` semantics version is 4, so a snapshot written under 3 is rebuilt
   rather than served.
 - `--analyze code` no longer holds a whole logical line in memory: the line classifier
-  now runs in pieces over a 64 KiB window as a line arrives, carrying its lexer state and
-  the facts the whole-line classifier read from the line, and a site whose lookahead the
-  window's edge cuts waits for more bytes rather than deciding on a cut token. A one-line
-  minified or generated source therefore costs a worker the window, not the file. Every
-  count is unchanged: a differential test holds the streaming scan to the previous
-  whole-line classifier, kept verbatim as the oracle, for every supported language with
-  a piece edge at every byte, every two-way chunking, every window size, CRLF and lone
-  CR, splices, byte-order marks, invalid UTF-8, Unicode whitespace, no trailing newline,
-  and tokens longer than the window.
+  now runs in pieces over a 64 KiB window as a line arrives, carrying its lexer state
+  and the facts the whole-line classifier read from the line, and a site whose lookahead
+  the window’s edge cuts waits for more bytes rather than deciding on a cut token.
+  A one-line minified or generated source therefore costs a worker the window, not the
+  file. Every count is unchanged: a differential test holds the streaming scan to the
+  previous whole-line classifier, kept verbatim as the oracle, for every supported
+  language with a piece edge at every byte, every two-way chunking, every window size,
+  CRLF and lone CR, splices, byte-order marks, invalid UTF-8, Unicode whitespace, no
+  trailing newline, and tokens longer than the window.
+- `--analyze words` no longer holds a Markdown file of any size in memory to render it:
+  a Markdown file over 64 MiB is counted as plain text instead, in the same 64 KiB
+  chunks as any other text file, and its record says so.
+  The `CommonMark` parser needs the whole source, because list tightness, headings, and
+  link references resolve across the document, so an exact rendered count costs a worker
+  the file and a parse beside it: a few hundred megabytes at most up to the bound.
+  The largest Markdown files in common corpora are a few megabytes, so every real file
+  is still rendered exactly, and the bound exists for the generated or concatenated file
+  that would otherwise exhaust memory.
+  Such a file counts every word as visible and each blank-line run as a paragraph; its
+  row carries `counted as text`, machine output carries it under `text_only` in the
+  words coverage map, and the report notes how many files were counted that way and how.
+  A Markdown file at or under the bound is rendered exactly, as before, and a file of
+  any other type retains at most its 16 KiB classification prefix and one chunk, which a
+  test now holds it to.
+  The `markdown-prose-v1` analyzer is version 2, so a cached words record from an
+  earlier release is analyzed once more; the analysis sidecar’s format is unchanged.
 - `--analyze` no longer materializes every candidate file before its first read.
   A candidate holds two paths and a classification, so a million-file tree cost hundreds
   of megabytes of scheduling memory that the bounded worker channel then drained one at

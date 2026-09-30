@@ -1562,6 +1562,26 @@ pub(crate) fn report_in(
         notes.push("note: requested analysis is not displayed by the selected views".to_owned());
         tips.push(format!("tip: show analysis: {} families, languages, or full", query.axes.view));
     }
+    if content.includes_words() {
+        let wanted = index.content_identity(content);
+        let text_only = index.content().and_then(|held| held.admit(&wanted)).map_or(0, |held| {
+            held.records()
+                .filter(|(_, analysis)| {
+                    analysis.words.is_some_and(|words| {
+                        words.coverage() == crate::content::CoverageReason::TextOnly
+                    })
+                })
+                .count()
+        });
+        if text_only > 0 {
+            let files = if text_only == 1 { "file" } else { "files" };
+            notes.push(format!(
+                "note: {text_only} Markdown {files} over {} MiB counted as plain text: every \
+                 word counted visible, paragraphs are blank-line runs",
+                crate::content::MARKDOWN_EXACT_BYTES / (1024 * 1024)
+            ));
+        }
+    }
     tips.extend(retained_refusals_tip(query, &ignore_rules));
     if tree_measurements.is_some_and(|values| values.values().any(|value| !value.complete)) {
         notes.push("note: incomplete subtrees remain visible below the size threshold".to_owned());

@@ -1953,6 +1953,7 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
                 CoverageReason::Unsupported => "unsupported",
                 CoverageReason::IoError => "io_error",
                 CoverageReason::ChangedDuringRead => "changed_during_read",
+                CoverageReason::TextOnly => "text_only",
             };
             let _ = write!(record, "\0{unit}.{reason}={count}");
         }
