@@ -62,6 +62,15 @@ def decision_label(record: Mapping[str, Any]) -> str:
     return "accepted evidence"
 
 
+def compares(record: Mapping[str, Any]) -> bool:
+    """Whether a record's two arms are different builds, so it has a change to show.
+
+    The projection states it (`compares`); a projection written before it did falls back
+    to the decision, which read every baseline as one build measured against itself.
+    """
+    return bool(record.get("compares", record["decision"] != "baseline"))
+
+
 def esc(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
@@ -366,11 +375,16 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
 
     The dashed line is the accept threshold. Everything to its right was, by rule, not
     worth carrying — which is most of the chart, and the point of publishing it.
+
+    A baseline that compares two builds is drawn too, since its change is what it
+    measured: the end-to-end and release cells (exp-194, exp-195, exp-201, exp-202) are
+    how the record says what a round added up to. A baseline of one build against itself
+    has nothing to draw.
     """
     records = [
         record
         for record in dataset["experiments"]
-        if record["decision"] != "baseline" and _primary(record) is not None
+        if compares(record) and _primary(record) is not None
     ]
     if not records:
         return ""
@@ -457,7 +471,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
                 else ""
             ),
         ]
-        if record["decision"] != "baseline" and record["candidate"]:
+        if compares(record) and record["candidate"]:
             detail.append(f'Tried: {record["candidate"]}')
         if record["reason"]:
             detail.append(f'Why: {record["reason"]}')
@@ -484,6 +498,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
     out.append("</svg>")
 
     accepted = sum(1 for record in records if record["decision"] == "accepted")
+    baselines = sum(1 for record in records if record["decision"] == "baseline")
     evidence = [_primary(record)["paired"]["evidence"] for record in records]
     improved = evidence.count("improved")
     unclear = evidence.count("unclear")
@@ -495,8 +510,13 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
             ("key-bad", "interval entirely above zero"),
             ("key-flat", "interval crosses zero \u2014 the run could not tell"),
         )
-        + f"<figcaption>{len(records)} experiments, sorted by effect; {accepted} verdicts "
-        "were accepted. "
+        + f"<figcaption>{len(records)} experiments, sorted by effect"
+        + (
+            f", {baselines} of them baselines that compare two builds and decide nothing"
+            if baselines
+            else ""
+        )
+        + f"; {accepted} verdicts were accepted. "
         f"{improved} have an interval entirely below zero, {unclear} cross it, and "
         f"{regressed} are entirely above it. Nothing is clipped: the axis runs to the "
         "widest interval measured. Hover any point for the experiment."
@@ -1378,7 +1398,7 @@ def _experiment_detail(record: Mapping[str, Any]) -> str:
     complexity = record["complexity"] or {}
     rows = []
 
-    if record["decision"] != "baseline" and (record["control"] or record["candidate"]):
+    if compares(record) and (record["control"] or record["candidate"]):
         rows.append(
             (
                 "Compared",
@@ -1435,15 +1455,13 @@ def _section_table(dataset: Mapping[str, Any]) -> str:
             if paired and paired["ci95_low_pct"] is not None
             else "—"
         )
-        change = (
-            fmt_pct(paired["change_pct"]) if paired and record["decision"] != "baseline" else "—"
-        )
+        change = fmt_pct(paired["change_pct"]) if paired and compares(record) else "—"
         before = (
             fmt_primary(absolute["control"], record["primary_metric"]) if absolute else "—"
         )
         after = (
             fmt_primary(absolute["candidate"], record["primary_metric"])
-            if absolute and record["decision"] != "baseline"
+            if absolute and compares(record)
             else "—"
         )
         decision = record["decision"]

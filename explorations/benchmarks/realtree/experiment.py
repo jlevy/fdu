@@ -227,6 +227,37 @@ def kept_arm(verdict: Mapping[str, Any]) -> Optional[str]:
     return "candidate" if verdict.get("decision") == "accepted" else "control"
 
 
+def compares_two_builds(experiment: Mapping[str, Any]) -> bool:
+    """Whether a record's two arms are different builds, so its paired change is a change.
+
+    One derivation for every reader, as :func:`kept_arm` is. Every decision but
+    ``baseline`` compares a candidate with its control. Most baselines measure one build
+    against itself to set the numbers later work is judged by (exp-000, and the A/A cells
+    exp-175 to exp-177), and a view shows one value for them. Some compare two builds and
+    decide nothing: the end-to-end cells (exp-194, exp-195, exp-201) and the release
+    standing (exp-202) measure one engine against an earlier one, and an instrumentation
+    baseline measures the build that adds the counters (exp-075). Read as one arm, the
+    ledger printed exp-202's 0.2.1 control, 208.6 ms, as the whole record of a 48% gain,
+    and the page left its change blank.
+
+    Read from the binaries the record names, not from its title: the arms are one build
+    when they are the same binary, by hash, with the same arguments. A baseline that
+    names no binary hash keeps the one-arm reading.
+    """
+    verdict = experiment.get("verdict") or {}
+    if verdict.get("decision") != "baseline":
+        return True
+    method = experiment.get("method") or {}
+    control = method.get("control_binary") or {}
+    candidate = method.get("candidate_binary") or {}
+    if not control.get("sha256") or not candidate.get("sha256"):
+        return False
+    return (control["sha256"], list(control.get("args") or [])) != (
+        candidate["sha256"],
+        list(candidate.get("args") or []),
+    )
+
+
 class Subject(Strict):
     """What was measured, and on what.
 

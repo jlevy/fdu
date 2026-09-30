@@ -578,6 +578,11 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
     verdict = experiment["verdict"]
     method = experiment["method"]
     is_baseline = verdict["decision"] == "baseline"
+    # A baseline usually measures one build against itself and has one value per metric.
+    # One that compares two builds -- an end-to-end or release cell -- decides nothing
+    # but has a change, and printing only its control would state the old build's time
+    # as the whole record.
+    one_build = not experiment_model.compares_two_builds(experiment)
     lines = [f"### {experiment['id']} — {experiment['title']}", ""]
     lines.append(
         f"{_DECISION_MARK.get(verdict['decision'], verdict['decision'])} "
@@ -586,7 +591,7 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
         + (f" · commit `{verdict['commit']}`" if verdict.get("commit") else "")
     )
     lines.append("")
-    if not is_baseline:
+    if not one_build:
         lines.append(f"Control: {method['control']}")
         lines.append("")
         lines.append(f"Candidate: {method['candidate']}")
@@ -601,10 +606,16 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
     if primary and primary.get("metrics"):
         lines.append(
             f"**`{primary['job']}`** ({primary['start_state']} start) — "
-            + ("measured" if is_baseline else "the comparison the verdict rests on")
+            + (
+                "measured"
+                if one_build
+                else "the comparison it measured"
+                if is_baseline
+                else "the comparison the verdict rests on"
+            )
         )
         lines.append("")
-        if is_baseline:
+        if one_build:
             lines.append("| metric | value |")
             lines.append("| --- | ---: |")
         else:
@@ -614,7 +625,7 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
             entry = primary["metrics"].get(key)
             if not entry:
                 continue
-            if is_baseline:
+            if one_build:
                 lines.append(f"| {label} ({unit}) | {_value(entry['control_median'], unit)} |")
                 continue
             low, high = entry.get("ci95_low_pct"), entry.get("ci95_high_pct")
@@ -637,7 +648,7 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
         summaries = []
         for result in others:
             entry = result["metrics"]["wall_ns"]
-            if is_baseline:
+            if one_build:
                 summaries.append(
                     f"`{result['job']}` {entry['control_median'] / 1e6:.0f} ms"
                 )
@@ -730,6 +741,7 @@ def _absolute_timings(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
                 entry.get("candidate_median"),
                 entry.get("change_pct"),
                 str(experiment["verdict"]["decision"]),
+                not experiment_model.compares_two_builds(experiment),
             )
         )
 
@@ -745,7 +757,8 @@ def _absolute_timings(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     )
     lines.append("")
     lines.append(
-        "Baselines show one value because they measure a state rather than a change."
+        "A baseline that measures one build against itself shows one value, because it "
+        "measures a state rather than a change."
     )
     lines.append("")
     for group in sorted(rows, key=lambda item: (-len(rows[item]), item[0])):
@@ -754,11 +767,12 @@ def _absolute_timings(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
         lines.append("")
         lines.append("| # | experiment | job | before | after | change | verdict |")
         lines.append("| --- | --- | --- | ---: | ---: | ---: | --- |")
-        for identifier, title, job, control, candidate, change, decision in rows[group]:
-            baseline = decision == "baseline"
+        for identifier, title, job, control, candidate, change, decision, one_build in rows[
+            group
+        ]:
             before = f"{control / 1e6:,.1f}" if control is not None else "—"
-            after = "—" if baseline or candidate is None else f"{candidate / 1e6:,.1f}"
-            delta = "—" if baseline or change is None else f"{change:+.1f}%"
+            after = "—" if one_build or candidate is None else f"{candidate / 1e6:,.1f}"
+            delta = "—" if one_build or change is None else f"{change:+.1f}%"
             lines.append(
                 f"| {identifier.removeprefix('exp-')} | {title} | `{job}` "
                 f"| {before} | {after} | {delta} "

@@ -615,9 +615,26 @@ class SummaryRenderTests(unittest.TestCase):
     def test_a_baseline_gets_a_single_measured_column(self) -> None:
         baseline = self._experiment()
         baseline["verdict"] = dict(baseline["verdict"], decision="baseline", change_pct=None)
+        # One build measured against itself: the same binary in both arms.
+        baseline["method"] = dict(
+            baseline["method"], candidate_binary=dict(baseline["method"]["control_binary"])
+        )
         text = summary.render([baseline])
         self.assertIn("| metric | value |", text)
         self.assertNotIn("+0.00%", text)
+        self.assertNotIn("Candidate: after", text)
+
+    def test_a_baseline_comparing_two_builds_shows_both_arms(self) -> None:
+        # exp-202 measured the 0.3.0 engine against 0.2.1's and decided nothing, so it is
+        # a baseline; read as one build, its section printed 0.2.1's time alone as the
+        # record of a 48% gain.
+        cell = self._experiment()
+        cell["verdict"] = dict(cell["verdict"], decision="baseline", kept="neither")
+        text = summary.render([cell])
+        self.assertIn("Candidate: after", text)
+        self.assertIn("the comparison it measured", text)
+        self.assertIn("| metric | control | candidate | change | 95% interval |", text)
+        self.assertNotIn("| metric | value |", text)
 
     def test_a_mutated_tree_is_called_out_loudly(self) -> None:
         broken = self._experiment()
@@ -883,7 +900,11 @@ class AbsoluteTimingTests(unittest.TestCase):
         self.assertIn("beta (999 entries)", appendix)
 
     def test_a_baseline_shows_one_value_because_it_measures_a_state(self) -> None:
-        text = summary.render([self._experiment("exp-042", decision="baseline")])
+        baseline = self._experiment("exp-042", decision="baseline")
+        baseline["method"] = dict(
+            baseline["method"], candidate_binary=dict(baseline["method"]["control_binary"])
+        )
+        text = summary.render([baseline])
         row = [
             line
             for line in text.split("## Absolute timings", 1)[1].splitlines()
@@ -893,6 +914,39 @@ class AbsoluteTimingTests(unittest.TestCase):
         # Candidate and change columns are empty: there was no comparison to report.
         self.assertEqual(row[0].count("| — |"), 1)
         self.assertIn("— | —", row[0])
+
+    def test_a_baseline_comparing_two_builds_shows_its_change(self) -> None:
+        # An end-to-end cell is recorded as a baseline because nothing rests on it, and
+        # its two arms are still two engines; the change is what it measured.
+        text = summary.render([self._experiment("exp-042", decision="baseline")])
+        row = [
+            line
+            for line in text.split("## Absolute timings", 1)[1].splitlines()
+            if line.startswith("| 042 ")
+        ]
+        self.assertEqual(len(row), 1)
+        self.assertNotIn("—", row[0])
+        self.assertIn("%", row[0])
+
+    def test_arguments_alone_make_two_builds(self) -> None:
+        # exp-014 ran one binary as depth-first and as breadth-first.
+        one = self._experiment("exp-014", decision="baseline")
+        same = dict(one["method"]["control_binary"])
+        one["method"] = dict(one["method"], candidate_binary=same)
+        self.assertFalse(experiment_model.compares_two_builds(one))
+        flipped = dict(same, args=["--order", "breadth-first"])
+        one["method"] = dict(one["method"], candidate_binary=flipped)
+        self.assertTrue(experiment_model.compares_two_builds(one))
+
+    def test_every_other_decision_compares_two_builds(self) -> None:
+        for decision in ("accepted", "rejected", "superseded", "blocked", "in-progress"):
+            self.assertTrue(
+                experiment_model.compares_two_builds({"verdict": {"decision": decision}})
+            )
+        # A baseline that names no binary keeps the one-build reading.
+        self.assertFalse(
+            experiment_model.compares_two_builds({"verdict": {"decision": "baseline"}})
+        )
 
 
 
