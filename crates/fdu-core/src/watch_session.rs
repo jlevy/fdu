@@ -163,6 +163,8 @@ pub struct Session {
     plan: crate::Plan,
     persistence: Persistence,
     startup_save_error: Option<Error>,
+    /// The identity of the answer [`Self::changed_report`] last handed out.
+    presented: Option<Vec<u8>>,
 }
 
 impl Session {
@@ -352,6 +354,7 @@ impl Session {
             plan,
             persistence: Persistence { pending: dirty, last_attempt: Instant::now() },
             startup_save_error: None,
+            presented: None,
         })
     }
 
@@ -372,6 +375,55 @@ impl Session {
     pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
         report(&index, &self.request, generated_at)
+    }
+
+    /// The current answer, unless a reader of `format` would see nothing new in it.
+    ///
+    /// A tree changes more often than its answer does. A touch that leaves a file's
+    /// size alone, or a write to an entry the selection leaves out, moves the index and
+    /// marks its batch dirty, and a caller that repaints on every dirty batch then prints
+    /// the rows it printed a moment ago under a new timestamp (fdu-wb5n). The answer's
+    /// identity is what `format` renders of it with its generation instant held fixed,
+    /// together with its tree status and its source and freshness: a tree that shows
+    /// sizes repaints when a size moves, a listing that shows dates repaints when a date
+    /// does, machine output repaints when any field it carries does, and a retained
+    /// observation gap, a coverage change, or a freshness change repaints whether or not
+    /// `format` shows it, while the instant a repaint is generated at never counts on
+    /// its own. The change records of [`Self::next_batch`] are never deduplicated; only
+    /// this repaint is. The first call always answers, and [`Self::report`] always
+    /// answers.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::report`], and [`Error::Io`] when `format` cannot render the answer.
+    pub fn changed_report(
+        &mut self,
+        generated_at: std::time::SystemTime,
+        format: crate::report_format::Format,
+        options: crate::report_format::RenderOptions,
+    ) -> Result<Option<Report>> {
+        use std::io::Write as _;
+
+        let mut report = self.report(generated_at)?;
+        let pinned = std::time::SystemTime::UNIX_EPOCH;
+        let stamped = std::mem::replace(&mut report.provenance.generated_at, pinned);
+        let mut identity = Vec::new();
+        let rendered =
+            crate::report_format::write_with_options(&report, format, options, &mut identity)
+                .and_then(|()| {
+                    write!(
+                        identity,
+                        "\n{:?}\n{:?}\n{:?}\n",
+                        report.status, report.provenance.source, report.provenance.freshness
+                    )
+                });
+        report.provenance.generated_at = stamped;
+        rendered.map_err(|error| Error::io(&self.request.basis.root, error))?;
+        if self.presented.as_ref() == Some(&identity) {
+            return Ok(None);
+        }
+        self.presented = Some(identity);
+        Ok(Some(report))
     }
 
     /// A consistent copy of the current index.
@@ -1311,5 +1363,199 @@ mod tests {
         assert!(observed_report.status.complete);
         assert!(plain_report.status.complete);
         assert_eq!(progress.snapshot(), after_start, "the second start was not observed");
+    }
+
+    /// A scripted session over `root` answering `query`, and the sender that scripts its
+    /// events.
+    fn scripted_session(
+        root: &std::path::Path,
+        query: Query,
+    ) -> (Session, crate::watch::ScriptedSender) {
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root, &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.to_path_buf(),
+                scope: scan.clone().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            query,
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            stale_ok: false,
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let (watcher, sender) =
+            Watcher::scripted(root, WatchConfig::default(), script.path()).expect("watcher");
+        let session = Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            watcher,
+            scan,
+            None,
+        )
+        .expect("handoff");
+        (session, sender)
+    }
+
+    /// Move a file's modification time forward without touching its bytes.
+    fn touch(path: &std::path::Path) {
+        let file = std::fs::File::options().write(true).open(path).expect("open for touch");
+        let modified = file.metadata().expect("metadata").modified().expect("mtime");
+        file.set_modified(modified + Duration::from_secs(5)).expect("set mtime");
+    }
+
+    /// A tree changes more often than its answer (fdu-wb5n): an idle tree, a touch that
+    /// leaves a size alone, and a change to an entry the selection leaves out all leave
+    /// the aggregate a reader sees as it was, and only a visible change repaints it.
+    #[test]
+    fn an_aggregate_repaint_is_skipped_when_a_reader_would_see_no_change() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        let big = root.path().join("big.txt");
+        std::fs::write(&big, vec![b'x'; 4096]).expect("big");
+        std::fs::write(root.path().join("small.txt"), b"small").expect("small");
+        let query = Query {
+            views: vec![crate::query::ViewSpec::Summary],
+            selection: Selection {
+                size: crate::query::SizeMetric::Apparent,
+                min_size: Some(4096),
+                ..Selection::default()
+            },
+            ..Query::default()
+        };
+        let (mut session, sender) = scripted_session(root.path(), query);
+        let now = std::time::SystemTime::now;
+        let text = |session: &mut Session| {
+            session.changed_report(now(), Format::Text, RenderOptions::default()).expect("report")
+        };
+        let summary = |report: &Report| match report.sections.first() {
+            Some(crate::query::Section::Summary(row)) => (row.files, row.bytes),
+            other => panic!("expected a summary, got {other:?}"),
+        };
+
+        let first = text(&mut session).expect("the first answer is always given");
+        assert_eq!(summary(&first), (1, 4096));
+
+        // Idle: nothing arrived, nothing to say.
+        assert!(session.next_batch(Duration::from_millis(50)).expect("idle").is_none());
+        assert!(text(&mut session).is_none(), "an idle tree repaints nothing");
+
+        // A touch moves the index, so its batch is dirty, but no size a reader of the
+        // summary sees has moved.
+        touch(&big);
+        sender.send("modify\tbig.txt\n").expect("script a touch");
+        let batch = session.next_batch(Duration::from_secs(10)).expect("touch").expect("observed");
+        assert!(batch.dirty, "the index records the new modification time");
+        assert!(text(&mut session).is_none(), "a touch that changes no size repaints nothing");
+
+        // A change to an entry the selection leaves out is a change to the tree, and
+        // still not a change to the answer.
+        std::fs::write(root.path().join("small.txt"), b"still small").expect("grow small");
+        sender.send("modify\tsmall.txt\n").expect("script a filtered change");
+        let batch = session.next_batch(Duration::from_secs(10)).expect("small").expect("observed");
+        assert!(batch.dirty);
+        assert!(text(&mut session).is_none(), "a filtered change repaints nothing");
+
+        // A size the summary shows moves: repaint, with the new answer.
+        std::fs::write(&big, vec![b'x'; 8192]).expect("grow big");
+        sender.send("modify\tbig.txt\n").expect("script a visible change");
+        let batch = session.next_batch(Duration::from_secs(10)).expect("big").expect("observed");
+        assert!(batch.dirty);
+        let repainted = text(&mut session).expect("a visible change repaints");
+        assert_eq!(summary(&repainted), (1, 8192));
+        assert!(text(&mut session).is_none(), "and only once");
+
+        // The plain report always answers, and never counts as a repaint.
+        assert_eq!(summary(&session.report(now()).expect("report")), (1, 8192));
+        assert!(text(&mut session).is_none());
+    }
+
+    /// The identity follows the format a reader sees: machine output carries the newest
+    /// modification time, so the touch that text ignores repaints JSON.
+    #[test]
+    fn a_repaint_identity_is_what_the_format_renders() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        let big = root.path().join("big.txt");
+        std::fs::write(&big, vec![b'x'; 4096]).expect("big");
+        let query = Query { views: vec![crate::query::ViewSpec::Summary], ..Query::default() };
+        let (mut session, sender) = scripted_session(root.path(), query);
+        let json = |session: &mut Session| {
+            session
+                .changed_report(
+                    std::time::SystemTime::now(),
+                    Format::Json,
+                    RenderOptions::default(),
+                )
+                .expect("report")
+        };
+        assert!(json(&mut session).is_some());
+        assert!(json(&mut session).is_none(), "a second generation instant alone is no change");
+
+        touch(&big);
+        sender.send("modify\tbig.txt\n").expect("script a touch");
+        assert!(session.next_batch(Duration::from_secs(10)).expect("touch").is_some());
+        assert!(json(&mut session).is_some(), "JSON shows the newest modification time");
+    }
+
+    /// An invalidation is never deduplicated as a change record, and the answer it leaves
+    /// repaints exactly when a reader would see its status or its rows differ.
+    #[test]
+    fn an_invalidation_keeps_its_change_record_and_repaints_by_the_answer() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("a.txt"), b"aaaa").expect("a");
+        let query = Query { views: vec![crate::query::ViewSpec::Summary], ..Query::default() };
+        let (mut session, sender) = scripted_session(root.path(), query);
+        let text = |session: &mut Session| {
+            session
+                .changed_report(
+                    std::time::SystemTime::now(),
+                    Format::Text,
+                    RenderOptions::default(),
+                )
+                .expect("report")
+        };
+        let first = text(&mut session).expect("first answer");
+
+        sender.send("rescan\t.\n").expect("script an invalidation");
+        let batch =
+            session.next_batch(Duration::from_secs(10)).expect("invalidation").expect("observed");
+        assert!(
+            batch.changes.iter().any(|change| change.kind == ChangeKind::Invalidate),
+            "the invalidation reaches the change stream: {:?}",
+            batch.changes
+        );
+        // The closed loop re-verified the tree, which is as it was; whether the answer
+        // repaints is decided by its status, which the identity carries explicitly.
+        let after = session.report(std::time::SystemTime::now()).expect("report");
+        let repainted = text(&mut session);
+        assert_eq!(
+            repainted.is_some(),
+            format!("{:?}", after.status) != format!("{:?}", first.status),
+            "a repaint follows a status change and nothing else: {:?}",
+            after.status
+        );
+
+        // The same invalidation again leaves the same status, so no second repaint.
+        sender.send("rescan\t.\n").expect("script another invalidation");
+        let batch =
+            session.next_batch(Duration::from_secs(10)).expect("invalidation").expect("observed");
+        assert!(batch.changes.iter().any(|change| change.kind == ChangeKind::Invalidate));
+        assert!(text(&mut session).is_none());
     }
 }

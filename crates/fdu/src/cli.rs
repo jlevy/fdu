@@ -1083,11 +1083,14 @@ impl Cli {
         let has_aggregates =
             !streams_changes || request.query.views.iter().any(|view| *view != ViewSpec::Files);
 
-        // The initial answer, identical to a one-shot run's.
+        // The initial answer, identical to a one-shot run's. It is asked for as a repaint
+        // so the session holds it as the answer every later repaint is measured against.
         if format == report_format::Format::Yaml {
             write!(out, "{}", report_format::document_start(format))?;
         }
-        let initial = session.report(SystemTime::now())?;
+        let initial = session
+            .changed_report(SystemTime::now(), format, render)?
+            .expect("a session's first answer is always given");
         report_format::write_with_options(&initial, format, render, out)?;
         out.flush()?;
         write_report_diagnostics(diagnostic, &initial, format, diagnostic_color, None, quiet)?;
@@ -1102,7 +1105,7 @@ impl Cli {
                     Self::render_live(
                         out,
                         diagnostic,
-                        &session,
+                        &mut session,
                         format,
                         render,
                         diagnostic_color,
@@ -1128,7 +1131,7 @@ impl Cli {
                 Self::render_live(
                     out,
                     diagnostic,
-                    &session,
+                    &mut session,
                     format,
                     render,
                     diagnostic_color,
@@ -1190,18 +1193,23 @@ impl Cli {
     /// Repaint the aggregate views after a change.
     ///
     /// Only ever called for a repaint — the first answer is written by the caller before
-    /// the loop — so the rule below can be unconditional.
+    /// the loop — so the rule below can be unconditional. A change that leaves the answer
+    /// as the reader last saw it, such as a touch that moves no size, repaints nothing:
+    /// the session decides that (`Session::changed_report`), so every surface decides it
+    /// the same way (fdu-wb5n).
     fn render_live(
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
-        session: &fdu_core::watch_session::Session,
+        session: &mut fdu_core::watch_session::Session,
         format: report_format::Format,
         render: report_format::RenderOptions,
         diagnostic_color: bool,
         quiet: bool,
     ) -> anyhow::Result<()> {
         let generated_at = SystemTime::now();
-        let report = session.report(generated_at)?;
+        let Some(report) = session.changed_report(generated_at, format, render)? else {
+            return Ok(());
+        };
         // A watch run has no final answer and so no performance footer, which left text
         // repaints with nothing between them: the last row of one and the first row of
         // the next were adjacent lines. A blank line alone would not do, because that is

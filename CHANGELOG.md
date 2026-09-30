@@ -94,6 +94,15 @@ No command-line option, report or cache schema, or Python API changed.
   releases matched the mark as part of the first rule, so it never applied, and kept the
   bytes after a NUL as part of the rule. The `.gitignore` semantics version is 4, so a
   snapshot written under 3 is rebuilt rather than served.
+- `fdu --watch` no longer repaints its aggregate views when nothing a reader sees has
+  changed: a touch that leaves a file's size alone, or a change to an entry the
+  selection leaves out, moves the index but printed the same tree again under a new
+  timestamp. A repaint's identity is what the format renders of the answer with its
+  generation instant held fixed, plus its tree status and its source and freshness, so
+  machine formats still repaint when a modification time they carry moves, and a
+  retained observation gap or a coverage change repaints on every format. Change
+  records are never deduplicated. The rule is the engine's,
+  `watch_session::Session::changed_report`, which is new.
 - A C header is no longer classified as C++ because a C++ keyword appears inside an
   identifier, a comment, or a string literal: `struct pid_namespace *` holds
   `namespace `, and kernel comments discuss namespaces and templates freely. The probe
