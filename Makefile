@@ -92,6 +92,7 @@ help:
 	@echo "make perf-compare   Measure a candidate against CONTROL, interleaved and paired"
 	@echo "make perf-content-profile  Attribute basic content, cache-hit, and query time"
 	@echo "make perf-content-compare  Compare content jobs in 12 paired trials"
+	@echo "make perf-store RUN=run.json OUT=.../run.json.gz  Commit a run, gzipped deterministically"
 	@echo "make perf-test      Test the real-tree harness itself"
 	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
 	@echo "make perf-report    Regenerate the charted performance report from the same artifacts"
@@ -246,7 +247,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test test-terminal release-rehearse semver-check docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
+	perf-compare-tools perf-floor perf-record perf-store perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -640,7 +641,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
+.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-store perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
@@ -788,6 +789,11 @@ perf-floor: perf-probe-release
 
 perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
+
+# Commit a run beside its record, gzipped with no file name and an mtime of 0 so the same
+# run always compresses to the same bytes, and written whole.
+perf-store:
+	$(PERF_RUN) store --run $(RUN) --out $(OUT)
 
 # In `check` even though the measurement loop is not, and the distinction is the point:
 # running an experiment needs a large real tree and a quiet machine, but the harness that

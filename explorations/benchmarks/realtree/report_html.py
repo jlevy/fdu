@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree.timeline import METRICS
 
 #: Jobs shown in the absolute figure, in the order the work happens: build the index
@@ -1607,7 +1608,7 @@ def main(argv: Sequence[str]) -> int:
 
         return _check(arguments.out, page)
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
-    arguments.out.write_text(page, encoding="utf-8")
+    write_text_atomic(arguments.out, page, encoding="utf-8")
     print(f"wrote {arguments.out}", file=sys.stderr)
     return 0
 

@@ -57,6 +57,12 @@ const TEST_DIRECTORIES = [
 // Test support outside those names: every write in these files builds a test's input.
 export const FIXTURE_BUILDERS = new Map([
   ["scripts/check-yaml.mjs", "builds the tree the YAML self-check scans"],
+  [
+    "explorations/benchmarks/corpus_cache.py",
+    "materializes a trial's scan tree from a verified base, in a run directory the " +
+      "trial removes",
+  ],
+  ["explorations/benchmarks/spikes/gen_tree.py", "generates a benchmark scan tree"],
   ["tests/correctness/build_tree.py", "builds the correctness runbook's scan tree"],
   ["tests/path_independence/fixture.py", "builds and copies the matrix's scan tree"],
   ["tests/path_independence/matrix.py", "mutates the scan tree; an in-place rewrite is the change"],
@@ -71,6 +77,14 @@ export const FIXTURE_BUILDERS = new Map([
 
 // Individual writes that need no helper, each matched by the text of its line. An entry
 // that no longer matches a write fails, so the list cannot outlive the code it excuses.
+// A child's output captured in scratch, read back once it exits, and removed.
+const CHILD_CAPTURE =
+  "captures a child's output in a scratch directory; this process reads it after the " +
+  "child exits, and the directory is removed";
+
+// A kernel control, not a file anything reads back.
+const DROP_CACHES = "writes the kernel's /proc/sys/vm/drop_caches control";
+
 // The Actions runner creates $GITHUB_OUTPUT, and reads it once the step ends.
 const GITHUB_OUTPUT =
   "appends to $GITHUB_OUTPUT, the runner's file; a torn write fails its step, and no " +
@@ -87,6 +101,50 @@ export const EXCEPTIONS = new Map([
           "after a torn write",
       },
     ],
+  ],
+  [
+    "explorations/benchmarks/corpus.py",
+    [
+      { site: 'with path.open("xb") as output:', reason: "creates a file of the corpus scan tree" },
+      {
+        site: 'with path.open("r+b") as output:',
+        reason: "rewrites a corpus file in place; the in-place change is the mutation measured",
+      },
+    ],
+  ],
+  [
+    "explorations/benchmarks/runner.py",
+    [
+      {
+        site: 'snapshot_path.write_bytes(b"fdu-invalid-snapshot',
+        reason: "plants the corrupt snapshot a scenario declares as its input",
+      },
+      { site: 'stderr_path.open("xb")', reason: CHILD_CAPTURE },
+      { site: 'stdout_path.open("xb")', reason: CHILD_CAPTURE },
+    ],
+  ],
+  [
+    "explorations/benchmarks/realtree/floor.py",
+    [{ site: 'with out_path.open("xb") as out, err_path.open("xb") as err:', reason: CHILD_CAPTURE }],
+  ],
+  [
+    "explorations/benchmarks/realtree/measure.py",
+    [
+      { site: 'with out_path.open("xb") as out, err_path.open("xb") as err:', reason: CHILD_CAPTURE },
+      { site: 'drop.write_text("3\\n", encoding="ascii")', reason: DROP_CACHES },
+    ],
+  ],
+  [
+    "explorations/benchmarks/realtree/profile.py",
+    [{ site: 'with stdout_path.open("xb") as stdout_file, stderr_path.open("xb")', reason: CHILD_CAPTURE }],
+  ],
+  [
+    "explorations/benchmarks/spikes/code_analysis_pair.py",
+    [{ site: "path.write_bytes(body)", reason: "builds the spike's scan tree" }],
+  ],
+  [
+    "explorations/benchmarks/spikes/paired_runner.py",
+    [{ site: 'open("/proc/sys/vm/drop_caches", "w")', reason: DROP_CACHES }],
   ],
   [
     "scripts/qa_peer_agreement.py",
@@ -123,12 +181,13 @@ export const EXCEPTIONS = new Map([
 
 // Copies of a helper for a project that cannot import the original, each required to
 // stay byte-identical to it.
-export const MIRRORS = new Map([]);
+export const MIRRORS = new Map([
+  ["explorations/benchmarks/atomic_write.py", "scripts/atomic_write.py"],
+]);
 
 // Paths not yet converted, with the bead that converts them. Temporary: each conversion
 // removes its entries, and the list is gone once the last lands.
 export const PENDING = new Map([
-  ["explorations/benchmarks/", "fdu-jf2n"],
   ["explorations/fsevents-replay/", "fdu-lxuv"],
   ["explorations/change-sources/", "fdu-lxuv"],
   ["explorations/yaml-conformance/", "fdu-lxuv"],

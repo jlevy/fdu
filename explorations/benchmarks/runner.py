@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from benchmarks.atomic_write import open_atomic
 from benchmarks.corpus import (
     CORPUS_NAME,
     MANIFEST_NAME,
@@ -988,21 +989,17 @@ def _prepare_directory(path: Path, label: str) -> Path:
 
 
 def _copy_exclusive(source: Path, destination: Path) -> None:
-    with source.open("rb") as input_file, destination.open("xb") as output_file:
+    with source.open("rb") as input_file, open_atomic(destination, "xb") as output_file:
         shutil.copyfileobj(input_file, output_file)
-        output_file.flush()
-        os.fsync(output_file.fileno())
 
 
 def _write_immutable_result(result_root: Path, result: Mapping[str, Any]) -> Path:
     identity = result["identity"]
     timestamp = str(identity["started_at_utc"]).replace(":", "").replace("-", "")
     path = result_root / f"run-{timestamp}-{identity['run_id']}.json"
-    with path.open("x", encoding="utf-8", newline="\n") as output:
-        json.dump(result, output, ensure_ascii=True, indent=2, sort_keys=True)
+    with open_atomic(path, "x", encoding="utf-8", newline="\n") as output:
+        output.write(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
         output.write("\n")
-        output.flush()
-        os.fsync(output.fileno())
     return path
 
 

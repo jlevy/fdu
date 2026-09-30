@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import compare_tools, provenance, tree
 
 
@@ -360,8 +361,10 @@ def main(argv: Sequence[str]) -> int:
                     "installation is exploratory: " + "; ".join(document["invalidation_reasons"])
                 )
             arguments.output.parent.mkdir(parents=True, exist_ok=True)
-            arguments.output.write_text(
-                json.dumps(document, indent=2, sort_keys=True), encoding="utf-8"
+            write_text_atomic(
+                arguments.output,
+                json.dumps(document, indent=2, sort_keys=True),
+                encoding="utf-8",
             )
         else:
             document = load_and_verify(

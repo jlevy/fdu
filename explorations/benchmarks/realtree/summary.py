@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from pydantic import ValidationError
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import experiment as experiment_model
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
@@ -825,7 +826,7 @@ def main(argv: Sequence[str]) -> int:
         print("no experiment artifacts found", file=sys.stderr)
         return 1
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
-    arguments.out.write_text(render(experiments), encoding="utf-8")
+    write_text_atomic(arguments.out, render(experiments), encoding="utf-8")
     print(f"wrote {arguments.out} from {len(experiments)} experiments", file=sys.stderr)
     return 0
 

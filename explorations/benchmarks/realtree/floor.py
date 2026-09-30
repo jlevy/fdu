@@ -132,6 +132,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import measure
 from benchmarks.realtree.subjects import MINIMUM_DECIDING_ENTRIES
 
@@ -1150,11 +1151,13 @@ def main(argv: Sequence[str]) -> int:
     print(text)
     if arguments.output:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        arguments.output.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
+        write_text_atomic(
+            arguments.output, json.dumps(document, indent=2, sort_keys=True), encoding="utf-8"
+        )
         print(f"wrote {arguments.output}", file=sys.stderr)
     if arguments.markdown:
         arguments.markdown.parent.mkdir(parents=True, exist_ok=True)
-        arguments.markdown.write_text(text, encoding="utf-8")
+        write_text_atomic(arguments.markdown, text, encoding="utf-8")
         print(f"wrote {arguments.markdown}", file=sys.stderr)
 
     if any(subject["oracle_disagreements"] for subject in document["subjects"]):

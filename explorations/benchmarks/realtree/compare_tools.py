@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import installed_command, measure, provenance, tree
 
 SCHEMA = "fdu-tool-comparison-v3"
@@ -580,8 +581,8 @@ def main(argv: Sequence[str]) -> int:
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     json_path = arguments.output_dir / f"run-{slug}.json"
     markdown_path = arguments.output_dir / f"run-{slug}.md"
-    json_path.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
-    markdown_path.write_text(render(document), encoding="utf-8")
+    write_text_atomic(json_path, json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
+    write_text_atomic(markdown_path, render(document), encoding="utf-8")
     print(f"\nwrote {json_path}\nwrote {markdown_path}", file=sys.stderr)
     print(render(document))
 
@@ -659,7 +660,9 @@ def run(
     before = tree.fingerprint(root, label=label)
     if baseline_output is not None:
         baseline_output.parent.mkdir(parents=True, exist_ok=True)
-        baseline_output.write_text(json.dumps(before, indent=2, sort_keys=True), encoding="utf-8")
+        write_text_atomic(
+            baseline_output, json.dumps(before, indent=2, sort_keys=True), encoding="utf-8"
+        )
     drift = tree.compare(before, dict(baseline_fingerprint)) if baseline_fingerprint else []
     schedule = _schedule(competitors, trials=trials, warmups=warmups)
     samples: List[Dict[str, Any]] = []

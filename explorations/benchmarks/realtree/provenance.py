@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import measure
 
 
@@ -738,8 +739,10 @@ def main(argv: Sequence[str]) -> int:
                     "capture is exploratory: " + "; ".join(document["invalidation_reasons"])
                 )
             arguments.output.parent.mkdir(parents=True, exist_ok=True)
-            arguments.output.write_text(
-                json.dumps(document, indent=2, sort_keys=True), encoding="utf-8"
+            write_text_atomic(
+                arguments.output,
+                json.dumps(document, indent=2, sort_keys=True),
+                encoding="utf-8",
             )
         else:
             document = load_and_verify(
