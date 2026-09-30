@@ -65,7 +65,7 @@ try {
   assert.deepEqual(report.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
     { id: "text-logical-v1", version: 1 },
-    { id: "markdown-prose-v1", version: 1 },
+    { id: "markdown-prose-v1", version: 2 },
   ]);
 
   const sections = new Map(report.reports.map((section) => [section.view, section]));
