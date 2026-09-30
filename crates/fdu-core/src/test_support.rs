@@ -75,6 +75,38 @@ pub(crate) fn read_of(index: &crate::Index, query: crate::query::Query) -> crate
     crate::query::Request::new(crate::query::Basis::held_by(index), query, std::time::UNIX_EPOCH)
 }
 
+/// Return once the filesystem holding `root` has allocated the blocks of every file a
+/// fixture wrote there, so each later walk of the fixture reads the same allocated bytes.
+///
+/// ext4, the usual filesystem of a Linux temporary directory, allocates a buffered write's
+/// blocks only when it writes the data back (delayed allocation). Until then a stat counts
+/// the reservation, and afterwards the allocation, but writeback drops the one before it
+/// charges the other, so a stat between the two reads a one-block file as `st_blocks` 0.
+/// The kernel decides when writeback runs, so a differential that walks one fixture twice
+/// and compares allocated bytes can come out a block apart whenever writeback lands inside
+/// a walk. The control-case summary differential failed that way in CI: every count and
+/// apparent byte equal, allocated bytes 4096 apart. `sync --file-system` is `syncfs`, which returns
+/// once the filesystem is written back, so no block is left to move. It is a command, as
+/// `mkfifo` is in these tests, because the workspace keeps unsafe code to the platform
+/// readers.
+///
+/// Elsewhere this does nothing. Windows reads a file's length as its allocation, and the
+/// other Unix hosts have no `syncfs`, while POSIX lets `sync` return before the writes it
+/// schedules are complete.
+pub(crate) fn settle_allocations(root: &std::path::Path) {
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::process::Command::new("sync")
+            .arg("--file-system")
+            .arg(root)
+            .status()
+            .expect("run sync");
+        assert!(status.success(), "sync --file-system exited with {status}");
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = root;
+}
+
 /// Whether the filesystem under `dir` resolves a name in another case to the stored entry,
 /// as APFS and NTFS do by default and an ext4 casefold directory does.
 pub(crate) fn resolves_case_insensitively(dir: &std::path::Path) -> bool {
