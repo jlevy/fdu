@@ -1,0 +1,70 @@
+Derived from run-tools-linux-v6.12.json.gz and run-tools-node-modules-dense.json.gz:
+the release head's (fdu-final) own change against each peer, paired at equal ordinals.
+
+linux-v6.12: peers against fdu-final, same-ordinal pairs, (peer - fdu-final) / fdu-final
+  pdu-default  n=20  +6.2% [+4.4%, +10.3%]
+  pdu          n=20  -1.5% [-2.8%, +1.9%]
+  diskus       n=20  +5.7% [+1.0%, +7.9%]
+anchor-normalized (each sample over its adjacent anchor run):
+  pdu-default  n=20  +9.6% [+4.0%, +12.6%]
+  pdu          n=20  +0.7% [-6.1%, +4.2%]
+  diskus       n=20  +6.5% [+2.3%, +10.3%]
+
+node-modules-dense: peers against fdu-final, same-ordinal pairs, (peer - fdu-final) / fdu-final
+  pdu-default  n=20  +6.2% [+2.7%, +9.1%]
+  pdu          n=20  -2.4% [-4.7%, -0.0%]
+  diskus       n=20  +1.2% [-0.8%, +5.8%]
+anchor-normalized (each sample over its adjacent anchor run):
+  pdu-default  n=20  +5.6% [+0.8%, +12.0%]
+  pdu          n=20  -1.0% [-6.5%, +4.0%]
+  diskus       n=20  +1.0% [-1.9%, +2.9%]
+
+The script:
+
+"""Derived from a compare_tools artifact: the final head's own change against each peer.
+
+The harness pairs every competitor with the anchor, not with each other. Two competitors'
+timed samples at the same ordinal ran within one rotation of the anchor of each other, so
+this pairs them at equal ordinals, exactly as the harness pairs variants, and reports the
+peer's wall against the final head's as (peer - final) / final with the harness's own
+deterministic percentile bootstrap of the median (2000 resamples, seed 0x5EED). The
+anchor-normalized variant divides each sample by its adjacent anchor run first, which
+removes whatever the host was doing to that rotation.
+"""
+import json, random, statistics, sys
+
+def bootstrap(values, resamples=2000, seed=0x5EED):
+    g = random.Random(seed); n = len(values); meds = []
+    for _ in range(resamples):
+        meds.append(statistics.median([values[g.randrange(n)] for _ in range(n)]))
+    meds.sort()
+    return meds[int(0.025 * (resamples - 1))], meds[int(0.975 * (resamples - 1))]
+
+d = json.load(open(sys.argv[1]))
+base = sys.argv[2] if len(sys.argv) > 2 else "fdu-final"
+timed = [s for s in d["samples"] if not s["warmup"] and s.get("valid", True)]
+wall = {}   # (tool, pair, ordinal) -> wall_ns
+for s in timed:
+    wall[(s["tool"], s["pair"], s["ordinal"])] = s["metrics"]["wall_ns"]
+anchor = d["anchor"] if isinstance(d["anchor"], str) else d["anchor"]["name"]
+ordinals = sorted({s["ordinal"] for s in timed})
+def rows(normalize):
+    out = []
+    for peer in d["competitor_order"]:
+        if peer == base: continue
+        ratios = []
+        for o in ordinals:
+            try:
+                b = wall[(base, base, o)]; p = wall[(peer, peer, o)]
+                if normalize:
+                    b /= wall[(anchor, base, o)]; p /= wall[(anchor, peer, o)]
+            except KeyError:
+                continue
+            ratios.append((p - b) / b)
+        m = statistics.median(ratios); lo, hi = bootstrap(ratios)
+        out.append(f"  {peer:12s} n={len(ratios):2d}  {m*100:+.1f}% [{lo*100:+.1f}%, {hi*100:+.1f}%]")
+    return out
+print(f"{d['tree']['label'] if isinstance(d.get('tree'), dict) and 'label' in d['tree'] else sys.argv[1]}: peers against {base}, same-ordinal pairs, (peer - {base}) / {base}")
+print("\n".join(rows(False)))
+print("anchor-normalized (each sample over its adjacent anchor run):")
+print("\n".join(rows(True)))
