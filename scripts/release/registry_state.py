@@ -7,7 +7,9 @@ import argparse
 import http.client
 import json
 import re
-from collections.abc import Callable
+import sys
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -211,6 +213,71 @@ def exit_status(states: list[RegistryState], *, require_identical: bool) -> int:
     return 0
 
 
+def still_arriving(state: RegistryState) -> bool:
+    """
+    Whether a later read could still find `state` identical.
+
+    That is a version the registry does not list yet, or one listing only some of the
+    expected files, each with its expected digest: registry APIs trail an upload, and one
+    CDN node can answer 404 after another has served every file (fdu-zx9y). A file with
+    another digest, or one the manifest does not name, can never become identical. The
+    detail is `classify_files`' own, whose parts are `; `-separated and name wheel files,
+    which cannot contain that separator.
+    """
+    if state.state == "missing":
+        return True
+    return state.state == "conflict" and all(
+        part.startswith("missing: ") for part in state.detail.split("; ")
+    )
+
+
+def audit(
+    manifest: Path,
+    version: str,
+    channel: str,
+    fetch: Callable[[str], bytes | None] | None = None,
+) -> list[RegistryState]:
+    """Classify every requested registry once."""
+    states = []
+    if channel in {"all", "crates.io"}:
+        states.extend(crates_io_state(manifest, version, fetch or get))
+    if channel in {"all", "pypi"}:
+        states.append(pypi_state(manifest, version, fetch))
+    return states
+
+
+def settle(
+    read: Callable[[], list[RegistryState]],
+    *,
+    wait: float,
+    interval: float,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> list[RegistryState]:
+    """
+    Reread until no registry is still arriving, or `wait` seconds have passed.
+
+    A conflict that cannot resolve ends the wait at once. A read that fails inside the
+    window is retried, as publish_gate's waits retry one; at the deadline it propagates.
+    """
+    deadline = clock() + wait
+    while True:
+        try:
+            states = read()
+        except RegistryError as error:
+            if clock() >= deadline:
+                raise
+            print(f"registry read failed, rereading in {interval:g}s: {error}", file=sys.stderr)
+        else:
+            arriving = [state for state in states if still_arriving(state)]
+            final = any(state.state == "conflict" and not still_arriving(state) for state in states)
+            if final or not arriving or clock() >= deadline:
+                return states
+            names = ", ".join(f"{state.channel} {state.package}" for state in arriving)
+            print(f"not yet served: {names}; rereading in {interval:g}s", file=sys.stderr)
+        sleep(interval)
+
+
 def registry_document(version: str, states: list[RegistryState]) -> str:
     """Render the audit as the JSON document a GitHub release attaches."""
     document = {"version": version, "registries": [asdict(state) for state in states]}
@@ -229,17 +296,45 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="exit 3 unless every audited registry already holds exactly the expected files",
     )
+    result.add_argument(
+        "--wait",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "with --require-identical, reread for up to SECONDS while a registry lists the "
+            "version incompletely or not at all; a conflicting file still fails at once"
+        ),
+    )
+    result.add_argument("--interval", type=float, default=15.0, metavar="SECONDS")
     return result
 
 
-def main() -> None:
+def parser_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse and cross-check the command line."""
+    command = parser()
+    args = command.parse_args(argv)
+    if args.wait and not args.require_identical:
+        command.error("--wait needs --require-identical: without it, missing is an answer")
+    return args
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    fetch: Callable[[str], bytes | None] | None = None,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
     """Audit registry state without credentials or mutations."""
-    args = parser().parse_args()
-    states = []
-    if args.channel in {"all", "crates.io"}:
-        states.extend(crates_io_state(args.manifest, args.version))
-    if args.channel in {"all", "pypi"}:
-        states.append(pypi_state(args.manifest, args.version))
+    args = parser_arguments(argv)
+    states = settle(
+        lambda: audit(args.manifest, args.version, args.channel, fetch),
+        wait=args.wait,
+        interval=args.interval,
+        clock=clock,
+        sleep=sleep,
+    )
     rendered = registry_document(args.version, states)
     print(rendered, end="")
     if args.output is not None:
