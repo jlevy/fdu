@@ -98,20 +98,21 @@ across instruments, but nothing cancels a host that was quiet for the denominato
 busy for the numerator.
 
 So `quiet` here is the loop's contract rather than a local variant of it. `measure`'s own
-gate -- on Linux, a one-minute load average of at most 0.25 per core -- must hold before
-and after every trial, and a load average that cannot be read refuses the regime rather
-than passing it. A trial that breaches the gate is invalid, and one invalid measured trial
+gate -- on Linux, CPU occupancy of at most 25% over a one-second `/proc/stat` interval --
+must hold before and after every trial, and a reading that cannot be taken refuses the
+regime rather than passing it. A trial that breaches the gate is invalid, and one invalid measured trial
 anywhere downgrades the whole scoreboard to `uncontrolled`: a table cannot say quiet when
 one of its samples was not. It is still written, as the screening-grade table
 `--host-regime uncontrolled` would have recorded.
 
 Before each subject's first trial the harness waits, within a stated bound
 (`--quiet-wait`), for a settling host to meet the gate, because `make perf-floor` builds
-the probe immediately beforehand and a load average remembers a build for minutes. The
-wait decides when measurement starts, never what it accepts. A load average also
-remembers this harness's own instruments, which run N workers back to back, so a long run
-on few cores can cross the gate on its own load and be downgraded; `measure` shares that
-property on Linux.
+the probe immediately beforehand. The wait decides when measurement starts, never what
+it accepts. The gate reads occupancy rather than the one-minute load average because the
+load average remembers this harness's own instruments, which run N workers back to back:
+25 s of N busy workers on an idle four-core Linux host left 0.35 load per core, past the
+old 0.25 bar, with the CPU 1% busy a second later (fdu-hw7f). The load averages are still
+recorded as context.
 """
 
 from __future__ import annotations
@@ -146,14 +147,15 @@ DEFAULT_TIMEOUT_SECONDS = 900.0
 
 #: How long `--host-regime quiet` waits for a settling host before it refuses.
 #:
-#: A load average is a one-minute exponential average, so after load stops it stays over
-#: a 0.25-per-core bar for ln(load per core / 0.25) minutes: 83 s after a build that held
-#: every core busy, 125 s after one that ran twice oversubscribed. `make perf-floor` builds
-#: the probe immediately before this starts. Three minutes covers a build of up to five
-#: runnable threads per core; `--quiet-wait` lifts it.
+#: The wait polls `measure`'s own gate. Where that gate is a load average (neither Linux
+#: nor macOS, which read CPU occupancy), a one-minute exponential average stays over a
+#: 0.25-per-core bar for ln(load per core / 0.25) minutes after load stops: 83 s after a
+#: build that held every core busy, 125 s after one that ran twice oversubscribed. `make
+#: perf-floor` builds the probe immediately before this starts. Three minutes covers a
+#: build of up to five runnable threads per core; `--quiet-wait` lifts it.
 QUIET_WAIT_SECONDS = 180.0
 
-#: How often that wait re-reads the load average, which the kernel updates every 5 s.
+#: How often that wait re-reads the gate; a load average updates every 5 s.
 QUIET_POLL_SECONDS = 5.0
 
 #: max/min at or past which the samples span more than a median can stand for. See
