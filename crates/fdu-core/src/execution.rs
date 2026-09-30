@@ -2670,9 +2670,23 @@ mod tests {
         let mut kinds = list.clone();
         kinds.selection.kinds = vec![EntryKind::Dir];
         full.push(kinds);
+        let mut files = list.clone();
+        files.selection.kinds = vec![EntryKind::File];
+        full.push(files);
+        let mut modified = list.clone();
+        modified.selection.modified.since = Some(0);
+        full.push(modified);
         let mut by_ignored = list.clone();
         by_ignored.selection.ignored = IgnoredEntries::Exclude;
         full.push(by_ignored);
+        // `-d 2 -n 30 --sort size --min-size 300M` (fdu-6o5o): its bounds and sort fold
+        // alone, and its minimum size does not.
+        let mut reported = list.clone();
+        reported.selection.min_size = Some(300 << 20);
+        reported.selection.sort = Some(SortKey::Size);
+        reported.selection.depth = Some(Bound::Limit(2));
+        reported.selection.limit = Some(Bound::Limit(30));
+        full.push(reported);
         // A zero share shows every file.
         full.push(tree_query(vec![ViewSpec::List], Format::Text, "0%", size));
         full.push(tree_query(vec![ViewSpec::Tree], Format::Json, "0.000%", size));
@@ -2800,7 +2814,7 @@ mod tests {
                 14..=17 => (draw.below(40_000) as u64, false),
                 _ => (50_000 + draw.below(4_000_000) as u64, true),
             };
-            let minute = 28_000_000 + draw.below(4) as u64;
+            let minute = FIXTURE_MINUTE + draw.below(4) as u64;
             sized_file(&root.path().join(dir).join(name), size, sparse, minute);
         }
         put(root.path(), ".gitignore", b"*.log\n!f000*.log\nd002/\n");
@@ -2927,6 +2941,67 @@ mod tests {
             crate::test_support::settle_allocations(tree.path());
         }
         trees
+    }
+
+    /// The minute [`random_tree`] and [`crowded_tree`] stamp their oldest files with; each
+    /// stamps the next three as well.
+    const FIXTURE_MINUTE: u64 = 28_000_000;
+
+    /// A tree on which a minimum size of 1,000 bytes reports neither the roll-ups a folded
+    /// index keeps nor only the files it admits (fdu-6o5o).
+    ///
+    /// `hit/` matches by its subtree, so the selection holds everything in it, `hit/covered`
+    /// included though that file is 900 bytes; at 1% of what the selection holds it is a
+    /// row. The root holds a file on either side of the minimum, and each of 110 directories
+    /// below the minimum holds a 950-byte file the selection never counts: larger than
+    /// `hit/covered`, and more of them than a 1% tree keeps. `hit/many` holds more files
+    /// the minimum admits than a 10% tree keeps. Ignored files in the root and below it,
+    /// empty directories, and directories stamped apart give the other filters something
+    /// to select.
+    fn crowded_tree() -> tempfile::TempDir {
+        let tree = tempfile::tempdir().expect("tempdir");
+        let root = tree.path();
+        let minute = |offset| FIXTURE_MINUTE + offset;
+        put(root, ".gitignore", b"*.skip\n");
+        sized_file(&root.join("hit/large"), 20_000, false, minute(3));
+        sized_file(&root.join("hit/covered"), 900, false, minute(3));
+        sized_file(&root.join("hit/x.skip"), 400, false, minute(2));
+        for index in 0..30 {
+            let path = root.join(format!("hit/many/m{index:02}.bin"));
+            sized_file(&path, 1_000, false, minute(index % 4));
+        }
+        for index in 0..110 {
+            sized_file(&root.join(format!("u{index:03}/f.rs")), 950, false, minute(1));
+        }
+        sized_file(&root.join("u000/y.skip"), 30, false, minute(1));
+        sized_file(&root.join("top-big"), 1_500, false, minute(2));
+        sized_file(&root.join("top-small"), 990, false, minute(0));
+        sized_file(&root.join("top.skip"), 20, false, minute(1));
+        for empty in ["empty", "hit/empty"] {
+            fs::create_dir_all(root.join(empty)).expect("empty directory");
+        }
+        // A directory's own time counts in its subtree's newest activity, so each is
+        // stamped once nothing more is written in it.
+        #[cfg(unix)]
+        {
+            let mut stamps = vec![
+                ("hit".to_string(), 3),
+                ("hit/many".to_string(), 2),
+                ("hit/empty".to_string(), 0),
+                ("empty".to_string(), 0),
+            ];
+            stamps.extend((0..110).map(|index| (format!("u{index:03}"), 1)));
+            for (directory, offset) in stamps {
+                fs::File::open(root.join(directory))
+                    .expect("open directory")
+                    .set_modified(
+                        std::time::UNIX_EPOCH + std::time::Duration::from_secs(minute(offset) * 60),
+                    )
+                    .expect("directory mtime");
+            }
+        }
+        crate::test_support::settle_allocations(root);
+        tree
     }
 
     /// Worker counts and traversal orders the differential walks each tree under, and
@@ -3243,6 +3318,283 @@ mod tests {
             "{label}"
         );
         assert!(folded_trees > 10, "the differential folded {folded_trees} trees");
+    }
+
+    /// Why a filtered tree takes the full index (fdu-6o5o): a filter measures its rows, and
+    /// the share that bounds them, against what it selects, which neither the roll-ups nor
+    /// the largest files a folded index keeps can state.
+    ///
+    /// Under a minimum size the root is the sum of what the minimum selects rather than the
+    /// root's roll-up, and a directory below the minimum is no row. A directory at or above
+    /// it selects every file beneath it, so `hit/covered`, below the minimum, is a row: a
+    /// fold that ranked only the files the minimum admits would drop it, and so would one
+    /// that ranked every file, since 111 files the selection never counts are larger.
+    #[test]
+    fn a_filtered_tree_is_measured_against_what_it_selects() {
+        use crate::query::{SizeMetric, TreeNode};
+        use crate::report_format::Format;
+        let tree = crowded_tree();
+        let off = config(CachePolicy::Off, None);
+        let unfiltered = tree_query(vec![ViewSpec::Tree], Format::Json, "1%", SizeMetric::Apparent);
+        let mut filtered = unfiltered.clone();
+        filtered.selection.min_size = Some(1_000);
+        assert_eq!(planned(&off, &filtered).retained, RetainedState::FullIndex);
+        let root_of = |query: &Query| {
+            let (report, pending, _) = prepared(tree.path(), &off, query).expect("a report");
+            pending.join().expect("a one-shot report saves nothing");
+            match report.sections.into_iter().next() {
+                Some(Section::Tree { root: Some(root), .. }) => *root,
+                other => panic!("expected a tree, got {other:?}"),
+            }
+        };
+        let rows = |node: &TreeNode| {
+            node.children.iter().map(|row| (row.name.clone(), row.bytes)).collect::<Vec<_>>()
+        };
+        let named = |rows: &[(&str, u64)]| {
+            rows.iter().map(|(name, bytes)| ((*name).to_string(), *bytes)).collect::<Vec<_>>()
+        };
+
+        let selected = root_of(&filtered);
+        // `hit/` and `top-big`; the root's roll-up also holds `top-small`, `top.skip`, the
+        // 950-byte files, `u000/y.skip`, and the control file.
+        assert_eq!(selected.bytes, 20_000 + 900 + 400 + 30 * 1_000 + 1_500);
+        assert_eq!(root_of(&unfiltered).bytes, selected.bytes + 990 + 20 + 110 * 950 + 30 + 7);
+        assert_eq!(rows(&selected), named(&[("hit", 51_300), ("top-big", 1_500)]));
+        assert_eq!(
+            rows(&selected.children[0]),
+            named(&[("many", 30_000), ("large", 20_000), ("covered", 900)])
+        );
+    }
+
+    /// One selection by each filter a one-shot tree takes, and compositions of them.
+    ///
+    /// A maximum size filters opened-root reads alone ([`crate::query::EntrySelection`]), so
+    /// no one-shot tree has one to compare.
+    fn filtered_selections() -> Vec<(&'static str, crate::query::Selection)> {
+        use crate::query::{ModifiedWindow, Selection};
+        let at = |offset: u64| {
+            i64::try_from((FIXTURE_MINUTE + offset) * 60 * 1_000_000_000).expect("nanoseconds")
+        };
+        let globs = |sources: &[&str]| -> Vec<Pattern> {
+            sources.iter().map(|source| Pattern::parse(source).expect("pattern")).collect()
+        };
+        let window = |since, before| ModifiedWindow { since, before };
+        let none = Selection::default;
+        vec![
+            ("a minimum size", Selection { min_size: Some(1_000), ..none() }),
+            ("a minimum every nonempty file passes", Selection { min_size: Some(1), ..none() }),
+            ("included names", Selection { include: globs(&["*.rs", "*.skip"]), ..none() }),
+            ("included directories", Selection { include: globs(&["hit", "d00*"]), ..none() }),
+            ("excluded names", Selection { exclude: globs(&["*.log", "*.skip"]), ..none() }),
+            (
+                "excluded directories",
+                Selection { exclude: globs(&["u0*", "d001", "many"]), ..none() },
+            ),
+            (
+                "included and excluded",
+                Selection {
+                    include: globs(&["*.rs", "hit"]),
+                    exclude: globs(&["many", "*.tmp"]),
+                    ..none()
+                },
+            ),
+            ("modified since", Selection { modified: window(Some(at(2)), None), ..none() }),
+            ("modified before", Selection { modified: window(None, Some(at(2))), ..none() }),
+            (
+                "a modified window",
+                Selection { modified: window(Some(at(1)), Some(at(3))), ..none() },
+            ),
+            ("files", Selection { kinds: vec![EntryKind::File], ..none() }),
+            ("directories", Selection { kinds: vec![EntryKind::Dir], ..none() }),
+            ("symlinks", Selection { kinds: vec![EntryKind::Symlink], ..none() }),
+            ("unignored entries", Selection { ignored: IgnoredEntries::Exclude, ..none() }),
+            ("ignored entries", Selection { ignored: IgnoredEntries::Only, ..none() }),
+            (
+                "a minimum size among included names",
+                Selection {
+                    min_size: Some(1_000),
+                    include: globs(&["*.bin", "*.rs", "top-*"]),
+                    ..none()
+                },
+            ),
+        ]
+    }
+
+    /// The tree requests one selection is compared under at one share and metric: the
+    /// list and the tree view, each in the default and in name order; the reporter's
+    /// `-d 2 -n 30 --sort size` (fdu-6o5o); and a reversed name order cut by depth and
+    /// breadth.
+    fn filtered_queries(
+        selection: &crate::query::Selection,
+        share: &str,
+        size: crate::query::SizeMetric,
+    ) -> Vec<Query> {
+        use crate::query::{Bound, SortKey};
+        use crate::report_format::Format;
+        let filtered = |views, format| {
+            let mut query = tree_query(views, format, share, size);
+            query.selection = crate::query::Selection {
+                min_share: query.selection.min_share.clone(),
+                size,
+                ..selection.clone()
+            };
+            query
+        };
+        let list = filtered(vec![ViewSpec::List], Format::Text);
+        let json = filtered(vec![ViewSpec::Tree], Format::Json);
+        let mut queries = vec![list.clone(), json.clone()];
+        for query in [&list, &json] {
+            let mut named = query.clone();
+            named.selection.sort = Some(SortKey::Name);
+            queries.push(named);
+        }
+        let mut reported = list;
+        reported.selection.sort = Some(SortKey::Size);
+        reported.selection.depth = Some(Bound::Limit(2));
+        reported.selection.limit = Some(Bound::Limit(30));
+        queries.push(reported);
+        let mut bounded = json;
+        bounded.selection.sort = Some(SortKey::Name);
+        bounded.selection.reverse = true;
+        bounded.selection.depth = Some(Bound::Limit(1));
+        bounded.selection.breadth = Some(Bound::Limit(2));
+        queries.push(bounded);
+        queries
+    }
+
+    /// `actual` is `expected`, as a value and rendered, once the provenance that describes
+    /// each walk rather than the tree is set aside.
+    fn assert_same_answer(
+        mut actual: Report,
+        expected: &Report,
+        format: crate::report_format::Format,
+        context: &str,
+    ) {
+        use crate::report_format::render;
+        assert_eq!(
+            (actual.provenance.source, actual.provenance.freshness),
+            (expected.provenance.source, expected.provenance.freshness),
+            "{context}"
+        );
+        actual.provenance = expected.provenance.clone();
+        assert_eq!(format!("{actual:#?}"), format!("{expected:#?}"), "{context}");
+        assert_eq!(
+            render(&actual, format, false).expect("render"),
+            render(expected, format, false).expect("render"),
+            "{context}"
+        );
+    }
+
+    /// For every selection in [`filtered_selections`], at two shares that omit rows, in
+    /// both metrics, and for every request in [`filtered_queries`]: the one-shot route the
+    /// planner chooses answers what the full index of the tree answers, or both refuse; and
+    /// wherever that route is a folded index, the folded index answers the same. Each
+    /// selection must change the tree's answer, so that no comparison agrees for want of a
+    /// filter.
+    fn assert_filtered_reports_match(root: &Path, scan: &ScanConfig, label: &str) {
+        use crate::query::{Selection, SizeMetric};
+        use crate::report_format::Format;
+        let root = root.canonicalize().expect("canonical root");
+        let fixture = OpenFixture { scan: scan.clone(), ..config(CachePolicy::Off, None) };
+        let scan_config = {
+            let (request, delivery) = split(&root, &fixture, &Query::default());
+            request.basis.scope.scan_config(&delivery)
+        };
+        let (full, _) = crate::scan::scan_into_index(&root, &scan_config).expect("full index");
+        let answer = |query: &Query| {
+            let (request, _) = split(&root, &fixture, query);
+            report(&full, &request, SystemTime::UNIX_EPOCH)
+        };
+        let whole = tree_query(vec![ViewSpec::Tree], Format::Json, "0%", SizeMetric::Apparent);
+        let unfiltered = format!("{:#?}", answer(&whole).expect("unfiltered report").sections);
+        let mut vacuous = Vec::new();
+        for (name, selection) in filtered_selections() {
+            // A selection by ignored state over a tree whose `.gitignore` went unread has no
+            // answer on any route.
+            let refused = !scan.read_controls && selection.ignored != IgnoredEntries::Include;
+            let every_row = Query {
+                selection: Selection {
+                    min_share: whole.selection.min_share.clone(),
+                    size: whole.selection.size,
+                    ..selection.clone()
+                },
+                ..whole.clone()
+            };
+            match answer(&every_row) {
+                Ok(filtered) => {
+                    assert!(!refused, "{label}: {name} is answered");
+                    if format!("{:#?}", filtered.sections) == unfiltered {
+                        vacuous.push(name);
+                    }
+                }
+                Err(error) => assert!(refused, "{label}: {name}: {error}"),
+            }
+            for share in ["1%", "10%"] {
+                for size in [SizeMetric::Apparent, SizeMetric::Allocated] {
+                    for query in filtered_queries(&selection, share, size) {
+                        let context = format!("{label}, {name}, {share} of {size:?}: {query:?}");
+                        let (request, delivery) = split(&root, &fixture, &query);
+                        let (expected, routed) =
+                            match (answer(&query), prepare_report(&request, &delivery)) {
+                                (Ok(expected), Ok((routed, pending, _))) => {
+                                    pending.join().expect("a one-shot report saves nothing");
+                                    (expected, routed)
+                                }
+                                (Err(_), Err(_)) if refused => continue,
+                                (expected, routed) => panic!(
+                                    "{context}: {:?} beside {:?}",
+                                    expected.err(),
+                                    routed.err()
+                                ),
+                            };
+                        assert_same_answer(routed, &expected, query.format, &context);
+                        let RetainedState::Tree(retention) =
+                            plan(&request, &delivery, Route::OneShot).expect("plan").retained
+                        else {
+                            continue;
+                        };
+                        let (index, _, _) = crate::scan::scan_into_folded_index(
+                            &root,
+                            &scan_config,
+                            retention,
+                            false,
+                        )
+                        .expect("folded index");
+                        assert!(index.is_folded(), "{context}");
+                        let folded =
+                            report(&index, &request, SystemTime::UNIX_EPOCH).expect("folded");
+                        assert_same_answer(folded, &expected, query.format, &context);
+                    }
+                }
+            }
+        }
+        assert!(vacuous.is_empty(), "{label}: these select the whole tree: {vacuous:?}");
+    }
+
+    /// A filtered tree answers on the one-shot route what the full index answers, under
+    /// every filter a one-shot tree takes, alone and composed: a minimum size, names and
+    /// directories included and excluded, a modified window open at either end and closed,
+    /// entry kinds, and selection by ignored state; in the default and in name order, cut
+    /// by depth, breadth, and rows, at shares that omit rows, in both metrics. The trees
+    /// are a randomized one, read with and without `.gitignore` and bounded in scan depth,
+    /// and [`crowded_tree`], where more files pass a filter than a folded tree keeps and a
+    /// fold that ranked only those would lose a row. Wherever the planner folds a filtered
+    /// request, the folded index must answer the same.
+    #[test]
+    fn a_filtered_tree_answers_as_the_full_index_on_every_route() {
+        let random = random_tree(0x9E37_79B9_7F4A_7C15, 480);
+        let crowded = crowded_tree();
+        let deep = |max_depth| ScanConfig { max_depth: Some(max_depth), ..ScanConfig::default() };
+        let blind = ScanConfig { read_controls: false, ..ScanConfig::default() };
+        for (tree, scan, label) in [
+            (&random, ScanConfig::default(), "a random tree"),
+            (&random, deep(3), "a random tree scanned three deep"),
+            (&random, blind, "a random tree read without .gitignore"),
+            (&crowded, ScanConfig::default(), "the crowded tree"),
+            (&crowded, deep(1), "the crowded tree scanned one deep"),
+        ] {
+            assert_filtered_reports_match(tree.path(), &scan, label);
+        }
     }
 
     #[test]
