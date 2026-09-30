@@ -134,9 +134,13 @@ coverage map has one more possible key, `text_only`.
   A one-line minified or generated source therefore costs a worker the window, not the
   file. Every count is unchanged: a differential test holds the streaming scan to the
   previous whole-line classifier, kept verbatim as the oracle, for every supported
-  language with a piece edge at every byte, every two-way chunking, every window size,
-  CRLF and lone CR, splices, byte-order marks, invalid UTF-8, Unicode whitespace, no
-  trailing newline, and tokens longer than the window.
+  language, comparing the cumulative counts after every line rather than only the file’s
+  totals. It runs nine window sizes from one byte, which puts a piece edge at every byte,
+  to the full 64 KiB; two-way splits of the source at every seventh byte, at windows of
+  one and three bytes; and every two- and three-way chunking of a short mixed source, at
+  a window of one byte.
+  Its sources hold CRLF and lone CR, splices, byte-order marks, invalid UTF-8, Unicode
+  whitespace, no trailing newline, and tokens longer than the window.
 - `--analyze words` no longer holds a Markdown file of any size in memory to render it:
   a Markdown file over 64 MiB is counted as plain text instead, in the same 64 KiB
   chunks as any other text file, and its record says so.
