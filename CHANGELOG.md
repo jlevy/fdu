@@ -13,6 +13,9 @@ On Linux a stat of a directory’s child no longer mounts an unmounted autofs tr
 any route.
 Two Rust API changes are breaking: `counters::Counts` gains three public fields, and
 `Error` gains a variant, `UnrepresentableTotal`.
+A `.gitignore` that starts with a byte-order mark, or holds a NUL byte inside a line, now
+reads as git reads it, which changes the `.gitignore` semantics version: a snapshot
+written by an earlier release is rebuilt rather than served.
 No command-line option, report or cache schema, or Python API changed.
 
 ### Added
@@ -86,6 +89,11 @@ No command-line option, report or cache schema, or Python API changed.
   more than 16 EiB. A filesystem cannot produce that; the public `Index` API can.
   A snapshot whose recorded sizes sum past `u64` is now refused as corrupt when it is
   loaded rather than summed.
+- A `.gitignore` that starts with a UTF-8 byte-order mark now applies its first rule, and
+  a pattern ends at the first NUL byte inside its line, as git reads both. Earlier
+  releases matched the mark as part of the first rule, so it never applied, and kept the
+  bytes after a NUL as part of the rule. The `.gitignore` semantics version is 4, so a
+  snapshot written under 3 is rebuilt rather than served.
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`

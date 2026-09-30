@@ -147,8 +147,12 @@ enum Segment {
     Glob(Vec<u8>),
 }
 
+/// The UTF-8 byte-order mark git skips at the start of a `.gitignore`, and only there.
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
 impl Gitignore {
     pub(super) fn parse(source: &[u8]) -> Self {
+        let source = source.strip_prefix(UTF8_BOM).unwrap_or(source);
         let patterns: Box<[Pattern]> =
             source.split(|byte| *byte == b'\n').filter_map(Pattern::parse).collect();
         let index = RuleIndex::build(&patterns);
@@ -868,6 +872,12 @@ fn fixed_matches(segments: &[Segment], directory: &[&[u8]], name: &[u8]) -> bool
 impl Pattern {
     fn parse(raw: &[u8]) -> Option<Self> {
         let mut line = raw.strip_suffix(b"\r").unwrap_or(raw);
+        // Git reads the line as a C string once its own `\r` is gone, so a pattern ends at
+        // the first NUL byte in it and the rest of the line is dropped with it; a `\r`
+        // before that NUL is part of the pattern.
+        if let Some(nul) = line.iter().position(|byte| *byte == 0) {
+            line = &line[..nul];
+        }
         line = trim_unescaped_spaces(line);
         if line.is_empty() || line.first() == Some(&b'#') {
             return None;
@@ -1675,11 +1685,37 @@ mod tests {
             RecordedCase { pattern: b"a//b", ignored: &[], kept: &[b"a/b", b"a/q/b"] },
             RecordedCase { pattern: b"//foo", ignored: &[], kept: &[b"foo", b"x/foo"] },
             RecordedCase { pattern: b"a\\//b", ignored: &[], kept: &[b"a/b", b"a/q/b"] },
+            RecordedCase { pattern: b"a/\\/b", ignored: &[], kept: &[b"a/b", b"a/q/b", b"a\\/b"] },
             RecordedCase { pattern: b"a/**//", ignored: &[], kept: &[b"a/x", b"a/x/y"] },
             RecordedCase { pattern: b"a/***/b", ignored: &[b"a/b", b"a/q/b", b"a/q/r/b"], kept: &[b"b", b"q/a/b"] },
             RecordedCase { pattern: b"***/x", ignored: &[b"x", b"q/x", b"q/r/x"], kept: &[b"y"] },
             RecordedCase { pattern: b"x/***", ignored: &[b"x/a", b"x/a/b"], kept: &[b"x", b"q/x/a"] },
             RecordedCase { pattern: b"a/****\\/b", ignored: &[b"a/q/b", b"a/q/r/b"], kept: &[b"a/b"] },
+    ];
+
+    /// What git reads at the start of the file and inside a line, recorded the same way
+    /// (fdu-ifci). A byte-order mark is skipped at the start of the file and nowhere else;
+    /// a pattern ends at the first NUL byte in its line, and the rest of that line goes
+    /// with it, after the line's own `\r` is stripped and before trailing spaces are.
+    #[rustfmt::skip]
+    const SOURCE_EDGE_CASES: &[RecordedCase] = &[
+            RecordedCase { pattern: b"\xEF\xBB\xBFfoo", ignored: &[b"foo", b"d/foo"], kept: &[b"\xEF\xBB\xBFfoo"] },
+            RecordedCase { pattern: b"\xEF\xBB\xBF/foo", ignored: &[b"foo"], kept: &[b"d/foo"] },
+            RecordedCase { pattern: b"\xEF\xBB\xBF#c\nfoo", ignored: &[b"foo"], kept: &[b"#c"] },
+            RecordedCase { pattern: b"\xEF\xBB\xBF!foo\n*", ignored: &[b"foo", b"bar"], kept: &[] },
+            RecordedCase { pattern: b"x\n\xEF\xBB\xBFfoo", ignored: &[b"x", b"\xEF\xBB\xBFfoo"], kept: &[b"foo"] },
+            RecordedCase { pattern: b"\xEF\xBB", ignored: &[b"\xEF\xBB"], kept: &[b"foo"] },
+            RecordedCase { pattern: b"\xEF\xBB\xBF", ignored: &[], kept: &[b"foo", b"\xEF\xBB\xBF"] },
+            RecordedCase { pattern: b"fo\x00o", ignored: &[b"fo"], kept: &[b"foo", b"o"] },
+            RecordedCase { pattern: b"fo\x00o\nbar", ignored: &[b"fo", b"bar"], kept: &[b"foo"] },
+            RecordedCase { pattern: b"fo \x00o", ignored: &[b"fo"], kept: &[b"fo "] },
+            RecordedCase { pattern: b"\x00foo", ignored: &[], kept: &[b"foo"] },
+            RecordedCase { pattern: b"!\x00foo\n*", ignored: &[b"foo"], kept: &[] },
+            RecordedCase { pattern: b"*.lo\x00g", ignored: &[b"x.lo"], kept: &[b"x.log"] },
+            RecordedCase { pattern: b"a\\\x00", ignored: &[], kept: &[b"a", b"a\\"] },
+            RecordedCase { pattern: b"ab\r\x00", ignored: &[b"ab\r"], kept: &[b"ab"] },
+            RecordedCase { pattern: b"ab\x00c\r", ignored: &[b"ab"], kept: &[b"abc"] },
+            RecordedCase { pattern: b"a/\x00/b", ignored: &[], kept: &[b"a"] },
     ];
 
     fn verdict_bytes(source: &[u8], path: &[u8]) -> bool {
@@ -1720,6 +1756,11 @@ mod tests {
     #[test]
     fn path_segment_edges_answer_as_git_check_ignore_does() {
         assert_recorded_verdicts(PATH_SEGMENT_CASES);
+    }
+
+    #[test]
+    fn a_byte_order_mark_and_nul_bytes_answer_as_git_check_ignore_does() {
+        assert_recorded_verdicts(SOURCE_EDGE_CASES);
     }
 
     /// The rows of git's `t/t3070-wildmatch.sh` that gitignore matching shares, each
