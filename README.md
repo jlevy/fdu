@@ -1,6 +1,6 @@
 # fdu
 
-**Fast du replacement and file tree analysis for 100+GB, million-file worktrees**
+**Fastest du replacement and file tree analysis for 100+GB, million-file worktrees**
 
 Use fdu to find what takes up space, locate old build directories, or summarize a tree
 without writing a filesystem walker.

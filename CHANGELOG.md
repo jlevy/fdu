@@ -65,10 +65,6 @@ coverage map has one more possible key, `text_only`. The GitHub release text is
   `AnalyzerCoverage` counts it as analyzed.
   Code that matches `CoverageReason` exhaustively must name it or use a wildcard arm.
   These are the only public API changes.
-- The package description on crates.io and PyPI, which `fdu --help` also prints, now
-  reads “Fast native du replacement …” rather than “Fastest”: on a generated
-  million-entry Linux tree, `pdu --max-depth 2` was 3% faster than fdu’s default tree
-  before the two changes that follow, and no peer has been run on that tree since.
 - On Linux the default tree is faster again on directory-dense trees: 8.9% faster on a
   `node_modules` tree and 3.1% faster on the Linux v6.12 source tree, on top of the
   gains below, in one paired cell of 20 pairs per tree
