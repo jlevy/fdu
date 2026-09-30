@@ -381,7 +381,7 @@ experiment:
     primary_job: default-tree
     primary_metric: wall_ns
     change_pct: -3.551
-    reason: "quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the --no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%; placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25% [-4.46%, +0.25%] off, not resolvable, no regression; statx 79,961 -> 70,416 and 92,836 -> 87,006; answers identical"
+    reason: "quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the --no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%; placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25% [-4.46%, +0.25%] off, not resolvable, no regression on the --no-controls arm and the controls-on arm too wide to bound; statx 79,961 -> 70,416 and 92,836 -> 87,006; answers identical"
     commit: c0da65ae
     kept: candidate
 ---
@@ -461,10 +461,12 @@ with directories per entry, as H159’s per-directory saving did (exp-190): 9,54
 `linux-v6.12` (16 per directory).
 The dense tree shows it twice over, −3.55% by the deciding comparison and −7.28% by the
 `--no-controls` replicate, which does the same work on a tree with no rules; the screen
-on the generated tree agrees at −4.45%. On `linux-v6.12` the change is not resolvable
-and no regression: +2.13% [−3.19%, +5.30%] with `.gitignore` on, the widest interval of
-the track’s cells, and −1.25% [−4.46%, +0.25%] with it off, against −2% to −4%
-predicted; both placebos there include zero.
+on the generated tree agrees at −4.45%. On `linux-v6.12` the change is not resolvable:
++2.13% [−3.19%, +5.30%] with `.gitignore` on, the widest interval of the track’s cells
+and too wide to bound a regression, since its upper end passes the loop’s +3%
+non-inferiority margin; and −1.25% [−4.46%, +0.25%] with it off, which excludes one,
+against −2% to −4% predicted.
+Both placebos there include zero.
 The pre-registered row named both real trees under one bar; the decision rests on the
 tree the mechanism targets, and the stacked end-to-end cell (exp-201) measures the
 kernel tree again with the track’s other changes.
@@ -479,8 +481,9 @@ as the ledger asks; `run-linux-balanced-1m.json.gz`, the 12-pair screen.
 Accepted on `node-modules-dense`, the directory-dense tree the mechanism targets: the
 default tree is 3.6% faster by the deciding comparison and 7.3% by its replicate, the
 generated screen 4.5%, and every placebo includes zero.
-On `linux-v6.12` the change is not resolvable and no regression, as the per-directory
-saving and exp-190’s precedent allow; the end-to-end cell measures it again.
+On `linux-v6.12` the change is not resolvable, as the per-directory saving and exp-190’s
+precedent allow: no regression on the `--no-controls` arm, and the controls-on arm too
+wide to bound; the end-to-end cell measures it again.
 Linux only in effect: the macOS listing carries every child’s attributes, so the change
 is a no-op there (M11 in the platform review).
 About 120 lines in `c0da65ae`, half of them the policy test.

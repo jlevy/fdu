@@ -6476,8 +6476,9 @@ Cost to carry: 136 lines; no new dependencies.
 **Accepted:** quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the
 --no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%;
 placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25%
-[-4.46%, +0.25%] off, not resolvable, no regression; statx 79,961 -> 70,416 and 92,836
--> 87,006; answers identical.
+[-4.46%, +0.25%] off, not resolvable, no regression on the --no-controls arm and the
+controls-on arm too wide to bound; statx 79,961 -> 70,416 and 92,836 -> 87,006; answers
+identical.
 
 Full record:
 [`exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md`](../experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)
