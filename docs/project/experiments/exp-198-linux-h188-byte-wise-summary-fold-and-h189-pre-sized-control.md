@@ -324,6 +324,18 @@ own changes, and to 202.7M with the table’s byte-keyed index, −159M in all a
 −120M predicted; its walkers and the tree route’s consumer are unchanged (132.6M and
 239.3M).
 
+**Context switches** (per run, medians of the 20 pairs): on the deciding
+`aggregate-summary` cell voluntary switches rose from 153 to 328 and involuntary from 43
+to 176, past the harness’s +50% regression limit on both, so the cell’s qualification
+block above classifies the job `inferior` while the verdict accepts it.
+The reading is benign, and informative: both `--no-controls` arms sit at about 760
+voluntary and 630 involuntary, so with `.gitignore` on the consumer at the H185 head was
+the longest thread and hardly ever parked, and H188 made it fast enough to wait on its
+channel as the blind arm’s does; wall, CPU and instructions fell with it.
+The loop names context switches among the independent gates, but the H188 row
+pre-registered wall, consumer instructions and the placebos, not switches, and the
+accept overrides the switch gate on this reasoning (R163-2).
+
 **Fingerprints.** The cells checked the subjects against fingerprints registered for
 this track (`tree-linux-v6.12-pdu.json`, `tree-node-modules-dense-pdu.json`,
 `tree-linux-balanced-1m-pdu.json`), not the shared ones: the shared `linux-v6.12`

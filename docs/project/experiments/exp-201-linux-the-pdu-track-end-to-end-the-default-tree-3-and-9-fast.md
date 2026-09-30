@@ -336,7 +336,11 @@ bracket the stacked effect as they bracketed H186’s alone (exp-199): both inte
 below −1.5%, and the larger, controls-on figure is the one the default command takes.
 The default summary is −6.14% on `linux-v6.12` (H188) and unchanged on the dense tree,
 which has no rules; the `--no-controls` summary, which no change touches, is at zero on
-both.
+both. The stacked summary’s qualification block reads `inferior` on context switches for
+the reason exp-198 records: its voluntary and involuntary switches rose from 144 and 36
+to 310 and 153 (medians of 20) as the consumer stopped being the longest thread, against
+about 760 and 620 on the blind arms, and the switch gate was not pre-registered for
+H188.
 
 **The standing, product command lines.** Each competitor paired with the shipped head
 (`fdu-h186`, the `fdu` product binary at `a356d456`) in one interleaved run per tree, 20
