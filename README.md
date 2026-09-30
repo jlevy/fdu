@@ -421,13 +421,52 @@ assert!(report.analysis.is_some());
 
 ## Speed
 
-fdu is optimized by an agent-run
-[performance loop](docs/project/guides/performance-loop.md) of 200 recorded experiments
-so far.
-The loop measures each change against the previous build in interleaved pairs and
-keeps it only when it makes fdu at least 3% faster, with a 95% interval below zero.
+fdu is aggressively optimized by agent-run research loops.
+Each turn of the [performance loop](docs/project/guides/performance-loop.md) is one
+hypothesis, one change, and a measurement against the previous build in interleaved
+pairs, and a change is kept only when it makes fdu at least 3% faster, with a 95%
+interval below zero.
+Of 200 recorded experiments so far, 111 were kept and 61 rejected.
+Kept changes include:
+
+- **A parallel, bulk-reading walk.** Threads walk the tree at once, and on macOS
+  `getattrlistbulk` returns a directory’s names and sizes in one call.
+  With the rest of the first campaign, this cut cold scans by 54.5% and warm
+  revalidation by 52.0%
+  ([exp-032](docs/project/experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)).
+- **A native directory reader on Linux.** `getdents64` into a reused buffer, and `statx`
+  relative to the directory, cut the default command’s `fstat` calls on the kernel
+  source from 5,773 to 4, and the default summary’s time by 9–10% on two real trees
+  ([exp-185](docs/project/experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md),
+  [exp-186](docs/project/experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)).
+- **Exact summaries without an index.** A summary is totalled as the walk runs, without
+  building an index: 14.6% less time and 95% less memory
+  ([exp-040](docs/project/experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md)).
+- **Fast `.gitignore` classification.** On the Linux kernel source’s default report,
+  allocation-free matching took 47.0% off
+  ([exp-173](docs/project/experiments/exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md)),
+  per-listing rule chains 36.4%
+  ([exp-174](docs/project/experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md)),
+  and rules bucketed by literal name, extension, and suffix 29.6%
+  ([exp-178](docs/project/experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md)).
+- **A default tree that keeps only what it can show.** Files too small to reach a row
+  fold into their directories’ totals: 13.5% less time on the kernel source
+  ([exp-180](docs/project/experiments/exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md)),
+  and on a million-entry tree, peak memory fell from 293 to 57 MiB
+  ([exp-202](docs/project/experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
+- **Less work per row.** Each directory’s and symlink’s kind comes from its parent’s
+  listing rather than a second stat, and a tree row is admitted before it is built: 3.6%
+  and 4.9% less time on a `node_modules` tree
+  ([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md),
+  [exp-199](docs/project/experiments/exp-199-linux-h186-admits-tree-rows-before-building-them-the-default.md)).
+- **No repeated work across runs and views.** A cold scan no longer rewrites an
+  identical snapshot (10.6% less time,
+  [exp-067](docs/project/experiments/exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md)),
+  and unfiltered views share one walk (18.8%,
+  [exp-137](docs/project/experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)).
+
 [The evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
-is the full record of every one.
+is the full record of every experiment, rejected ones included.
 
 Time to report on the same generated million-file tree, with warm filesystem caches, as
 a multiple of fdu’s time (lower is faster):
