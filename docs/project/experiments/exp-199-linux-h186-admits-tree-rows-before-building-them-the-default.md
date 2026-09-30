@@ -374,5 +374,6 @@ On `linux-v6.12` the change is in the predicted range, not resolvable, and no
 regression; by its own prediction it could not clear the row’s bar, as H159’s
 kernel-tree cells could not (exp-190). The stacked end-to-end cell settles the size of
 the effect. The List view’s JSON sort stays an open item.
-About 180 lines in `a356d456`, a third of them the row-admission test and the
-higher-ranked name accessor.
+About 180 lines in `a356d456`, none of them a test: the admission was guarded by the
+goldens and the transient-versus-indexed differential, and the unit test of `child_rows`
+(admission, order, and the share omission’s sums) was added after review (R163-4).

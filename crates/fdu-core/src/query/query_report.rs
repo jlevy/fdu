@@ -5427,6 +5427,112 @@ mod tests {
         index
     }
 
+    /// H186: a directory's children are admitted from their roll-ups before any row is
+    /// built, in the order sorting every row would give; the children the share omits are
+    /// summed from their facts alone, an ignored tally included; an incomplete child below
+    /// the share is admitted regardless; and `complete = false` withholds the sums.
+    #[test]
+    fn child_rows_admit_from_roll_ups_and_sum_what_the_share_omits() {
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        index.apply_ok(&Observation::new(vec![
+            Op::ControlUpsert { path: PathBuf::from(CONTROL), source: b"*.log\n".to_vec() },
+            upsert("big", EntryKind::Dir, Attrs::default()),
+            upsert("big/a", EntryKind::File, attrs(1_000, 10)),
+            upsert("small", EntryKind::Dir, Attrs::default()),
+            upsert("small/x.log", EntryKind::File, attrs(5, 20)),
+            upsert("tiny", EntryKind::Dir, Attrs::default()),
+            upsert("tiny/t", EntryKind::File, attrs(3, 30)),
+            upsert("f1", EntryKind::File, attrs(200, 40)),
+            upsert("f2", EntryKind::File, attrs(2, 50)),
+        ]));
+        let id = |path: &str| index.lookup(Path::new(path)).expect("an indexed path");
+        let measured = |bytes: u64, complete| query_subtrees::SubtreeValues {
+            bytes,
+            allocated: bytes.div_ceil(512) * 512,
+            mtime_ns: 0,
+            files: 1,
+            dirs: 0,
+            complete,
+        };
+        let measurements: BTreeMap<EntryId, query_subtrees::SubtreeValues> = [
+            (id("big"), measured(1_000, true)),
+            (id("small"), measured(5, true)),
+            (id("tiny"), measured(3, false)),
+        ]
+        .into_iter()
+        .collect();
+        // Apparent bytes, so the shares below are the file sizes' rather than their
+        // allocated blocks', which round every small file up to one.
+        let query = query(
+            &[ViewSpec::Tree],
+            Selection { size: SizeMetric::Apparent, ..Selection::default() },
+        );
+        let grand = 1_000 + 5 + 3 + 200 + 2;
+
+        let (rows, omitted) = child_rows(
+            &index,
+            &query,
+            None,
+            &BTreeMap::new(),
+            Some(&measurements),
+            EntryId::ROOT,
+            Path::new(""),
+            &ShareThreshold::one_percent(),
+            grand,
+        );
+        // 1% of 1,210 is 12.1: `big` and `f1` clear it, `tiny` does not but is incomplete,
+        // and the rows come sorted by size, largest first, as the tree sorts them.
+        assert_eq!(
+            rows.iter().map(|(row, id)| (row.name.as_str(), row.bytes, *id)).collect::<Vec<_>>(),
+            [("big", 1_000, id("big")), ("f1", 200, id("f1")), ("tiny", 3, id("tiny"))]
+        );
+        assert!(rows.iter().all(|(row, _)| row.path.as_path() == Path::new(&row.name)));
+        // `small` and `f2` are below the share: their facts alone, `small` with the ignored
+        // file it holds and `f2` with an empty tally, since its classification is known.
+        let mut facts: Vec<_> =
+            omitted.iter().map(|row| (row.bytes, row.files, row.allocated, row.ignored)).collect();
+        facts.sort_unstable_by_key(|(bytes, ..)| *bytes);
+        assert_eq!(
+            facts,
+            [
+                (2, 1, 512, Some(IgnoredTally::default())),
+                (5, 1, 512, Some(IgnoredTally { files: 1, dirs: 0, bytes: 5, allocated: 512 })),
+            ]
+        );
+
+        for complete in [true, false] {
+            let mut node = TreeNode {
+                path: PathBuf::new(),
+                name: String::new(),
+                kind: EntryKind::Dir,
+                entry_ignored: None,
+                bytes: grand,
+                allocated: 0,
+                files: 5,
+                dirs: 3,
+                ignored: None,
+                newest_mtime_ns: None,
+                children: Vec::new(),
+                omissions: Vec::new(),
+                truncated: false,
+            };
+            record_omission(&mut node, TreeOmissionReason::Share, &omitted, None, complete);
+            assert!(node.truncated);
+            let [omission] = node.omissions.as_slice() else {
+                panic!("one Share omission, complete = {complete}: {:?}", node.omissions)
+            };
+            assert_eq!(omission.reason, TreeOmissionReason::Share);
+            assert_eq!(omission.entries, 2);
+            let sums = (omission.files, omission.bytes, omission.allocated, omission.ignored);
+            let expected = if complete {
+                (Some(2), Some(7), Some(1_024), Some(IgnoredSize { bytes: 5, allocated: 512 }))
+            } else {
+                (None, None, None, None)
+            };
+            assert_eq!(sums, expected, "complete = {complete}");
+        }
+    }
+
     #[test]
     fn tree_entry_classification_is_independent_of_selected_subtree_tallies() {
         let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
