@@ -10,12 +10,15 @@ from __future__ import annotations
 import json, os, sys
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from since import load, since
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import complete_lines, write_text_atomic  # noqa: E402
 KEEP_META = ("batch", "order", "label", "kind", "started_at", "finished_at", "wall_s", "rc", "loadavg", "cpu_before", "cpu_after", "event_lines", "series")
 DROP_RESULT = ("label", "dev")
 def main() -> None:
     rows = load(sys.argv[2])
     out = []
-    for ln in open(sys.argv[1]):
+    for ln in complete_lines(sys.argv[1]):
         r = json.loads(ln)
         rec = {k: r[k] for k in KEEP_META if k in r}
         res = r.get("result")
@@ -26,9 +29,9 @@ def main() -> None:
                 s = since(rows, int(res["cursor"]))
                 rec["log_after_cursor"] = {k: s[k] for k in ("files_after", "gz_bytes_after", "raw_bytes_after", "records_after")}
         out.append(rec)
-    json.dump({"schema": "fdu-replay-cost-review-v1", "host": "M1 Pro 10c/32GB, macOS 26.5.x, loaded", "date": "2026-09-27",
+    write_text_atomic(sys.argv[3], json.dumps({"schema": "fdu-replay-cost-review-v1", "host": "M1 Pro 10c/32GB, macOS 26.5.x, loaded", "date": "2026-09-27",
                "volumes": {"external": "APFS on USB SSD, noowners, ~13.6M inodes, log readable", "internal": "APFS Data volume, ~8.6M inodes, log root-only"},
-               "runs": out}, open(sys.argv[3], "w"), indent=1)
+               "runs": out}, indent=1))
     print(len(out), "runs written")
 if __name__ == "__main__":
     main()

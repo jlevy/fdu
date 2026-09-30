@@ -20,6 +20,9 @@ import sys
 import time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import open_atomic, write_text_atomic  # noqa: E402
 
 TRAILER = 24
 
@@ -117,7 +120,7 @@ def main() -> None:
     cats: Counter[str] = Counter()
     for r in rows:
         cats.update(r["cats"])
-    with open(out_csv, "w", newline="") as f:
+    with open_atomic(out_csv, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["name", "name_id", "gz_bytes", "raw_bytes", "records", "pages", "bad", "min_id", "max_id", "mtime", "path_bytes"])
         for r in rows:
@@ -137,8 +140,7 @@ def main() -> None:
         "name_is_upper_bound": sum(1 for r in rows if r["max_id"] <= r["name_id"]),
         "name_is_lower_bound": sum(1 for r in rows if r["min_id"] >= r["name_id"]),
     }
-    with open(out_json, "w") as f:
-        json.dump(summary, f, indent=1)
+    write_text_atomic(out_json, json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
 
 

@@ -10,14 +10,16 @@
 // docs/project/architecture/fdu-design-principles.md; this check keeps new code to it.
 //
 // A raw write is allowed in only three places: an approved helper, which is the atomic
-// implementation; test code, whose writes are the inputs a test scans or feeds to the
-// code under test; and a listed exception that says why the write needs no helper.
-// Everything else fails, so a new writer either goes through a helper or is argued for
-// here.
+// implementation; test code and the other input writers listed below, whose writes are
+// the input a test or an experiment observes; and a listed exception that says why the
+// write needs no helper. Everything else fails, so a new writer either goes through a
+// helper or is argued for here.
 //
-// Test inputs are exempt because they are not read after the process that wrote them
-// exits: a crash fails the test that owned them. How a freshly written fixture settles
-// before a test measures it is a separate question, settled by fdu-tq70.
+// Inputs are exempt because nothing reads them once the process that wrote them exits:
+// a crash fails the test or the trial that owned them, and an experiment's write is often
+// the very change under study, which a rename would replace with a different one. How a
+// freshly written fixture settles before a test measures it is a separate question,
+// settled by fdu-tq70.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -54,8 +56,15 @@ const TEST_DIRECTORIES = [
   /\/tests\/fixtures\//,
 ];
 
-// Test support outside those names: every write in these files builds a test's input.
-export const FIXTURE_BUILDERS = new Map([
+// Research workloads, whose writes are the filesystem changes an experiment observes.
+const CATALOG = "each write is a change the change-source catalog observes";
+const DIRSTATS = "each write is a change whose directory statistics the study verifies";
+const REPLAY = "each write is a change FSEvents replay must report, in the probe or its tests";
+
+// Test support and experiment workloads outside those names: every raw write left in
+// these files builds or changes the input a test or experiment observes. Their results go
+// through a helper.
+export const INPUT_WRITERS = new Map([
   ["scripts/check-yaml.mjs", "builds the tree the YAML self-check scans"],
   [
     "explorations/benchmarks/corpus_cache.py",
@@ -65,7 +74,10 @@ export const FIXTURE_BUILDERS = new Map([
   ["explorations/benchmarks/spikes/gen_tree.py", "generates a benchmark scan tree"],
   ["tests/correctness/build_tree.py", "builds the correctness runbook's scan tree"],
   ["tests/path_independence/fixture.py", "builds and copies the matrix's scan tree"],
-  ["tests/path_independence/matrix.py", "mutates the scan tree; an in-place rewrite is the change"],
+  [
+    "tests/path_independence/matrix.py",
+    "mutates the scan tree; an in-place rewrite is the change under test",
+  ],
   ["tests/golden/bin/cache-plant.mjs", "plants damaged cache files for a golden to reject"],
   ["tests/golden/bin/directory-builds.cjs", "builds the tree a golden scans"],
   ["tests/golden/bin/watch-capture.mjs", "each write is a change the watch golden observes"],
@@ -73,10 +85,30 @@ export const FIXTURE_BUILDERS = new Map([
     "tests/golden/bin/watch-repaint-capture.mjs",
     "each write is a change the watch golden observes",
   ],
+  ["explorations/change-sources/catalog/src/complete.py", CATALOG],
+  ["explorations/change-sources/catalog/src/dirstats.py", CATALOG],
+  ["explorations/change-sources/catalog/src/dirstats2.py", CATALOG],
+  ["explorations/change-sources/catalog/src/nested_wa.py", CATALOG],
+  ["explorations/change-sources/catalog/src/wa_bench.py", CATALOG],
+  ["explorations/change-sources/dirstats-verify/src/accounting.py", DIRSTATS],
+  ["explorations/change-sources/dirstats-verify/src/bench_wa.py", DIRSTATS],
+  ["explorations/change-sources/dirstats-verify/src/dmg_tests.py", DIRSTATS],
+  ["explorations/change-sources/dirstats-verify/src/flag_unset.py", DIRSTATS],
+  ["explorations/change-sources/dirstats-verify/src/hardlink_primary.py", DIRSTATS],
+  ["explorations/change-sources/dirstats-verify/src/ow_lag.py", DIRSTATS],
+  ["explorations/change-sources/dirstats-verify/src/refresh.py", DIRSTATS],
+  ["explorations/change-sources/dirstats-verify/src/scale_build.py", "builds the scale tree"],
+  ["explorations/change-sources/dirstats-verify/src/semantics.py", DIRSTATS],
+  [
+    "explorations/change-sources/harness-audit/close_order.py",
+    "each write is a change whose close-order events the audit observes",
+  ],
+  ["explorations/fsevents-replay/fixture_workload.py", REPLAY],
+  ["explorations/fsevents-replay/open_writer.py", REPLAY],
+  ["explorations/fsevents-replay/real_tree.py", REPLAY],
+  ["explorations/fsevents-replay/run.py", REPLAY],
 ]);
 
-// Individual writes that need no helper, each matched by the text of its line. An entry
-// that no longer matches a write fails, so the list cannot outlive the code it excuses.
 // A child's output captured in scratch, read back once it exits, and removed.
 const CHILD_CAPTURE =
   "captures a child's output in a scratch directory; this process reads it after the " +
@@ -85,11 +117,18 @@ const CHILD_CAPTURE =
 // A kernel control, not a file anything reads back.
 const DROP_CACHES = "writes the kernel's /proc/sys/vm/drop_caches control";
 
+// An append-only record stream, whose readers drop a torn last record.
+const JSONL =
+  "appends one JSON record per line; its readers use complete_lines, which drops a torn " +
+  "last record";
+
 // The Actions runner creates $GITHUB_OUTPUT, and reads it once the step ends.
 const GITHUB_OUTPUT =
   "appends to $GITHUB_OUTPUT, the runner's file; a torn write fails its step, and no " +
   "release.yml step runs after a failure to read it";
 
+// Individual writes that need no helper, each matched by the text of its line. An entry
+// that no longer matches a write fails, so the list cannot outlive the code it excuses.
 export const EXCEPTIONS = new Map([
   [
     "crates/fdu-core/build.rs",
@@ -103,12 +142,23 @@ export const EXCEPTIONS = new Map([
     ],
   ],
   [
+    "explorations/change-sources/replay-cost/src/drive.py",
+    [{ site: 'with open(out, "a") as f:', reason: JSONL }],
+  ],
+  [
+    "explorations/change-sources/writer-coverage/src/ops.py",
+    [
+      { site: "os.open(", reason: "each writer is a change the coverage study observes" },
+      { site: 'with open(args.out, "a") as out:', reason: JSONL },
+    ],
+  ],
+  [
     "explorations/benchmarks/corpus.py",
     [
-      { site: 'with path.open("xb") as output:', reason: "creates a file of the corpus scan tree" },
+      { site: 'with path.open("xb") as output:', reason: "creates a file of the scan tree" },
       {
         site: 'with path.open("r+b") as output:',
-        reason: "rewrites a corpus file in place; the in-place change is the mutation measured",
+        reason: "rewrites a corpus file in place; the in-place change is the mutation",
       },
     ],
   ],
@@ -125,18 +175,18 @@ export const EXCEPTIONS = new Map([
   ],
   [
     "explorations/benchmarks/realtree/floor.py",
-    [{ site: 'with out_path.open("xb") as out, err_path.open("xb") as err:', reason: CHILD_CAPTURE }],
+    [{ site: 'with out_path.open("xb") as out, err_path.open("xb")', reason: CHILD_CAPTURE }],
   ],
   [
     "explorations/benchmarks/realtree/measure.py",
     [
-      { site: 'with out_path.open("xb") as out, err_path.open("xb") as err:', reason: CHILD_CAPTURE },
+      { site: 'with out_path.open("xb") as out, err_path.open("xb")', reason: CHILD_CAPTURE },
       { site: 'drop.write_text("3\\n", encoding="ascii")', reason: DROP_CACHES },
     ],
   ],
   [
     "explorations/benchmarks/realtree/profile.py",
-    [{ site: 'with stdout_path.open("xb") as stdout_file, stderr_path.open("xb")', reason: CHILD_CAPTURE }],
+    [{ site: 'with stdout_path.open("xb") as stdout_file, stderr_path', reason: CHILD_CAPTURE }],
   ],
   [
     "explorations/benchmarks/spikes/code_analysis_pair.py",
@@ -167,7 +217,7 @@ export const EXCEPTIONS = new Map([
   ],
   [
     "tests/path_independence/runner.py",
-    [{ site: "shutil.copytree(warmed, xdg)", reason: "copies a warmed cache in as a case's input" }],
+    [{ site: "shutil.copytree(warmed, xdg)", reason: "copies a warmed cache in as a case input" }],
   ],
   [
     "scripts/release/publish_gate.py",
@@ -183,14 +233,6 @@ export const EXCEPTIONS = new Map([
 // stay byte-identical to it.
 export const MIRRORS = new Map([
   ["explorations/benchmarks/atomic_write.py", "scripts/atomic_write.py"],
-]);
-
-// Paths not yet converted, with the bead that converts them. Temporary: each conversion
-// removes its entries, and the list is gone once the last lands.
-export const PENDING = new Map([
-  ["explorations/fsevents-replay/", "fdu-lxuv"],
-  ["explorations/change-sources/", "fdu-lxuv"],
-  ["explorations/yaml-conformance/", "fdu-lxuv"],
 ]);
 
 // ---------------------------------------------------------------------------------------
@@ -241,7 +283,11 @@ export function pythonStructure(source) {
   return { code, literals };
 }
 
-const REGEX_FOLLOWS = /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\b(?:return|typeof|case|do|else|in|of|new|delete|void|throw|yield|await|instanceof))\s*$/;
+// A slash opens a regular expression, not a division, after an operator, an opening
+// bracket, or a keyword that takes an expression.
+const REGEX_KEYWORDS =
+  "return|typeof|case|do|else|in|of|new|delete|void|throw|yield|await|instanceof";
+const REGEX_FOLLOWS = new RegExp(`(?:^|[(,=:[!&|?{};+\\-*%<>~^]|\\b(?:${REGEX_KEYWORDS}))\\s*$`);
 
 // JavaScript: line and block comments, quoted strings, template literals (whose `${}`
 // holes are code), and regular-expression literals.
@@ -410,7 +456,8 @@ function keywordArgument(structure, args, name) {
 
 function positional(structure, args) {
   return args.filter(
-    (argument) => !/^\s*\*{0,2}\w+\s*=(?!=)/.test(structure.code.slice(argument.start, argument.end)),
+    (argument) =>
+      !/^\s*\*{0,2}\w+\s*=(?!=)/.test(structure.code.slice(argument.start, argument.end)),
   );
 }
 
@@ -421,6 +468,11 @@ const PYTHON_MODE = /^([rwaxbtU+]{1,4})(?:[:|][\w*]*)?$/;
 const PYTHON_MODULE_OPENERS = new Set(["gzip", "bz2", "lzma", "io", "codecs", "tarfile", "os"]);
 const PYTHON_ARCHIVES = new Set(["GzipFile", "BZ2File", "LZMAFile", "ZipFile", "TarFile"]);
 const OS_WRITE_FLAGS = /\bO_(?:WRONLY|RDWR|CREAT|APPEND|TRUNC)\b/;
+// A call of `open`, `fdopen`, or an archive class, with the name before any dot.
+const PYTHON_OPENERS = new RegExp(
+  `(?:(\\b\\w+)\\s*\\.\\s*)?(?<![\\w])(open|fdopen|${[...PYTHON_ARCHIVES].join("|")})\\s*\\(`,
+  "g",
+);
 
 function pythonModeWrites(value) {
   const match = value.match(PYTHON_MODE);
@@ -446,13 +498,10 @@ export function auditPython(source) {
     writes.push({ offset: match.index, kind: `shutil.${match[1]}()` });
   }
 
-  const openers = /(?:(\b\w+)\s*\.\s*)?(?<![\w])(open|fdopen|GzipFile|BZ2File|LZMAFile|ZipFile|TarFile)\s*\(/g;
-  for (const match of code.matchAll(openers)) {
+  for (const match of code.matchAll(PYTHON_OPENERS)) {
     const [, receiver, name] = match;
     // A definition, such as the package's own `def open(root, ...)`, is not a call.
-    if (receiver === "def" || /\bdef\s+$/.test(code.slice(Math.max(0, match.index - 8), match.index))) {
-      continue;
-    }
+    if (/\bdef\s+$/.test(code.slice(Math.max(0, match.index - 8), match.index))) continue;
     // `x.open(` where x is not a bare name, such as `path.with_suffix(".x").open(`.
     const qualified = receiver !== undefined || code[match.index - 1] === ".";
     const open = match.index + match[0].length - 1;
@@ -491,8 +540,18 @@ export function auditPython(source) {
   return writes;
 }
 
-const NODE_WRITERS =
-  /\b(writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync)\s*\(/g;
+// Calls, not mentions: `import { writeFileSync }` has no parenthesis after the name.
+const NODE_WRITER_NAMES = [
+  "writeFileSync",
+  "writeFile",
+  "appendFileSync",
+  "appendFile",
+  "createWriteStream",
+  "copyFileSync",
+  "copyFile",
+  "cpSync",
+];
+const NODE_WRITERS = new RegExp(`\\b(${NODE_WRITER_NAMES.join("|")})\\s*\\(`, "g");
 const NODE_WRITE_FLAG = /^(?:w|wx|w\+|wx\+|a|ax|a\+|ax\+|as|as\+|r\+|rs\+)$/;
 
 export function auditNode(source) {
@@ -500,7 +559,6 @@ export function auditNode(source) {
   const { code } = structure;
   const writes = [];
   for (const match of code.matchAll(NODE_WRITERS)) {
-    // `import { writeFileSync } from ...` names the function without calling it.
     writes.push({ offset: match.index, kind: `${match[1]}()` });
   }
   for (const match of code.matchAll(/\b(openSync|open)\s*\(/g)) {
@@ -642,12 +700,11 @@ function lineOf(source, offset) {
 
 export function auditAtomicWrites(sources, policy = {}) {
   const helpers = policy.helpers ?? HELPERS;
-  const fixtures = policy.fixtures ?? FIXTURE_BUILDERS;
+  const inputs = policy.inputs ?? INPUT_WRITERS;
   const exceptions = policy.exceptions ?? EXCEPTIONS;
-  const pending = policy.pending ?? PENDING;
   const mirrors = policy.mirrors ?? MIRRORS;
   const problems = [];
-  const counts = { files: 0, writes: 0, excused: 0, pending: 0 };
+  const counts = { files: 0, writes: 0, excused: 0 };
   const usedExceptions = new Set();
 
   // Rust modules compiled only for tests, wherever they are declared.
@@ -659,7 +716,7 @@ export function auditAtomicWrites(sources, policy = {}) {
     }
   }
 
-  for (const path of [...helpers.keys(), ...fixtures.keys(), ...exceptions.keys()]) {
+  for (const path of [...helpers.keys(), ...inputs.keys(), ...exceptions.keys()]) {
     if (!sources.has(path)) problems.push(`${path}: listed in the atomic-write policy but missing`);
   }
   for (const [mirror, original] of mirrors) {
@@ -673,11 +730,10 @@ export function auditAtomicWrites(sources, policy = {}) {
   for (const [path, source] of sources) {
     const auditor = AUDITORS.find(([pattern]) => pattern.test(path))?.[1];
     if (auditor === undefined) continue;
-    if (helpers.has(path) || mirrors.has(path) || fixtures.has(path)) continue;
+    if (helpers.has(path) || mirrors.has(path) || inputs.has(path)) continue;
     if (testCode(path) || testModules.has(path)) continue;
     counts.files += 1;
     const lines = source.split("\n");
-    const bead = [...pending.entries()].find(([prefix]) => path.startsWith(prefix))?.[1];
     for (const write of auditor(source)) {
       counts.writes += 1;
       const line = lineOf(source, write.offset);
@@ -686,10 +742,6 @@ export function auditAtomicWrites(sources, policy = {}) {
       if (exception) {
         usedExceptions.add(exception);
         counts.excused += 1;
-        continue;
-      }
-      if (bead !== undefined) {
-        counts.pending += 1;
         continue;
       }
       problems.push(
@@ -739,10 +791,9 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  const pending = counts.pending > 0 ? `, ${counts.pending} pending conversion` : "";
   console.log(
-    `atomic-write check passed: ${counts.files} files, ${counts.writes} raw writes outside ` +
-      `helpers and tests, ${counts.excused} listed with a reason${pending}`,
+    `atomic-write check passed: ${counts.files} files audited; the ${counts.excused} raw ` +
+      "writes outside the helpers and test inputs are each listed with a reason",
   );
 }
 

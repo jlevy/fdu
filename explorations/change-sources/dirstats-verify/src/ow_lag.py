@@ -4,6 +4,9 @@ or close (the periodic syncer).  ow_lag.py MARKED_DIR OUT.json [REPS]"""
 import json, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 def main():
     d, out = os.path.abspath(sys.argv[1]), sys.argv[2]; reps = int(sys.argv[3]) if len(sys.argv) > 3 else 3
     res = []
@@ -23,5 +26,5 @@ def main():
         res.append({"rep": k, "write_ms": round(t_write * 1000, 2), "landed_after_s": landed, "phys_delta_when_landed": p1 - p0})
         print(res[-1])
         time.sleep(1)
-    json.dump(res, open(out, "w"), indent=1)
+    write_text_atomic(out, json.dumps(res, indent=1))
 main()

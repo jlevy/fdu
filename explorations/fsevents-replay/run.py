@@ -9,11 +9,16 @@ import os
 import platform
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path, PurePosixPath
 from unittest.mock import patch
+
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 SCHEMA = "fdu-fsevents-probe-v2"
 HISTORY_DONE = 0x10
@@ -47,13 +52,7 @@ def verify_provenance(saved: dict, binary: Path) -> None:
 
 def save(path: Path, value: object) -> None:
     """Replace a complete record atomically; interrupted writes leave no partial JSON."""
-    staging = path.with_suffix(".pending")
-    with staging.open("x") as output:
-        json.dump(value, output, indent=2, sort_keys=True)
-        output.write("\n")
-        output.flush()
-        os.fsync(output.fileno())
-    staging.replace(path)
+    write_text_atomic(path, json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
 def invoke(binary: Path, *args: object) -> list[dict]:

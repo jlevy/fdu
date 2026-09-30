@@ -12,6 +12,9 @@ import re
 import subprocess
 import sys
 import time
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 APFS_UTIL = "/System/Library/Filesystems/apfs.fs/Contents/Resources/apfs.util"
 REVIEW = os.environ["REVIEW"]
@@ -127,8 +130,7 @@ def main():
     log["bulk_read_timing_informal"] = ts
     print("bulk timing:", ts)
 
-    with open(out_path, "w") as fh:
-        json.dump(log, fh, indent=1)
+    write_text_atomic(out_path, json.dumps(log, indent=1))
 
 
 if __name__ == "__main__":

@@ -5,13 +5,17 @@ from __future__ import annotations
 
 import json
 import sys
+import os
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import complete_lines  # noqa: E402
 
 
 def main() -> None:
     path = sys.argv[1]
     wanted = set(sys.argv[2].split(",")) if len(sys.argv) > 2 else None
     reps = {int(r) for r in sys.argv[3].split(",")} if len(sys.argv) > 3 else None
-    for line in open(path):
+    for line in complete_lines(path):
         record = json.loads(line)
         if wanted and record["op"] not in wanted:
             continue

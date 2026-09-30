@@ -17,6 +17,9 @@ import struct
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 TRAILER = 24
 SCRATCH_TOP = os.environ["CHURN_SCRATCH_TOP"].encode()
@@ -99,14 +102,13 @@ def main() -> None:
         "top5_depth2_shares": [round(v / after, 4) for v in d2[:5]],
         "flag_histogram_low16": {hex(k): v for k, v in flags.most_common(12)},
     }
-    json.dump(summary, open(out, "w"), indent=1)
+    write_text_atomic(out, json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
     # Private side file (gitignored attic, never reported): the busiest depth-2 directory,
     # used only as a replay filter for the project-scope cell.
     if depth2 and len(sys.argv) > 6:
         busiest = max(depth2.items(), key=lambda kv: kv[1])[0]
-        with open(sys.argv[6], "w") as f:
-            f.write(busiest + "\n")
+        write_text_atomic(sys.argv[6], busiest + "\n")
 
 
 if __name__ == "__main__":

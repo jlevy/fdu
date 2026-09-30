@@ -12,10 +12,9 @@ import {
 
 const NO_POLICY = {
   helpers: new Map(),
-  fixtures: new Map(),
+  inputs: new Map(),
   exceptions: new Map(),
   mirrors: new Map(),
-  pending: new Map(),
 };
 
 const kinds = (writes) => writes.map((write) => write.kind);
@@ -74,7 +73,8 @@ test("skips Rust items compiled only for tests", () => {
 });
 
 test("audits Rust items that also compile outside tests", () => {
-  for (const attribute of ["#[cfg(not(test))]", "#[cfg(any(test, unix))]", '#[cfg(feature = "watch")]']) {
+  const attributes = ["#[cfg(not(test))]", "#[cfg(any(test, unix))]", '#[cfg(feature = "watch")]'];
+  for (const attribute of attributes) {
     const source = `${attribute}\nfn save() { std::fs::write(p, b"x").unwrap(); }\n`;
     assert.deepEqual(kinds(auditRust(source)), ["fs::write()"], attribute);
   }
@@ -202,7 +202,7 @@ test("sees code inside template holes and after regular expressions", () => {
   assert.equal(code.length, source.length);
 });
 
-test("exempts helpers, test code, and fixture builders, and reports the rest", () => {
+test("exempts helpers, test code, and input writers, and reports the rest", () => {
   const write = 'writeFileSync(path, "x");';
   const sources = new Map([
     ["scripts/atomic-write.mjs", write],
@@ -217,7 +217,7 @@ test("exempts helpers, test code, and fixture builders, and reports the rest", (
   const policy = {
     ...NO_POLICY,
     helpers: new Map([["scripts/atomic-write.mjs", "the helper"]]),
-    fixtures: new Map([["tests/golden/bin/plant.mjs", "plants inputs"]]),
+    inputs: new Map([["tests/golden/bin/plant.mjs", "plants inputs"]]),
   };
   const { problems } = auditAtomicWrites(sources, policy);
   assert.equal(problems.length, 1);
@@ -259,14 +259,7 @@ test("a listed file must exist and a helper copy must match its original", () =>
   const { problems } = auditAtomicWrites(sources, policy);
   assert.deepEqual(problems, [
     "scripts/gone.py: listed in the atomic-write policy but missing",
-    "explorations/benchmarks/atomic_write.py: differs from scripts/atomic_write.py; copy the helper again",
+    "explorations/benchmarks/atomic_write.py: differs from scripts/atomic_write.py; " +
+      "copy the helper again",
   ]);
-});
-
-test("pending paths are counted rather than failed", () => {
-  const sources = new Map([["explorations/old/run.py", 'open("out.json", "w")\n']]);
-  const policy = { ...NO_POLICY, pending: new Map([["explorations/old/", "fdu-xxxx"]]) };
-  const { problems, counts } = auditAtomicWrites(sources, policy);
-  assert.deepEqual(problems, []);
-  assert.equal(counts.pending, 1);
 });

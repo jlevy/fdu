@@ -10,7 +10,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.atomic_write import open_atomic, write_bytes_atomic, write_text_atomic
+from scripts.atomic_write import (
+    complete_lines,
+    open_atomic,
+    write_bytes_atomic,
+    write_text_atomic,
+)
 
 
 def leftovers(directory: Path) -> list[str]:
@@ -136,6 +141,16 @@ class AtomicWriteTests(unittest.TestCase):
         write_text_atomic(link, "new", encoding="utf-8")
         self.assertTrue(link.is_symlink())
         self.assertEqual(real.read_text(encoding="utf-8"), "new")
+
+    def test_complete_lines_drops_only_a_torn_last_record(self) -> None:
+        log = self.directory / "runs.jsonl"
+        log.write_text('{"a": 1}\n{"b": 2}\n', encoding="utf-8")
+        self.assertEqual(complete_lines(log, encoding="utf-8"), ['{"a": 1}', '{"b": 2}'])
+        with log.open("a", encoding="utf-8") as output:
+            output.write('{"c": ')
+        self.assertEqual(complete_lines(log, encoding="utf-8"), ['{"a": 1}', '{"b": 2}'])
+        log.write_text("", encoding="utf-8")
+        self.assertEqual(complete_lines(log, encoding="utf-8"), [])
 
     def test_refuses_modes_that_are_not_a_whole_write(self) -> None:
         for mode in ("a", "r+", "w+"):

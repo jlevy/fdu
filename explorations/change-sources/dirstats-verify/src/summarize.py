@@ -10,6 +10,9 @@ scale/wa-*.json, scale/refresh-*.json, smoke/*.json.
 import json
 import os
 import sys
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 
 def load(d, name):
@@ -72,7 +75,7 @@ def main():
                         v = {k: x for k, x in v.items()}
                         v["totals_only"] = {"immediate": v["totals_only"]["immediate"], "after_sync": {"changed_origins": v["totals_only"]["after_sync"]["changed_origins"], "ms": v["totals_only"]["after_sync"]["ms"]}}
                     S[sub][name[:-5]] = v
-    json.dump(S, open(out, "w"), indent=1, default=str)
+    write_text_atomic(out, json.dumps(S, indent=1, default=str))
     # digest
     if ext:
         print("== semantics (external, %d replicates): step  root dgen/dphys/ddesc  A B C  first-read" % len(ext["replicates"]))

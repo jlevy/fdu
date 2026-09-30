@@ -1,5 +1,6 @@
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { parse, stringify } from 'yaml';
+import { writeFileAtomicSync } from '../../scripts/atomic-write.mjs';
 const corpus = new Map(JSON.parse(readFileSync('corpus.json', 'utf8')).map(c => [c.id, c]));
 // npm yaml as an emitter too, both schema versions
 const emitLines = [];
@@ -13,7 +14,7 @@ for (const [id, c] of corpus) {
     }
   }
 }
-writeFileSync('emit-node.tsv', emitLines.join('\n') + '\n');
+writeFileAtomicSync('emit-node.tsv', emitLines.join('\n') + '\n');
 const out = [];
 for (const f of readdirSync('.').filter(f => f.startsWith('emit-') && f.endsWith('.tsv')).sort()) {
   for (const line of readFileSync(f, 'utf8').split('\n')) {
@@ -35,5 +36,5 @@ for (const f of readdirSync('.').filter(f => f.startsWith('emit-') && f.endsWith
     }
   }
 }
-writeFileSync('results-node.json', JSON.stringify(out));
+writeFileAtomicSync('results-node.json', JSON.stringify(out));
 console.log(out.length, 'node parse results');

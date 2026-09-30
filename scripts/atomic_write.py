@@ -13,6 +13,10 @@ new file gets the permissions ``open`` would give it, a replaced file keeps its 
 a symbolic link is written through rather than replaced. Mode ``"x"`` still refuses an
 existing target, and publishes with a hard link so a racing writer cannot be clobbered.
 
+An append-only file, such as a JSONL log, is the one exception to whole writes: it grows a
+record at a time, so a crash can cut its last record short. ``complete_lines`` is how its
+readers drop that torn record instead of failing on it or, worse, reading it as whole.
+
 explorations/benchmarks/atomic_write.py is a byte-identical copy for the benchmark
 harness, a separate project that cannot import this one; the check keeps the two equal.
 """
@@ -49,6 +53,16 @@ def write_bytes_atomic(path: StrPath, data: bytes) -> None:
     """Replace ``path`` with ``data``, as ``Path.write_bytes`` would, but whole."""
     with open_atomic(path, "wb") as output:
         output.write(data)
+
+
+def complete_lines(path: StrPath, encoding: str | None = None) -> list[str]:
+    """The newline-terminated lines of an append-only file, without a torn last record.
+
+    Its writer ends every record with a newline, so a final line without one is a record
+    a crash cut short, and it is dropped. Lines are returned without their newlines.
+    """
+    with open(path, encoding=encoding) as source:
+        return source.read().split("\n")[:-1]
 
 
 @contextlib.contextmanager

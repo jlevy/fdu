@@ -15,6 +15,7 @@ import platform
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -23,6 +24,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple, cast
 from unittest.mock import patch
+
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.atomic_write import open_atomic  # noqa: E402
 
 SCHEMA = "fdu-real-tree-replay-v1"
 FILE_EVENTS = 0x10
@@ -552,32 +557,26 @@ def check_space(state: Path, limits: Limits) -> int:
 
 def atomic_json(path: Path, value: object, budget: tuple[Path, Limits] | None = None) -> None:
     """Write only inside private state; fsync and replace never modify the baseline in-place."""
-    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    staging = Path(name)
-    try:
-        with os.fdopen(descriptor, "w") as output:
-            remaining = check_space(*budget) if budget else None
-            written = 0
-            since_space_check = 0
-            for chunk in json.JSONEncoder(separators=(",", ":")).iterencode(value):
-                length = len(chunk.encode("utf-8"))
-                written += length
-                since_space_check += length
-                if remaining is not None and written + 1 > remaining:
-                    raise OSError(28, "state byte budget exhausted during serialization")
-                if budget and since_space_check >= MIB:
-                    output.flush()
-                    check_space(*budget)
-                    since_space_check = 0
-                output.write(chunk)
-            output.write("\n")
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(staging, path)
-        with directory_fd(path.parent) as parent_fd:
-            os.fsync(parent_fd)
-    finally:
-        staging.unlink(missing_ok=True)
+    with open_atomic(path) as output:
+        # Owner-only, as this private state has always been written.
+        os.fchmod(output.fileno(), 0o600)
+        remaining = check_space(*budget) if budget else None
+        written = 0
+        since_space_check = 0
+        for chunk in json.JSONEncoder(separators=(",", ":")).iterencode(value):
+            length = len(chunk.encode("utf-8"))
+            written += length
+            since_space_check += length
+            if remaining is not None and written + 1 > remaining:
+                raise OSError(28, "state byte budget exhausted during serialization")
+            if budget and since_space_check >= MIB:
+                output.flush()
+                check_space(*budget)
+                since_space_check = 0
+            output.write(chunk)
+        output.write("\n")
+    with directory_fd(path.parent) as parent_fd:
+        os.fsync(parent_fd)
 
 
 def load_inventory(value: Record) -> Inventory:
