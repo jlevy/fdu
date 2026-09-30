@@ -72,7 +72,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v50, ext4 | virtualized | warm-steady | 5 |
+| Linux 6.18.44-fc-v50, ext4 | virtualized | warm-steady | 6 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -250,7 +250,7 @@ dead end.
 | 164 | [macOS one-shot index release shows no wall change and no regression](#exp164--macos-oneshot-index-release-shows-no-wall-change-and-no-regression) | H156 | `default-tree` | -1.0% | ❌ rejected |
 | 165 | [macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall](#exp165--macos-auto-cache-policy-cuts-defaulttree-peak-rss-26-but-misses-3-wall) | H160 | `default-tree` | -3.1% | ❌ rejected |
 | 166 | [macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat](#exp166--macos-h159-unbounded-listing-pool-costs-15-peak-rss-wall-flat) | H159 | `default-tree` | +1.3% | ↩︎ superseded |
-| 167 | [macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux](#exp167--macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-decided-on-linux) | H159 | `default-tree` | -1.4% | ❌ rejected |
+| 167 | [macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux](#exp167--macos-h159-bounded-listing-recycle-shows-no-wall-or-rss-change-decided-on-linux) | H159 | `default-tree` | -1.4% | ❌ rejected |
 | 170 | [macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout](#exp170--macos-ignoreaware-transient-summary-cuts-default-summary-peak-rss-69-on-a-source-checkout) | H161 | `aggregate-summary` | -69.1% | ✅ accepted |
 | 171 | [macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore](#exp171--macos-ignoreaware-transient-summary-cuts-peak-rss-58-on-a-tree-with-no-gitignore) | H161 | `aggregate-summary` | -57.9% | ✅ accepted |
 | 172 | [macOS whole-listing hold keeps only 17% RSS saving on wide directories](#exp172--macos-wholelisting-hold-keeps-only-17-rss-saving-on-wide-directories) | H161 | `aggregate-summary` | -17.1% | ↩︎ superseded |
@@ -277,6 +277,7 @@ dead end.
 | 193 | [Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12](#exp193--linux-h183-cheap-matcher-prechecks-cut-the-default-tree-8-on-linuxv612) | H183 | `default-tree` | -7.6% | ✅ accepted |
 | 194 | [Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12](#exp194--linux-the-overnight-round-end-to-end-the-default-tree-39-faster-on-linuxv612) | — | `default-tree` | -39.0% | 📏 baseline |
 | 195 | [Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense](#exp195--linux-the-overnight-round-end-to-end-the-default-tree-10-faster-on-nodemodulesdense) | — | `default-tree` | -9.8% | 📏 baseline |
+| 196 | [Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger](#exp196--linux-every-route-lists-through-the-native-reader-and-no-stat-of-a-child-mounts-an-autofs-trigger) | H184 | `warm-revalidate` | -2.7% | ❌ rejected |
 | 197 | [Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense](#exp197--linux-h185-describes-each-directory-once-on-the-folded-tree-route-the-default-tree-4-faster-on-nodemodulesdense) | H185 | `default-tree` | -3.6% | ✅ accepted |
 | 198 | [Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12](#exp198--linux-h188-bytewise-summary-fold-and-h189-presized-control-reads-the-default-summary-6-faster-on-linuxv612) | H188, H189 | `aggregate-summary` | -6.2% | ✅ accepted |
 | 199 | [Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense](#exp199--linux-h186-admits-tree-rows-before-building-them-the-default-tree-5-faster-on-nodemodulesdense) | H186 | `default-tree` | -4.9% | ✅ accepted |
@@ -5620,7 +5621,7 @@ exp-167.
 Full record:
 [`exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md`](../experiments/exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md)
 
-### exp-167 — macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux
+### exp-167 — macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux
 
 ❌ rejected · 2026-09-28 · H159 · commit `b1f57ecd`
 
@@ -6411,6 +6412,45 @@ against the Q0 engine; no decision rests on it.
 Full record:
 [`exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md`](../experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)
 
+### exp-196 — Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger
+
+❌ rejected · 2026-09-29 · H184 · commit `17874dd6`
+
+Control: 4bc9b738 probe: the #161 layer head
+
+Candidate: 17874dd6 probe: fdu-d2fn, every route through the native reader
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 554.2 | 542.4 | -2.74% (n.s.) | [-3.96%, +0.28%] |
+| component (ms) | 124.1 | 119.3 | -3.56% (n.s.) | [-6.98%, +0.76%] |
+| cpu (ms) | 856.1 | 839.9 | -1.45% (n.s.) | [-3.87%, +0.25%] |
+| user (ms) | 510.3 | 493.0 | -3.23% | [-6.23%, -1.34%] |
+| system (ms) | 347.5 | 350.2 | -0.64% (n.s.) | [-4.08%, +3.65%] |
+| peak rss (MiB) | 40.1 | 40.5 | +1.07% (regression) | [+0.91%, +1.53%] |
+
+Other jobs, wall time: `default-tree` +0.4% (n.s.), `opened-discovery` +1.2%
+(regression).
+
+Cost to carry: 777 lines; no new dependencies.
+
+the reader’s statx wrapper gained a caller by path (stat_path), and one listing iterator
+now serves the serial walk, revalidation, both reconciliations and opened discovery in
+place of five read_dir loops; the concurrent walk’s own native block is untouched
+
+**Rejected:** not a speed decision: the non-regression screen of a correctness change
+(fdu-d2fn) that ships regardless, quiet 20 pairs on linux-v6.12: warm-revalidate -2.74%
+[-3.96%, +0.28%], its reconciliation component -3.56%; opened-discovery wall +1.19%
+[+0.56%, +3.51%] with its discovery component +0.06% non-inferior; default-tree +0.42%
+within noise; the serial walk, exp-185’s placebo arm, -5.14% [-6.63%, -2.44%] against
+the control’s serial walk; fstat 5,773 -> 4 on every moved route; every tree-entry statx
+carries AT_NO_AUTOMOUNT on every route.
+
+Full record:
+[`exp-196-linux-every-route-lists-through-the-native-reader-and-no-sta.md`](../experiments/exp-196-linux-every-route-lists-through-the-native-reader-and-no-sta.md)
+
 ### exp-197 — Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense
 
 ✅ accepted · 2026-09-30 · H185 · commit `c0da65ae`
@@ -6676,7 +6716,7 @@ Baselines show one value because they measure a state rather than a change.
 | 156 | Progress indicator without a handle against main | `default-tree` | 2,469.4 | 2,457.6 | -1.8% | ✅ accepted |
 | 157 | Progress handle attached against no handle | `default-tree` | 2,289.7 | 2,323.0 | +5.8% | ⏳ in progress |
 | 166 | macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat | `default-tree` | 2,862.5 | 2,867.2 | +1.3% | ↩︎ superseded |
-| 167 | macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux | `default-tree` | 2,855.3 | 2,842.4 | -1.4% | ❌ rejected |
+| 167 | macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux | `default-tree` | 2,855.3 | 2,842.4 | -1.4% | ❌ rejected |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -6769,6 +6809,15 @@ Baselines show one value because they measure a state rather than a change.
 | 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 | 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 196 | Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger | `warm-revalidate` | 554.2 | 542.4 | -2.7% | ❌ rejected |
+| 198 | Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12 | `aggregate-summary` | 90.3 | 85.8 | -6.2% | ✅ accepted |
+| 200 | Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change | `default-tree` | 84.3 | 83.0 | -0.3% | ❌ rejected |
+| 201 | Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees | `default-tree` | 88.5 | — | — | 📏 baseline |
+
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6785,14 +6834,6 @@ Baselines show one value because they measure a state rather than a change.
 | 057 | Reject repeated adaptive worker windows on APFS | `adaptive-scan-index` | 1,871.8 | 2,963.2 | +58.5% | ❌ rejected |
 | 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
 | 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 198 | Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12 | `aggregate-summary` | 90.3 | 85.8 | -6.2% | ✅ accepted |
-| 200 | Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change | `default-tree` | 84.3 | 83.0 | -0.3% | ❌ rejected |
-| 201 | Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees | `default-tree` | 88.5 | — | — | 📏 baseline |
 
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

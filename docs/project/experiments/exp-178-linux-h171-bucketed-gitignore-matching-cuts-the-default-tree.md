@@ -352,6 +352,7 @@ reviewable: `run-placebo-balanced.json.gz`, the `linux-balanced-1m` placebo scre
 
 Accepted. The default tree on the real source tree is 29.6% faster and the default
 summary 25.5% faster, with both placebos at zero and answers identical against the base
-and against git. `IGNORE_RULES_VERSION`, the snapshot format and the public API are
-unchanged; there is no new dependency and no `unsafe`. About 1,480 lines, about 1,350 of
-them tests.
+and against git. `IGNORE_RULES_VERSION` and the snapshot format are unchanged; there is
+no new dependency and no `unsafe`. The one public API change is the three
+`counters::Counts` fields behind the new counter rows, which is semver-breaking.
+About 1,480 lines, about 1,350 of them tests.

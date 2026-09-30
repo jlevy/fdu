@@ -13,8 +13,31 @@
 //! which makes the caller reopen the complete directory through the portable `read_dir`
 //! reference path.
 //!
-//! Per-entry stats pass `AT_NO_AUTOMOUNT` (fdu-puk7): an unmounted automount point among
-//! the children is reported as the trigger directory rather than mounted by the stat.
+//! # Automounts
+//!
+//! The kernel mounts an unmounted autofs trigger directory for a `statx` of it unless
+//! the call passes `AT_NO_AUTOMOUNT`, and never for `fstatat` or `lstat`, which it
+//! treats as passing the flag (`fs/stat.c`: `getname_statx_lookup_flags` against
+//! `vfs_fstatat`). std stats with `statx` and without the flag on glibc
+//! (`cfg_has_statx` is `all(target_os = "linux", target_env = "gnu")` in
+//! `library/std/src/sys/pal/unix/fs.rs` at 1.85.0 and `library/std/src/sys/fs/unix.rs`
+//! at 1.97.1), for `DirEntry::metadata`, `symlink_metadata`, and `DirEntry::file_type`
+//! of a `DT_UNKNOWN` entry alike; on musl the same functions are `fstatat` and `lstat`
+//! (`DirEntry::metadata` at 1.85.0 line 915 and 1.97.1 line 1080, `lstat` at 1.85.0
+//! line 1893 and 1.97.1 line 2183), so a musl build never mounts by a stat and needs
+//! none of this.
+//!
+//! On glibc, then, every stat of a listed child goes through this module, so that an
+//! unmounted trigger among the children is reported as the trigger directory on every
+//! route, as `lstat` and `du` report it (fdu-puk7, fdu-d2fn): the walks, revalidation,
+//! reconciliation and opened discovery list through [`Reader`], which stats each entry
+//! relative to the listing's descriptor, and the directories a reader declines, the
+//! paths a reconciliation or the watch verifies one at a time, and control lookups go
+//! through [`stat_path`], the same call by path. Where `statx` is not served, both
+//! decline and std answers, then with `fstatat`. The walk root alone is resolved:
+//! listing it mounts it in any case, and `scan::root_device` reads its device from an
+//! opened descriptor so that `one_filesystem` bounds the walk to the filesystem the
+//! listing finds.
 //!
 //! On 32-bit glibc targets the reader keeps `statx`'s 64-bit timestamps, where std's
 //! `from_statx` narrows them through a 32-bit `time_t`; the two differ only for times
@@ -84,6 +107,57 @@ impl StatxSupport {
 /// The process's `statx` support, shared by every walker's reader.
 static STATX: StatxSupport = StatxSupport::new();
 
+/// Whether `statx` has been found unavailable in this process, so that std's stats are
+/// `fstatat`, which the kernel treats as passing `AT_NO_AUTOMOUNT`.
+pub(super) fn statx_unavailable() -> bool {
+    STATX.state() == STATX_UNAVAILABLE
+}
+
+/// The reader's non-following stat of `path` itself, which never triggers an automount,
+/// or `None` where `statx` is not served in this process and std must answer.
+///
+/// For the stats a listing's descriptor cannot serve: a child of a directory the reader
+/// declined, a path a reconciliation or the watch verifies on its own, a control looked
+/// up by name. It resolves the whole path, where [`Reader`] resolves one name, so a
+/// route that lists a directory lists it through the reader. `None` settles support the
+/// way [`Reader`] settles it, so once std answers here it answers with `fstatat`.
+pub(super) fn stat_path(path: &Path) -> Option<std::io::Result<(EntryKind, Attrs)>> {
+    stat_path_with(&STATX, path)
+}
+
+fn stat_path_with(
+    support: &'static StatxSupport,
+    path: &Path,
+) -> Option<std::io::Result<(EntryKind, Attrs)>> {
+    if support.state() == STATX_UNAVAILABLE {
+        return None;
+    }
+    let bytes = path.as_os_str().as_bytes();
+    // A path holding a NUL cannot be passed; std refuses it with its own error.
+    if bytes.contains(&0) {
+        return None;
+    }
+    let mut path_with_nul = Vec::with_capacity(bytes.len() + 1);
+    path_with_nul.extend_from_slice(bytes);
+    path_with_nul.push(0);
+    match statx_at(libc::AT_FDCWD, &path_with_nul) {
+        Ok(observed) => {
+            if support.state() == STATX_UNKNOWN {
+                support.set(STATX_PRESENT);
+            }
+            Some(Ok(observed))
+        }
+        Err(error) => {
+            let gate = StatxGate {
+                support,
+                #[cfg(test)]
+                probe_errno: None,
+            };
+            gate.confirm_after_failure().ok().map(|()| Err(error))
+        }
+    }
+}
+
 /// Which listed children need a stat.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct StatPolicy {
@@ -94,7 +168,7 @@ pub(super) struct StatPolicy {
 }
 
 /// What one listed child's observation produced.
-pub(super) enum Outcome {
+pub(crate) enum Outcome {
     Observed {
         kind: EntryKind,
         attrs: Attrs,
@@ -111,13 +185,13 @@ struct Dent {
 }
 
 /// One listed child, its name borrowed from the reader's buffer.
-pub(super) struct Entry<'a> {
-    pub(super) name: &'a OsStr,
-    pub(super) outcome: Outcome,
+pub(crate) struct Entry<'a> {
+    pub(crate) name: &'a OsStr,
+    pub(crate) outcome: Outcome,
 }
 
 /// One complete listing, yielded in enumeration order, names borrowed from the reader.
-pub(super) struct Listing<'a> {
+pub(crate) struct Listing<'a> {
     names: &'a [u8],
     entries: std::vec::Drain<'a, Dent>,
 }
@@ -181,12 +255,6 @@ impl Reader {
     /// `macos_bulk::Reader::read` gives: a declined directory is counted by the portable
     /// retry, and counting it here as well would double it.
     pub(super) fn read(&mut self, path: &Path, policy: StatPolicy) -> Option<Listing<'_>> {
-        // A test hook injects into per-entry lookups and listings, which only the portable
-        // path makes.
-        #[cfg(test)]
-        if super::walk_hook_covers(path) {
-            return None;
-        }
         if self.statx.state() == STATX_UNAVAILABLE {
             return None;
         }
@@ -450,7 +518,7 @@ fn observe(
         }
     }
     counts.stats += 1;
-    let (kind, attrs) = match stat_entry(fd, name_with_nul) {
+    let (kind, attrs) = match statx_at(fd, name_with_nul) {
         Ok(observed) => {
             if gate.support.state() == STATX_UNKNOWN {
                 gate.support.set(STATX_PRESENT);
@@ -481,22 +549,25 @@ fn observe(
     Ok(Some(Outcome::Observed { kind, attrs }))
 }
 
-fn stat_entry(fd: RawFd, name_with_nul: &[u8]) -> std::io::Result<(EntryKind, Attrs)> {
+/// `statx(dirfd, name, STATX_FLAGS, STATX_MASK)`: the non-following, never-automounting
+/// stat of `name_with_nul` relative to `dirfd`, or of a path when `dirfd` is `AT_FDCWD`.
+fn statx_at(dirfd: RawFd, name_with_nul: &[u8]) -> std::io::Result<(EntryKind, Attrs)> {
     debug_assert_eq!(name_with_nul.last(), Some(&0));
     // SAFETY: every field of `libc::statx` is an integer or padding, so all-zero bytes
     // are a valid value (std initializes its buffer the same way).
     let mut buffer: libc::statx = unsafe { std::mem::zeroed() };
     loop {
-        // SAFETY: `fd` is held open by the caller's `File` for the call. `name_with_nul`
-        // is a NUL-terminated byte string inside the reader's buffer, which is neither
-        // written nor reallocated during the call (`parse_chunk` holds it borrowed).
-        // `buffer` is a live, writable, 256-byte `libc::statx` (size asserted at compile
-        // time), the size the kernel writes. Flags and mask are the documented
+        // SAFETY: `dirfd` is either `AT_FDCWD` or a descriptor the caller's `File` holds
+        // open for the call. `name_with_nul` is a NUL-terminated byte string that is
+        // neither written nor reallocated during the call: a name inside the reader's
+        // buffer, which `parse_chunk` holds borrowed, or a path `stat_path_with` built
+        // and owns. `buffer` is a live, writable, 256-byte `libc::statx` (size asserted
+        // at compile time), the size the kernel writes. Flags and mask are the documented
         // `c_int`/`c_uint` widths; the argument types match std's `syscall!` fallback.
         let result = unsafe {
             libc::syscall(
                 libc::SYS_statx,
-                fd,
+                dirfd,
                 name_with_nul.as_ptr().cast::<libc::c_char>(),
                 STATX_FLAGS,
                 STATX_MASK,
@@ -581,7 +652,47 @@ mod tests {
         )
     }
 
+    /// std's own answer for a listing under `policy`: the listing's `file_type` where
+    /// the H72 skip applies and `DirEntry::metadata` otherwise, which is what the
+    /// portable path answered before every glibc child stat went through this module.
+    /// The reference stays std's so the differential is against std, not against
+    /// [`stat_path`].
     fn portable(directory: &Path, policy: StatPolicy) -> Observed {
+        fs::read_dir(directory)
+            .expect("portable listing")
+            .filter_map(|item| {
+                let item = item.expect("portable entry");
+                if policy.skip_dir_symlink_stat {
+                    if let Ok(file_type) = item.file_type() {
+                        if file_type.is_dir() && !policy.one_filesystem {
+                            return Some((item.file_name(), (EntryKind::Dir, Attrs::default())));
+                        }
+                        if file_type.is_symlink() {
+                            return Some((
+                                item.file_name(),
+                                (EntryKind::Symlink, Attrs::default()),
+                            ));
+                        }
+                    }
+                }
+                match item.metadata() {
+                    Ok(metadata) => Some((
+                        item.file_name(),
+                        (
+                            kind_from(&metadata),
+                            attrs_from(&item.path(), &metadata).expect("Unix attrs"),
+                        ),
+                    )),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                    Err(error) => panic!("{:?}: {error}", item.path()),
+                }
+            })
+            .collect()
+    }
+
+    /// What the crate's portable listing answers under `policy`, which on glibc stats
+    /// through [`stat_path`].
+    fn crate_portable(directory: &Path, policy: StatPolicy) -> Observed {
         fs::read_dir(directory)
             .expect("portable listing")
             .filter_map(|item| {
@@ -664,6 +775,103 @@ mod tests {
                 (entry.name.to_os_string(), outcome)
             })
             .collect()
+    }
+
+    #[test]
+    fn every_stat_forbids_automounts_and_following() {
+        assert_ne!(STATX_FLAGS & libc::AT_NO_AUTOMOUNT, 0);
+        assert_ne!(STATX_FLAGS & libc::AT_SYMLINK_NOFOLLOW, 0);
+        assert_eq!(STATX_FLAGS & libc::AT_EMPTY_PATH, 0, "an empty name names no child");
+    }
+
+    #[test]
+    fn a_path_stat_answers_as_std_answers_for_every_kind() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        fs::write(root.join("file"), b"contents").expect("regular file");
+        fs::create_dir(root.join("dir")).expect("directory");
+        fs::write(root.join("dir").join("inner"), b"i").expect("nested file");
+        symlink("file", root.join("link-to-file")).expect("symlink to a file");
+        symlink("dir", root.join("link-to-dir")).expect("symlink to a directory");
+        symlink("missing-target", root.join("dangling")).expect("dangling symlink");
+        drop(UnixListener::bind(root.join("socket")).expect("socket"));
+        mkfifo(&root.join("fifo"));
+        fs::hard_link(root.join("file"), root.join("hard-link")).expect("hard link");
+        fs::write(root.join(OsStr::from_bytes(b"not-utf8-\xff\xfe")), b"raw")
+            .expect("non-UTF-8 name");
+        fs::write(root.join("decomposed-e\u{301}"), b"nfd").expect("decomposed Unicode name");
+        fs::write(root.join("l".repeat(255)), b"long").expect("255-byte name");
+
+        let mut kinds = HashSet::new();
+        for item in fs::read_dir(root).expect("listing") {
+            let path = item.expect("entry").path();
+            let metadata = fs::symlink_metadata(&path).expect("std metadata");
+            let expected =
+                (kind_from(&metadata), attrs_from(&path, &metadata).expect("Unix attrs"));
+            kinds.insert(expected.0);
+            let observed = stat_path(&path).expect("statx is served here").expect("observed");
+            assert_eq!(observed, expected, "{path:?}");
+        }
+        assert_eq!(
+            kinds,
+            HashSet::from([EntryKind::File, EntryKind::Dir, EntryKind::Symlink, EntryKind::Other])
+        );
+
+        // The directory itself, as std's `symlink_metadata` reads it.
+        let metadata = fs::symlink_metadata(root).expect("root metadata");
+        assert_eq!(
+            stat_path(root).expect("served").expect("observed"),
+            (EntryKind::Dir, attrs_from(root, &metadata).expect("Unix attrs"))
+        );
+
+        // A missing path is the caller's `NotFound`, the error std reports.
+        let missing = stat_path(&root.join("missing")).expect("served").expect_err("missing");
+        assert_eq!(missing.raw_os_error(), Some(libc::ENOENT));
+        assert_eq!(
+            missing.to_string(),
+            fs::symlink_metadata(root.join("missing")).expect_err("missing").to_string()
+        );
+
+        // A NUL cannot reach the kernel; std answers with its own error.
+        assert!(stat_path(&root.join(OsStr::from_bytes(b"nul\0inside"))).is_none());
+    }
+
+    /// A FIFO at `path`, the one special kind besides a socket a fixture can make, through
+    /// the coreutils command rather than another `unsafe` expression in this module.
+    fn mkfifo(path: &Path) {
+        let status = std::process::Command::new("mkfifo").arg(path).status().expect("mkfifo runs");
+        assert!(status.success(), "mkfifo {path:?}: {status}");
+    }
+
+    #[test]
+    fn a_path_stat_settles_statx_support_as_the_reader_settles_it() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let present = directory.path().join("present");
+        fs::write(&present, b"bytes").expect("regular file");
+        let missing = directory.path().join("missing");
+        let support = |state: u8| -> &'static StatxSupport {
+            Box::leak(Box::new(StatxSupport(AtomicU8::new(state))))
+        };
+
+        // Unavailable: std answers, and no call is made.
+        assert!(stat_path_with(support(STATX_UNAVAILABLE), &present).is_none());
+
+        // A first success settles it present.
+        let unknown = support(STATX_UNKNOWN);
+        assert!(stat_path_with(unknown, &present).expect("served").is_ok());
+        assert_eq!(unknown.state(), STATX_PRESENT);
+
+        // A failure before any success asks std's probe, which faults where `statx` is
+        // served, so the failure is the path's own.
+        let unknown = support(STATX_UNKNOWN);
+        let error = stat_path_with(unknown, &missing).expect("served").expect_err("missing");
+        assert_eq!(error.raw_os_error(), Some(libc::ENOENT));
+        assert_eq!(unknown.state(), STATX_PRESENT);
+
+        // Once present, a failure is the path's own.
+        let settled = support(STATX_PRESENT);
+        assert!(stat_path_with(settled, &missing).expect("served").is_err());
+        assert_eq!(settled.state(), STATX_PRESENT);
     }
 
     #[test]
@@ -939,15 +1147,21 @@ mod tests {
             let report = crate::scan::scan(root, &config, &mut |_| {}).expect("scan");
             report.errors.iter().map(ToString::to_string).collect::<Vec<_>>()
         };
-        // One worker is the serial portable walk; four take the native reader.
+        // Every walk lists through the reader; a walk hook over the root, even one that
+        // injects nothing, sends its directories down the portable path instead.
+        let portable = {
+            let _hooked = crate::scan::install_walk_hook(root, |_| None);
+            errors(1)
+        };
         let (serial, native) = (errors(1), errors(4));
         fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).expect("allow search");
-        assert_eq!(native, serial);
+        assert_eq!(serial, portable);
+        assert_eq!(native, portable);
         for child in ["a", "b"] {
             let path = sealed.join(child).to_string_lossy().into_owned();
             assert!(
-                serial.iter().any(|error| error.contains(&path) && error.contains("denied")),
-                "{path} is reported as denied: {serial:?}"
+                portable.iter().any(|error| error.contains(&path) && error.contains("denied")),
+                "{path} is reported as denied: {portable:?}"
             );
         }
     }
@@ -1239,10 +1453,18 @@ mod tests {
             let directory = tempfile::tempdir().expect("temporary directory");
             for listed in random_tree(directory.path(), seed) {
                 for policy in POLICIES {
+                    let reference = portable(&listed, policy);
                     assert_eq!(
                         native(&listed, policy),
-                        portable(&listed, policy),
+                        reference,
                         "seed {seed:#x}, {policy:?}, {listed:?}"
+                    );
+                    // The crate's portable listing, which the declined directories take,
+                    // stats by path through this module and must answer as std does too.
+                    assert_eq!(
+                        crate_portable(&listed, policy),
+                        reference,
+                        "portable: seed {seed:#x}, {policy:?}, {listed:?}"
                     );
                 }
             }
@@ -1250,15 +1472,16 @@ mod tests {
     }
 
     /// The walk-level differential for the transient summary tier, whose fold is private
-    /// to the crate. With `.gitignore` reading off, one worker is the serial portable
-    /// walk; more take this reader. Every count must emit the same observations.
+    /// to the crate. With `.gitignore` reading off, one worker is the serial walk and
+    /// more are the concurrent one, and every walk lists through this reader unless a
+    /// walk hook covers the root, which sends its directories down the portable path.
+    /// The hooked serial walk is the reference; every count must emit its observations.
     #[test]
     fn summary_folds_agree_across_worker_counts_on_random_trees() {
         for seed in SEEDS {
             let directory = tempfile::tempdir().expect("temporary directory");
             random_tree(directory.path(), seed);
-            let mut reference = None;
-            for threads in [1, 2, 4, 8] {
+            let fold = |threads: usize| {
                 let config = ScanConfig {
                     threads: Some(threads),
                     read_controls: false,
@@ -1278,15 +1501,21 @@ mod tests {
                     report.allocated_walked,
                     report.dirs_read,
                 );
-                let Some((expected_ops, expected_tallies)) = &reference else {
-                    reference = Some((ops, tallies));
-                    continue;
-                };
-                assert_eq!(&tallies, expected_tallies, "seed {seed:#x}, {threads} workers");
+                (ops, tallies)
+            };
+            let (expected_ops, expected_tallies) = {
+                let _hooked = crate::scan::install_walk_hook(directory.path(), |_| None);
+                fold(1)
+            };
+            for threads in [1, 2, 4, 8] {
+                let (ops, tallies) = fold(threads);
+                assert_eq!(tallies, expected_tallies, "seed {seed:#x}, {threads} workers");
                 if let Some((left, right)) =
                     expected_ops.iter().zip(&ops).find(|(left, right)| left != right)
                 {
-                    panic!("seed {seed:#x}, {threads} workers:\n serial: {left}\n native: {right}");
+                    panic!(
+                        "seed {seed:#x}, {threads} workers:\n portable: {left}\n native:   {right}"
+                    );
                 }
                 assert_eq!(ops.len(), expected_ops.len(), "seed {seed:#x}, {threads} workers");
             }

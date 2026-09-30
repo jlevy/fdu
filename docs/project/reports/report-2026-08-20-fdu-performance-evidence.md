@@ -72,7 +72,7 @@ the gate for a whole cell, so every recent macOS result is uncontrolled.
   could resolve; H160 cut peak RSS 26%
   ([exp-164](../experiments/exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md),
   [exp-165](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)).
-  H159’s bounded form is wall and RSS neutral here
+  H159’s bounded form shows no wall or RSS change here
   ([exp-167](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)).
   H162 and H163 have not been measured on macOS, and neither has any change from the
   2026-09-29 Linux round.
@@ -145,8 +145,11 @@ Each landed as a change commit followed by its record commit:
   built on glibc only;
 - H183, cheap pre-checks for the residual `.gitignore` rules.
 
-None changes an answer, `IGNORE_RULES_VERSION`, or the public API, and none adds a
-dependency. The reader’s public diagnostics fields are deferred to 0.3.0 (`fdu-q7hf`).
+None changes an answer or `IGNORE_RULES_VERSION`, and none adds a dependency.
+The only public API change is H171’s: `counters::Counts` gains three public fields,
+`ignore_patterns_tested`, `ignore_bucket_probes`, and `ignore_bucket_hits`, for its
+`FDU_COUNTERS=1` rows, which is semver-breaking, so the round ships in 0.3.0. The
+reader’s public diagnostics fields are deferred to 0.3.0 (`fdu-q7hf`).
 
 ## Standing Results by Tier
 
@@ -374,12 +377,13 @@ were identical.
   stats each entry with `statx` relative to the directory, passing `AT_NO_AUTOMOUNT`. It
   sits behind four audited `unsafe` expressions on Linux glibc.
   `fstat` calls fell from 5,773 to 4 on the kernel tree, and the per-entry `statx` no
-  longer triggers automounts on the reader’s path (`fdu-puk7`, closed for that path; the
-  other routes are `fdu-d2fn`). The default summary gained 9.7% and 9.4%. The default
-  tree, controls on, gained 4.29% [−8.81%, −0.90%] on `node-modules-dense` and 2.06%
-  [−7.38%, +1.83%], not clearing, on `linux-v6.12`, against a predicted 6–8%. The
-  records’ frontmatter, and so the ledger, carry the `--no-controls` tree pair the
-  deciding job used: −1.67% and −1.79%, neither clearing.
+  longer triggers automounts on the reader’s path (`fdu-puk7`; the review of #161 then
+  put every other route on the reader too, `fdu-d2fn`, H184, exp-196). The default
+  summary gained 9.7% and 9.4%. The default tree, controls on, gained 4.29%
+  [−8.81%, −0.90%] on `node-modules-dense` and 2.06% [−7.38%, +1.83%], not clearing, on
+  `linux-v6.12`, against a predicted 6–8%. The records’ frontmatter, and so the ledger,
+  carry the `--no-controls` tree pair the deciding job used: −1.67% and −1.79%, neither
+  clearing.
 - **H183** computes a 32-class byte set of each name once per entry and rejects a
   residual rule by a mask test and its first and last literal bytes before any string
   comparison; the survivors compare with inline byte loops.
@@ -484,14 +488,14 @@ These do not overturn a verdict; they say what a verdict rests on.
 - **H159’s deciding subject changed after two misses.** The dense tree was registered
   before exp-190 ran and fits the per-directory mechanism, but it was chosen after the
   first subject had failed.
-  exp-167, the macOS cell, is now resolved as rejected with the change kept, the
-  encoding exp-164 and exp-165 use for H156’s and H160’s macOS cells.
+  exp-167, the macOS cell, is recorded as rejected with the change kept, as exp-164 and
+  exp-165 record H156’s and H160’s macOS cells.
 - **The leftover determinations on Linux v6.12 predate the `.gitignore` finding.** H140
   (exp-139) and H146
   ([exp-147](../experiments/exp-147-linux-first-run-leftover-is-still-the-walk.md))
   attributed the default command to the walk; exp-173 shows most of it was
-  classification. Both registry rows now carry that caveat, and a new determination needs
-  a `--no-controls` arm.
+  classification. Both registry rows carry that caveat, and a new determination needs a
+  `--no-controls` arm.
 - **Every macOS accept since 0.1.0 is uncontrolled.** They stand as paired evidence on a
   busy host; none has a quiet replication.
 - **The 2026-09-29 round ran on one virtualized host.** Every cell from exp-175 to
@@ -600,9 +604,9 @@ queue.
      needs an fd budget sized to the breadth-first frontier.
 - **Follow-ups from the reader and the matcher:**
   - `fdu-q7hf`: the reader’s public diagnostics fields, a public API change for 0.3.0;
-  - `fdu-d2fn`: `AT_NO_AUTOMOUNT` on the routes the native reader does not cover.
-    musl builds, the serial walk, and reconciliation still stat through std without it;
-    `fdu-puk7` is closed for the native reader’s path (exp-185);
+  - `fdu-d2fn`, done: every route lists through the native reader and every stat of a
+    listed child passes `AT_NO_AUTOMOUNT` (H184, exp-196); musl never needed it, and
+    `fdu-puk7` was closed for the reader’s path by exp-185;
   - `fdu-ifci`: a UTF-8 BOM and an embedded NUL in `.gitignore`, where fdu diverges from
     git; it changes answers, so it is fixed apart from the performance loop;
   - the benchmark half of the matcher survey (`fdu-p6vc`).

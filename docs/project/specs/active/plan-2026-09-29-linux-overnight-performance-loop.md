@@ -55,7 +55,12 @@ the next night’s.
 ## Non-Goals
 
 - A public API change.
-  Anything that needs one (H164’s summary route) waits for 0.3.0.
+  Anything that needs one (H164’s summary route) waits for 0.3.0. The round made one:
+  H171’s counter rows added three public fields to `counters::Counts`
+  (`ignore_patterns_tested`, `ignore_bucket_probes`, `ignore_bucket_hits`), which is
+  semver-breaking and its only public API change.
+  Under the 0.2.2 plan’s rule it ships in 0.3.0
+  ([the release gate](plan-2026-09-29-linux-parity-0.2.2.md#stage-3-022)).
 - A new dependency in `fdu-core`, an allocator in the command line, or shipping PGO.
   These are maintainer decisions; the loop may screen them but never adopts them.
 - New `.gitignore` semantics.
@@ -616,7 +621,7 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | Q12 standing and handoff | `fdu-o4z5` | Partly done | Tool cells re-run on the final head (Final standing above); evidence report and Current Pickup refreshed (`55f5b42e`, `057453d4`, `0c8131fd`). The final Fable review of the night’s record was not run: the round ended at its time box |
 | Post-round utilization profile | `fdu-j4p7` | Filed, open | fdu keeps fewer cores busy than pdu’s default (3.65 against 3.81 on `linux-v6.12`, 3.54 against 3.72 on `node-modules-dense`) and makes more voluntary context switches (608 against 128); profile the serial tail after the walk and the handoffs before the next candidate, first in the runbook’s Current Pickup |
 | Harness invalid-sample verdict | `fdu-c2c6` | Fixed, `8a58d432` | INCONCLUSIVE for any invalid sample; the recorder refuses such an accept |
-| Automount flag | `fdu-puk7`, `fdu-d2fn` | Closed for the native reader (exp-185) | Remaining routes (musl builds, the serial walk, reconciliation): `fdu-d2fn` |
+| Automount flag | `fdu-puk7`, `fdu-d2fn` | Closed on every route: the native reader (exp-185), then every other route in the review of #161 (H184, exp-196) | musl never needed it (std stats with `fstatat` there); the walk root alone is resolved |
 | BOM and NUL divergence | `fdu-ifci` | Filed | Not tonight: it changes answers |
 
 ## Open Questions

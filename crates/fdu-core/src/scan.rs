@@ -8,15 +8,20 @@
 //!
 //! # Status
 //!
-//! The serial walk is the portable `read_dir` plus non-following metadata reference.
-//! Parallel scans use the same path on most platforms; on macOS they first try a
+//! The portable `read_dir` plus non-following metadata reference is what every listing
+//! falls back to. Parallel scans use it on most platforms; on macOS they first try a
 //! measured `getattrlistbulk` backend that returns directory entries and stat-tier
 //! metadata together. Unsupported filesystems, malformed results, mount points, and
 //! firmlinks fail closed to the portable path for the complete containing directory.
-//! On Linux with glibc they first try a reader that lists with raw `getdents64` and stats
-//! with `statx` against the listing's descriptor; an open or enumeration failure, a
-//! malformed record, or a kernel without `statx` falls back the same way. Every backend
-//! produces the same [`Observation`] contract.
+//! On Linux with glibc every route that lists a directory (the serial and concurrent
+//! walks, revalidation, reconciliation, opened discovery) first tries a reader that
+//! lists with raw `getdents64` and stats with `statx` against the listing's descriptor,
+//! passing `AT_NO_AUTOMOUNT`; an open or enumeration failure, a malformed record, or a
+//! kernel without `statx` falls back the same way, and the fallback's own stats then
+//! pass the flag too (`observe_dir_entry`), as does every stat of a path a route
+//! verifies by itself (`observe_path`). Only the walk root is resolved through a mount
+//! (`root_device`). So an autofs tree answers the same on every route and delivery.
+//! Every backend produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
@@ -1393,40 +1398,37 @@ fn walk_hook(path: &Path) -> Option<WalkHook> {
 /// shape. Keep the binding when editing a call site; dropping it silently removes the loop
 /// from the audit, whose expected count would then look too high rather than wrong.
 #[cfg(test)]
-fn reconcile_listing(
-    listing: fs::ReadDir,
-    dir: &Path,
-) -> impl Iterator<Item = std::io::Result<fs::DirEntry>> {
+fn reconcile_listing<'r>(listing: Listing<'r>, dir: &Path) -> impl Iterator<Item = Listed<'r>> {
     let injected = walk_hook(dir).and_then(|hook| hook(WalkHookPoint::ListingEnd));
-    listing.chain(injected.map(Err))
+    listing.chain(injected.map(Listed::Failed))
 }
 
 /// A reconciliation's listing of `dir`.
 #[cfg(not(test))]
-fn reconcile_listing(listing: fs::ReadDir, _dir: &Path) -> fs::ReadDir {
+fn reconcile_listing<'r>(listing: Listing<'r>, _dir: &Path) -> Listing<'r> {
     listing
 }
 
-/// Metadata for one entry a directory listing returned, or `None` when it is gone.
+/// The error a test hook injects for the metadata lookup of the listed child at `path`.
+#[cfg(all(test, not(windows)))]
+fn child_metadata_hook(path: &Path) -> Option<std::io::Error> {
+    walk_hook(path).and_then(|hook| hook(WalkHookPoint::ChildMetadata(path)))
+}
+
+/// Whether std's stat of a listed child, `DirEntry::file_type` of a `DT_UNKNOWN` entry
+/// included, is one the kernel treats as `AT_NO_AUTOMOUNT`.
 ///
-/// `NotFound` for a name the listing just returned means the entry was deleted in
-/// between, and every walk records it as it records a name the listing never returned: a
-/// cold walk has nothing to record, and a reconciliation removes what its baseline held.
-/// Reported as an error, it would make a walk over a tree being cleaned partial, and in a
-/// reconciliation it would settle as a phantom entry with permanent partial freshness.
-/// Any other error means the entry is present but unreadable.
-#[cfg(not(windows))]
-pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Option<fs::Metadata>> {
-    #[cfg(test)]
-    {
-        let path = entry.path();
-        if let Some(error) =
-            walk_hook(&path).and_then(|hook| hook(WalkHookPoint::ChildMetadata(&path)))
-        {
-            return missing_as_none(Err(error));
-        }
-    }
-    missing_as_none(metadata_for_fingerprint(entry))
+/// It is `fstatat` everywhere but glibc, where it is `statx` without the flag wherever
+/// `statx` is served, and `fstatat` only once the reader has found it unavailable
+/// (`linux_dents`).
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn std_child_stat_never_automounts() -> bool {
+    linux_dents::statx_unavailable()
+}
+
+#[cfg(not(any(windows, all(target_os = "linux", target_env = "gnu"))))]
+const fn std_child_stat_never_automounts() -> bool {
+    true
 }
 
 /// Kind and attributes for one listed child.
@@ -1439,8 +1441,13 @@ pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Opt
 /// cross a mount.
 ///
 /// Where `d_type` is `DT_UNKNOWN` (XFS without `ftype`, some FUSE/NFS mounts, older
-/// ext3), std's `file_type` performs the non-following stat itself. The skip is a
-/// no-op there, and the `stats` counter does not see that fallback.
+/// ext3), std's `file_type` performs the non-following stat itself, and the skip then
+/// applies to the kind it found. On glibc that stat would trigger an automount, so
+/// while `statx` is served the listing's `file_type` is not consulted at all: every
+/// child is stated by [`observe_dir_entry`], which never automounts, and the skip
+/// applies to what that stat found, as it does to a `DT_UNKNOWN` entry. That route is
+/// the fallback for a directory the native reader declined; the reader itself keeps
+/// the `d_type` skip.
 ///
 /// Windows never takes the skip: its observation contract reads every listed entry
 /// through a fresh non-following handle ([`observe_dir_entry`]), so the transient fold
@@ -1452,7 +1459,8 @@ fn listed_child_kind_and_attrs(
 ) -> std::io::Result<Option<(EntryKind, Attrs)>> {
     #[cfg(not(windows))]
     {
-        if skip_dir_symlink_stat {
+        let listing_kind_suffices = skip_dir_symlink_stat && std_child_stat_never_automounts();
+        if listing_kind_suffices {
             if let Ok(file_type) = entry.file_type() {
                 if file_type.is_dir() && !one_filesystem {
                     return Ok(Some((EntryKind::Dir, Attrs::default())));
@@ -1462,12 +1470,157 @@ fn listed_child_kind_and_attrs(
                 }
             }
         }
+        let observed = observe_dir_entry(entry)?;
+        if skip_dir_symlink_stat && !listing_kind_suffices {
+            return Ok(observed.map(|(kind, attrs)| match kind {
+                EntryKind::Dir if !one_filesystem => (kind, Attrs::default()),
+                EntryKind::Symlink => (kind, Attrs::default()),
+                EntryKind::Dir | EntryKind::File | EntryKind::Other => (kind, attrs),
+            }));
+        }
+        Ok(observed)
     }
     #[cfg(windows)]
     {
         let _ = (skip_dir_symlink_stat, one_filesystem);
+        observe_dir_entry(entry)
     }
-    observe_dir_entry(entry)
+}
+
+/// How a listing observes its children.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ListingPolicy {
+    /// H72: directory and symlink kinds come from the listing without a stat.
+    pub(crate) skip_dir_symlink_stat: bool,
+    /// Descent compares `attrs.dev`, so directories are stated even under the skip.
+    pub(crate) one_filesystem: bool,
+}
+
+impl ListingPolicy {
+    /// Every child stated: what the retained index, a reconciliation, and discovery need.
+    pub(crate) const fn every_child_stated(one_filesystem: bool) -> Self {
+        Self { skip_dir_symlink_stat: false, one_filesystem }
+    }
+}
+
+/// The platform readers a listing loop keeps between the directories it lists.
+///
+/// One per walker or reconciliation worker: the Linux reader holds a 64 KiB record
+/// buffer that each of its listings borrows for the directory's duration. Elsewhere
+/// there is nothing to keep, and every listing is portable.
+pub(crate) struct Readers {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    dents: linux_dents::Reader,
+}
+
+impl Readers {
+    pub(crate) fn new() -> Self {
+        Self {
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            dents: linux_dents::Reader::new(),
+        }
+    }
+}
+
+/// One item of a directory listing, whichever backend served it.
+pub(crate) enum Listed<'a> {
+    /// The listing failed to yield an item, so the directory is listed incompletely.
+    Failed(std::io::Error),
+    /// A child by name, with its kind and attributes, or `Ok(None)` when it vanished
+    /// between the listing and its stat, or the error that stat failed with.
+    ///
+    /// `NotFound` for a name the listing just returned means the entry was deleted in
+    /// between, and every walk records it as it records a name the listing never
+    /// returned: a cold walk has nothing to record, and a reconciliation removes what
+    /// its baseline held. Reported as an error, it would make a walk over a tree being
+    /// cleaned partial, and in a reconciliation it would settle as a phantom entry with
+    /// permanent partial freshness. A native listing does not yield such a child at all.
+    /// Any other error means the entry is present but unreadable.
+    Child {
+        name: std::borrow::Cow<'a, OsStr>,
+        observed: std::io::Result<Option<(EntryKind, Attrs)>>,
+    },
+}
+
+/// One directory's children, natively where a reader served it and portably otherwise.
+pub(crate) enum Listing<'r> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    Native(linux_dents::Listing<'r>),
+    Portable {
+        entries: fs::ReadDir,
+        policy: ListingPolicy,
+        readers: std::marker::PhantomData<&'r mut Readers>,
+    },
+}
+
+impl<'r> Iterator for Listing<'r> {
+    type Item = Listed<'r>;
+
+    fn next(&mut self) -> Option<Listed<'r>> {
+        match self {
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            Self::Native(listing) => {
+                let entry = listing.next()?;
+                let observed = match entry.outcome {
+                    linux_dents::Outcome::Observed { kind, attrs } => Ok(Some((kind, attrs))),
+                    linux_dents::Outcome::Failed(error) => Err(error),
+                };
+                Some(Listed::Child { name: std::borrow::Cow::Borrowed(entry.name), observed })
+            }
+            Self::Portable { entries, policy, .. } => {
+                let item = match entries.next()? {
+                    Ok(item) => item,
+                    Err(error) => return Some(Listed::Failed(error)),
+                };
+                crate::counters::bump(|c| c.dir_entries += 1);
+                let observed = listed_child_kind_and_attrs(
+                    &item,
+                    policy.skip_dir_symlink_stat,
+                    policy.one_filesystem,
+                );
+                Some(Listed::Child { name: std::borrow::Cow::Owned(item.file_name()), observed })
+            }
+        }
+    }
+}
+
+/// List `abs_dir` for a walk, a reconciliation, or discovery.
+///
+/// On Linux with glibc the native reader serves the directory unless it declines or a
+/// test hook covers the directory; the portable `read_dir` answers otherwise, and an
+/// error opening it is the caller's to report. Each backend produces the same items:
+/// a native listing counts itself, and the portable one is counted here, as a
+/// `dir_opens` and a portable attempt in `diagnostics`.
+pub(crate) fn list_directory<'r>(
+    readers: &'r mut Readers,
+    abs_dir: &Path,
+    policy: ListingPolicy,
+    diagnostics: Option<&ScanDiagnosticsRecorder>,
+) -> std::io::Result<Listing<'r>> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // Plain `if`, not `bool::then(|| …)`: the listing borrows the reader.
+        if !walk_hook_covers(abs_dir) {
+            let native = linux_dents::StatPolicy {
+                skip_dir_symlink_stat: policy.skip_dir_symlink_stat,
+                one_filesystem: policy.one_filesystem,
+            };
+            if let Some(listing) = readers.dents.read(abs_dir, native) {
+                return Ok(Listing::Native(listing));
+            }
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    let _ = &readers;
+    crate::counters::bump(|c| c.dir_opens += 1);
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.portable_attempted();
+    }
+    let entries = fs::read_dir(abs_dir)?;
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.portable_succeeded();
+    }
+    Ok(Listing::Portable { entries, policy, readers: std::marker::PhantomData })
 }
 
 fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> {
@@ -1799,6 +1952,11 @@ fn scan_internal(
         .then(|| crate::control::ControlTable::with_limits(config.control_limits));
     let mut unreadable_controls = std::collections::BTreeSet::new();
     let mut tally = ProgressTally::new(config.progress.as_ref());
+    let mut readers = Readers::new();
+    let policy = ListingPolicy {
+        skip_dir_symlink_stat: sink_mode.skips_dir_symlink_stat(),
+        one_filesystem: config.one_filesystem,
+    };
     // Every batch leaves through here, so the batch is where the serial walk reports
     // its progress: the handoff the consumer already pays for, never the entry.
     let mut emit = |ops: Vec<ObservationOp>, report: &mut ScanReport| {
@@ -1824,17 +1982,8 @@ fn scan_internal(
                 }
             }
         }
-        crate::counters::bump(|c| c.dir_opens += 1);
-        if let Some(diagnostics) = &diagnostics {
-            diagnostics.portable_attempted();
-        }
-        let listing = match fs::read_dir(&abs_dir) {
-            Ok(listing) => {
-                if let Some(diagnostics) = &diagnostics {
-                    diagnostics.portable_succeeded();
-                }
-                listing
-            }
+        let listing = match list_directory(&mut readers, &abs_dir, policy, diagnostics.as_deref()) {
+            Ok(listing) => listing,
             Err(e) => {
                 report.errors.push(Error::io(abs_dir, e));
                 continue;
@@ -1843,25 +1992,19 @@ fn scan_internal(
         report.dirs_read += 1;
 
         for item in listing {
-            let item = match item {
-                Ok(item) => item,
-                Err(e) => {
+            let (name, observed) = match item {
+                Listed::Child { name, observed } => (name, observed),
+                Listed::Failed(e) => {
                     report.errors.push(Error::io(&abs_dir, e));
                     continue;
                 }
             };
-            crate::counters::bump(|c| c.dir_entries += 1);
-            let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let (kind, attrs) = match listed_child_kind_and_attrs(
-                &item,
-                sink_mode.skips_dir_symlink_stat(),
-                config.one_filesystem,
-            ) {
+            let (kind, attrs) = match observed {
                 Ok(Some(observed)) => observed,
                 Ok(None) => continue,
                 Err(error) => {
-                    report.errors.push(Error::io(item.path(), error));
+                    report.errors.push(Error::io(abs_dir.join(&name), error));
                     continue;
                 }
             };
@@ -2060,7 +2203,7 @@ struct PolicyTraceState {
 /// trace mutex is deliberately separate from the directory queue: recording a policy
 /// window may add diagnostic cost, but it cannot alter the queue's synchronization or
 /// the controller's decision.
-struct ScanDiagnosticsRecorder {
+pub(crate) struct ScanDiagnosticsRecorder {
     available_parallelism: usize,
     pool: WorkerPool,
     policy: WorkerPolicyExperiment,
@@ -4066,9 +4209,8 @@ fn look_up_control(
     control_path: &Path,
     budget: Option<usize>,
 ) -> Result<Option<Op>> {
-    crate::counters::bump(|counts| counts.stats = counts.stats.saturating_add(1));
-    let kind = match fs::symlink_metadata(absolute) {
-        Ok(metadata) if metadata.file_type().is_file() => EntryKind::File,
+    let kind = match observe_path(absolute) {
+        Ok((EntryKind::File, _)) => EntryKind::File,
         Ok(_) => EntryKind::Other,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(absolute, error)),
@@ -5199,6 +5341,8 @@ pub fn revalidate(
     let mut controls = (config.population != crate::query::IgnoredEntries::Include)
         .then(|| index.control_table().clone());
     let mut unreadable_controls = std::collections::BTreeSet::new();
+    let mut readers = Readers::new();
+    let policy = ListingPolicy::every_child_stated(config.one_filesystem);
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
@@ -5230,8 +5374,7 @@ pub fn revalidate(
                 }
             }
         }
-        crate::counters::bump(|c| c.dir_opens += 1);
-        let listing = match fs::read_dir(&abs_dir) {
+        let listing = match list_directory(&mut readers, &abs_dir, policy, None) {
             Ok(listing) => listing,
             Err(e) => {
                 report.errors.push(Error::io(abs_dir, e));
@@ -5244,22 +5387,21 @@ pub fn revalidate(
         let mut listing_complete = true;
         let listing = reconcile_listing(listing, &abs_dir);
         for item in listing {
-            let item = match item {
-                Ok(item) => item,
-                Err(e) => {
+            let (name, observed) = match item {
+                Listed::Child { name, observed } => (name, observed),
+                Listed::Failed(e) => {
                     listing_complete = false;
                     report.errors.push(Error::io(&abs_dir, e));
                     continue;
                 }
             };
-            let name = item.file_name();
             // Seeing the name proves it is not absent even when a following metadata
             // lookup fails. Record it before any fallible per-entry work so an
             // operational error cannot become a false removal in the missing sweep.
-            seen.insert(name.clone());
+            seen.insert(name.to_os_string());
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let (kind, attrs) = match observe_dir_entry(&item) {
+            let (kind, attrs) = match observed {
                 Ok(Some(observed)) => observed,
                 Ok(None) => {
                     let entry_held = baseline.state != PathState::Absent;
@@ -5278,7 +5420,7 @@ pub fn revalidate(
                 }
                 Err(e) => {
                     listed_control.listed(&name);
-                    report.errors.push(Error::io(item.path(), e));
+                    report.errors.push(Error::io(abs_dir.join(&name), e));
                     continue;
                 }
             };
@@ -5646,11 +5788,8 @@ fn refresh_may_expand(
 ) -> Result<bool> {
     let current = target.expectation(path)?.state;
     let absolute = target.root_path()?.join(path);
-    let observed = match fs::symlink_metadata(&absolute) {
-        Ok(metadata) => {
-            let Ok((kind, attrs)) = observe(&absolute, &metadata) else {
-                return Ok(true);
-            };
+    let observed = match observe_path(&absolute) {
+        Ok((kind, attrs)) => {
             work.observe(kind, attrs);
             Some(kind)
         }
@@ -5812,8 +5951,8 @@ fn reconcile_target_inner(
     if !subtree.as_os_str().is_empty() {
         let baseline = target.expectation(subtree)?;
         let absolute = root.join(subtree);
-        let meta = match fs::symlink_metadata(&absolute) {
-            Ok(meta) => meta,
+        let (kind, attrs) = match observe_path(&absolute) {
+            Ok(observed) => observed,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 batch.push(ObservationOp::if_state(
                     Op::Remove { path: subtree.to_path_buf() },
@@ -5849,13 +5988,6 @@ fn reconcile_target_inner(
                     &mut report,
                 )?;
                 flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
-                return Ok(report);
-            }
-        };
-        let (kind, attrs) = match observe(&absolute, &meta) {
-            Ok(observed) => observed,
-            Err(error) => {
-                report.scan.errors.push(Error::io(absolute, error));
                 return Ok(report);
             }
         };
@@ -5926,6 +6058,8 @@ fn reconcile_target_inner(
     let mut unreadable_controls = std::collections::BTreeSet::new();
     #[cfg(target_os = "macos")]
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
+    let mut readers = Readers::new();
+    let policy = ListingPolicy::every_child_stated(config.one_filesystem);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let errors_before = report.scan.errors.len();
         let abs_dir = root.join(&rel_dir);
@@ -6065,8 +6199,7 @@ fn reconcile_target_inner(
         let used_bulk = false;
 
         if !used_bulk {
-            crate::counters::bump(|c| c.dir_opens += 1);
-            let listing = match fs::read_dir(&abs_dir) {
+            let listing = match list_directory(&mut readers, &abs_dir, policy, None) {
                 Ok(listing) => listing,
                 Err(error) => {
                     report.scan.errors.push(Error::io(&abs_dir, error));
@@ -6085,15 +6218,14 @@ fn reconcile_target_inner(
             report.scan.dirs_read += 1;
             let listing = reconcile_listing(listing, &abs_dir);
             for item in listing {
-                let item = match item {
-                    Ok(item) => item,
-                    Err(error) => {
+                let (name, observed) = match item {
+                    Listed::Child { name, observed } => (name.into_owned(), observed),
+                    Listed::Failed(error) => {
                         listing_complete = false;
                         report.scan.errors.push(Error::io(&abs_dir, error));
                         continue;
                     }
                 };
-                let name = item.file_name();
                 // Seeing the name proves it is not absent even if the following
                 // metadata lookup fails. Remove it from the missing set before that
                 // fallible lookup so an operational error cannot turn an existing
@@ -6102,7 +6234,7 @@ fn reconcile_target_inner(
                     Some(baseline) => baseline,
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
-                let (kind, attrs) = match observe_dir_entry(&item) {
+                let (kind, attrs) = match observed {
                     Ok(Some(observed)) => observed,
                     Ok(None) => {
                         let entry_held = baseline.state != PathState::Absent;
@@ -6120,7 +6252,7 @@ fn reconcile_target_inner(
                     }
                     Err(error) => {
                         listed_control.listed(&name);
-                        report.scan.errors.push(Error::io(item.path(), error));
+                        report.scan.errors.push(Error::io(abs_dir.join(&name), error));
                         if baseline.state != PathState::Absent {
                             batch.push(ObservationOp::if_state(
                                 Op::Remove { path: rel_dir.join(&name) },
@@ -6390,6 +6522,8 @@ fn reconcile_wave_worker(
     let mut tally = ProgressTally::new(config.progress.as_ref());
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
+    let mut readers = Readers::new();
+    let policy = ListingPolicy::every_child_stated(config.one_filesystem);
 
     loop {
         let start = next.fetch_add(DIR_CLAIM, std::sync::atomic::Ordering::Relaxed);
@@ -6569,8 +6703,7 @@ fn reconcile_wave_worker(
                 let used_bulk = false;
 
                 if !used_bulk {
-                    crate::counters::bump(|c| c.dir_opens += 1);
-                    let listing = match fs::read_dir(&abs_dir) {
+                    let listing = match list_directory(&mut readers, &abs_dir, policy, None) {
                         Ok(listing) => Some(listing),
                         Err(error) => {
                             result.scan.errors.push(Error::io(&abs_dir, error));
@@ -6582,20 +6715,19 @@ fn reconcile_wave_worker(
                         result.scan.dirs_read += 1;
                         let listing = reconcile_listing(listing, &abs_dir);
                         for item in listing {
-                            let item = match item {
-                                Ok(item) => item,
-                                Err(error) => {
+                            let (name, observed) = match item {
+                                Listed::Child { name, observed } => (name.into_owned(), observed),
+                                Listed::Failed(error) => {
                                     result.scan.errors.push(Error::io(&abs_dir, error));
                                     continue;
                                 }
                             };
-                            let name = item.file_name();
                             // Match the serial path: an entry whose name was enumerated is
                             // not missing merely because its metadata could not be read.
                             let baseline = known
                                 .remove(&name)
                                 .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
-                            let (kind, attrs) = match observe_dir_entry(&item) {
+                            let (kind, attrs) = match observed {
                                 Ok(Some(observed)) => observed,
                                 Ok(None) => {
                                     // Removed once this directory's listing is done.
@@ -6604,7 +6736,7 @@ fn reconcile_wave_worker(
                                 }
                                 Err(error) => {
                                     listed_control.listed(&name);
-                                    result.scan.errors.push(Error::io(item.path(), error));
+                                    result.scan.errors.push(Error::io(abs_dir.join(&name), error));
                                     unverified.push((name, baseline.state != PathState::Absent));
                                     continue;
                                 }
@@ -7145,8 +7277,8 @@ fn resolve_subtree_root(
             break; // The boundary entry itself remains visible even when descent stops.
         }
         prefix.push(component.as_os_str());
-        let metadata = match fs::symlink_metadata(root.join(&prefix)) {
-            Ok(metadata) => metadata,
+        let (kind, attrs) = match observe_path(&root.join(&prefix)) {
+            Ok(observed) => observed,
             Err(error)
                 if matches!(
                     error.kind(),
@@ -7157,18 +7289,15 @@ fn resolve_subtree_root(
             }
             Err(_) => break, // The applying pass records operational failures as partial.
         };
-        if metadata.file_type().is_symlink() {
+        if kind == EntryKind::Symlink {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
                 scope: config.scope(),
             });
         }
-        if !metadata.is_dir() {
+        if kind != EntryKind::Dir {
             return Ok(prefix);
         }
-        let Ok(attrs) = attrs_from(&root.join(&prefix), &metadata) else {
-            break;
-        };
         if config.one_filesystem && root_dev != 0 && attrs.dev != 0 && attrs.dev != root_dev {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
@@ -7221,11 +7350,48 @@ pub(crate) fn observe_dir_entry(
     }
     #[cfg(not(windows))]
     {
-        let Some(meta) = listed_child_metadata(entry)? else {
+        #[cfg(test)]
+        {
+            let path = entry.path();
+            if let Some(error) = child_metadata_hook(&path) {
+                return missing_as_none(Err(error));
+            }
+        }
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            // std's `DirEntry::metadata` is `statx` without `AT_NO_AUTOMOUNT` wherever
+            // `statx` is served, and std keeps the listing's descriptor to itself, so the
+            // reader's stat answers by path (fdu-d2fn). This is the route of a directory
+            // the reader declined, so the whole-path resolution is paid rarely.
+            if !linux_dents::statx_unavailable() {
+                crate::counters::bump(|c| c.stats += 1);
+                if let Some(observed) = linux_dents::stat_path(&entry.path()) {
+                    return missing_as_none(observed);
+                }
+                // `statx` has just been found unavailable: std answers, with `fstatat`.
+            }
+        }
+        let Some(meta) = missing_as_none(metadata_for_fingerprint(entry))? else {
             return Ok(None);
         };
         Ok(Some((kind_from(&meta), attrs_from(Path::new(""), &meta)?)))
     }
+}
+
+/// The non-following observation of `path` itself, as [`observe`] reads it from
+/// `symlink_metadata`, and on Linux one that never triggers an automount.
+///
+/// For a path a route holds as an entry and verifies by itself: a reconciliation's
+/// subtree and the prefixes above it, a change the watch verifies, a control looked up
+/// by name. The walk root is not one; [`root_device`] says why.
+pub(crate) fn observe_path(path: &Path) -> std::io::Result<(EntryKind, Attrs)> {
+    crate::counters::bump(|c| c.stats += 1);
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    if let Some(observed) = linux_dents::stat_path(path) {
+        return observed;
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    observe(path, &metadata)
 }
 
 #[cfg(not(windows))]
@@ -7263,7 +7429,9 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
     secs.saturating_mul(1_000_000_000).saturating_add(nanos)
 }
 
-#[cfg(windows)]
+// Windows observation goes through `windows_metadata::observe` on every route; only a
+// test still derives attributes from metadata alone.
+#[cfg(all(windows, test))]
 pub(crate) fn attrs_from(path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
     windows_metadata::observe(path, || Ok(meta.clone())).map(|(_, attrs)| attrs)
 }
@@ -7290,13 +7458,34 @@ pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<A
 ///
 /// Only the device is needed, and on Windows it is read without demanding a consistent
 /// observation of the root's times, which change whenever a child is created or removed.
+/// The device that bounds a `one_filesystem` walk from `root`, whose non-following
+/// metadata is `meta`.
+///
+/// The walk root is resolved. The user named it and the listing that follows opens it,
+/// and on Linux an open mounts an unmounted autofs trigger where a non-following stat
+/// need not: `symlink_metadata` does on glibc (std's `statx` without `AT_NO_AUTOMOUNT`)
+/// and does not on musl (`fstatat`). A trigger's own device would then exclude every
+/// entry the listing finds under it, so on Linux the device is read from an opened
+/// descriptor on every route and under either libc, and `meta`'s device answers only
+/// when the open fails, as the listing then fails the same way. Every other stat of the
+/// tree never mounts ([`observe_dir_entry`], [`observe_path`], `linux_dents`).
 pub(crate) fn root_device(root: &Path, meta: &fs::Metadata) -> std::io::Result<u64> {
     #[cfg(windows)]
     {
         let _ = meta;
         windows_metadata::volume_serial(root)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let opened = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(root)
+            .and_then(|directory| directory.metadata());
+        attrs_from(root, opened.as_ref().unwrap_or(meta)).map(|attrs| attrs.dev)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         attrs_from(root, meta).map(|attrs| attrs.dev)
     }
@@ -8393,6 +8582,22 @@ mod tests {
         assert!(!diagnostics.worker_policy.events_truncated);
         assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
         assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
+        // On glibc the serial walk lists through the native reader too, which no backend
+        // field counts, so its directories are `dirs_read` less the portable reads.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            assert_eq!(
+                diagnostics.backend.portable_attempts,
+                diagnostics.backend.portable_directory_reads
+            );
+            assert!(
+                diagnostics.backend.portable_directory_reads < report.dirs_read,
+                "native listings are not portable reads: {:?}, {} read",
+                diagnostics.backend,
+                report.dirs_read
+            );
+        }
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
         assert_eq!(diagnostics.backend.portable_directory_reads, report.dirs_read);
 
         #[cfg(target_os = "macos")]

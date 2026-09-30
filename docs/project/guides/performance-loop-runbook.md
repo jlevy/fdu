@@ -972,11 +972,12 @@ indexed tree’s mean −6.9%. **H157 rejected** on its probe job (exp-161, −2
 rejected** (exp-162): consumer `futex` wakes 106k → 18k, wall flat.
 **H159 accepted** (`fdu-578e`, [#150](https://github.com/jlevy/fdu/pull/150), in 0.2.1):
 the index builder returns each drained listing to the walker that allocated it.
-No effect on the directory-sparse `linux-v6.12` (exp-188, exp-189); `default-tree`
-−8.61% [−19.47%, −5.04%] on the real directory-dense `node-modules-dense` (exp-190), as
-its per-directory mechanism predicts; a screen on `linux-balanced-1m` measured −10.63%.
-An allocator dependency still comes only after the structural fixes are measured (H74,
-H85).
+No `default-tree` effect on the directory-sparse `linux-v6.12` (exp-188, exp-189), where
+exp-189’s `cold-scan-index` read +3.22% [+1.21%, +12.87%], a regression interval;
+`default-tree` −8.61% [−19.47%, −5.04%] on the real directory-dense `node-modules-dense`
+(exp-190), as its per-directory mechanism predicts; a screen on `linux-balanced-1m`
+measured −10.63%. An allocator dependency still comes only after the structural fixes
+are measured (H74, H85).
 
 **H160 accepted** (exp-163): `--cache auto` no longer persists a one-shot metadata
 report, which no later one-shot report reads; `--cache on` keeps the write.
@@ -1046,9 +1047,9 @@ and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-202** and **H191**. exp-196 and H184 are reserved for the
-autofs fix (`fdu-d2fn`); the pdu track (`fdu-faqa`, branch `claude/pdu-uniform-lead`)
-used exp-197–201 and H185–H190. exp-173–201 and H162–H190 are Linux work.
+**Ids.** Next free are **exp-202** and **H191**. exp-196 and H184 record `fdu-d2fn`, the
+automount fix; the pdu track (`fdu-faqa`, branch `claude/pdu-uniform-lead`) used
+exp-197–201 and H185–H190. exp-173–201 and H162–H190 are Linux work.
 The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1 work
 (`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
 (`fdu-8a8r`), came from its range.
@@ -1111,9 +1112,12 @@ than the track.
    no-op there, a placebo) and M12 (H186’s serial tail on eight performance cores).
 6. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
    0.3.0.
-7. **`fdu-d2fn`**, `AT_NO_AUTOMOUNT` on the remaining routes: musl builds, the serial
-   walk, and reconciliation still stat through std without it.
-   `fdu-puk7` is closed for the native reader’s path (exp-185).
+7. **`fdu-d2fn`**, `AT_NO_AUTOMOUNT` on the remaining routes.
+   **Done** in the review of #161 (H184, exp-196): every route lists through the native
+   reader, the directories it declines and the paths a route verifies by itself are
+   stated by path with the same flags, and the walk root alone is resolved.
+   musl never needed it: std stats with `fstatat` there.
+   `fdu-puk7` was closed for the reader’s path by exp-185.
 8. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
    fixed with recorded git verdicts, outside the performance loop.
 
