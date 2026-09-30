@@ -3,9 +3,9 @@ type: is
 id: is-01m3n77fy60sdcdzzk9qmbzg8e
 title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, dumac, and peers)"
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 17
+version: 18
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 delegate: claude-code@vm
 labels:
@@ -16,8 +16,12 @@ parent_id: is-01m3mvdz2891yheyemx49gzm6j
 hold: null
 hold_until: null
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T19:48:38.587Z
+updated_at: 2026-09-30T00:01:10.035Z
 started_at: 2026-09-29T17:02:10.729Z
+closed_at: 2026-09-30T00:01:10.034Z
+close_reason: "Comparison to Alternatives matrix landed in PR #162 (12 rows x 11 tools including scc and tokei), reviewed and fixed; ready to merge after #161."
+resolution: null
+duplicate_of: null
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
 

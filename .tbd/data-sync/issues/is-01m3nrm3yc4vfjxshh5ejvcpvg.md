@@ -3,9 +3,9 @@ type: is
 id: is-01m3nrm3yc4vfjxshh5ejvcpvg
 title: "0.2.2 handoff PR #157: plan, H171-H173 registry rows, design-study brief, next-agent brief"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 delegate: claude-code@vm
 labels: []
@@ -14,8 +14,12 @@ parent_id: is-01m3nbs9kfe7ygc6jx23j1byzt
 hold: null
 hold_until: null
 created_at: 2026-09-29T05:01:28.908Z
-updated_at: 2026-09-29T05:56:25.376Z
+updated_at: 2026-09-29T22:00:16.959Z
 started_at: 2026-09-29T05:01:30.500Z
+closed_at: 2026-09-29T22:00:16.959Z
+close_reason: "PR #157 is complete and reviewed; its review fixes are pushed (c99322ce) and it is ready to merge, bottom of the stack."
+resolution: null
+duplicate_of: null
 ---
 PR https://github.com/jlevy/fdu/pull/157 on claude/fdu-alternatives-research-qx0xn0: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md, docs/project/research/research-2026-09-29-linux-default-tree-point-solution.md, performance-loop.md rows H171-H173 (+H164/H156/H160 notes), runbook Current Pickup and ids, pdu brief recommendations. Add the next-agent handoff to the PR body; merge after CI.
 
