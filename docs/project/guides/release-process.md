@@ -287,10 +287,12 @@ x86-64 and arm64, macOS x86-64 and arm64, and Windows x86-64. The Linux builds u
 controlled manylinux2014 image rather than inheriting the hosted runner’s glibc.
 Cross-built Linux arm64 receives structural artifact validation; the evidence manifest
 does not mislabel that as a native execution test.
-It also classifies each crate and the Python release on its registry against the
-validated manifest: a missing version is ready for a first upload, an identical version
-is safe to skip during recovery, and any filename or hash disagreement is a conflict
-that stops the workflow.
+The engine the wheel wraps, the Linux native reader’s `unsafe` calls included, is linted
+and tested natively on arm64 by CI’s `Engine on Linux arm64` job on every pull request.
+The rehearsal also classifies each crate and the Python release on its registry against
+the validated manifest: a missing version is ready for a first upload, an identical
+version is safe to skip during recovery, and any filename or hash disagreement is a
+conflict that stops the workflow.
 That audit uses public registry endpoints and no credentials.
 
 ### Credentials
