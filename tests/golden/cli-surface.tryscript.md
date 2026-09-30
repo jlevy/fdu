@@ -161,6 +161,10 @@ This is the complete fdu usage contract; it needs no setup chat or prior session
 context.
 
 Use `fdu` to summarize a directory tree without modifying files in that tree.
+It reports size, file count, recency, and file kinds for every directory at once, and
+walks the tree on several threads through each platform’s native directory interface: on
+a million-file tree it runs about 9× as fast as `du` on macOS and 2.6× as fast on Linux,
+ahead of pdu, diskus, and dust.
 `fdu --docs` prints common commands, cache behavior, and the full usage contract without
 a PATH and without scanning.
 Every report requires an explicit `PATH`; bare `fdu` prints help instead of scanning the
@@ -655,7 +659,16 @@ dropped section fails here rather than in somebody’s terminal.
 
 ```console
 $ fdu --docs
-fdu — a fast, incremental file roll-up engine.
+fdu — the fastest du replacement, with file tree analysis.
+
+  For every directory in a tree at once, fdu reports its size, file count,
+  recency, and file kinds, and on request its lines of code and prose volume.
+  It walks the tree on several threads through each platform's native
+  directory interface; on a million-file tree it runs about 9x as fast as du
+  on macOS and 2.6x as fast on Linux, ahead of pdu, diskus, and dust.
+  Content metrics are cached between runs, and every capability is also a
+  Rust and Python API.
+  Speed details: https://github.com/jlevy/fdu/blob/main/docs/speed.md
 
 SET UP WITH ANY CODING AGENT
   Install fdu's self-contained skill for current and future agent sessions:

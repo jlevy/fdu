@@ -5,6 +5,10 @@
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, with reusable metadata and content state.
+It walks a tree on several threads through each platform’s native directory interface,
+and on a million-file tree runs about 9× as fast as `du` on macOS and 2.6× as fast on
+Linux, ahead of pdu, diskus, and dust
+([speed](https://github.com/jlevy/fdu/blob/main/docs/speed.md)).
 
 This crate is the `fdu` command line.
 It is also a library that re-exports the whole
