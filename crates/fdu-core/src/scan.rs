@@ -1438,7 +1438,9 @@ const fn std_child_stat_never_automounts() -> bool {
 /// not bound to one filesystem. Files and specials still need a metadata lookup for
 /// size, allocated bytes, and mtime. `one_filesystem` still stats directories because
 /// descent compares `attrs.dev` to the root device, and `dev == 0` would otherwise
-/// cross a mount.
+/// cross a mount. The listing's kind is taken only once the listing has proved its
+/// directory searchable ([`Searchability`]); until then every child is stated, and the
+/// skip applies to what the stat found.
 ///
 /// Where `d_type` is `DT_UNKNOWN` (XFS without `ftype`, some FUSE/NFS mounts, older
 /// ext3), std's `file_type` performs the non-following stat itself, and the skip then
@@ -1454,15 +1456,17 @@ const fn std_child_stat_never_automounts() -> bool {
 /// there performs exactly the observations the retained walk performs.
 fn listed_child_kind_and_attrs(
     entry: &fs::DirEntry,
-    skip_dir_symlink_stat: bool,
-    one_filesystem: bool,
+    policy: ListingPolicy,
+    searchability: &mut Searchability,
 ) -> std::io::Result<Option<(EntryKind, Attrs)>> {
     #[cfg(not(windows))]
     {
-        let listing_kind_suffices = skip_dir_symlink_stat && std_child_stat_never_automounts();
+        let listing_kind_suffices = policy.skip_dir_symlink_stat
+            && *searchability == Searchability::Proven
+            && std_child_stat_never_automounts();
         if listing_kind_suffices {
             if let Ok(file_type) = entry.file_type() {
-                if file_type.is_dir() && !one_filesystem {
+                if file_type.is_dir() && !policy.one_filesystem {
                     return Ok(Some((EntryKind::Dir, Attrs::default())));
                 }
                 if file_type.is_symlink() {
@@ -1471,9 +1475,12 @@ fn listed_child_kind_and_attrs(
             }
         }
         let observed = observe_dir_entry(entry)?;
-        if skip_dir_symlink_stat && !listing_kind_suffices {
+        if observed.is_some() {
+            *searchability = Searchability::Proven;
+        }
+        if policy.skip_dir_symlink_stat && !listing_kind_suffices {
             return Ok(observed.map(|(kind, attrs)| match kind {
-                EntryKind::Dir if !one_filesystem => (kind, Attrs::default()),
+                EntryKind::Dir if !policy.one_filesystem => (kind, Attrs::default()),
                 EntryKind::Symlink => (kind, Attrs::default()),
                 EntryKind::Dir | EntryKind::File | EntryKind::Other => (kind, attrs),
             }));
@@ -1482,7 +1489,7 @@ fn listed_child_kind_and_attrs(
     }
     #[cfg(windows)]
     {
-        let _ = (skip_dir_symlink_stat, one_filesystem);
+        let _ = (policy, searchability);
         observe_dir_entry(entry)
     }
 }
@@ -1490,10 +1497,36 @@ fn listed_child_kind_and_attrs(
 /// How a listing observes its children.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ListingPolicy {
-    /// H72: directory and symlink kinds come from the listing without a stat.
+    /// H72: directory and symlink kinds come from the listing without a stat, once the
+    /// listing has proved its directory searchable ([`Searchability`]).
     pub(crate) skip_dir_symlink_stat: bool,
     /// Descent compares `attrs.dev`, so directories are stated even under the skip.
     pub(crate) one_filesystem: bool,
+}
+
+/// Whether one listing has proved its directory searchable, which the skip of
+/// [`ListingPolicy::skip_dir_symlink_stat`] requires before it takes a child's kind from
+/// the listing alone. Per listing: it starts unproven with each directory.
+///
+/// A stat is also an observation of failure. A directory that is readable but not
+/// searchable (mode `0400`) opens and lists, and then every child's stat fails with
+/// `EACCES`; a walk that stats every child reports each child as an error and holds no
+/// entry for it. A `DT_DIR` child admitted on its `d_type` alone would be a directory
+/// entry the full index does not have, queued and then reported again when it fails to
+/// open, and a `DT_LNK` child a symlink entry with no error at all, so the folded tree
+/// and the summary would count one directory more and report one error fewer than the
+/// full index (R163-1). Under the skip, therefore, every child is stated until one stat
+/// in the listing succeeds, which proves the directory searchable, as the skip assumes;
+/// only then are directory and symlink kinds taken from the listing. The cost is one
+/// stat per listing whose first children are directories or symlinks. A child that
+/// vanished before its stat proves nothing here, which costs a stat and never an entry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Searchability {
+    /// No child's stat has succeeded yet, so every child is stated.
+    #[default]
+    Unproven,
+    /// A child's stat succeeded, so the listing's kind stands for a directory or symlink.
+    Proven,
 }
 
 impl ListingPolicy {
@@ -1549,6 +1582,8 @@ pub(crate) enum Listing<'r> {
     Portable {
         entries: fs::ReadDir,
         policy: ListingPolicy,
+        /// What this listing has proved of its directory so far.
+        searchability: Searchability,
         readers: std::marker::PhantomData<&'r mut Readers>,
     },
 }
@@ -1567,17 +1602,13 @@ impl<'r> Iterator for Listing<'r> {
                 };
                 Some(Listed::Child { name: std::borrow::Cow::Borrowed(entry.name), observed })
             }
-            Self::Portable { entries, policy, .. } => {
+            Self::Portable { entries, policy, searchability, .. } => {
                 let item = match entries.next()? {
                     Ok(item) => item,
                     Err(error) => return Some(Listed::Failed(error)),
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
-                let observed = listed_child_kind_and_attrs(
-                    &item,
-                    policy.skip_dir_symlink_stat,
-                    policy.one_filesystem,
-                );
+                let observed = listed_child_kind_and_attrs(&item, *policy, searchability);
                 Some(Listed::Child { name: std::borrow::Cow::Owned(item.file_name()), observed })
             }
         }
@@ -1620,7 +1651,12 @@ pub(crate) fn list_directory<'r>(
     if let Some(diagnostics) = diagnostics {
         diagnostics.portable_succeeded();
     }
-    Ok(Listing::Portable { entries, policy, readers: std::marker::PhantomData })
+    Ok(Listing::Portable {
+        entries,
+        policy,
+        searchability: Searchability::Unproven,
+        readers: std::marker::PhantomData,
+    })
 }
 
 fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> {
@@ -3770,6 +3806,11 @@ fn walk_worker_with<E: WalkEmission>(
             };
             report.dirs_read += 1;
 
+            let policy = ListingPolicy {
+                skip_dir_symlink_stat: emission.skip_dir_symlink_stat(),
+                one_filesystem: config.one_filesystem,
+            };
+            let mut searchability = Searchability::Unproven;
             for item in listing {
                 let item = match item {
                     Ok(item) => item,
@@ -3780,18 +3821,15 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let (kind, attrs) = match listed_child_kind_and_attrs(
-                    &item,
-                    emission.skip_dir_symlink_stat(),
-                    config.one_filesystem,
-                ) {
-                    Ok(Some(observed)) => observed,
-                    Ok(None) => continue,
-                    Err(error) => {
-                        report.errors.push(Error::io(item.path(), error));
-                        continue;
-                    }
-                };
+                let (kind, attrs) =
+                    match listed_child_kind_and_attrs(&item, policy, &mut searchability) {
+                        Ok(Some(observed)) => observed,
+                        Ok(None) => continue,
+                        Err(error) => {
+                            report.errors.push(Error::io(item.path(), error));
+                            continue;
+                        }
+                    };
                 if !emission.record_entry(
                     root,
                     &rel_dir,
@@ -7639,17 +7677,30 @@ mod tests {
         // Windows observes every listed entry through a fresh handle on both paths, so the
         // fold performs exactly the retained walk's observations there; the skip is a
         // non-Windows saving.
-        #[cfg(not(windows))]
+        #[cfg(unix)]
         assert!(
             fold_stats < scan_stats,
             "fold {fold_stats} should skip directory/symlink stats versus scan {scan_stats}"
         );
+        // The fold stats `a.txt` and, when the listing yields `src` or `link` before it,
+        // the first of those, whose stat proves the directory searchable
+        // ([`Searchability`]); the others take their kind from the listing.
+        #[cfg(not(windows))]
+        let proof = u64::from(first_listed(dir.path()) != "a.txt");
         #[cfg(unix)]
-        assert_eq!(scan_stats.saturating_sub(fold_stats), 2);
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 2 - proof);
         #[cfg(not(any(unix, windows)))]
-        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1 - proof);
         #[cfg(windows)]
         assert_eq!(fold_stats, scan_stats);
+    }
+
+    /// The name the filesystem lists first in `dir`, read rather than assumed: under the
+    /// skip a listing stats its children until one stat succeeds ([`Searchability`]), so
+    /// how many stats the fold saves depends on the enumeration order.
+    #[cfg(not(windows))]
+    fn first_listed(dir: &Path) -> std::ffi::OsString {
+        fs::read_dir(dir).expect("listing").next().expect("an entry").expect("entry").file_name()
     }
 
     #[cfg(unix)]
@@ -7678,7 +7729,11 @@ mod tests {
         crate::counters::enable(false);
 
         assert_eq!(fold_report.entries, scan_report.entries);
-        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+        // `src` and `a.txt` are stated on both routes; `link` takes its kind from the
+        // listing only once one of them has been stated before it, which proves the
+        // directory searchable ([`Searchability`]).
+        let proof = u64::from(first_listed(dir.path()) == "link");
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1 - proof);
     }
 
     #[test]

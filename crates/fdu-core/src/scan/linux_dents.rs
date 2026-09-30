@@ -51,7 +51,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use super::{Attrs, EntryKind, compose_ns};
+use super::{Attrs, EntryKind, Searchability, compose_ns};
 
 /// Bytes asked of each `getdents64` call. Two literals, not a cast: pedantic clippy.
 ///
@@ -161,7 +161,8 @@ fn stat_path_with(
 /// Which listed children need a stat.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct StatPolicy {
-    /// H72: directory and symlink kinds come from `d_type` without a stat.
+    /// H72: directory and symlink kinds come from `d_type` without a stat, once the
+    /// listing has proved its directory searchable ([`Searchability`]).
     pub(super) skip_dir_symlink_stat: bool,
     /// Descent compares `attrs.dev`, so directories are stated even under the skip.
     pub(super) one_filesystem: bool,
@@ -292,6 +293,7 @@ impl Reader {
             .ok()?;
         let fd = directory.as_raw_fd();
         let mut counts = Counts::default();
+        let mut searchability = Searchability::Unproven;
         loop {
             let start = self.filled;
             let end = start + CHUNK_BYTES;
@@ -340,19 +342,21 @@ impl Reader {
                 return None;
             }
             self.filled = start + filled;
-            self.parse_chunk(start, fd, policy, &mut counts)?;
+            self.parse_chunk(start, fd, policy, &mut searchability, &mut counts)?;
         }
     }
 
     /// Parse and observe one `getdents64` chunk, `names[start..filled]`.
     ///
     /// Records never straddle calls, so each chunk is parsed on its own, and name ranges
-    /// are indices into `names`, which stay valid across later growth.
+    /// are indices into `names`, which stay valid across later growth. `searchability`
+    /// is the listing's, carried across its chunks.
     fn parse_chunk(
         &mut self,
         start: usize,
         fd: RawFd,
         policy: StatPolicy,
+        searchability: &mut Searchability,
         counts: &mut Counts,
     ) -> Option<()> {
         let gate = StatxGate {
@@ -377,7 +381,8 @@ impl Reader {
                 hook(OsStr::from_bytes(name));
             }
             if let Some(outcome) =
-                observe(fd, name_with_nul, record.d_type, policy, gate, counts).ok()?
+                observe(fd, name_with_nul, record.d_type, policy, searchability, gate, counts)
+                    .ok()?
             {
                 self.entries.push(Dent { name_start, name_len: record.name_len, outcome });
             }
@@ -492,29 +497,32 @@ fn statx_probe_faults() -> bool {
 }
 
 /// Observe one listed child, or `Ok(None)` when it vanished before its stat.
+///
+/// `searchability` is the listing's: under the skip, a directory or symlink is answered
+/// from `d_type` alone only once a stat in this listing has succeeded, and a successful
+/// stat here proves it.
 fn observe(
     fd: RawFd,
     name_with_nul: &[u8],
     d_type: u8,
     policy: StatPolicy,
+    searchability: &mut Searchability,
     gate: StatxGate,
     counts: &mut Counts,
 ) -> Result<Option<Outcome>, StatxUnavailable> {
-    if policy.skip_dir_symlink_stat {
+    // The kind the listing's `d_type` alone would answer for this child under the skip.
+    let listing_kind = if policy.skip_dir_symlink_stat {
         match d_type {
-            libc::DT_DIR if !policy.one_filesystem => {
-                return Ok(Some(Outcome::Observed {
-                    kind: EntryKind::Dir,
-                    attrs: Attrs::default(),
-                }));
-            }
-            libc::DT_LNK => {
-                return Ok(Some(Outcome::Observed {
-                    kind: EntryKind::Symlink,
-                    attrs: Attrs::default(),
-                }));
-            }
-            _ => {}
+            libc::DT_DIR if !policy.one_filesystem => Some(EntryKind::Dir),
+            libc::DT_LNK => Some(EntryKind::Symlink),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some(kind) = listing_kind {
+        if *searchability == Searchability::Proven {
+            return Ok(Some(Outcome::Observed { kind, attrs: Attrs::default() }));
         }
     }
     counts.stats += 1;
@@ -523,6 +531,7 @@ fn observe(
             if gate.support.state() == STATX_UNKNOWN {
                 gate.support.set(STATX_PRESENT);
             }
+            *searchability = Searchability::Proven;
             observed
         }
         Err(error) => {
@@ -534,12 +543,15 @@ fn observe(
             return Ok(Some(Outcome::Failed(error)));
         }
     };
-    // std's `file_type` stats a `DT_UNKNOWN` entry itself, and the skip then applies to
-    // what it found (`listed_child_kind_and_attrs`). Reproduce that answer, default attrs
-    // included; a known non-directory `d_type` that stats as a directory (a race) is
-    // answered with its real attrs, as the portable path answers it.
+    // The skip applies to what the stat found, as it does on the portable path
+    // (`listed_child_kind_and_attrs`): for a `DT_UNKNOWN` entry, which std's `file_type`
+    // stats itself, and for a directory or symlink stated before the listing proved its
+    // directory searchable. Either answers with default attrs, so a folded directory's
+    // attributes do not depend on its place in the listing. A known non-directory
+    // `d_type` that stats as a directory (a race) is answered with its real attrs, as the
+    // portable path answers it.
     let attrs = if policy.skip_dir_symlink_stat
-        && !listing_names_kind(d_type)
+        && (listing_kind.is_some() || !listing_names_kind(d_type))
         && (kind == EntryKind::Symlink || (kind == EntryKind::Dir && !policy.one_filesystem))
     {
         Attrs::default()
@@ -620,7 +632,7 @@ mod tests {
     use super::*;
     use crate::ScanConfig;
     use crate::scan::{
-        attrs_from, kind_from, listed_child_kind_and_attrs, metadata_for_fingerprint,
+        ListingPolicy, attrs_from, kind_from, listed_child_kind_and_attrs, metadata_for_fingerprint,
     };
 
     const INDEX: StatPolicy = StatPolicy { skip_dir_symlink_stat: false, one_filesystem: false };
@@ -693,17 +705,18 @@ mod tests {
     /// What the crate's portable listing answers under `policy`, which on glibc stats
     /// through [`stat_path`].
     fn crate_portable(directory: &Path, policy: StatPolicy) -> Observed {
+        let policy = ListingPolicy {
+            skip_dir_symlink_stat: policy.skip_dir_symlink_stat,
+            one_filesystem: policy.one_filesystem,
+        };
+        let mut searchability = Searchability::Unproven;
         fs::read_dir(directory)
             .expect("portable listing")
             .filter_map(|item| {
                 let item = item.expect("portable entry");
-                listed_child_kind_and_attrs(
-                    &item,
-                    policy.skip_dir_symlink_stat,
-                    policy.one_filesystem,
-                )
-                .expect("portable observation")
-                .map(|found| (item.file_name(), found))
+                listed_child_kind_and_attrs(&item, policy, &mut searchability)
+                    .expect("portable observation")
+                    .map(|found| (item.file_name(), found))
             })
             .collect()
     }
@@ -926,9 +939,9 @@ mod tests {
 
     #[test]
     fn a_chunk_yields_its_names_in_order_without_dot_entries() {
-        // Under the summary policy directory and symlink records need no stat, so a
-        // synthetic chunk exercises the name ranges without any filesystem: the
-        // descriptor is never used.
+        // Under the summary policy, in a listing that has proved its directory searchable,
+        // directory and symlink records need no stat, so a synthetic chunk exercises the
+        // name ranges without any filesystem: the descriptor is never used.
         let mut reader = loaded(&[
             (b"first", libc::DT_DIR),
             (b".", libc::DT_DIR),
@@ -937,7 +950,9 @@ mod tests {
             (b"link", libc::DT_LNK),
         ]);
         let mut counts = Counts::default();
-        assert!(reader.parse_chunk(0, -1, SUMMARY, &mut counts).is_some());
+        assert!(
+            reader.parse_chunk(0, -1, SUMMARY, &mut Searchability::Proven, &mut counts).is_some()
+        );
 
         assert_eq!(
             yielded(&mut reader),
@@ -968,7 +983,17 @@ mod tests {
             (&too_long, libc::DT_REG),
         ]);
         let mut counts = Counts::default();
-        assert!(reader.parse_chunk(0, listed.as_raw_fd(), INDEX, &mut counts).is_some());
+        assert!(
+            reader
+                .parse_chunk(
+                    0,
+                    listed.as_raw_fd(),
+                    INDEX,
+                    &mut Searchability::Unproven,
+                    &mut counts
+                )
+                .is_some()
+        );
 
         let mut listing =
             Listing { names: &reader.names[..reader.filled], entries: reader.entries.drain(..) };
@@ -1030,7 +1055,17 @@ mod tests {
         ] {
             let mut reader = loaded(&records);
             let mut counts = Counts::default();
-            assert!(reader.parse_chunk(0, listed.as_raw_fd(), policy, &mut counts).is_some());
+            assert!(
+                reader
+                    .parse_chunk(
+                        0,
+                        listed.as_raw_fd(),
+                        policy,
+                        &mut Searchability::Unproven,
+                        &mut counts
+                    )
+                    .is_some()
+            );
             let expected: Vec<Yield> = [
                 ("f", file),
                 ("d", dir_answer),
@@ -1095,7 +1130,15 @@ mod tests {
         let failing: [(&[u8], u8); 1] = [(&too_long, libc::DT_REG)];
         let parse = |reader: &mut Reader| {
             let mut counts = Counts::default();
-            reader.parse_chunk(0, listed.as_raw_fd(), INDEX, &mut counts).map(|()| yielded(reader))
+            reader
+                .parse_chunk(
+                    0,
+                    listed.as_raw_fd(),
+                    INDEX,
+                    &mut Searchability::Unproven,
+                    &mut counts,
+                )
+                .map(|()| yielded(reader))
         };
         let failed: Option<Vec<Yield>> =
             Some(vec![(OsStr::from_bytes(&too_long).to_os_string(), Err(libc::ENAMETOOLONG))]);
@@ -1131,7 +1174,10 @@ mod tests {
     fn a_search_denied_directory_reports_each_child_as_the_portable_walk_does() {
         // A directory that is readable but not searchable opens and lists, and then every
         // child's stat fails with EACCES: the per-entry stat error a real tree produces
-        // without hooks, so the one that reaches the walk's `Failed` route.
+        // without hooks, so the one that reaches the walk's `Failed` route. Under the
+        // summary policy the listing's `d_type` names a subdirectory and a symlink, and
+        // neither may be admitted on it: no stat succeeds, so the directory is never
+        // proved searchable and every child fails as the full index reports it.
         if !crate::test_support::require_permission_bits() {
             return;
         }
@@ -1141,6 +1187,8 @@ mod tests {
         fs::create_dir(&sealed).expect("directory to seal");
         fs::write(sealed.join("a"), b"a").expect("child");
         fs::write(sealed.join("b"), b"b").expect("child");
+        fs::create_dir(sealed.join("sub")).expect("child directory");
+        symlink("a", sealed.join("link")).expect("child symlink");
         fs::set_permissions(&sealed, fs::Permissions::from_mode(0o400)).expect("deny search");
         let errors = |threads| {
             let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
@@ -1154,16 +1202,141 @@ mod tests {
             errors(1)
         };
         let (serial, native) = (errors(1), errors(4));
+        let denied = |policy: StatPolicy| -> Vec<(OsString, Option<i32>)> {
+            Reader::new()
+                .read(&sealed, policy)
+                .expect("a readable directory reads natively")
+                .map(|entry| {
+                    let errno = match entry.outcome {
+                        Outcome::Observed { .. } => None,
+                        Outcome::Failed(error) => error.raw_os_error(),
+                    };
+                    (entry.name.to_os_string(), errno)
+                })
+                .collect()
+        };
+        let by_policy: Vec<_> = POLICIES.iter().map(|policy| denied(*policy)).collect();
+        let crate_portable_summary: Vec<(OsString, Option<i32>)> = {
+            let policy = ListingPolicy { skip_dir_symlink_stat: true, one_filesystem: false };
+            let mut searchability = Searchability::Unproven;
+            fs::read_dir(&sealed)
+                .expect("portable listing")
+                .map(|item| {
+                    let item = item.expect("portable entry");
+                    let observed = listed_child_kind_and_attrs(&item, policy, &mut searchability);
+                    (item.file_name(), observed.err().and_then(|error| error.raw_os_error()))
+                })
+                .collect()
+        };
         fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).expect("allow search");
         assert_eq!(serial, portable);
         assert_eq!(native, portable);
-        for child in ["a", "b"] {
+        for child in ["a", "b", "sub", "link"] {
             let path = sealed.join(child).to_string_lossy().into_owned();
             assert!(
                 portable.iter().any(|error| error.contains(&path) && error.contains("denied")),
                 "{path} is reported as denied: {portable:?}"
             );
         }
+        for (policy, listed) in POLICIES.iter().zip(&by_policy) {
+            assert_eq!(listed.len(), 4, "{policy:?}: every child is yielded");
+            assert!(
+                listed.iter().all(|(_, errno)| *errno == Some(libc::EACCES)),
+                "{policy:?}: every child fails with EACCES, whatever its d_type: {listed:?}"
+            );
+        }
+        assert_eq!(crate_portable_summary.len(), 4);
+        assert!(
+            crate_portable_summary.iter().all(|(_, errno)| *errno == Some(libc::EACCES)),
+            "the portable path under the summary policy: {crate_portable_summary:?}"
+        );
+    }
+
+    #[test]
+    fn a_listing_takes_kinds_from_d_type_only_after_a_stat_succeeds() {
+        // The latch: a directory or symlink listed before any stat succeeded is stated,
+        // with default attrs under the skip; once a stat has succeeded, the rest are
+        // answered from `d_type`. The records are synthetic so the order is fixed; their
+        // names are real, so the stats are too.
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        fs::create_dir(root.join("d1")).expect("directory");
+        fs::create_dir(root.join("d2")).expect("directory");
+        fs::write(root.join("f"), b"file contents").expect("regular file");
+        symlink("f", root.join("l1")).expect("symlink");
+        symlink("f", root.join("l2")).expect("symlink");
+        let real = |name: &str| {
+            let path = root.join(name);
+            let metadata = fs::symlink_metadata(&path).expect("fixture metadata");
+            (kind_from(&metadata), attrs_from(&path, &metadata).expect("Unix attrs"))
+        };
+        let listed = fs::File::open(root).expect("open the directory");
+        let records: [(&[u8], u8); 5] = [
+            (b"d1", libc::DT_DIR),
+            (b"l1", libc::DT_LNK),
+            (b"f", libc::DT_REG),
+            (b"d2", libc::DT_DIR),
+            (b"l2", libc::DT_LNK),
+        ];
+        let defaults = |name: &str| (real(name).0, Attrs::default());
+        // The summary: `d1` is stated and proves the directory searchable, so `l1` and
+        // everything after it that `d_type` names is not; `f` is stated for its attrs.
+        for (policy, stats, expected) in [
+            (INDEX, 5, ["d1", "l1", "f", "d2", "l2"].map(real)),
+            (
+                SUMMARY,
+                2,
+                [defaults("d1"), defaults("l1"), real("f"), defaults("d2"), defaults("l2")],
+            ),
+            // Bound to one filesystem, directories keep their stat for their device, so
+            // `d1`'s stat proves the directory searchable and only the symlinks take the
+            // listing's kind.
+            (
+                StatPolicy { skip_dir_symlink_stat: true, one_filesystem: true },
+                3,
+                [real("d1"), defaults("l1"), real("f"), real("d2"), defaults("l2")],
+            ),
+        ] {
+            let mut reader = loaded(&records);
+            let mut counts = Counts::default();
+            let mut searchability = Searchability::Unproven;
+            assert!(
+                reader
+                    .parse_chunk(0, listed.as_raw_fd(), policy, &mut searchability, &mut counts)
+                    .is_some()
+            );
+            let expected: Vec<Yield> = records
+                .iter()
+                .zip(expected)
+                .map(|((name, _), answer)| (OsStr::from_bytes(name).to_os_string(), Ok(answer)))
+                .collect();
+            assert_eq!(yielded(&mut reader), expected, "{policy:?}");
+            assert_eq!(counts.stats, stats, "{policy:?}");
+            assert_eq!(searchability, Searchability::Proven, "{policy:?}");
+        }
+        // A listing whose first stat failed keeps stating: over-long names fail with
+        // ENAMETOOLONG on any filesystem, and prove nothing.
+        let too_long = vec![b'z'; 300];
+        let failing: [(&[u8], u8); 3] =
+            [(&too_long, libc::DT_REG), (b"d1", libc::DT_DIR), (b"l1", libc::DT_LNK)];
+        let mut reader = loaded(&failing);
+        let mut counts = Counts::default();
+        let mut searchability = Searchability::Unproven;
+        assert!(
+            reader
+                .parse_chunk(0, listed.as_raw_fd(), SUMMARY, &mut searchability, &mut counts)
+                .is_some()
+        );
+        assert_eq!(
+            yielded(&mut reader),
+            vec![
+                (OsStr::from_bytes(&too_long).to_os_string(), Err(libc::ENAMETOOLONG)),
+                (OsString::from("d1"), Ok(defaults("d1"))),
+                (OsString::from("l1"), Ok(defaults("l1"))),
+            ]
+        );
+        assert_eq!(counts.stats, 2, "the failed stat proved nothing, so `d1` is stated");
+        assert_eq!(searchability, Searchability::Proven, "and `d1`'s stat proved it");
     }
 
     #[test]
@@ -1355,7 +1528,20 @@ mod tests {
         };
         // One data call and the terminating empty one.
         assert_eq!(counted(&small, INDEX), (4, 1, 4, 4, 2));
-        assert_eq!(counted(&small, SUMMARY), (4, 1, 4, 2, 2), "files alone are stated");
+        // The summary stats the files, and the first directory or symlink the listing
+        // yields before its first file, whose stat proves the directory searchable; the
+        // others before that file take their kind from the listing. The enumeration order
+        // is the filesystem's, so it is read rather than assumed.
+        let leading = Reader::new()
+            .read(&small, INDEX)
+            .expect("a readable directory")
+            .take_while(|entry| entry.name != "a" && entry.name != "b")
+            .count();
+        assert_eq!(
+            counted(&small, SUMMARY),
+            (4, 1, 4, 2 + u64::from(leading > 0), 2),
+            "the files, and one of the {leading} listed before the first file, are stated"
+        );
         let (listed, opens, entries, stats, calls) = counted(&wide, INDEX);
         assert_eq!((listed, opens, entries, stats), (3_000, 1, 3_000, 3_000));
         assert!(calls >= 4, "a wide directory takes several calls, not {calls}");

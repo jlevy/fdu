@@ -2173,6 +2173,12 @@ mod tests {
     /// names fails instead of agreeing vacuously.
     struct ControlCase {
         name: &'static str,
+        /// A file the case made unreadable, or a directory it made unsearchable, restored
+        /// when the case is dropped so its tree can be removed even after a failed
+        /// assertion. Declared before `root`: fields drop in order, and the restore must
+        /// precede the removal. Only Unix can make one.
+        #[cfg(unix)]
+        denied: Option<Unlocked>,
         root: tempfile::TempDir,
         scan: ScanConfig,
         /// Whether the row carries an ignored share, which a refused or unreadable control
@@ -2190,20 +2196,35 @@ mod tests {
         /// For a tree whose rules sit in a case variant of the name: whether they govern,
         /// which is whether a lookup of `.gitignore` resolves to the variant.
         variant_governs: Option<bool>,
-        /// A file the case made unreadable, readable again when the case is dropped so its
-        /// tree can be removed even after a failed assertion. Only Unix can make one.
-        #[cfg(unix)]
-        denied: Option<PathBuf>,
     }
 
-    impl Drop for ControlCase {
+    /// A path a fixture sealed, a file made unreadable or a directory made unsearchable,
+    /// restored when dropped so the tree holding it can be removed even after a failed
+    /// assertion.
+    #[cfg(unix)]
+    struct Unlocked(PathBuf);
+
+    #[cfg(unix)]
+    impl Drop for Unlocked {
         fn drop(&mut self) {
-            #[cfg(unix)]
-            if let Some(path) = &self.denied {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
-            }
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
         }
+    }
+
+    /// A directory that is readable but not searchable, so it lists and then every
+    /// child's stat fails with `EACCES`: a subdirectory, a file, and a symlink, whose
+    /// `d_type` names them where no stat may (R163-1). The walk reports each child as
+    /// an error and holds no entry for any of them, on every route.
+    #[cfg(unix)]
+    fn seal_search_denied(root: &Path) -> Unlocked {
+        use std::os::unix::fs::PermissionsExt;
+        let denied = root.join("denied");
+        put(root, "denied/sub/inner", b"inner");
+        put(root, "denied/f", b"f");
+        std::os::unix::fs::symlink("f", denied.join("link")).expect("symlink");
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o400)).expect("deny search");
+        Unlocked(denied)
     }
 
     fn put(root: &Path, path: &str, contents: &[u8]) {
@@ -2435,9 +2456,30 @@ mod tests {
                     case("unreadable control file", unreadable, ScanConfig::default(), false, 0);
                 fs::set_permissions(&control, fs::Permissions::from_mode(0o000))
                     .expect("deny the control file");
-                denied.denied = Some(control);
+                denied.denied = Some(Unlocked(control));
                 denied.errors = true;
                 cases.push(denied);
+
+                // Rules beside a search-denied directory, whose listing shows no control
+                // file: the children fail, and the classification of the rest is known.
+                // At every batch size: a listing that records no entry never fills a
+                // batch, so the directory's control is never probed
+                // (`StreamingEmission::settle_listing`), on either route.
+                let sealed = tempfile::tempdir().expect("tempdir");
+                put(sealed.path(), ".gitignore", b"*.log\n");
+                put(sealed.path(), "open/x.log", b"ignored");
+                put(sealed.path(), "open/y.txt", b"kept");
+                let denied = seal_search_denied(sealed.path());
+                let mut unsearchable = case(
+                    "a directory that lists but refuses search",
+                    sealed,
+                    ScanConfig::default(),
+                    true,
+                    0,
+                );
+                unsearchable.denied = Some(denied);
+                unsearchable.errors = true;
+                cases.push(unsearchable);
             }
         }
         for case in &cases {
@@ -2862,8 +2904,17 @@ mod tests {
         root
     }
 
+    /// One tree built for the share boundary. Fields drop in order: a sealed directory is
+    /// restored before the tree is removed.
+    struct BoundaryTree {
+        name: &'static str,
+        #[cfg(unix)]
+        _sealed: Option<Unlocked>,
+        tree: tempfile::TempDir,
+    }
+
     /// Trees built for the share boundary, each with what it holds there.
-    fn boundary_trees() -> Vec<(&'static str, tempfile::TempDir)> {
+    fn boundary_trees() -> Vec<BoundaryTree> {
         let mut trees = Vec::new();
 
         // Nine files at exactly 10% of apparent bytes and two tied for the tenth place at
@@ -2966,8 +3017,34 @@ mod tests {
             }
             trees.push(("names equal once made readable", lossy));
         }
-        for (_, tree) in &trees {
-            crate::test_support::settle_allocations(tree.path());
+        let mut trees: Vec<BoundaryTree> = trees
+            .into_iter()
+            .map(|(name, tree)| BoundaryTree {
+                name,
+                #[cfg(unix)]
+                _sealed: None,
+                tree,
+            })
+            .collect();
+
+        // A directory that lists but refuses search, beside files a share omits: its
+        // subdirectory and symlink are named by `d_type` and must not be admitted on it.
+        #[cfg(unix)]
+        if crate::test_support::require_permission_bits() {
+            let unsearchable = tempfile::tempdir().expect("tempdir");
+            sized_file(&unsearchable.path().join("open/large"), 5_000, false, 18);
+            for index in 0..60 {
+                sized_file(&unsearchable.path().join(format!("open/s{index:02}")), 5, false, 19);
+            }
+            let sealed = seal_search_denied(unsearchable.path());
+            trees.push(BoundaryTree {
+                name: "a directory that lists but refuses search",
+                _sealed: Some(sealed),
+                tree: unsearchable,
+            });
+        }
+        for tree in &trees {
+            crate::test_support::settle_allocations(tree.tree.path());
         }
         trees
     }
@@ -3211,16 +3288,16 @@ mod tests {
             folded_trees += 1;
         }
 
-        for (name, tree) in boundary_trees() {
+        for boundary in boundary_trees() {
+            let (name, tree) = (boundary.name, boundary.tree.path());
             let scan = ScanConfig::default();
-            let folds =
-                assert_folded_reports_match(tree.path(), &scan, &FOLDED_SHARES, false, name);
+            let folds = assert_folded_reports_match(tree, &scan, &FOLDED_SHARES, false, name);
             assert_eq!(
                 folds,
                 !matches!(name, "no files" | "one file"),
                 "{name}: whether the tree has files a share omits"
             );
-            assert_folded_route_matches(tree.path(), &scan, name);
+            assert_folded_route_matches(tree, &scan, name);
             folded_trees += usize::from(folds);
         }
 
@@ -3230,13 +3307,6 @@ mod tests {
         #[cfg(unix)]
         if crate::test_support::require_permission_bits() {
             use std::os::unix::fs::PermissionsExt;
-            /// Readable again when dropped, so the tree can be removed after a failure.
-            struct Unlocked(PathBuf);
-            impl Drop for Unlocked {
-                fn drop(&mut self) {
-                    let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
-                }
-            }
             let tree = random_tree(0x1405_7B7E_F767_814F, 300);
             let locked = tree.path().join("locked");
             sized_file(&locked.join("hidden-large"), 900_000, false, 16);

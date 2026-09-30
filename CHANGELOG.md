@@ -40,8 +40,11 @@ No command-line option, report or cache schema, or Python API changed.
   ([exp-201](docs/project/experiments/exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md)).
   A one-shot tree report takes each directory’s and symlink’s kind from its parent’s
   listing and no longer stats it a second time, since the tree reads none of their own
-  attributes; `--one-filesystem` keeps the stat for the device number.
-  That removes one `statx` per directory: 9,545 of the 79,961 on the `node_modules` tree
+  attributes; `--one-filesystem` keeps the stat for the device number, and a listing
+  stats its children until one stat succeeds, which proves the directory searchable (see
+  Fixed). That removes the `statx` of every directory and symlink except one a listing
+  starts with: 7,886 of the 79,961 on the `node_modules` tree (9,545 before the proof
+  was required)
   ([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)).
   The tree also decides from each child’s totals whether the child will show before
   building a row for it, and frees its index on a separate thread rather than the one
@@ -95,6 +98,17 @@ No command-line option, report or cache schema, or Python API changed.
 
 ### Fixed
 
+- A directory that is readable but not searchable (mode `0400`) is reported the same way
+  on every route: each of its children as an error, and none of them as an entry.
+  In 0.2.1 the default `--view summary` counted such a directory’s subdirectory as a
+  directory and reported it a second time when it failed to open, and reported nothing
+  at all for its symlink, because it took both kinds from the parent’s listing without
+  the stat that fails there, while the full index reported each child once as an error;
+  the 0.2.2 engine’s default tree did the same before this fix.
+  A listing now takes directory and symlink kinds from itself only once one of its
+  children’s stat has succeeded, which proves the directory searchable; the saving above
+  keeps all but one stat per listing that starts with directories or symlinks (72,075
+  `statx` on the `node_modules` tree against 70,416 without the proof).
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`
