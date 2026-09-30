@@ -353,6 +353,25 @@ publishes them as one atomic commit.
 Snapshot and journal parsers check declared counts against the bytes actually present
 before allocating. A corrupt file must fail closed, not abort on an allocation.
 
+### Write Every File Whole
+
+A reader sees the whole old file or the whole new one, never part of either under the
+final name. Anything written for something else to read later (a snapshot, a release
+manifest, a run artifact, the ledger) goes to a temporary in the same directory, is
+flushed and synced, and is renamed over its target, and the temporary is removed if
+anything fails. A crash or a container restart mid-write then leaves the previous file,
+not a truncated one that parses as something else or fails a later step for a reason
+nobody can see.
+
+An append-only file, such as a log or a JSONL stream, cannot be renamed into place one
+record at a time, so its reader must detect and drop a torn last record instead.
+
+The engine’s `snapshot::write_atomically` and the helpers in `scripts/atomic_write.py`
+and `scripts/atomic-write.mjs` do this.
+`make atomic-writes` fails on a raw write anywhere else unless it lists the site with
+its reason. A test’s own inputs are exempt, because a crash fails the test that wrote
+them.
+
 ## Trust and the Cache
 
 ### The Cache May Never Silently Lie

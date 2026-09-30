@@ -89,6 +89,8 @@ jobs:
         run: node scripts/check-rust-module-names.mjs
       - name: Check every inventory producer routes through shared admission
         run: npm run check:admission-sites
+      - name: Check every file is written whole, through the atomic helpers
+        run: npm run check:atomic-writes
       - name: Check the golden corpus never resolves fdu through PATH
         run: node scripts/check-golden-invocations.mjs
       - name: Check golden sessions expose complete product behavior

@@ -78,7 +78,10 @@ function characterLiteralLength(source, index) {
   return source[index + 1 + width] === "'" ? width + 2 : 0;
 }
 
-function rustStructure(source) {
+// `source` with comments and the contents of string and character literals blanked,
+// newlines kept, so offsets and line numbers still match. Shared with
+// check-atomic-writes.mjs, which audits Rust writes the same way.
+export function rustStructure(source) {
   let result = "";
   const state = { kind: "code", blockDepth: 0, rawHashes: 0 };
 

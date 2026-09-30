@@ -50,7 +50,7 @@ TARGET_OWNER_TARGETS := build release rust-test reference-model opened-root-gold
 
 $(TARGET_OWNER_TARGETS): target-owner
 
-.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
+.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -74,6 +74,7 @@ help:
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
 	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
 	@echo "make admission-sites  Check every filesystem producer routes through admission"
+	@echo "make atomic-writes  Check every file is written whole, through the atomic helpers"
 	@echo "make msrv       Compile all features and test the core contract on Rust $(MSRV)"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
@@ -193,7 +194,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test test-terminal
+check: uv-version wheel-python supply-chain rust-module-names admission-sites atomic-writes golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test test-terminal
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -269,6 +270,12 @@ rust-module-names:
 admission-sites:
 	$(NODE) --test scripts/check-admission-sites.test.mjs
 	$(NODE) scripts/check-admission-sites.mjs
+
+# A reader sees a whole old file or a whole new one: every write goes through a helper
+# that stages, syncs, and renames, or is listed in the check with its reason.
+atomic-writes:
+	$(NODE) --test scripts/check-atomic-writes.test.mjs scripts/atomic-write.test.mjs
+	$(NODE) scripts/check-atomic-writes.mjs
 
 # The corpus selects its binary by full path. This keeps a bare `fdu` -- which PATH
 # would happily resolve to an installed build -- from creeping back in (fdu-9h2w).
@@ -474,7 +481,7 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
+PYTHON_LINT_PATHS := python tests examples ../../scripts/atomic_write.py ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
 
 # pytest imports the editable install, whose compiled half uv rebuilds only when a cache
 # key changes -- by default Python metadata files, never the Rust. A reused .venv then
