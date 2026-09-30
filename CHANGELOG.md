@@ -43,8 +43,7 @@ No command-line option, report or cache schema, or Python API changed.
   attributes; `--one-filesystem` keeps the stat for the device number, and a listing
   stats its children until one stat succeeds, which proves the directory searchable (see
   Fixed). That removes the `statx` of every directory and symlink except one a listing
-  starts with: 7,886 of the 79,961 on the `node_modules` tree (9,545 before the proof
-  was required)
+  starts with: 7,886 of the 79,961 on the `node_modules` tree
   ([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)).
   The tree also decides from each child’s totals whether the child will show before
   building a row for it, and frees its index on a separate thread rather than the one
@@ -103,20 +102,16 @@ No command-line option, report or cache schema, or Python API changed.
   In 0.2.1 the default `--view summary` counted such a directory’s subdirectory as a
   directory and reported it a second time when it failed to open, and reported nothing
   at all for its symlink, because it took both kinds from the parent’s listing without
-  the stat that fails there, while the full index reported each child once as an error;
-  the 0.2.2 engine’s default tree did the same before this fix.
+  the stat that fails there, while the full index reported each child once as an error.
   A listing now takes directory and symlink kinds from itself only once one of its
   children’s stat has succeeded, which proves the directory searchable; the saving above
-  keeps all but one stat per listing that starts with directories or symlinks (72,075
-  `statx` on the `node_modules` tree against 70,416 without the proof).
+  keeps all but one stat per listing that starts with directories or symlinks.
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`
   report it, and a walk no longer mounts, or hangs on, a network filesystem it would not
   descend into. 0.2.1 and earlier mounted the trigger by statting it, because the
-  standard library stats with `statx` and without `AT_NO_AUTOMOUNT` on glibc; the 0.2.2
-  engine before this fix did so on every route but the parallel walk, so the same
-  request answered differently by route.
+  standard library stats with `statx` and without `AT_NO_AUTOMOUNT` on glibc.
   The walk root itself is resolved: listing it mounts it in any case, and
   `--one-filesystem` bounds the walk to the filesystem it finds there.
   musl builds were never affected: the standard library stats with `fstatat` there.
