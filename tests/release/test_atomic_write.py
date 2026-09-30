@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import gzip
 import io
 import os
@@ -9,7 +10,9 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from scripts import atomic_write
 from scripts.atomic_write import (
     complete_lines,
     open_atomic,
@@ -97,6 +100,59 @@ class AtomicWriteTests(unittest.TestCase):
             target.write_bytes(b"the other writer")
             output.write(b"ours")
         self.assertEqual(target.read_bytes(), b"the other writer")
+        self.assertEqual(leftovers(self.directory), [])
+
+    def test_exclusive_mode_publishes_where_the_filesystem_has_no_hard_links(self) -> None:
+        for code in sorted({errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}):
+            target = self.directory / f"run-{code}.json"
+            with (
+                self.subTest(errno=errno.errorcode[code]),
+                mock.patch.object(atomic_write.os, "link", side_effect=OSError(code, "no")),
+            ):
+                with open_atomic(target, "x", encoding="utf-8") as output:
+                    output.write("first")
+                self.assertEqual(target.read_text(encoding="utf-8"), "first")
+                with self.assertRaises(FileExistsError), open_atomic(target, "x") as output:
+                    output.write("second")
+                self.assertEqual(target.read_text(encoding="utf-8"), "first")
+        self.assertEqual(leftovers(self.directory), [])
+
+    def test_exclusive_mode_without_hard_links_loses_a_race_without_clobbering(self) -> None:
+        target = self.directory / "run.json"
+        no_links = OSError(errno.EPERM, "Operation not permitted")
+        with (
+            mock.patch.object(atomic_write.os, "link", side_effect=no_links),
+            self.assertRaises(FileExistsError),
+            open_atomic(target, "xb") as output,
+        ):
+            target.write_bytes(b"the other writer")
+            output.write(b"ours")
+        self.assertEqual(target.read_bytes(), b"the other writer")
+        self.assertEqual(leftovers(self.directory), [])
+
+    def test_exclusive_mode_without_hard_links_removes_its_reservation_on_failure(self) -> None:
+        target = self.directory / "run.json"
+        no_links = OSError(errno.ENOTSUP, "Operation not supported")
+        with (
+            mock.patch.object(atomic_write.os, "link", side_effect=no_links),
+            mock.patch.object(atomic_write.os, "replace", side_effect=OSError(errno.EIO, "io")),
+            self.assertRaises(OSError),
+            open_atomic(target, "x") as output,
+        ):
+            output.write("ours")
+        self.assertFalse(target.exists())
+        self.assertEqual(leftovers(self.directory), [])
+
+    def test_exclusive_mode_reports_any_other_link_failure(self) -> None:
+        target = self.directory / "run.json"
+        denied = OSError(errno.EACCES, "Permission denied")
+        with (
+            mock.patch.object(atomic_write.os, "link", side_effect=denied),
+            self.assertRaises(PermissionError),
+            open_atomic(target, "x") as output,
+        ):
+            output.write("ours")
+        self.assertFalse(target.exists())
         self.assertEqual(leftovers(self.directory), [])
 
     def test_a_child_process_can_write_through_the_handle(self) -> None:
