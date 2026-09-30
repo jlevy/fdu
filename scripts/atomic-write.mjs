@@ -5,7 +5,8 @@
 // data goes to a temporary beside the target, is synced, and is then renamed over the
 // target; on any failure the temporary is removed and the target is untouched. This is
 // "Write Every File Whole" in docs/project/architecture/fdu-design-principles.md, and
-// scripts/check-atomic-writes.mjs fails on a raw write anywhere outside a helper.
+// scripts/check-atomic-writes.mjs fails on a raw write outside a helper in the Rust,
+// Python and Node sources.
 //
 // It mirrors writeFileSync, so converting a call changes nothing but atomicity: a new
 // file gets the permissions writeFileSync would give it, a replaced file keeps its own,

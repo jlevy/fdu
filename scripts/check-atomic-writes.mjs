@@ -411,6 +411,19 @@ function blank(text) {
 
 const CLOSERS = { "(": ")", "[": "]", "{": "}" };
 
+// The index of the bracket that closes the one at `open` in structural `code`, or -1.
+function closingIndex(code, open) {
+  let depth = 0;
+  for (let cursor = open; cursor < code.length; cursor += 1) {
+    if (CLOSERS[code[cursor]]) depth += 1;
+    else if (code[cursor] === ")" || code[cursor] === "]" || code[cursor] === "}") {
+      depth -= 1;
+      if (depth === 0) return cursor;
+    }
+  }
+  return -1;
+}
+
 // The arguments of the call whose opening parenthesis is at `open` in structural `code`,
 // each as a span, split on top-level commas.
 function callArguments(code, open) {
@@ -465,9 +478,23 @@ function positional(structure, args) {
 // Detection. Each auditor returns the raw writes in one file as { offset, kind }.
 
 const PYTHON_MODE = /^([rwaxbtU+]{1,4})(?:[:|][\w*]*)?$/;
-const PYTHON_MODULE_OPENERS = new Set(["gzip", "bz2", "lzma", "io", "codecs", "tarfile", "os"]);
+const PYTHON_MODULE_OPENERS = new Set([
+  "builtins",
+  "gzip",
+  "bz2",
+  "lzma",
+  "io",
+  "codecs",
+  "tarfile",
+  "os",
+]);
+// Modules whose `open` opens no file: the package's own `fdu.open(root)` serves a tree,
+// and `webbrowser.open(url)` shows a page.
+const PYTHON_NON_FILE_OPENERS = new Set(["fdu", "webbrowser"]);
 const PYTHON_ARCHIVES = new Set(["GzipFile", "BZ2File", "LZMAFile", "ZipFile", "TarFile"]);
 const OS_WRITE_FLAGS = /\bO_(?:WRONLY|RDWR|CREAT|APPEND|TRUNC)\b/;
+// Flags spelled out as `os.O_*` names or numbers, joined by `|`, which can be read here.
+const OS_LITERAL_FLAG = /^(?:(?:os\s*\.\s*)?O_[A-Z0-9_]+|\d+)$/;
 // A call of `open`, `fdopen`, or an archive class, with the name before any dot.
 const PYTHON_OPENERS = new RegExp(
   `(?:(\\b\\w+)\\s*\\.\\s*)?(?<![\\w])(open|fdopen|${[...PYTHON_ARCHIVES].join("|")})\\s*\\(`,
@@ -479,6 +506,26 @@ function pythonModeWrites(value) {
   return match !== null && /[wax+]/.test(match[1]);
 }
 
+function literalFlags(text) {
+  return text
+    .replace(/[()]/g, "")
+    .split("|")
+    .every((term) => OS_LITERAL_FLAG.test(term.trim()));
+}
+
+// The names `open_atomic(...) as name` binds. A dump into one of them is the helper's
+// write, and any other handle of the same name was opened by a call reported on its own.
+function atomicHandles(code) {
+  const names = new Set();
+  for (const match of code.matchAll(/\bopen_atomic\s*\(/g)) {
+    const end = closingIndex(code, match.index + match[0].length - 1);
+    if (end === -1) continue;
+    const bound = code.slice(end + 1).match(/^\s*as\s+(\w+)/);
+    if (bound) names.add(bound[1]);
+  }
+  return names;
+}
+
 export function auditPython(source) {
   const structure = pythonStructure(source);
   const { code } = structure;
@@ -487,11 +534,12 @@ export function auditPython(source) {
   for (const match of code.matchAll(/\.write_(text|bytes)\s*\(/g)) {
     writes.push({ offset: match.index, kind: `.write_${match[1]}()` });
   }
+  const atomic = atomicHandles(code);
   for (const match of code.matchAll(/\b(?:json|pickle)\.dump\s*\(/g)) {
     const open = match.index + match[0].length - 1;
     const handle = positional(structure, callArguments(code, open))[1];
     const target = handle ? code.slice(handle.start, handle.end).trim() : "";
-    if (target === "sys.stdout" || target === "sys.stderr") continue;
+    if (target === "sys.stdout" || target === "sys.stderr" || atomic.has(target)) continue;
     writes.push({ offset: match.index, kind: `${match[0].replace(/\s*\($/, "")}() to a file` });
   }
   for (const match of code.matchAll(/\bshutil\.(copy|copy2|copyfile|copytree)\s*\(/g)) {
@@ -502,6 +550,7 @@ export function auditPython(source) {
     const [, receiver, name] = match;
     // A definition, such as the package's own `def open(root, ...)`, is not a call.
     if (/\bdef\s+$/.test(code.slice(Math.max(0, match.index - 8), match.index))) continue;
+    if (PYTHON_NON_FILE_OPENERS.has(receiver)) continue;
     // `x.open(` where x is not a bare name, such as `path.with_suffix(".x").open(`.
     const qualified = receiver !== undefined || code[match.index - 1] === ".";
     const open = match.index + match[0].length - 1;
@@ -509,9 +558,15 @@ export function auditPython(source) {
     const label = `${receiver ? `${receiver}.` : qualified ? "." : ""}${name}()`;
 
     if (receiver === "os" && name === "open") {
-      const flags = positional(structure, args)[1];
-      if (flags && OS_WRITE_FLAGS.test(code.slice(flags.start, flags.end))) {
+      const flags =
+        keywordArgument(structure, args, "flags") ?? positional(structure, args)[1];
+      if (flags === undefined) continue;
+      const text = code.slice(flags.start, flags.end);
+      if (OS_WRITE_FLAGS.test(text)) {
         writes.push({ offset: match.index, kind: "os.open() for writing" });
+      } else if (!literalFlags(text)) {
+        // Flags this check cannot read may hold a write flag.
+        writes.push({ offset: match.index, kind: "os.open() with computed flags" });
       }
       continue;
     }
@@ -526,11 +581,10 @@ export function auditPython(source) {
     if (place === undefined) continue;
     const value = literalValue(structure, place);
     if (value === undefined) {
-      // A computed mode cannot be proven to read. Only report it where the argument is
-      // known to be the mode; a method's first argument may be something else entirely.
-      if (keyword || moduleLevel) {
-        writes.push({ offset: match.index, kind: `${label} with a computed mode` });
-      }
+      // A computed mode cannot be proven to read. A method's first argument is taken as
+      // its mode, as Path.open's is; a method whose `open` takes something else is either
+      // one of the modules above or a site listed with its reason.
+      writes.push({ offset: match.index, kind: `${label} with a computed mode` });
       continue;
     }
     if (pythonModeWrites(value)) {
@@ -554,12 +608,38 @@ const NODE_WRITER_NAMES = [
 const NODE_WRITERS = new RegExp(`\\b(${NODE_WRITER_NAMES.join("|")})\\s*\\(`, "g");
 const NODE_WRITE_FLAG = /^(?:w|wx|w\+|wx\+|a|ax|a\+|ax\+|as|as\+|r\+|rs\+)$/;
 
+// The local names a writer is imported or destructured under, such as
+// `import { writeFileSync as save }` or `const { writeFileSync: save } = require(...)`.
+function nodeWriterAliases(code) {
+  const aliases = new Map();
+  const forms = [
+    [/\bimport\s*(?:[\w$]+\s*,\s*)?\{([^}]*)\}/g, /^\s*([\w$]+)\s+as\s+([\w$]+)\s*$/],
+    [/\b(?:const|let|var)\s*\{([^}]*)\}\s*=/g, /^\s*([\w$]+)\s*:\s*([\w$]+)\s*$/],
+  ];
+  for (const [group, specifier] of forms) {
+    for (const match of code.matchAll(group)) {
+      for (const item of match[1].split(",")) {
+        const [, name, local] = item.match(specifier) ?? [];
+        if (NODE_WRITER_NAMES.includes(name) && local !== name) aliases.set(local, name);
+      }
+    }
+  }
+  return aliases;
+}
+
 export function auditNode(source) {
   const structure = scriptStructure(source);
   const { code } = structure;
   const writes = [];
   for (const match of code.matchAll(NODE_WRITERS)) {
     writes.push({ offset: match.index, kind: `${match[1]}()` });
+  }
+  for (const [local, name] of nodeWriterAliases(code)) {
+    const call = new RegExp(`(?<![\\w$.])${local.replace(/\$/g, "\\$")}\\s*\\(`, "g");
+    for (const match of code.matchAll(call)) {
+      if (/\bfunction\s*$/.test(code.slice(Math.max(0, match.index - 10), match.index))) continue;
+      writes.push({ offset: match.index, kind: `${name}() imported as ${local}()` });
+    }
   }
   for (const match of code.matchAll(/\b(openSync|open)\s*\(/g)) {
     const args = callArguments(code, match.index + match[0].length - 1);
@@ -585,6 +665,123 @@ const RUST_WRITERS = [
   [/\bfs::copy\s*\(/g, "fs::copy()"],
   [/\.(?:write|append|create|create_new|truncate)\s*\(\s*true\s*\)/g, "a write-mode OpenOptions"],
 ];
+const OPEN_OPTIONS_WRITES = new Set(["write", "append", "create", "create_new", "truncate"]);
+const OPEN_OPTIONS_BUILDER = /\b(?:OpenOptions\s*::\s*new|File\s*::\s*options)\s*\(\s*\)/g;
+// The std::fs writers a `use` can bring in under a bare name.
+const RUST_FS_WRITERS = new Map([
+  ["std::fs::write", "fs::write()"],
+  ["std::fs::copy", "fs::copy()"],
+]);
+
+// Each path a `use` tree names, with the local name it binds: `std::{fs::{self, write as
+// save}, io}` gives std::fs as fs, std::fs::write as save, and std::io as io.
+function useLeaves(tree, prefix = []) {
+  const text = tree.trim();
+  const brace = text.indexOf("{");
+  if (brace === -1) {
+    const [path, alias] = text.split(/\s+as\s+/);
+    const segments = [...prefix, ...path.split("::").map((part) => part.trim())].filter(Boolean);
+    if (segments.at(-1) === "self") segments.pop();
+    return [{ path: segments.join("::"), local: alias?.trim() ?? segments.at(-1) }];
+  }
+  const base = [...prefix, ...text.slice(0, brace).split("::").map((part) => part.trim())];
+  const inner = text.slice(brace + 1, text.lastIndexOf("}"));
+  const items = [];
+  let depth = 0;
+  let item = "";
+  for (const character of inner) {
+    if (character === "{") depth += 1;
+    if (character === "}") depth -= 1;
+    if (character === "," && depth === 0) {
+      items.push(item);
+      item = "";
+    } else {
+      item += character;
+    }
+  }
+  items.push(item);
+  return items
+    .filter((entry) => entry.trim() !== "")
+    .flatMap((entry) => useLeaves(entry, base.filter(Boolean)));
+}
+
+// Bare calls of a std::fs writer imported by `use`, such as `use std::fs::write;` and
+// then `write(path, bytes)`.
+function rustImportedWriters(code) {
+  const writes = [];
+  const locals = new Map();
+  for (const declaration of code.matchAll(/\buse\s+([^;]+);/g)) {
+    for (const { path, local } of useLeaves(declaration[1])) {
+      if (RUST_FS_WRITERS.has(path)) locals.set(local, RUST_FS_WRITERS.get(path));
+      if (path === "std::fs::*") {
+        for (const [writer, kind] of RUST_FS_WRITERS) locals.set(writer.split("::").at(-1), kind);
+      }
+    }
+  }
+  for (const [local, kind] of locals) {
+    for (const match of code.matchAll(new RegExp(`(?<![\\w:.])${local}\\s*\\(`, "g"))) {
+      if (/\bfn\s+$/.test(code.slice(Math.max(0, match.index - 8), match.index))) continue;
+      writes.push({ offset: match.index, kind: `${kind} imported as ${local}()` });
+    }
+  }
+  return writes;
+}
+
+// The calls chained from `cursor`, each as { name, argument, offset }.
+function rustChain(code, cursor) {
+  const calls = [];
+  for (;;) {
+    const call = code.slice(cursor).match(/^\s*\.\s*(\w+)\s*\(/);
+    if (!call) return calls;
+    const open = cursor + call[0].length - 1;
+    const close = closingIndex(code, open);
+    if (close === -1) return calls;
+    const offset = cursor + call[0].lastIndexOf(call[1]);
+    calls.push({ name: call[1], argument: code.slice(open + 1, close).trim(), offset });
+    cursor = close + 1;
+  }
+}
+
+// An OpenOptions whose write, append, create, create_new, or truncate flag is an
+// expression rather than `true` or `false`, whether set in the chain that builds it or
+// through a binding in the same block. A literal `true` is reported by RUST_WRITERS.
+function rustComputedOpenOptions(code) {
+  const writes = [];
+  const report = (calls) => {
+    for (const call of calls) {
+      if (!OPEN_OPTIONS_WRITES.has(call.name) || /^(?:true|false)$/.test(call.argument)) {
+        continue;
+      }
+      const kind = `OpenOptions .${call.name}() with a computed flag`;
+      writes.push({ offset: call.offset, kind });
+    }
+  };
+  for (const builder of code.matchAll(OPEN_OPTIONS_BUILDER)) {
+    const end = builder.index + builder[0].length;
+    const chain = rustChain(code, end);
+    report(chain);
+    // Only `let options = OpenOptions::new();` binds the builder itself.
+    if (chain.length > 0 || !/^\s*;/.test(code.slice(end))) continue;
+    const before = code.slice(Math.max(0, builder.index - 200), builder.index);
+    const binding = before.match(/\blet\s+(?:mut\s+)?(\w+)\s*(?::[^=;]*)?=\s*(?:\w+\s*::\s*)*$/);
+    if (!binding) continue;
+    // The binding lives until the block that holds it closes.
+    let depth = 0;
+    let stop = code.length;
+    for (let index = end; index < code.length; index += 1) {
+      if (code[index] === "{") depth += 1;
+      if (code[index] === "}" && --depth < 0) {
+        stop = index;
+        break;
+      }
+    }
+    const uses = new RegExp(`(?<![\\w.:])${binding[1]}(?=\\s*\\.)`, "g");
+    for (const use of code.slice(end, stop).matchAll(uses)) {
+      report(rustChain(code, end + use.index + use[0].length));
+    }
+  }
+  return writes;
+}
 
 // The attribute names a configuration that exists only when testing: `cfg(test)`, or an
 // `all(...)` with `test` among its terms.
@@ -668,6 +865,7 @@ export function auditRust(source) {
   for (const [pattern, kind] of RUST_WRITERS) {
     for (const match of code.matchAll(pattern)) writes.push({ offset: match.index, kind });
   }
+  writes.push(...rustImportedWriters(code), ...rustComputedOpenOptions(code));
   return writes;
 }
 

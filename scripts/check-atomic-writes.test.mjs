@@ -44,6 +44,91 @@ test("finds every raw Rust write outside test code", () => {
   ]);
 });
 
+test("finds a std::fs writer imported by use and called bare", () => {
+  const imports = [
+    "use std::fs::write;",
+    "use std::fs::{self, write};",
+    "use std::fs::{File, copy};",
+    "use std::{fs::{write, copy}, io};",
+    "use std::fs::write as save;",
+    "use std::fs::*;",
+  ];
+  const calls = ["write(path, b\"x\")?;", "copy(from, path)?;", "save(path, b\"x\")?;"];
+  const expected = [
+    ["fs::write() imported as write()"],
+    ["fs::write() imported as write()"],
+    ["fs::copy() imported as copy()"],
+    ["fs::write() imported as write()", "fs::copy() imported as copy()"],
+    ["fs::write() imported as save()"],
+    ["fs::write() imported as write()", "fs::copy() imported as copy()"],
+  ];
+  imports.forEach((line, index) => {
+    const body = calls.map((call) => `    ${call}\n`).join("");
+    const source = `${line}\nfn store(path: &Path) -> io::Result<()> {\n${body}}\n`;
+    assert.deepEqual(kinds(auditRust(source)), expected[index], line);
+  });
+});
+
+test("does not count a bare write that is not std::fs's", () => {
+  const source = [
+    "use std::io::Write;",
+    "use std::fs::File;",
+    "fn write(buffer: &mut Vec<u8>) {}",
+    "fn store(out: &mut impl Write) {",
+    "    write(&mut buffer);",
+    "    write!(out, \"x\")?;",
+    "    out.write(b\"x\")?;",
+    "    io::copy(&mut from, out)?;",
+    "}",
+    "#[cfg(test)]",
+    "mod tests {",
+    "    use std::fs::write;",
+    "    fn plant() { write(p, b\"x\").unwrap(); }",
+    "}",
+  ].join("\n");
+  assert.deepEqual(auditRust(source), []);
+});
+
+test("finds an OpenOptions whose write, append, or create flag is computed", () => {
+  const source = [
+    "fn open(path: &Path, append: bool) -> io::Result<File> {",
+    "    OpenOptions::new().read(true).append(append).open(path)?;",
+    "    std::fs::OpenOptions::new()",
+    "        .write(!read_only)",
+    "        .create(settings.create)",
+    "        .open(path)?;",
+    "    File::options().create_new(fresh).open(path)?;",
+    "    let mut options = OpenOptions::new();",
+    "    options.read(true);",
+    "    options.write(writable);",
+    "    options.open(path)",
+    "}",
+  ].join("\n");
+  assert.deepEqual(kinds(auditRust(source)), [
+    "OpenOptions .append() with a computed flag",
+    "OpenOptions .write() with a computed flag",
+    "OpenOptions .create() with a computed flag",
+    "OpenOptions .create_new() with a computed flag",
+    "OpenOptions .write() with a computed flag",
+  ]);
+});
+
+test("does not count a read-only OpenOptions or another type's write call", () => {
+  const source = [
+    "fn read(path: &Path) -> io::Result<()> {",
+    "    OpenOptions::new().read(true).write(false).open(path)?;",
+    "    fs::OpenOptions::new().read(true).custom_flags(flags).open(path)?;",
+    "    let options = OpenOptions::new();",
+    "    let file = options.read(true).open(path)?;",
+    "    buffer.truncate(length);",
+    "    lines.append(&mut other);",
+    "    output.write(&bytes)?;",
+    "}",
+    "fn other(options: Settings) { options.write(flag); }",
+  ].join("\n");
+  assert.deepEqual(auditRust(source), []);
+});
+
 test("does not count a read-open or a Rust write named in a comment or string", () => {
   const source = [
     "// fs::write(path, bytes) would tear",
@@ -142,6 +227,63 @@ test("does not count Python reads, streams, definitions, comments, or strings", 
   assert.deepEqual(auditPython(source), []);
 });
 
+test("reads builtins.open like the builtin", () => {
+  const source = [
+    'with builtins.open(path, "w") as handle: pass',
+    'with builtins.open("x", "w") as handle: pass',
+    "with builtins.open(path, mode) as handle: pass",
+    "with builtins.open(path) as handle: pass",
+    'with builtins.open("x", "rb") as handle: pass',
+  ].join("\n");
+  assert.deepEqual(kinds(auditPython(source)), [
+    'builtins.open() with mode "w"',
+    'builtins.open() with mode "w"',
+    "builtins.open() with a computed mode",
+  ]);
+});
+
+test("finds Python opens whose flags or mode are computed", () => {
+  const source = [
+    "descriptor = os.open(path, flags)",
+    "descriptor = os.open(path, os.O_RDONLY | extra)",
+    "descriptor = os.open(path, flags=os.O_WRONLY)",
+    "descriptor = os.open(path, os.O_WRONLY | extra)",
+    "with path.open(mode) as handle: pass",
+    'with path.with_suffix(".x").open(mode, encoding="utf-8") as handle: pass',
+  ].join("\n");
+  assert.deepEqual(kinds(auditPython(source)), [
+    "os.open() with computed flags",
+    "os.open() with computed flags",
+    "os.open() for writing",
+    "os.open() for writing",
+    "path.open() with a computed mode",
+    ".open() with a computed mode",
+  ]);
+});
+
+test("does not count Python opens whose flags are literal reads", () => {
+  const source = [
+    "descriptor = os.open(path, os.O_RDONLY)",
+    "descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)",
+    "descriptor = os.open(path, (O_RDONLY | O_DIRECTORY), dir_fd=parent)",
+    "descriptor = os.open(path, 0)",
+    "with fdu.open(root, options) as opened: pass",
+    "webbrowser.open(url, new)",
+  ].join("\n");
+  assert.deepEqual(auditPython(source), []);
+});
+
+test("does not count a dump into a handle open_atomic bound", () => {
+  const source = [
+    'with open_atomic(path, "w", encoding="utf-8") as output:',
+    "    json.dump(value, output, indent=2)",
+    'with open_atomic(first) as a, atomic_write.open_atomic(second, "wb") as b:',
+    "    pickle.dump(value, b)",
+    "    json.dump(value, handle)",
+  ].join("\n");
+  assert.deepEqual(kinds(auditPython(source)), ["json.dump() to a file"]);
+});
+
 test("keeps Python structure aligned with the source", () => {
   const source = 'a = rb"\\"x"  # c\nb = f"""{x}\n"""\nc = \'open(p, "w")\'\n';
   const { code, literals } = pythonStructure(source);
@@ -177,6 +319,42 @@ test("finds every raw Node write", () => {
     'open() with flags "a+"',
     "openSync() with computed flags",
   ]);
+});
+
+test("finds a Node writer called under an alias", () => {
+  const source = [
+    'import { readFileSync, writeFileSync as save, createWriteStream as stream } from "node:fs";',
+    'import fs, { writeFile as put } from "node:fs/promises";',
+    'const { appendFileSync: log, readFileSync: read } = require("node:fs");',
+    "const {",
+    "  appendFile: logLater,",
+    '} = await import("node:fs/promises");',
+    "save(path, text);",
+    "const out = stream(path);",
+    "await put(path, text);",
+    "log(path, line);",
+    "await logLater(path, line);",
+    "read(path);",
+  ].join("\n");
+  assert.deepEqual(kinds(auditNode(source)), [
+    "writeFileSync() imported as save()",
+    "createWriteStream() imported as stream()",
+    "writeFile() imported as put()",
+    "appendFileSync() imported as log()",
+    "appendFile() imported as logLater()",
+  ]);
+});
+
+test("does not count an alias that is only defined or named", () => {
+  const source = [
+    'import { writeFileSync as save } from "node:fs";',
+    "function save(path) { return path; }",
+    "object.save(path);",
+    "const hint = 'save(path)';",
+    "const options = { writeFileSync: fake };",
+    "fake(path);",
+  ].join("\n");
+  assert.deepEqual(auditNode(source), []);
 });
 
 test("does not count Node reads, comments, strings, templates, or regular expressions", () => {

@@ -5,7 +5,8 @@ under the final name, even after a crash or a container restart mid-write. The d
 to a temporary beside the target, is flushed and synced, and is then renamed over the
 target; on any failure the temporary is removed and the target is untouched. This is
 "Write Every File Whole" in docs/project/architecture/fdu-design-principles.md, and
-scripts/check-atomic-writes.mjs fails on a raw write anywhere outside a helper.
+scripts/check-atomic-writes.mjs fails on a raw write outside a helper in the Rust, Python
+and Node sources.
 
 Each function mirrors the call it replaces, so converting one changes nothing but
 atomicity: text defaults to the same encoding and newline translation as ``open``, a
