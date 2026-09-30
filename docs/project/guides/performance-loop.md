@@ -1041,6 +1041,16 @@ make perf-compare PERF_TREE=/path/to/tree PERF_LABEL=mytree \
   JOBS="cold-scan-index warm-revalidate" TRIALS=12 NAME=exp-067-parallel-producer
 ```
 
+The candidate is the probe `perf-probe-release` just built, found where cargo put it
+(`CARGO_TARGET_DIR` and `build.target-dir` move it).
+A target directory shared with another worktree could hand that build a probe compiled
+from the other worktree’s sources: cargo judges freshness by modification time, and
+nothing prints `Compiling` (`fdu-8whh`). The build’s `target-owner` step prevents that
+by discarding the workspace crates’ fingerprints whenever another checkout built there
+last, so a candidate built through Make is always this checkout’s. Build a control by
+hand with `cargo` and the guard does not run; give it its own target directory, or
+confirm it recompiled.
+
 The targets run `python -m benchmarks.realtree` through
 `uv run --project explorations/benchmarks` with `PYTHONPATH=explorations`; invoking the
 module any other way does not resolve the package.

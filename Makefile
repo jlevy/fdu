@@ -18,7 +18,39 @@ NODE_INSTALL_STAMP := node_modules/.package-lock.json
 CARGO_TARGET = $(eval CARGO_TARGET := $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),$(CURDIR)/target))$(CARGO_TARGET)
 DEBUG_FDU = $(CARGO_TARGET)/debug/fdu
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
+# A target directory shared by several checkouts serves one checkout's build to another.
+# Cargo judges a workspace crate fresh when its outputs are newer than its sources, and
+# another checkout's newer outputs pass that test however different its sources are: a
+# test binary then runs without the code under test, and nothing prints `Compiling`
+# (fdu-8whh). So every target that builds a workspace crate first records which checkout
+# owns the target directory. When the owner changes, or is unrecorded -- as for any
+# directory built before this check -- it removes the workspace crates' fingerprints, and
+# cargo rebuilds them from this checkout's sources. Dependencies keep theirs: they are
+# registry releases, identical in every checkout. The `fdu-*` pattern names exactly the
+# workspace packages (fdu, fdu-core, fdu-py); no dependency's name starts with it.
+TARGET_OWNER_STAMP = $(CARGO_TARGET)/.fdu-checkout
+
+target-owner:
+	@target="$(CARGO_TARGET)"; stamp="$(TARGET_OWNER_STAMP)"; \
+	owner="$$(cat "$$stamp" 2>/dev/null)"; \
+	if [ -d "$$target" ] && [ "$$owner" != "$(CURDIR)" ]; then \
+		echo "note: $$target was last built from $${owner:-an unrecorded checkout};"; \
+		echo "      removing its fdu crate fingerprints so cargo rebuilds them from $(CURDIR)"; \
+		find "$$target" -maxdepth 3 -type d -name .fingerprint -prune \
+			-exec sh -c 'for dir; do rm -rf -- "$$dir"/fdu-*; done' sh {} + || exit 1; \
+	fi; \
+	mkdir -p "$$target" && printf '%s\n' "$(CURDIR)" > "$$stamp"
+
+# Every target whose recipe compiles a workspace crate, through cargo or maturin; the
+# recipe-coverage test in scripts/cargo-target.test.mjs keeps this list complete.
+TARGET_OWNER_TARGETS := build release rust-test reference-model opened-root-golden \
+	opened-root-golden-update yaml-selfcheck performance-probe clippy cross-lint docs \
+	lib-only msrv fix parity-venv python-check python-concurrency python-smoke \
+	release-rehearse cli perf-probe-release perf-probe-profiling
+
+$(TARGET_OWNER_TARGETS): target-owner
+
+.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -467,12 +499,15 @@ python-smoke:
 		wheel_path="$$(find "$$wheel_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)" && \
 		$(UV) tool run --isolated --no-index --python $(WHEEL_PYTHON) --from "$$wheel_path" fdu --version
 
+# The sdist must build from its own contents. Under an exported CARGO_TARGET_DIR -- which
+# AGENTS.md recommends -- cargo would build it into the checkout's target directory, where
+# the same crates' newer outputs can pass for fresh and install instead (fdu-8whh).
 python-sdist-smoke:
 	cd crates/fdu-py && sdist_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-sdist.XXXXXX")" && \
 		trap 'rm -r -- "$$sdist_dir"' EXIT && \
 		$(UV) build --no-sources --sdist --out-dir "$$sdist_dir" && \
 		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-sdist && \
-		$(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
+		env -u CARGO_TARGET_DIR $(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
 		$(UV) run --no-project --python .venv-sdist python tests/public_smoke.py
 
 # uv provides the interpreter so the release gates never depend on the host's system
