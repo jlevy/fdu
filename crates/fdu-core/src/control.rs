@@ -1129,6 +1129,24 @@ impl ControlTable {
             self.refused.keys().all(|directory| !self.by_directory.contains_key(directory)),
             "a refused directory retains no source"
         );
+        // The byte-keyed index (H188) holds the same relation: one key per directory,
+        // sharing the directory's content.
+        assert_eq!(
+            self.by_directory_bytes.len(),
+            self.by_directory.len(),
+            "one byte key per directory"
+        );
+        for (directory, content) in &self.by_directory {
+            let by_bytes = self
+                .by_directory_bytes
+                .get(directory.as_os_str())
+                .expect("every directory is keyed by its bytes");
+            assert!(
+                Arc::ptr_eq(by_bytes, content),
+                "{}: the byte-keyed index shares the directory's content",
+                directory.display()
+            );
+        }
         assert!(
             self.limits.budget.is_none_or(|budget| self.retained_cost <= budget),
             "within budget"
