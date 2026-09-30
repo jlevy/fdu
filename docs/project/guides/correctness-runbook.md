@@ -213,6 +213,9 @@ Each pass was checked by breaking it:
   cold output relabeled `cache_only`. All 23 cases reported `PARTIAL-STORED`, and
   `--refusals-only` exited 1.
 
+Every case of every pass, and the commands that ran them, are in the
+[0.3.0 stability-pass report](../reports/report-2026-09-30-release-0.3.0-stability-pass.md).
+
 ### Previous Run: 0.2.0 on macOS
 
 On 2026-09-28, against release commit `6ec77163a` for 0.2.0, the `make build` debug
