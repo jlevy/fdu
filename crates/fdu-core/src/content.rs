@@ -7,11 +7,11 @@
 //! ([`CodeAccumulator`]), and never truncates or size-skips an eligible file. One thing
 //! is retained whole per worker, because an exact answer needs it: the source of a
 //! Markdown file under the words unit, since the `CommonMark` parser resolves list
-//! tightness, headings, and references across the whole document. That is bounded by
-//! [`MARKDOWN_EXACT_BYTES`]: a larger Markdown file is counted as plain text and its
-//! record says so ([`CoverageReason::TextOnly`]). A file of another type retains at
-//! most its 16 KiB classification prefix and one chunk once the prefix has settled its
-//! type.
+//! tightness, headings, and references across the whole document. That is bounded at
+//! 64 MiB (`MARKDOWN_EXACT_BYTES`, stated with its reason in the analysis module): a
+//! larger Markdown file is counted as plain text and its record says so
+//! ([`CoverageReason::TextOnly`]). A file of another type retains at most its 16 KiB
+//! classification prefix and one chunk once the prefix has settled its type.
 
 mod content_analysis;
 mod content_basic_metrics;
