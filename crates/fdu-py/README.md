@@ -2,7 +2,13 @@
 
 **Fastest native du replacement and detailed file analytics for Python and Rust**
 
-Python bindings for [fdu](https://github.com/jlevy/fdu).
+Python bindings for [fdu](https://github.com/jlevy/fdu), which reports, for every
+directory in a tree at once, its size, file count, recency, and file kinds, and on
+request its lines of code and prose volume.
+It walks a tree on several threads through each platform’s native directory interface,
+and on a million-file tree runs about 9× as fast as `du` on macOS and 2.6× as fast on
+Linux, ahead of pdu, diskus, and dust
+([speed](https://github.com/jlevy/fdu/blob/main/docs/speed.md)).
 
 ## Set Up with Any Coding Agent
 
