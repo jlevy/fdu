@@ -25,11 +25,13 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from pydantic import ValidationError
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import experiment as experiment_model
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
@@ -791,8 +793,21 @@ def _value(value: float, unit: str) -> str:
 
 
 def _anchor(experiment: Mapping[str, Any]) -> str:
+    """The id GitHub gives the experiment's section heading, so an index row jumps to it.
+
+    GitHub's rule (github-slugger): lowercase the heading's text, drop every character that
+    is not a letter, mark, number, connector punctuation such as `_`, space, or hyphen, and
+    turn each space into a hyphen. Hyphens and underscores stay; dropping them, as this
+    once did, linked every row to an id no heading had (fdu-tokp).
+    """
     text = f"{experiment['id']} — {experiment['title']}".lower()
-    kept = [character if character.isalnum() or character == " " else "" for character in text]
+    kept = [
+        character
+        for character in text
+        if character in " -"
+        or unicodedata.category(character)[0] in "LMN"
+        or unicodedata.category(character) == "Pc"
+    ]
     return "".join(kept).replace(" ", "-")
 
 
@@ -811,7 +826,7 @@ def main(argv: Sequence[str]) -> int:
         print("no experiment artifacts found", file=sys.stderr)
         return 1
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
-    arguments.out.write_text(render(experiments), encoding="utf-8")
+    write_text_atomic(arguments.out, render(experiments), encoding="utf-8")
     print(f"wrote {arguments.out} from {len(experiments)} experiments", file=sys.stderr)
     return 0
 

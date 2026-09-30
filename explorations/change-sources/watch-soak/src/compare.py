@@ -16,6 +16,9 @@ import re
 import statistics
 import sys
 from collections import Counter, defaultdict
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import open_atomic  # noqa: E402
 
 PRIV = sys.argv[1]
 ROOT = sys.argv[2].rstrip("/")
@@ -145,7 +148,7 @@ for p in sorted(set(O1f) | set(O2f) | set(Wf)):
     class_bytes[cls] += abs(delta_alloc)
     per_class_categories[cls][category(p)] += 1
     private_rows.append((cls, p, ka, kb, kw, bool(writer), delta_alloc))
-with open(os.path.join(PRIV, "classification_private.tsv"), "w") as f:
+with open_atomic(os.path.join(PRIV, "classification_private.tsv")) as f:
     for row in private_rows:
         f.write("\t".join(str(x) for x in row) + "\n")
 

@@ -454,7 +454,7 @@ It observes control state as `ScanConfig::read_controls` says, on by default as 
 `open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must answer the same request identically.
 A one-shot report owns an index nobody else can reach once its answer is built, so the
-last reference to a large one (64k entries or more) is released on a detached thread
+last reference to a large one (4,096 entries or more) is released on a detached thread
 rather than before the call returns; a joined snapshot writer does the same with its
 reference. That thread holds no engine state and reports nothing, so nothing joins it:
 its only effect is returning memory, and a process that exits first lets the operating

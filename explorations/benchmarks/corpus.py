@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
+from benchmarks.atomic_write import write_text_atomic
+
 if os.name == "nt":
     from ctypes import wintypes
 
@@ -1775,23 +1777,8 @@ def _reject_json_constant(value: str) -> None:
 
 def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
-    )
-    temporary_path = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
-            json.dump(value, output, ensure_ascii=True, indent=2, sort_keys=True)
-            output.write("\n")
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary_path, path)
-    except Exception:
-        try:
-            temporary_path.unlink()
-        except FileNotFoundError:
-            pass
-        raise
+    text = json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
+    write_text_atomic(path, text, encoding="utf-8", newline="\n")
 
 
 def _canonical_json(value: Mapping[str, Any]) -> bytes:

@@ -114,7 +114,7 @@ The Linux scouting measured a warm single-threaded floor of about **1.5 µs per 
 some twenty times below the threshold.
 If warm Linux service time never approaches 30 µs, the trigger never fires, and an
 automatic scan stays at its six-worker cap in every regime the threshold was meant to
-distinguish. That is a concrete mechanism for the one place Linux measurement found fdu
+distinguish. That is a concrete mechanism for the one place the Linux scouting found fdu
 behind: `diskus`, which runs three times the core count, led the cold scalar class by
 22.8%.
 
@@ -155,21 +155,28 @@ describes an unknown mixture of decisions.
 The characterization, experiments, and no-change decision are in
 [the adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md).
 
-### The Linux native reader is invisible to backend diagnostics
+### The Linux native reader in backend diagnostics
 
-The Linux reader (`scan/linux_dents.rs`, glibc builds) has no fields in
-`ScanBackendDiagnostics` in the 0.2 series, because adding them changes a public struct,
-and that waits for 0.3.0. Its listings are counted in neither portable field, and
-`unavailable_reason` still describes only the macOS fields.
-On Linux, the directories it served are therefore `dirs_read` less
-`portable_directory_reads`, and a directory it declined is counted once, as a portable
-attempt.
+The Linux reader (`scan/linux_dents.rs`, glibc builds) has three fields in
+`ScanBackendDiagnostics` since 0.3.0, serialized in the `backend` object of the
+`__FDU_SCAN_DIAGNOSTICS__` trace ahead of the macOS keys so the object stays
+alphabetical: `linux_dents_attempts`, the directories the reader was asked to list;
+`linux_dents_successes`, the listings it served; and `linux_dents_fallbacks`, the
+directories it declined, each of which then counts as a portable attempt.
+So `linux_dents_attempts` equals successes plus fallbacks, and `dirs_read` equals
+`linux_dents_successes` plus `portable_directory_reads`. Every route that lists
+directories counts them: the walker, revalidation, reconciliation, and opened discovery.
+The three are `null` off Linux and on a Linux build without glibc, where the reader is
+not compiled; `unavailable_reason` still describes only the macOS fields.
+Traces that predate the fields have no keys, and the harness reads them as zero native
+listings. In the 0.2 series the reader was invisible here, and the directories it served
+were `dirs_read` less `portable_directory_reads`.
 
-The realtree harness’s claim-grade backend check compares `dirs_read` with the portable
-reads off macOS, so it refuses a Linux `--diagnostics` job whose walk the reader served.
-No Linux job in the loop requires scan diagnostics: the only job that does,
-`adaptive-scan-index`, also requires the macOS backend counts, so it cannot pass on
-Linux in any case.
+The realtree harness’s claim-grade backend check reads the Linux triplet like the macOS
+one and, off macOS, compares `dirs_read` with the portable reads plus the Linux
+successes, so a Linux `--diagnostics` job passes once the reader serves the walk.
+The only job requiring scan diagnostics in the loop, `adaptive-scan-index`, also
+requires the macOS backend counts, so it still cannot pass on Linux.
 
 ## How a divergence is expressed in code
 

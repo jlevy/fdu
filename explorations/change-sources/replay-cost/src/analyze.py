@@ -20,6 +20,9 @@ from collections import defaultdict
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from since import load, since  # noqa: E402
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import complete_lines, write_text_atomic  # noqa: E402
 
 EXT_DEV = int(os.environ["EXTERNAL_DEV"])
 
@@ -44,7 +47,7 @@ def main() -> None:
     idx_path = sys.argv[2] if len(sys.argv) > 2 else "data/logindex.csv"
     out_path = sys.argv[3] if len(sys.argv) > 3 else "data/summary.json"
     rows = load(idx_path)
-    runs = [json.loads(ln) for ln in open(runs_path) if ln.strip()]
+    runs = [json.loads(ln) for ln in complete_lines(runs_path) if ln.strip()]
     recs = [r for r in runs if r.get("kind") in ("run", "bg-end") and r.get("result")]
 
     # 1. per-cell (label with trailing -rN / -N stripped) stats
@@ -108,7 +111,7 @@ def main() -> None:
         fits["cpu_vs_gz_MB"] = {"intercept_s": round(a, 3), "slope_s_per_MB": round(b, 5), "r2": round(r2, 4)}
 
     summary = {"cells": cell_table, "ext_quiet_sweep": sweep, "fits": fits, "n_runs": len(recs)}
-    json.dump(summary, open(out_path, "w"), indent=1)
+    write_text_atomic(out_path, json.dumps(summary, indent=1))
 
     print("## Cells\n")
     print("| cell | batch | n | dev | age | flags | hist min/med/max (s) | cpu med (s) | cpu share | events med | first cb (ms) | all done |")

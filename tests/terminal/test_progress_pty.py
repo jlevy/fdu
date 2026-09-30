@@ -31,7 +31,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-FDU = os.environ.get("FDU_BIN") or str(REPO / "target" / "debug" / "fdu")
+# `make test-terminal` names the build cargo made; standalone, CARGO_TARGET_DIR moves it.
+TARGET = REPO / os.environ.get("CARGO_TARGET_DIR", "target")
+FDU = os.environ.get("FDU_BIN") or str(TARGET / "debug" / "fdu")
 ERASE = b"\r\x1b[2K"
 SPINNER_LEAD = "⠋".encode()[:2]  # every braille spinner cell starts with these bytes
 INTERRUPTED = b"fdu: interrupted"
@@ -42,6 +44,8 @@ MIN_RUN_S = 3.0
 def environment(cache: Path) -> dict[str, str]:
     env = dict(os.environ, TERM="xterm-256color", NO_COLOR="1", XDG_CACHE_HOME=str(cache))
     env.pop("CI", None)
+    # FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real cache.
+    env.pop("FDU_CACHE_DIR", None)
     return env
 
 

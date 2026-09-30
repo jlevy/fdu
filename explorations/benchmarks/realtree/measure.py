@@ -1632,11 +1632,21 @@ def _validate_scan_diagnostics(
                 reasons.append("backend counts disagree with reported directories read")
         elif backend.get("unavailable_reason") in (None, ""):
             reasons.append("unavailable macOS backend counts have no reason")
+        # The Linux native reader, null where it is not built and absent from traces that
+        # predate it. Its successes are directories the portable counts never saw.
+        linux_attempts = backend.get("linux_dents_attempts")
+        linux_successes = backend.get("linux_dents_successes")
+        linux_fallbacks = backend.get("linux_dents_fallbacks")
+        if all(
+            isinstance(value, int) for value in (linux_attempts, linux_successes, linux_fallbacks)
+        ) and linux_attempts != (linux_successes + linux_fallbacks):
+            reasons.append("Linux native/fallback counts are inconsistent")
         if (
             not isinstance(attempts, int)
             and isinstance(expected_dirs_read, int)
             and isinstance(portable_reads, int)
-            and expected_dirs_read != portable_reads
+            and expected_dirs_read
+            != portable_reads + (linux_successes if isinstance(linux_successes, int) else 0)
         ):
             reasons.append("portable backend count disagrees with reported directories read")
     return reasons

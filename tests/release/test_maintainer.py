@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +20,7 @@ from collections.abc import Callable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from scripts.release import inspect_artifacts, maintainer
 from scripts.release.maintainer import (
@@ -155,6 +157,21 @@ def workspace_files(version: str = VERSION) -> dict[str, str]:
         f"docs/project/release-notes/{VERSION}.md": NOTES,
         "CHANGELOG.md": f"# Changelog\n\n## [Unreleased]\n\n## [{VERSION}] - 2026-09-28\n",
     }
+
+
+class HostTests(unittest.TestCase):
+    """The real host reports a program missing from PATH as that command failing."""
+
+    def test_a_missing_program_is_a_command_error_or_status_127(self) -> None:
+        with tempfile.TemporaryDirectory() as empty, mock.patch.dict(os.environ, {"PATH": empty}):
+            with self.assertRaises(CommandError) as raised:
+                Host().run(["gh", "api", "user"])
+            with redirect_stderr(io.StringIO()) as stderr:
+                status = Host().attach(["gh", "run", "watch", "1"])
+        self.assertEqual(raised.exception.status, 127)
+        self.assertIn("gh: not installed", str(raised.exception))
+        self.assertEqual(status, 127)
+        self.assertIn("gh: not installed", stderr.getvalue())
 
 
 class ReleaseCase(unittest.TestCase):
@@ -388,6 +405,29 @@ class PreflightTests(ReleaseCase):
         checks = self.preflight()
         self.assertEqual(self.failed(checks), ["registry secrets"])
         self.assertIn("CARGO_REGISTRY_TOKEN, PYPI_API_TOKEN", checks["registry secrets"].detail)
+
+    def test_a_host_without_gh_fails_only_the_lines_that_need_it(self) -> None:
+        # The promise is one unreadable source per line. A missing gh raised
+        # FileNotFoundError, which no probe caught, so the checklist died at its first gh
+        # line with a traceback (fdu-wy2t).
+        with tempfile.TemporaryDirectory() as empty:
+            real = Host()
+
+            def without_gh(argv: list[str]) -> str:
+                with mock.patch.dict(os.environ, {"PATH": empty}):
+                    return real.run(argv)
+
+            self.host.on(["gh"], without_gh)
+            checks = self.preflight()
+        gh_lines = [
+            "private vulnerability reporting",
+            "release environment",
+            "registry secrets",
+            "signing key",
+        ]
+        self.assertEqual(self.failed(checks), gh_lines)
+        for name in gh_lines:
+            self.assertIn("gh: not installed", checks[name].detail, name)
 
     def test_an_unprotected_environment_fails(self) -> None:
         self.host.on(

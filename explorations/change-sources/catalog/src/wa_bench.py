@@ -14,6 +14,9 @@ import os
 import subprocess
 import sys
 import time
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 APFS_UTIL = "/System/Library/Filesystems/apfs.fs/Contents/Resources/apfs.util"
 FIXTURES = os.environ["REVIEW"] + "/catalog/fixtures/"
@@ -78,8 +81,7 @@ def main():
             row[name] = workload(root, f"r{i:02d}")
         results.append(row)
         print(json.dumps(row))
-    with open(out, "w") as fh:
-        json.dump(results, fh, indent=1)
+    write_text_atomic(out, json.dumps(results, indent=1))
     # summary
     phases = list(results[0]["maintained"].keys())
     for ph in phases:

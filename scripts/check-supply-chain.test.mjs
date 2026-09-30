@@ -21,6 +21,7 @@ import {
   validateRustToolchainPins,
   selectShellFiles,
   shellFilesUnder,
+  validateSupplyChainTestLists,
   validateWorkflowSecurity,
 } from "./check-supply-chain.mjs";
 
@@ -269,6 +270,47 @@ jobs:
         },
       ]),
     /must authenticate with the least-privilege workflow token/,
+  );
+});
+
+test("every provenance job runs the supply-chain tests make supply-chain runs", () => {
+  const packageText = JSON.stringify({
+    scripts: {
+      "test:supply-chain":
+        "node --test scripts/check-supply-chain.test.mjs scripts/check-uv-version.test.mjs scripts/cargo-target.test.mjs",
+    },
+  });
+  const step = (files) => ({
+    path: ".github/workflows/ci.yml",
+    text: `    steps:\n      - run: node --test scripts/check-supply-chain.test.mjs ${files}\n      - run: node scripts/check-supply-chain.mjs\n`,
+  });
+  assert.doesNotThrow(() =>
+    validateSupplyChainTestLists(packageText, [
+      step("scripts/check-uv-version.test.mjs scripts/cargo-target.test.mjs"),
+      // Order is free.
+      step("scripts/cargo-target.test.mjs scripts/check-uv-version.test.mjs"),
+      { path: ".github/workflows/other.yml", text: "      - run: node --test scripts/unrelated.test.mjs\n" },
+    ]),
+  );
+  // The drift this exists for: a test added to package.json and to no workflow.
+  assert.throws(
+    () => validateSupplyChainTestLists(packageText, [step("scripts/check-uv-version.test.mjs")]),
+    /ci\.yml: the supply-chain tests must be the files npm run test:supply-chain runs/,
+  );
+  assert.throws(
+    () =>
+      validateSupplyChainTestLists(packageText, [
+        step("scripts/check-uv-version.test.mjs scripts/cargo-target.test.mjs scripts/extra.test.mjs"),
+      ]),
+    /must be the files npm run test:supply-chain runs/,
+  );
+  assert.throws(
+    () =>
+      validateSupplyChainTestLists(
+        JSON.stringify({ scripts: { "test:supply-chain": "node --test a.test.mjs && node b.mjs" } }),
+        [],
+      ),
+    /must be a single node --test command/,
   );
 });
 

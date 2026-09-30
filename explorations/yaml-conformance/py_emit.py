@@ -1,5 +1,10 @@
 """Emit {path: s} for every corpus string with Python-side emitters and fdu rule re-implementations."""
 import io, json, math
+import os
+import sys
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
+from scripts.atomic_write import open_atomic  # noqa: E402
 
 corpus = json.load(open("corpus.json"))
 
@@ -53,7 +58,7 @@ def emit_all():
         b = io.StringIO(); y.dump({"path": s}, b); return b.getvalue()
     emitters["ruamel-safe-pure"] = ruamel_safe
     emitters["frontmatter-format(ruamel rt)"] = lambda s: to_yaml_string({"path": s})
-    with open("emit-py.tsv", "w") as f:
+    with open_atomic("emit-py.tsv") as f:
         for name, fn in emitters.items():
             for c in corpus:
                 try:

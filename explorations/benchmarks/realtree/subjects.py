@@ -41,6 +41,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import measure
 from benchmarks.realtree import tree as reference_tree
 
@@ -401,8 +402,10 @@ def main(argv: Sequence[str]) -> int:
     print(render(observed))
     if arguments.out is not None:
         arguments.out.parent.mkdir(parents=True, exist_ok=True)
-        arguments.out.write_text(
-            json.dumps(observed, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+        write_text_atomic(
+            arguments.out,
+            json.dumps(observed, indent=1, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
         print(f"wrote {arguments.out}", file=sys.stderr)
     return 0

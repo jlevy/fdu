@@ -1841,6 +1841,33 @@ pub enum Error {
     #[error("the process-local index clock is exhausted")]
     ClockExhausted,
 
+    /// A tree, or a batch, would leave a whole-tree total no `u64` can hold.
+    ///
+    /// Roll-ups are `u64` counts and byte totals, and every route that counts a tree
+    /// refuses one whose total leaves that range, with this error, rather than wrapping
+    /// or panicking. A filesystem can produce one: tmpfs, XFS, and btrfs let a sparse file
+    /// claim up to 8 EiB apparent without allocating anything, so three such files sum
+    /// past `u64::MAX`.
+    ///
+    /// - A one-shot report, whether it folds a summary or builds a full or folded index,
+    ///   fails at the first file the root's total cannot hold, and reports nothing.
+    /// - A batch committed to an index ([`Index::apply`](crate::Index::apply), and every
+    ///   scan, refresh, reconciliation, and watch commit) is applied in order, so the index
+    ///   must be representable after each of its operations: a batch that removes before
+    ///   it adds is accepted where the reverse order is not. The batch is refused before
+    ///   any of it is applied, and the index, its clock, and its journal are as they were.
+    #[error(
+        "counting {path:?} would carry the tree's {counter} total past what a u64 can hold, \
+         so nothing that includes it was applied or reported"
+    )]
+    UnrepresentableTotal {
+        /// The entry, or the batch operation, at which the total would leave the
+        /// representable range.
+        path: PathBuf,
+        /// Which total: `files`, `directories`, `bytes`, or `allocated bytes`.
+        counter: &'static str,
+    },
+
     /// No further live-session identity can be represented in this process.
     #[error("the process-local opened-index identity space is exhausted")]
     OpenedIdentityExhausted,

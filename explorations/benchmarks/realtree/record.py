@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Mapping, Sequence
 
 from pydantic import ValidationError
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import experiment as experiment_model
 from benchmarks.realtree import ledger
 from benchmarks.realtree.summary import SummaryError, _validator, model_error
@@ -169,7 +170,7 @@ def main(argv: Sequence[str]) -> int:
     )
     destination = arguments.output_dir / f"{arguments.id}-{_slug(arguments.title)}.md"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(_render(payload, body), encoding="utf-8")
+    write_text_atomic(destination, _render(payload, body), encoding="utf-8")
     print(f"wrote {destination}", file=sys.stderr)
 
     if not arguments.no_validate:

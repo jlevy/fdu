@@ -79,7 +79,7 @@ stack without H153, keeping the exact report oracle on both sides.
 Quiet-host major-fault confirmation and Linux replication remain open.
 Bare `--analyze all` now selects Code and Documents, so it still does not request two of
 the metric views needed to enter H153’s shared pass.
-See [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+See [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

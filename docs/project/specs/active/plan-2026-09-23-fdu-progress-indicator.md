@@ -148,11 +148,12 @@ It enters through variants beside today’s entry points rather than through `De
 which stays a plain comparable value:
 `prepare_report_with_progress(request, delivery, &progress)`, following
 `prepare_report_with_scan_diagnostics`, and `Session::start_with_progress` for the
-watch’s initial scan.
-Inside the engine the handle rides on `ScanConfig::progress`, an observer field that
-changes neither what a walk produces nor how it produces it, so it is no part of the
-scan scope or of any snapshot identity: a run with a handle and one without are the same
-scan. `refresh` is left for the Python callback that would use it.
+watch’s initial scan, with `Session::changed_report_with_progress` for the first answer
+it builds, which enters `Summarizing` as the one-shot report does (fdu-wku3). Inside the
+engine the handle rides on `ScanConfig::progress`, an observer field that changes
+neither what a walk produces nor how it produces it, so it is no part of the scan scope
+or of any snapshot identity: a run with a handle and one without are the same scan.
+`refresh` is left for the Python callback that would use it.
 
 **What it counts:** work done, never index state.
 The engine architecture keeps an in-progress cold build unobservable, and progress does

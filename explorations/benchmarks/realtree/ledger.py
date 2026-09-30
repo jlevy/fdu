@@ -18,6 +18,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.atomic_write import open_atomic, write_text_atomic
+
 #: A change has to beat this to be worth carrying. Below it, run-to-run noise on a
 #: laptop is the same size as the effect, and the code is more complex for nothing.
 ACCEPT_THRESHOLD_PCT = -3.0
@@ -359,7 +361,7 @@ def _cell(summary: Optional[Mapping[str, Any]], unit: str) -> str:
 
 def write(document: Mapping[str, Any], destination: Path, *, profiles=()) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(render(document, profiles=profiles), encoding="utf-8")
+    write_text_atomic(destination, render(document, profiles=profiles), encoding="utf-8")
 
 
 def load(path: Path) -> Dict[str, Any]:
@@ -375,3 +377,22 @@ def load(path: Path) -> Dict[str, Any]:
         with gzip.open(path, "rt", encoding="utf-8") as source:
             return json.load(source)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def store(run: Path, destination: Path) -> None:
+    """Commit the run document at ``run`` as ``destination`` (``*.json.gz``).
+
+    The bytes are the run's own, compressed with no file name and an mtime of 0, so
+    nothing about when or where the file was written lands in it, and compressing an
+    unchanged run again reproduces the committed bytes. The file is written whole: a
+    crash leaves no truncated artifact for a record to name.
+    """
+    if destination.suffix != ".gz":
+        raise ValueError(f"a stored run is gzipped, so {destination} must end in .gz")
+    payload = run.read_bytes()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        open_atomic(destination, "wb") as raw,
+        gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as out,
+    ):
+        out.write(payload)

@@ -2634,6 +2634,7 @@ mod tests {
         std::fs::write(root.path().join("root.txt"), b"root").expect("root fixture");
         std::fs::write(root.path().join("alpha/child.bin"), b"child").expect("child fixture");
         std::fs::write(root.path().join("alpha/deep/leaf.rs"), b"leaf").expect("leaf fixture");
+        crate::test_support::settle_allocations(root.path());
         let options = OpenOptions { batch_size: 2, ..OpenOptions::default() };
 
         let opened = open_fixture(root.path(), options.clone()).expect("opened root");

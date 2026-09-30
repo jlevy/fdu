@@ -483,7 +483,7 @@ analysis:
   analyzers:
     - {id: content-basic-v1, version: 1}
     - {id: text-logical-v1, version: 1}
-    - {id: markdown-prose-v1, version: 1}
+    - {id: markdown-prose-v1, version: 2}
 reports:
   -
     view: documents

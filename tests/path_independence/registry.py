@@ -46,6 +46,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# The repository root, so the shared atomic writer imports however this module is run.
+REPOSITORY = Path(__file__).resolve().parents[2]
+if str(REPOSITORY) not in sys.path:
+    sys.path.append(str(REPOSITORY))
+
+from scripts.atomic_write import write_text_atomic  # noqa: E402
+
 DEFAULT_PATH = Path(__file__).resolve().parent / "known-violations.toml"
 UNCLASSIFIED = "unclassified"
 KEY_SEGMENTS = 6
@@ -319,7 +326,7 @@ def _array(values: Iterable[str]) -> str:
 def write_judged(path: Path, platform: str, judged: Iterable[Judged]) -> None:
     """Write one run's judged cases, so runs on several platforms can be merged."""
     cases = [[key, allowed, list(paths)] for key, allowed, paths in judged]
-    path.write_text(json.dumps({"platform": platform, "cases": cases}), encoding="utf-8")
+    write_text_atomic(path, json.dumps({"platform": platform, "cases": cases}), encoding="utf-8")
 
 
 def read_judged(path: Path) -> tuple[str, list[Judged]]:
@@ -341,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"two runs from {platform}: {path}")
         runs[platform] = cases
     merged = merge(load(args.registry), runs)
-    args.registry.write_text(dump(merged), encoding="utf-8")
+    write_text_atomic(args.registry, dump(merged), encoding="utf-8")
     unclassified = sum(1 for entry in merged.all_entries() if entry.klass == UNCLASSIFIED)
     print(
         f"merged {sorted(runs)}: {len(merged.all_entries())} entries, {unclassified} unclassified"

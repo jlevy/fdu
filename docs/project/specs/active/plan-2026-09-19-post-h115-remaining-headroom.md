@@ -6,7 +6,7 @@
 
 **Status:** Historical queue through H138. The current actionable queue starts with
 quiet H153 confirmation, then H154–H155, in
-[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 This file preserves the detailed H107–H138 planning record after the H116–H120
 overnight.
 H111 failed on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141); leftover
@@ -29,7 +29,7 @@ H137 is confirmed (exp-136): content-query leftover is `every_entry` per unfilte
 metric view (~278 ms / four-view report).
 H138 is accepted (exp-137): share one `every_entry` (−18.76% wall).
 Engine kept (`a5c98d59`). H113 is superseded by H125.
-[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
+[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-30)
 keeps the live next-up after the later H152–H153 round.
 The loop guide registry remains the full hypothesis text.
 
@@ -440,7 +440,7 @@ one-shot `cold scan`. Record every verdict, including skips at the quiet gate.
 #91 review fixes landed at `e667b739`. The 2026-09-19 measurements used the stacked
 `perf/campaign-next-2026-09-19` branch, based on `perf/campaign-quiet-2026-09-18`. Those
 branches have since merged; new work starts from
-[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 Engine changes land only as the experiment that tests the next row.
 
 ## Open Questions
@@ -522,7 +522,7 @@ Engine changes land only as the experiment that tests the next row.
   H107–H143
 - [Linux parallel validation](../done/plan-2026-09-19-linux-parallel-validation.md) —
   H139–H143 recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed
-- [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
+- [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-30)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs

@@ -287,10 +287,12 @@ x86-64 and arm64, macOS x86-64 and arm64, and Windows x86-64. The Linux builds u
 controlled manylinux2014 image rather than inheriting the hosted runner’s glibc.
 Cross-built Linux arm64 receives structural artifact validation; the evidence manifest
 does not mislabel that as a native execution test.
-It also classifies each crate and the Python release on its registry against the
-validated manifest: a missing version is ready for a first upload, an identical version
-is safe to skip during recovery, and any filename or hash disagreement is a conflict
-that stops the workflow.
+The engine the wheel wraps, the Linux native reader’s `unsafe` calls included, is linted
+and tested natively on arm64 by CI’s `Engine on Linux arm64` job on every pull request.
+The rehearsal also classifies each crate and the Python release on its registry against
+the validated manifest: a missing version is ready for a first upload, an identical
+version is safe to skip during recovery, and any filename or hash disagreement is a
+conflict that stops the workflow.
 That audit uses public registry endpoints and no credentials.
 
 ### Credentials
@@ -902,7 +904,8 @@ make release-published ARGS=--by-hand
    so reproduce and compare it once more, then publish it.
    The audit must report both crates as `identical`; `--require-identical` makes it exit
    3 while either is `missing`, which right after the publish may be the same lag, so
-   rerun it as in step 3:
+   `--wait 600` rereads for up to ten minutes (a conflicting digest still fails at
+   once):
 
    ```shell
    cargo package --locked -p fdu
@@ -912,7 +915,7 @@ make release-published ARGS=--by-hand
    cargo publish --locked -p fdu
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
      --manifest "$RELEASE/published/evidence/release-manifest.json" \
-     --version "$VERSION" --channel crates.io --require-identical
+     --version "$VERSION" --channel crates.io --require-identical --wait 600
    ```
 
 5. Install the published crate as a user does, outside the checkout, and check that it
@@ -954,14 +957,14 @@ make release-published ARGS=--by-hand
    without them, a free-threaded default interpreter, which cannot install the `abi3`
    wheels, quietly builds the source distribution and the check passes having tested
    none. Run it on 3.12, the `abi3` floor, and again on 3.14. PyPI’s API and index can
-   also trail an upload, so if the audit exits 3 for a `missing` release, or the install
-   cannot find the version, rerun both as in step 3 of
+   also trail an upload: `--wait 600` rereads a release PyPI lists incompletely or not
+   at all, and if the install cannot find the version, rerun it as in step 3 of
    [Publish the Crates](#publish-the-crates):
 
    ```shell
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
      --manifest "$RELEASE/published/evidence/release-manifest.json" \
-     --version "$VERSION" --channel pypi --require-identical &&
+     --version "$VERSION" --channel pypi --require-identical --wait 600 &&
      (cd "$RELEASE" &&
        uv tool run --no-config --no-build --python 3.12 --from "fdu==$VERSION" fdu --version &&
        uv tool run --no-config --no-build --python 3.14 --from "fdu==$VERSION" fdu --version)

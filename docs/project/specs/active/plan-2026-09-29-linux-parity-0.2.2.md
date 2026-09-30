@@ -4,11 +4,11 @@
 
 **Author:** fdu project
 
-**Status:** Stage 1 done (0.2.1 tagged on `c1644575` and published); stage 2 not
-started. Stage 3 ran in
-[the overnight loop](plan-2026-09-29-linux-overnight-performance-loop.md#status) on
-2026-09-29, unreleased: H171 and H172 accepted (exp-178, exp-180 and exp-181), H173
-demoted, and H164 split.
+**Status:** Stage 1 done (0.2.1 tagged on `c1644575` and published); stage 2’s README
+matrix and SLOC survey are in [#162](https://github.com/jlevy/fdu/pull/162). Stage 3 ran
+in [the overnight loop](plan-2026-09-29-linux-overnight-performance-loop.md#status) on
+2026-09-29: H171 and H172 accepted (exp-178, exp-180 and exp-181), H173 demoted, and
+H164 split. It ships in 0.3.0, not 0.2.2, for the reason its last item gives.
 Epic `fdu-8a8r`. Stage 1 is 0.2.1, released from `c1644575`, which merges
 [#155](https://github.com/jlevy/fdu/pull/155) and
 [#156](https://github.com/jlevy/fdu/pull/156).
@@ -265,7 +265,10 @@ breaking change, so the round ships in 0.3.0 (see the release gate in Stage 3).
   and the summary route waits for 0.3.0.
 - [ ] Re-run the peer tables and refresh the matrix’s speed rows.
   The real-tree tool cells were re-run on the overnight loop’s final head (exp-194’s
-  evidence); the generated-tree table and the matrix are not refreshed.
+  evidence) and again on the pdu track’s head (exp-201), and the generated-tree table on
+  the final head (`ebc06c78`,
+  [the Linux comparison](../../reports/report-2026-09-27-fdu-linux-tool-comparison.md#final-head-of-the-parity-round-2026-09-29));
+  the generated tree has not been run against the peers on the shipped engine.
 - [ ] `cargo-semver-checks` against 0.2.1, goldens, and parity.
   If all three pass, run the release layer and checklist for 0.2.2. **2026-09-29:** the
   round fails the first check.
