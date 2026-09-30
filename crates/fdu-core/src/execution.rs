@@ -3017,7 +3017,7 @@ mod tests {
             }
             trees.push(("names equal once made readable", lossy));
         }
-        let mut trees: Vec<BoundaryTree> = trees
+        let trees: Vec<BoundaryTree> = trees
             .into_iter()
             .map(|(name, tree)| BoundaryTree {
                 name,
@@ -3025,28 +3025,38 @@ mod tests {
                 _sealed: None,
                 tree,
             })
+            .chain(search_denied_boundary_tree())
             .collect();
-
-        // A directory that lists but refuses search, beside files a share omits: its
-        // subdirectory and symlink are named by `d_type` and must not be admitted on it.
-        #[cfg(unix)]
-        if crate::test_support::require_permission_bits() {
-            let unsearchable = tempfile::tempdir().expect("tempdir");
-            sized_file(&unsearchable.path().join("open/large"), 5_000, false, 18);
-            for index in 0..60 {
-                sized_file(&unsearchable.path().join(format!("open/s{index:02}")), 5, false, 19);
-            }
-            let sealed = seal_search_denied(unsearchable.path());
-            trees.push(BoundaryTree {
-                name: "a directory that lists but refuses search",
-                _sealed: Some(sealed),
-                tree: unsearchable,
-            });
-        }
         for tree in &trees {
             crate::test_support::settle_allocations(tree.tree.path());
         }
         trees
+    }
+
+    /// A directory that lists but refuses search, beside files a share omits: its
+    /// subdirectory and symlink are named by `d_type` and must not be admitted on it.
+    /// None where the host cannot deny search (Windows, or a root test process).
+    #[cfg(unix)]
+    fn search_denied_boundary_tree() -> Option<BoundaryTree> {
+        if !crate::test_support::require_permission_bits() {
+            return None;
+        }
+        let unsearchable = tempfile::tempdir().expect("tempdir");
+        sized_file(&unsearchable.path().join("open/large"), 5_000, false, 18);
+        for index in 0..60 {
+            sized_file(&unsearchable.path().join(format!("open/s{index:02}")), 5, false, 19);
+        }
+        let sealed = seal_search_denied(unsearchable.path());
+        Some(BoundaryTree {
+            name: "a directory that lists but refuses search",
+            _sealed: Some(sealed),
+            tree: unsearchable,
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn search_denied_boundary_tree() -> Option<BoundaryTree> {
+        None
     }
 
     /// Worker counts and traversal orders the differential walks each tree under, and

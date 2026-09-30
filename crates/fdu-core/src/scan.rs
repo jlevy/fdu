@@ -1489,8 +1489,15 @@ fn listed_child_kind_and_attrs(
     }
     #[cfg(windows)]
     {
-        let _ = (policy, searchability);
-        observe_dir_entry(entry)
+        // Windows observes every listed entry through a fresh handle on both routes, so
+        // the skip does not apply there; a successful observation proves the directory
+        // searchable all the same, so the listing's state means the same on every host.
+        let _ = (policy.skip_dir_symlink_stat, policy.one_filesystem);
+        let observed = observe_dir_entry(entry)?;
+        if observed.is_some() {
+            *searchability = Searchability::Proven;
+        }
+        Ok(observed)
     }
 }
 
