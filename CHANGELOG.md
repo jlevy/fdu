@@ -12,8 +12,8 @@ tree, and classifying entries against `.gitignore` is faster again.
 On Linux a stat of a directory’s child no longer mounts an unmounted autofs trigger, on
 any route. Four Rust API changes are breaking: `counters::Counts` gains three public
 fields and is non-exhaustive, `Error` gains a variant, `UnrepresentableTotal`,
-`scan::ScanBackendDiagnostics` gains three public fields, and `content::CoverageReason`
-gains a variant, `TextOnly`. A `.gitignore` that starts with a byte-order mark, or holds
+`scan::ScanBackendDiagnostics` gains three public fields and is non-exhaustive, and
+`content::CoverageReason` gains a variant, `TextOnly`. A `.gitignore` that starts with a byte-order mark, or holds
 a NUL byte inside a line, now reads as git reads it, which changes the `.gitignore`
 semantics version: a snapshot written by an earlier release is rebuilt rather than
 served. A Markdown file over 64 MiB is counted as plain text under the words unit, and
@@ -47,6 +47,9 @@ coverage map has one more possible key, `text_only`.
   `dirs_read` equals the native successes plus `portable_directory_reads`; no existing
   key changes meaning.
   [The platform tuning guide](docs/project/guides/platform-tuning.md) documents them.
+  It is now `#[non_exhaustive]` too, for the reason `Counts` is: Rust code outside the
+  engine crate can read its fields but can no longer build it with a struct literal or
+  destructure it exhaustively, and a later backend field is an additive change.
 - **Breaking:** `fdu_core::Error` gains `UnrepresentableTotal { path, counter }`, which
   every route returns for a tree, or `Index::apply` for a batch, whose total no `u64`
   can hold (below); code that matches `Error` exhaustively must name it or use a

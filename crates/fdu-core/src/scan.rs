@@ -797,12 +797,20 @@ pub struct WorkerPolicyDiagnostics {
 
 /// Directory enumeration backends used by one scan.
 ///
-/// The Linux native reader (`getdents64` and `statx`, glibc builds) has no fields here
-/// yet. Its listings are counted in neither portable field, so on Linux the directories
-/// it served are the report's `dirs_read` less `portable_directory_reads`; a directory it
-/// declined is counted once, as a portable attempt. `unavailable_reason` still describes
-/// only the macOS fields.
+/// Each native reader's listings are counted in its own fields, and a directory it
+/// declines is counted as its fallback and then as a portable attempt. On Linux, for the
+/// native reader (`getdents64` and `statx`, glibc builds):
+///
+/// - `linux_dents_attempts` = `linux_dents_successes` + `linux_dents_fallbacks`;
+/// - the report's `dirs_read` = `linux_dents_successes` + `portable_directory_reads`.
+///
+/// `unavailable_reason` describes only the macOS fields.
+///
+/// Non-exhaustive, as [`crate::counters::Counts`] is: a diagnostics record grows with the
+/// backends it describes, so a later field is an additive change. Code outside the engine
+/// reads its fields; only the engine builds one.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScanBackendDiagnostics {
     /// Portable `read_dir` calls attempted.
     pub portable_attempts: u64,
