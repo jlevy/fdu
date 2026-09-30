@@ -10,12 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 On Linux the default `fdu PATH` tree is faster, and uses much less memory on a large
 tree, and classifying entries against `.gitignore` is faster again.
 On Linux a stat of a directory’s child no longer mounts an unmounted autofs trigger, on
-any route.
-Two Rust API changes are breaking: `counters::Counts` gains three public fields, and
-`Error` gains a variant, `UnrepresentableTotal`.
-A `.gitignore` that starts with a byte-order mark, or holds a NUL byte inside a line, now
-reads as git reads it, which changes the `.gitignore` semantics version: a snapshot
-written by an earlier release is rebuilt rather than served.
+any route. Two Rust API changes are breaking: `counters::Counts` gains three public
+fields, and `Error` gains a variant, `UnrepresentableTotal`. A `.gitignore` that starts
+with a byte-order mark, or holds a NUL byte inside a line, now reads as git reads it,
+which changes the `.gitignore` semantics version: a snapshot written by an earlier
+release is rebuilt rather than served.
 No command-line option, report or cache schema, or Python API changed.
 
 ### Added
@@ -89,38 +88,39 @@ No command-line option, report or cache schema, or Python API changed.
   more than 16 EiB. A filesystem cannot produce that; the public `Index` API can.
   A snapshot whose recorded sizes sum past `u64` is now refused as corrupt when it is
   loaded rather than summed.
-- A `.gitignore` that starts with a UTF-8 byte-order mark now applies its first rule, and
-  a pattern ends at the first NUL byte inside its line, as git reads both. Earlier
-  releases matched the mark as part of the first rule, so it never applied, and kept the
-  bytes after a NUL as part of the rule. The `.gitignore` semantics version is 4, so a
-  snapshot written under 3 is rebuilt rather than served.
+- A `.gitignore` that starts with a UTF-8 byte-order mark now applies its first rule,
+  and a pattern ends at the first NUL byte inside its line, as git reads both.
+  Earlier releases matched the mark as part of the first rule, so it never applied, and
+  kept the bytes after a NUL as part of the rule.
+  The `.gitignore` semantics version is 4, so a snapshot written under 3 is rebuilt
+  rather than served.
 - `--analyze` no longer materializes every candidate file before its first read.
-  A candidate holds two paths and a classification, so a million-file tree cost
-  hundreds of megabytes of scheduling memory that the bounded worker channel then
-  drained one at a time. Candidates are now walked in batches of 4,096 over one
-  resumable walk of the index; the count is taken first, without building any, so the
-  progress denominator is exact as before, and every result is still applied
-  conditionally on the revision and fingerprint its candidate carried. Answers,
-  records, and counts are unchanged.
+  A candidate holds two paths and a classification, so a million-file tree cost hundreds
+  of megabytes of scheduling memory that the bounded worker channel then drained one at
+  a time. Candidates are now walked in batches of 4,096 over one resumable walk of the
+  index; the count is taken first, without building any, so the progress denominator is
+  exact as before, and every result is still applied conditionally on the revision and
+  fingerprint its candidate carried.
+  Answers, records, and counts are unchanged.
 - `fdu --watch` no longer repaints its aggregate views when nothing a reader sees has
-  changed: a touch that leaves a file's size alone, or a change to an entry the
+  changed: a touch that leaves a file’s size alone, or a change to an entry the
   selection leaves out, moves the index but printed the same tree again under a new
-  timestamp. A repaint's identity is what the format renders of the answer with its
+  timestamp. A repaint’s identity is what the format renders of the answer with its
   generation instant held fixed, plus its tree status and its source and freshness, so
   machine formats still repaint when a modification time they carry moves, and a
-  retained observation gap or a coverage change repaints on every format. Change
-  records are never deduplicated. The rule is the engine's,
-  `watch_session::Session::changed_report`, which is new.
+  retained observation gap or a coverage change repaints on every format.
+  Change records are never deduplicated.
+  The rule is the engine’s, `watch_session::Session::changed_report`, which is new.
 - A C header is no longer classified as C++ because a C++ keyword appears inside an
   identifier, a comment, or a string literal: `struct pid_namespace *` holds
-  `namespace `, and kernel comments discuss namespaces and templates freely. The probe
-  now counts `namespace` and `template` only where they open a line and `std::` and
-  `constexpr` only as whole tokens, outside comments and literals. On the Linux v6.12
-  source tree 168 of 25,308 headers (0.66%) were labelled C++; line counts are
-  unchanged, only the language breakdown moves.
-- A modeline names a language as a whole token: `mode: conf-colon` and `mode: conf`
-  no longer classify a file as C, `ft=css` is not `cs`, and `mode: gomod` is not `go`.
-  Linux's `Documentation/docutils.conf` was counted as C code.
+  `namespace `, and kernel comments discuss namespaces and templates freely.
+  The probe now counts `namespace` and `template` only where they open a line and
+  `std::` and `constexpr` only as whole tokens, outside comments and literals.
+  On the Linux v6.12 source tree 168 of 25,308 headers (0.66%) were labelled C++; line
+  counts are unchanged, only the language breakdown moves.
+- A modeline names a language as a whole token: `mode: conf-colon` and `mode: conf` no
+  longer classify a file as C, `ft=css` is not `cs`, and `mode: gomod` is not `go`.
+  Linux’s `Documentation/docutils.conf` was counted as C code.
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`
