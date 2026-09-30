@@ -163,8 +163,61 @@ pub struct Session {
     plan: crate::Plan,
     persistence: Persistence,
     startup_save_error: Option<Error>,
-    /// The identity of the answer [`Self::changed_report`] last handed out.
-    presented: Option<Vec<u8>>,
+    /// The digest of the identity of the answer [`Self::changed_report`] last handed out
+    /// ([`RepaintDigest`]).
+    presented: Option<u128>,
+}
+
+/// A 128-bit FNV-1a digest of a repaint's identity, written section by section.
+///
+/// A digest rather than the identity itself: the identity is the whole rendered answer,
+/// and a session keeping it would hold a second copy of a `--view full --limit all`
+/// report for its whole life. FNV-1a is the hash the engine's fingerprints already use,
+/// at its 128-bit width, so two identities a session compares collide with a chance no
+/// repaint rule has to consider, and it needs no dependency. Each section's length is
+/// mixed in where it ends, so no two splits of the same bytes into sections digest alike.
+struct RepaintDigest {
+    hash: u128,
+    section: u64,
+}
+
+impl RepaintDigest {
+    const OFFSET_BASIS: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
+    const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
+
+    const fn new() -> Self {
+        Self { hash: Self::OFFSET_BASIS, section: 0 }
+    }
+
+    fn mix(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.hash ^= u128::from(*byte);
+            self.hash = self.hash.wrapping_mul(Self::PRIME);
+        }
+    }
+
+    /// Close the section written so far.
+    fn end_section(&mut self) {
+        let length = std::mem::take(&mut self.section);
+        self.mix(&length.to_le_bytes());
+    }
+
+    fn finish(mut self) -> u128 {
+        self.end_section();
+        self.hash
+    }
+}
+
+impl std::io::Write for RepaintDigest {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.mix(bytes);
+        self.section = self.section.wrapping_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 impl Session {
@@ -385,14 +438,19 @@ impl Session {
     /// marks its batch dirty, and a caller that repaints on every dirty batch then prints
     /// the rows it printed a moment ago under a new timestamp (fdu-wb5n). The answer's
     /// identity is what `format` renders of it with its generation instant held fixed,
-    /// together with its tree status and its source and freshness: a tree that shows
+    /// together with its tree status, its source and freshness, and the diagnostics a
+    /// frontend writes beside it: its notes and tips
+    /// ([`diagnostic_lines`](crate::report_format::diagnostic_lines)) and its warnings
+    /// ([`report_warnings`](crate::report_format::report_warnings)). So a tree that shows
     /// sizes repaints when a size moves, a listing that shows dates repaints when a date
     /// does, machine output repaints when any field it carries does, and a retained
-    /// observation gap, a coverage change, or a freshness change repaints whether or not
-    /// `format` shows it, while the instant a repaint is generated at never counts on
-    /// its own. The change records of [`Self::next_batch`] are never deduplicated; only
-    /// this repaint is. The first call always answers, and [`Self::report`] always
-    /// answers.
+    /// observation gap, a coverage change, a freshness change, or a new note such as a
+    /// `.gitignore` refused for its limits repaints whether or not `format` shows it,
+    /// while the instant a repaint is generated at never counts on its own. A caller that
+    /// prints no notes, as a quiet one does, may repaint once more than it had to, never
+    /// once fewer. A session keeps a 128-bit digest of the identity, not the identity.
+    /// The change records of [`Self::next_batch`] are never deduplicated; only this
+    /// repaint is. The first call always answers, and [`Self::report`] always answers.
     ///
     /// # Errors
     ///
@@ -408,19 +466,28 @@ impl Session {
         let mut report = self.report(generated_at)?;
         let pinned = std::time::SystemTime::UNIX_EPOCH;
         let stamped = std::mem::replace(&mut report.provenance.generated_at, pinned);
-        let mut identity = Vec::new();
+        let mut identity = RepaintDigest::new();
         let rendered =
             crate::report_format::write_with_options(&report, format, options, &mut identity)
                 .and_then(|()| {
+                    identity.end_section();
                     write!(
                         identity,
-                        "\n{:?}\n{:?}\n{:?}\n",
+                        "{:?}\n{:?}\n{:?}",
                         report.status, report.provenance.source, report.provenance.freshness
-                    )
+                    )?;
+                    identity.end_section();
+                    let notes = crate::report_format::diagnostic_lines(&report).into_lines();
+                    for line in notes.iter().chain(&crate::report_format::report_warnings(&report))
+                    {
+                        writeln!(identity, "{line}")?;
+                    }
+                    Ok(())
                 });
         report.provenance.generated_at = stamped;
         rendered.map_err(|error| Error::io(&self.request.basis.root, error))?;
-        if self.presented.as_ref() == Some(&identity) {
+        let identity = identity.finish();
+        if self.presented == Some(identity) {
             return Ok(None);
         }
         self.presented = Some(identity);
@@ -1453,7 +1520,15 @@ mod tests {
         root: &std::path::Path,
         query: Query,
     ) -> (Session, crate::watch::ScriptedSender) {
-        let scan = ScanConfig::default();
+        scripted_session_under(root, query, ScanConfig::default())
+    }
+
+    /// [`scripted_session`] under `scan`, such as one with tighter control limits.
+    fn scripted_session_under(
+        root: &std::path::Path,
+        query: Query,
+        scan: ScanConfig,
+    ) -> (Session, crate::watch::ScriptedSender) {
         let (index, report) = crate::scan::scan_into_index(root, &scan).expect("scan");
         assert!(report.is_complete());
         let request = Request::new(
@@ -1591,6 +1666,85 @@ mod tests {
         sender.send("modify\tbig.txt\n").expect("script a touch");
         assert!(session.next_batch(Duration::from_secs(10)).expect("touch").is_some());
         assert!(json(&mut session).is_some(), "JSON shows the newest modification time");
+    }
+
+    /// The repaint digest is FNV-1a at 128 bits, and a section boundary is part of what
+    /// it digests.
+    #[test]
+    fn a_repaint_digest_is_fnv1a_128_framed_by_section() {
+        use std::io::Write as _;
+
+        let mut raw = RepaintDigest::new();
+        raw.mix(b"a");
+        assert_eq!(raw.hash, 0xd228_cb69_6f1a_8caf_7891_2b70_4e4a_8964, "the published vector");
+        let digest = |sections: &[&[u8]]| {
+            let mut digest = RepaintDigest::new();
+            for (at, section) in sections.iter().enumerate() {
+                if at > 0 {
+                    digest.end_section();
+                }
+                digest.write_all(section).expect("digest");
+            }
+            digest.finish()
+        };
+        assert_eq!(digest(&[b"ab", b"c"]), digest(&[b"ab", b"c"]));
+        assert_ne!(digest(&[b"ab", b"c"]), digest(&[b"a", b"bc"]));
+        assert_ne!(digest(&[b"abc", b""]), digest(&[b"", b"abc"]));
+    }
+
+    /// A reader of a text report reads its diagnostics too (R164-4): a `.gitignore` edited
+    /// past the line limit adds a refusal note while the tree, its sizes, and its status
+    /// stay as they were, and that note alone repaints.
+    #[test]
+    fn a_diagnostic_that_appears_on_an_unchanged_tree_repaints() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("big.txt"), vec![b'x'; 4096]).expect("big");
+        let control = root.path().join(".gitignore");
+        // Ten bytes either way, so no size a reader sees moves; only the longest line does.
+        std::fs::write(&control, b"a\nb\nc\nd\ne\n").expect("short lines");
+        let scan = ScanConfig {
+            control_limits: crate::control::ControlLimits {
+                line_limit: Some(4),
+                ..crate::control::ControlLimits::default()
+            },
+            ..ScanConfig::default()
+        };
+        let (mut session, sender) = scripted_session_under(root.path(), Query::default(), scan);
+        let text = |session: &mut Session| {
+            session
+                .changed_report(
+                    std::time::SystemTime::now(),
+                    Format::Text,
+                    RenderOptions::default(),
+                )
+                .expect("report")
+        };
+        let first = text(&mut session).expect("the first answer is always given");
+        let notes = |report: &Report| crate::report_format::diagnostic_lines(report).into_lines();
+        assert!(
+            !notes(&first).iter().any(|line| line.contains("line limit")),
+            "{:?}",
+            notes(&first)
+        );
+
+        std::fs::write(&control, b"abcdefghi\n").expect("one long line");
+        sender.send("modify\t.gitignore\n").expect("script the edit");
+        let batch = session.next_batch(Duration::from_secs(10)).expect("edit").expect("observed");
+        assert!(batch.dirty);
+        let repainted = text(&mut session).expect("a new refusal note repaints");
+        assert_eq!(
+            format!("{:?}", repainted.status),
+            format!("{:?}", first.status),
+            "the status alone would not have repainted"
+        );
+        assert!(
+            notes(&repainted).iter().any(|line| line.contains("line limit")),
+            "{:?}",
+            notes(&repainted)
+        );
+        assert!(text(&mut session).is_none(), "and only once");
     }
 
     /// An invalidation is never deduplicated as a change record, and the answer it leaves

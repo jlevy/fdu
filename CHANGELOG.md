@@ -166,10 +166,13 @@ coverage map has one more possible key, `text_only`.
   changed: a touch that leaves a file’s size alone, or a change to an entry the
   selection leaves out, moves the index but printed the same tree again under a new
   timestamp. A repaint’s identity is what the format renders of the answer with its
-  generation instant held fixed, plus its tree status and its source and freshness, so
-  machine formats still repaint when a modification time they carry moves, and a
-  retained observation gap or a coverage change repaints on every format.
-  Change records are never deduplicated.
+  generation instant held fixed, plus its tree status, its source and freshness, and the
+  notes, tips, and warnings written beside it on stderr, so machine formats still
+  repaint when a modification time they carry moves, and a retained observation gap, a
+  coverage change, or a new note, such as a `.gitignore` refused for its line limit on
+  an otherwise unchanged tree, repaints on every format.
+  A session keeps a 128-bit digest of that identity rather than a copy of the rendered
+  answer. Change records are never deduplicated.
   The rule is the engine’s, `watch_session::Session::changed_report`, which is new.
 - A C header is no longer classified as C++ because a C++ keyword appears inside an
   identifier, a comment, or a string literal: `struct pid_namespace *` holds

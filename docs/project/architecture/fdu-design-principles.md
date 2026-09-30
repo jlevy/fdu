@@ -697,9 +697,10 @@ costs no filesystem work, a property asserted by test rather than described.
 `--interval` throttles only how often aggregate views repaint; it plays no part in
 detection. A repaint that would show a reader nothing new is skipped: the session
 compares what the format renders of the answer, with its generation instant held fixed,
-plus its tree status, source, and freshness, so a touch that moves no size repaints no
-size-only tree, while machine output that carries the modification time repaints, and a
-change of status or freshness repaints on every format.
+plus its tree status, source, and freshness, and the notes, tips, and warnings written
+beside it, so a touch that moves no size repaints no size-only tree, while machine
+output that carries the modification time repaints, and a change of status or freshness,
+or a new note, repaints on every format.
 Overflow and subtree invalidation appear explicitly in the stream and are never dropped,
 because they say the consumer’s own view may have gaps; change records are never
 deduplicated, only repaints.
