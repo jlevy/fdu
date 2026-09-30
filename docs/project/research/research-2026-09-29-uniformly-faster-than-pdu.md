@@ -455,7 +455,7 @@ M4, with ids from the Darwin block once it is opened.
 | H186 | Portable | The same code runs. **M12**: `default-tree` on S1, S2 and S5 (55k directories, the largest serial tail), 20 pairs, predicted −1% to −4%; `aggregate-summary` placebo |
 | H187 | Portable | The same code runs. **M13**: `default-tree` on S1, S2 and S5, 20 pairs; on the M1 Pro’s eight performance cores the consumer is not saturating a core, so the prediction is the tail’s share only, −1% to −2%; the RSS primary of M5 must not move |
 | H188, H189 | Portable | **M14**: `aggregate-summary` on S1 and S3 (rule-bearing), 20 pairs, predicted −3% to −7%; S2 placebo |
-| H177 | Linux reader | H184, the borrowed-name bulk listing, is the macOS form; screen only, gated on M9 |
+| H177 | Linux reader | The borrowed-name bulk listing is the macOS form (proposed as H184 before that id went to the automount fix, `fdu-d2fn`; it needs a new id); screen only, gated on M9 |
 | H178 | Portable | A scheduling policy: its deterministic characterization runs in CI on every platform; its macOS cell waits for M7’s `starved_ns` |
 | H169 phase 3 | Linux | Refuted on macOS (exp-024, exp-038) |
 | H190 | Portable | With H188 on M14 |
