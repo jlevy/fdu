@@ -477,7 +477,7 @@ apply:
 | Tree breakdown and pruning | ✅ depth, breadth, share floor, row limit | ✅ depth, size floor | TUI browsing | ✅ depth, top N, size floor | depth; TUI browsing | depth, top N files; TUI browsing | ✅ depth, share floor | ❌ | ❌ | ❌ per language or file | ❌ per language or file |
 | `.gitignore` | ✅ classify; include, exclude, or only ignored | ❌ | ❌ | ❌ | partial: TUI dims ignored entries; `--ignore-from` patterns | ❌¹ | ❌ | ❌ | ❌ | ✅ exclude | ✅ exclude, inside a git repository |
 | Source code analysis² | ✅ 15 languages: code, comment, and blank lines, per directory | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ 366 languages; complexity and cost estimates | ✅ 333 languages; embedded languages |
-| Code analysis speed, Linux source³ | 7.9 s; 0.55 s repeated | — | — | — | — | — | — | — | — | 1.2 s | 1.9 s |
+| Code analysis speed, Linux source³ | 8.2 s; 0.55 s repeated | — | — | — | — | — | — | — | — | 1.4 s | 2.2 s |
 | Text analysis | ✅ lines, words, paragraphs, pages | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | APIs and machine output | ✅ Rust, Python; JSON, JSONL, YAML | tab-separated text; `-0` | JSON export | JSON (`-j`) | Rust library; snapshot files | JSON export; SQLite or Badger | ✅ Rust library; JSON | Rust library | ❌ | ✅ Go package; JSON, CSV, HTML, SQL | ✅ Rust library; JSON |
 | Watch and stream | ✅ `--watch`, JSONL change stream | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -503,14 +503,14 @@ See the
 [cloc](https://github.com/AlDanial/cloc) recognizes the most languages, 402, but runs as
 a single Perl process by default.
 
-³ Median wall time on a copy of the Linux v6.12 source without `.git` (86,618 files, 1.5
-GB of file data), each tool with every ignore-file source off, hidden files counted, and
-text output: 12 adjacent pairs on a quiet 4-vCPU Linux virtual machine, 2026-09-29.
-fdu’s first run, with its cache off, took 6.4 times as long as scc and 4.2 times as long
-as tokei; the three read about the same bytes, so the gap is fdu’s CPU per byte.
-Run again under the default cache policy, fdu reopened no unchanged file and answered in
-0.55 s. With each tool’s own `.gitignore` handling on a git clone, fdu took 9.2 s, scc
-1.3 s, and tokei 2.0 s.
+³ Median wall time for fdu 0.3.0 on a copy of the Linux v6.12 source without `.git`
+(86,618 files, 1.5 GB of file data), each tool with every ignore-file source off, hidden
+files counted, and text output: 12 adjacent pairs on a quiet 4-vCPU Linux virtual
+machine, 2026-09-30. fdu’s first run, with its cache off, took 6.0 times as long as scc
+and 3.8 times as long as tokei; the three read about the same bytes, so the gap is fdu’s
+CPU per byte. Run again under the default cache policy, fdu reopened no unchanged file
+and answered in 0.55 s. See
+[Performance Measurements](docs/performance-measurements.md#source-line-counting).
 
 Versions checked for the feature cells: GNU coreutils `du` 9.4, and its source after
 9.12; ncdu 1.19 and 2.9.2; dust 1.2.5; dua 2.45.0; gdu 5.37.0, and its main branch at
@@ -532,29 +532,17 @@ versioned machine output, a live or cached view, or a Rust or Python API; for co
 adds counts per directory, each language’s ignored share, and a cache that makes a
 repeated count faster than either counter’s.
 
-## Why
-
-Of fifteen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
-[ncdu](https://dev.yorhel.nl/ncdu), [dust](https://github.com/bootandy/dust),
-[pdu](https://github.com/KSXGitHub/parallel-disk-usage),
-[diskus](https://github.com/sharkdp/diskus),
-[dumac](https://github.com/healeycodes/dumac#readme),
-[dua](https://github.com/Byron/dua-cli), [gdu](https://github.com/dundee/gdu),
+**Beyond this table.** A wider survey read fifteen tools: the ten above, and
 [dut](https://codeberg.org/201984/dut), [duc](https://github.com/zevv/duc),
 [fsearch](https://github.com/cboxdoerfer/fsearch),
-[bfs](https://github.com/tavianator/bfs), [fd](https://github.com/sharkdp/fd),
-[scc](https://github.com/boyter/scc), [tokei](https://github.com/XAMPPRocky/tokei)),
-several save a scan to reload later: ncdu, gdu, and pdu export one; gdu, duc, and
+[bfs](https://github.com/tavianator/bfs), and [fd](https://github.com/sharkdp/fd).
+Several save a scan to reload later: ncdu, gdu, and pdu export one; gdu, duc, and
 fsearch keep a database; and dua writes snapshots.
-But **none** revalidates a saved scan by modification time, **none** does per-directory
-type tallies, and none caches content metrics between runs.
-None of them is a native library with a live change feed that a Rust or Python program
-can hold. That combination is what a live file browser needs;
-[Comparison to Alternatives](#comparison-to-alternatives) shows where each of the common
-peers stands.
-
-The survey is in
-[the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md);
+None revalidates a saved scan by modification time, tallies file types per directory, or
+caches content metrics between runs, and none is a native library with a live change
+feed that a Rust or Python program can hold.
+[The file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md)
+has that survey, and
 [the pdu brief](docs/project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)
 reads pdu, diskus, and dumac at source level and maps pdu’s options to fdu’s.
 
