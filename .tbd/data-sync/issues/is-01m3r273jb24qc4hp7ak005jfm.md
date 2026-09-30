@@ -3,9 +3,9 @@ type: is
 id: is-01m3r273jb24qc4hp7ak005jfm
 title: "0.3.0 stability pass: fix every open bug that is fixable and testable on Linux"
 kind: epic
-status: open
+status: closed
 priority: 0
-version: 43
+version: 44
 labels: []
 dependencies: []
 parent_id: is-01m3rhbj53p4j4cghcyd4d3ak0
@@ -50,7 +50,11 @@ child_order_hints:
   - is-01m3rfnvx470zbrwgdc63152ct
   - is-01m3rfz36eh8m7xp52aq5c0kmz
 created_at: 2026-09-30T02:27:37.162Z
-updated_at: 2026-09-30T06:52:13.413Z
+updated_at: 2026-09-30T13:29:17.775Z
+closed_at: 2026-09-30T13:29:17.775Z
+close_reason: "Done on #164: every open bug fixable and testable on Linux is fixed with a test, closed as already fixed, or closed as not reproducible, with evidence on each bead; the review round's findings are fixed too. Still open, and not fixable here: fdu-3v0d (the code is in MetaBrowser), the macOS/Windows-only beads (fdu-43bc, fdu-ek21, fdu-9tul, fdu-vhrb, fdu-hb2t, fdu-syyl), fdu-6o5o (reproduced; an exact filtered fold is a design change, analysis in its notes), fdu-v71x (below the 3% bar), and fdu-k90t (the liftable Markdown bound)."
+resolution: null
+duplicate_of: null
 ---
 Maintainer request 2026-09-30: top priority is that the release is stable and clearly faster, so fix all bugs. Triage of 53 open bug beads: A) 17 engine correctness/stability bugs fixable and testable on Linux (fix now, test first, one commit each); B) 20 gate/tooling/harness bugs (fix now); C) 7 macOS/Windows-only bugs that cannot be reproduced here (need a macOS/Windows session); D) 9 design or measurement tasks filed as bugs (relabel). Work lands on branch claude/stability-fixes, stacked on #162 (claude/readme-comparison-matrix).
 
