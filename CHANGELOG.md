@@ -182,6 +182,15 @@ coverage map has one more possible key, `text_only`.
   The answer on a tree without automount triggers is unchanged
   ([exp-196](docs/project/experiments/exp-196-linux-every-route-lists-through-the-native-reader-and-no-sta.md)
   records the non-regression screen).
+- `fdu --watch` keeps its progress line up while its first answer is built.
+  The line stopped when the initial scan and its save returned, before the answer was
+  built, so a heavy view such as `--view full` over a large tree showed nothing for the
+  seconds that build takes.
+  The build is now drawn as `Summarizing`, as a one-shot report’s is, and the line is
+  erased once the answer exists, before it or anything else is written.
+  The entry point is the engine’s,
+  `watch_session::Session::changed_report_with_progress`, which is new; the answer and
+  every later repaint are unchanged.
 
 ## [0.2.1] - 2026-09-29
 

@@ -186,8 +186,9 @@ impl Session {
     /// closes the gap between that walk and the bound watcher. The second pass begins
     /// again at [`ProgressPhase::Revalidating`](crate::ProgressPhase) with the walk
     /// counters restarted, so they end at the tree's totals once, not twice. Once this
-    /// returns the session reports nothing further through the handle; its repaints are
-    /// the progress from there.
+    /// returns, the handle observes one more thing: the first answer's build, asked for
+    /// through [`Self::changed_report_with_progress`]. The session's repaints are the
+    /// progress from there.
     pub fn start_with_progress(
         request: Request,
         delivery: Delivery,
@@ -424,6 +425,31 @@ impl Session {
         }
         self.presented = Some(identity);
         Ok(Some(report))
+    }
+
+    /// [`Self::changed_report`], reporting the answer's construction through `progress`.
+    ///
+    /// The same answer as [`Self::changed_report`]; the handle observes the build and
+    /// changes nothing about it. The build enters
+    /// [`ProgressPhase::Summarizing`](crate::ProgressPhase), as a one-shot report's does,
+    /// so a caller that drew the start through [`Self::start_with_progress`] can keep
+    /// drawing until the first answer exists: a heavy view over a large tree takes
+    /// seconds to build, and a line stopped when the start returned said nothing about
+    /// them (fdu-wku3). Later repaints are the progress from there and take
+    /// [`Self::changed_report`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::changed_report`].
+    pub fn changed_report_with_progress(
+        &mut self,
+        generated_at: std::time::SystemTime,
+        format: crate::report_format::Format,
+        options: crate::report_format::RenderOptions,
+        progress: &crate::Progress,
+    ) -> Result<Option<Report>> {
+        progress.enter(crate::ProgressPhase::Summarizing);
+        self.changed_report(generated_at, format, options)
     }
 
     /// A consistent copy of the current index.
@@ -1383,6 +1409,42 @@ mod tests {
         };
         assert_eq!(json(&plain_report), json(&observed_report), "the same facts either way");
         assert_eq!(progress.snapshot(), after_start, "the second start was not observed");
+    }
+
+    /// The first answer's build is the last thing a start's progress covers (fdu-wku3):
+    /// asked for through the handle, it enters `Summarizing`, answers as the plain call
+    /// does, and is the answer later repaints are measured against.
+    #[test]
+    fn the_first_answer_is_built_under_the_summarizing_phase() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("a.txt"), b"alpha").expect("file");
+        std::fs::create_dir(root.path().join("d")).expect("directory");
+        std::fs::write(root.path().join("d/b.txt"), b"beta").expect("nested file");
+        let (mut session, _sender) = scripted_session(root.path(), Query::default());
+        let format = crate::report_format::Format::Json;
+        let options = crate::report_format::RenderOptions { color: false, bar_size: 0 };
+        let generated_at = std::time::SystemTime::now();
+        let plain_answer = session.report(generated_at).expect("plain answer");
+
+        let progress = crate::Progress::new();
+        progress.enter(crate::ProgressPhase::Revalidating);
+        let observed = session
+            .changed_report_with_progress(generated_at, format, options, &progress)
+            .expect("observed first answer")
+            .expect("a session's first answer is always given");
+        assert_eq!(
+            progress.snapshot().phase,
+            crate::ProgressPhase::Summarizing,
+            "the build is reported as the answer's construction"
+        );
+
+        let json =
+            |report: &Report| crate::report_format::render(report, format, false).expect("render");
+        assert_eq!(json(&observed), json(&plain_answer), "the same answer either way");
+        assert!(
+            session.changed_report(generated_at, format, options).expect("repaint").is_none(),
+            "nothing changed since the observed build, so nothing repaints"
+        );
     }
 
     /// A scripted session over `root` answering `query`, and the sender that scripts its
