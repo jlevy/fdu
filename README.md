@@ -12,6 +12,7 @@ without writing a filesystem walker.
   directory’s names and sizes in one call, and `getdents64` with `statx` on Linux.
   On a million-file tree it runs about 9× as fast as `du` on macOS and 2.6× as fast on
   Linux, and ahead of every other tool measured, including
+  [dumac](https://github.com/healeycodes/dumac#readme),
   [pdu](https://github.com/KSXGitHub/parallel-disk-usage),
   [diskus](https://github.com/sharkdp/diskus), and
   [dust](https://github.com/bootandy/dust).
