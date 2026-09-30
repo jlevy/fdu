@@ -53,6 +53,15 @@ small files. Future SLOC optimization should begin with file-open and scheduling
 attribution or use a larger byte-heavy corpus before changing parser mechanics.
 The reusable SLOC cold and cache-hit jobs remain in the harness.
 
+## Linux Kernel Comparison, 2026-09-29
+
+On the Linux v6.12 source, a tree with 1.5 GB of file data, the gap to the peers is
+wider than on these small trees: with ignore rules off, fdu took 7.92 s against scc
+4.1.0’s 1.24 s and tokei 15.0.0’s 1.87 s, while a repeated fdu run answered from its
+content cache in 0.55 s. The
+[SLOC tools survey](../research/research-2026-09-29-sloc-tools-survey.md#speed-on-linux-v612)
+has the protocol, both ignore arms, and a file-by-file accuracy comparison.
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

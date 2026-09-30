@@ -8,6 +8,8 @@ calling a difference significant when it is noise.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -324,6 +326,34 @@ class StatisticsTests(unittest.TestCase):
         )
 
         self.assertIn("required macOS bulk/fallback counts are unavailable", reasons)
+
+    def test_linux_scan_counts_native_listings_beside_portable_ones(self) -> None:
+        document = json.loads(self._diagnostic_probe())
+        document["scan_diagnostics"]["backend"] = {
+            "linux_dents_attempts": 4,
+            "linux_dents_fallbacks": 1,
+            "linux_dents_successes": 3,
+            "macos_bulk_attempts": None,
+            "macos_bulk_fallbacks": None,
+            "macos_bulk_successes": None,
+            "portable_attempts": 1,
+            "portable_directory_reads": 1,
+            "unavailable_reason": "macOS bulk directory enumeration is unavailable on this platform",
+        }
+
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(), require_scan_diagnostics=True
+        )
+        self.assertEqual(reasons, [])
+
+        backend = document["scan_diagnostics"]["backend"]
+        backend["linux_dents_attempts"] = 5
+        document["summary"]["dirs_read"] += 1
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(), require_scan_diagnostics=True
+        )
+        self.assertIn("Linux native/fallback counts are inconsistent", reasons)
+        self.assertIn("portable backend count disagrees with reported directories read", reasons)
 
     def test_claim_grade_scan_cross_checks_trace_and_backend_aggregates(self) -> None:
         document = json.loads(self._diagnostic_probe("held"))
@@ -698,7 +728,7 @@ class StatisticsTests(unittest.TestCase):
         entry = comparison["metrics"]["wall_ns"]
         self.assertAlmostEqual(entry["median_change_pct"], -30.0, places=3)
         self.assertTrue(entry["significant"])
-        self.assertTrue(ledger.verdict(comparison)["accepted"])
+        self.assertTrue(ledger.verdict(comparison, invalid_samples=0)["accepted"])
 
     def test_pure_noise_is_not_significant(self) -> None:
         control = [1000, 1100, 900, 1050, 950, 1000, 1080, 920, 1010, 990, 1040, 960]
@@ -709,7 +739,7 @@ class StatisticsTests(unittest.TestCase):
         comparison = measure.paired_comparison(
             samples, job="job", control="control", candidate="candidate"
         )
-        decision = ledger.verdict(comparison)
+        decision = ledger.verdict(comparison, invalid_samples=0)
         self.assertFalse(decision["accepted"])
 
     def test_a_small_but_certain_win_is_still_rejected(self) -> None:
@@ -720,7 +750,7 @@ class StatisticsTests(unittest.TestCase):
         comparison = measure.paired_comparison(
             samples, job="job", control="control", candidate="candidate"
         )
-        decision = ledger.verdict(comparison)
+        decision = ledger.verdict(comparison, invalid_samples=0)
         self.assertFalse(decision["accepted"])
         self.assertIn("under the", decision["reason"])
 
@@ -731,7 +761,7 @@ class StatisticsTests(unittest.TestCase):
         comparison = measure.paired_comparison(
             samples, job="job", control="control", candidate="candidate"
         )
-        self.assertFalse(ledger.verdict(comparison)["accepted"])
+        self.assertFalse(ledger.verdict(comparison, invalid_samples=0)["accepted"])
 
     def test_warmups_and_invalid_samples_never_reach_the_comparison(self) -> None:
         samples = self._samples("job", "control", [1000] * 12)
@@ -760,7 +790,7 @@ class StatisticsTests(unittest.TestCase):
             samples, job="job", control="control", candidate="candidate"
         )
         self.assertIsNone(comparison["metrics"]["wall_ns"])
-        self.assertFalse(ledger.verdict(comparison)["accepted"])
+        self.assertFalse(ledger.verdict(comparison, invalid_samples=0)["accepted"])
 
     def test_the_bootstrap_is_deterministic(self) -> None:
         values = [-0.10, -0.12, -0.05, -0.20, -0.08, -0.11, -0.09, -0.15]
@@ -768,6 +798,198 @@ class StatisticsTests(unittest.TestCase):
         second = measure._bootstrap_median_interval(values)
         self.assertEqual(first, second)
         self.assertLess(first[0], statistics.median(values) + 1e-9)
+
+
+class InconclusiveVerdictTests(unittest.TestCase):
+    """A cell with an invalid sample is rerun whole, and the printed word has to say so.
+
+    Exit code 3 enforced the rule while the printed verdict did not: a run whose
+    quiet-host gate had invalidated samples still printed ACCEPT for the valid pairs
+    that remained, and that word is what a person or an agent reads off the run.
+    """
+
+    JOB = "cold-scan-index"
+
+    def _document(self, *, invalid: int = 0) -> dict:
+        """A run whose surviving pairs are a clear -30% win, with ``invalid`` gated out."""
+        samples = [
+            measure.Sample(
+                variant=variant,
+                job=self.JOB,
+                ordinal=ordinal,
+                warmup=False,
+                valid=True,
+                metrics={"wall_ns": wall},
+            )
+            for ordinal in range(12)
+            for variant, wall in (("control", 1_000), ("candidate", 700))
+        ]
+        # The gate marks a sample invalid in place; it is kept and counted, not replaced.
+        for sample in [sample for sample in samples if sample.variant == "candidate"][:invalid]:
+            sample.valid = False
+            sample.reasons.append("quiet-host CPU busy exceeded 25.0% after the sample")
+        document = {
+            "started_utc": "2026-09-29T00:00:00Z",
+            "note": "",
+            "host": {
+                "cpu_model": "Fixture CPU",
+                "system": "Linux",
+                "release": "6.0",
+                "cpu_count": 4,
+                "filesystem": "ext4",
+            },
+            "conditions": {
+                "trials": 12,
+                "warmups": 0,
+                "schedule": "round-robin-by-ordinal-v1",
+                "os_cache": "warm-steady",
+            },
+            "tree": {
+                "label": "fixture",
+                "root_id": "a" * 64,
+                "counts": {"total": 10, "directories": 2, "files": 8},
+                "sizes": {"apparent_bytes": 1024},
+                "max_depth": 2,
+            },
+            "tree_mutated_during_run": [],
+            "baseline_drift": [],
+            "variant_order": ["control", "candidate"],
+            "variants": {
+                name: {"kind": "fdu-probe", "sha256": "b" * 64, "notes": ""}
+                for name in ("control", "candidate")
+            },
+            "jobs": {self.JOB: {"start_state": "cold", "description": "fixture job"}},
+            "samples": [sample.as_json() for sample in samples],
+        }
+        document["invalid_samples"] = sum(1 for sample in samples if not sample.valid)
+        document["statistics"] = measure.summarize(document)
+        return document
+
+    def _comparison(self, document: dict) -> dict:
+        return document["statistics"][self.JOB]["comparisons"]["candidate_vs_control"]
+
+    def test_invalid_samples_make_the_verdict_inconclusive(self) -> None:
+        document = self._document(invalid=2)
+        comparison = self._comparison(document)
+        # The ten surviving pairs alone clear the accept arithmetic, so a verdict that
+        # could leave the count out would print ACCEPT here. It cannot.
+        self.assertTrue(ledger.verdict(comparison, invalid_samples=0)["accepted"])
+        with self.assertRaises(TypeError):
+            ledger.verdict(comparison)
+
+        invalid = ledger.job_invalid_samples(document["statistics"][self.JOB])
+        decision = ledger.verdict(comparison, invalid_samples=invalid)
+
+        self.assertEqual(invalid, 2)
+        self.assertFalse(decision["accepted"])
+        self.assertTrue(decision["inconclusive"])
+        self.assertEqual(ledger.verdict_label(decision), "INCONCLUSIVE")
+        self.assertEqual(decision["reason"], "2 invalid samples; rerun the cell whole")
+
+    def test_one_invalid_sample_is_enough(self) -> None:
+        document = self._document(invalid=1)
+        decision = ledger.verdict(
+            self._comparison(document),
+            invalid_samples=ledger.job_invalid_samples(document["statistics"][self.JOB]),
+        )
+        self.assertEqual(ledger.verdict_label(decision), "INCONCLUSIVE")
+        self.assertEqual(decision["reason"], "1 invalid sample; rerun the cell whole")
+
+    def test_every_variant_of_the_job_counts(self) -> None:
+        # A sweep's third arm shares the interleaved cell, so its invalid sample counts
+        # against the pair that does not include it.
+        statistics_for_job = {
+            "variants": {
+                "control": {"invalid": 0},
+                "candidate": {"invalid": 0},
+                "four_threads": {"invalid": 1},
+            }
+        }
+        self.assertEqual(ledger.job_invalid_samples(statistics_for_job), 1)
+        self.assertEqual(ledger.job_invalid_samples({"variants": {"control": {}}}), 0)
+
+    def test_the_rendered_report_prints_inconclusive(self) -> None:
+        text = ledger.render(self._document(invalid=2))
+
+        self.assertIn(
+            "**Verdict on wall time: INCONCLUSIVE** — 2 invalid samples; rerun the cell whole",
+            text,
+        )
+        self.assertNotIn("Verdict on wall time: ACCEPT", text)
+        self.assertIn("The cell is inconclusive; rerun it whole.", text)
+
+    def test_the_console_headline_prints_inconclusive(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            realtree_cli._print_headline(self._document(invalid=2))
+
+        text = output.getvalue()
+        self.assertIn(
+            "candidate_vs_control: INCONCLUSIVE — 2 invalid samples; rerun the cell whole", text
+        )
+        self.assertIn("(n=10, invalid=2)", text)
+        self.assertNotIn("ACCEPT", text)
+
+    def test_a_clean_run_is_unchanged(self) -> None:
+        document = self._document()
+        decision = ledger.verdict(
+            self._comparison(document),
+            invalid_samples=ledger.job_invalid_samples(document["statistics"][self.JOB]),
+        )
+        self.assertTrue(decision["accepted"])
+        self.assertFalse(decision["inconclusive"])
+        self.assertEqual(ledger.verdict_label(decision), "ACCEPT")
+
+        self.assertIn("**Verdict on wall time: ACCEPT** — -30.00% median", ledger.render(document))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            realtree_cli._print_headline(document)
+        self.assertIn("candidate_vs_control: ACCEPT — -30.00% median", output.getvalue())
+        self.assertIn("(n=12)", output.getvalue())
+        self.assertNotIn("invalid", output.getvalue())
+
+    def test_a_clean_rejection_still_reads_reject(self) -> None:
+        comparison = self._comparison(self._document())
+        comparison["metrics"]["wall_ns"]["passes_acceptance"] = False
+        decision = ledger.verdict(comparison, invalid_samples=0)
+        self.assertEqual(ledger.verdict_label(decision), "REJECT")
+
+    def test_measure_still_exits_3_and_says_why(self) -> None:
+        scratch = Path(tempfile.mkdtemp(prefix="fdu-realtree-inconclusive-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        root = scratch / "tree"
+        root.mkdir()
+        argv = [
+            "measure",
+            "--root",
+            str(root),
+            "--label",
+            "fixture",
+            "--variant",
+            f"control={sys.executable}",
+            "--variant",
+            f"candidate={sys.executable}",
+            "--scratch",
+            str(scratch / "scratch"),
+            "--output-dir",
+            str(scratch / "results"),
+            "--name",
+            "fixture",
+        ]
+        for invalid, expected_code, expected_word in ((2, 3, "INCONCLUSIVE"), (0, 0, "ACCEPT")):
+            with self.subTest(invalid=invalid):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with (
+                    mock.patch.object(measure, "run", return_value=self._document(invalid=invalid)),
+                    contextlib.redirect_stdout(stdout),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    code = realtree_cli.main(argv)
+                self.assertEqual(code, expected_code)
+                self.assertIn(f"candidate_vs_control: {expected_word} —", stdout.getvalue())
+                if invalid:
+                    self.assertIn("the cell is inconclusive", stderr.getvalue())
+                    self.assertNotIn("ACCEPT", stdout.getvalue())
 
 
 class HostRegimeTests(unittest.TestCase):

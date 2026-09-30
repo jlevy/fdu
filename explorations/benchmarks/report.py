@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import math
-import os
 import statistics as statistics_module
 import textwrap
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.atomic_write import open_atomic
 from benchmarks.schema import load_result, validate_result_document
 
 
@@ -372,10 +372,8 @@ def render_report_file(result_path: Path) -> str:
 def write_report(result_path: Path, output_path: Path) -> None:
     """Write a report without replacing an existing reviewed artifact."""
     rendered = render_report_file(result_path)
-    with output_path.open("x", encoding="utf-8", newline="\n") as output:
+    with open_atomic(output_path, "x", encoding="utf-8", newline="\n") as output:
         output.write(rendered)
-        output.flush()
-        os.fsync(output.fileno())
 
 
 def _statistics_row(

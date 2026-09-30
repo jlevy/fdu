@@ -337,7 +337,8 @@ Metadata-only one-shot reports still have to inspect current metadata: an in-pla
 edit changes no parent-directory timestamp.
 Under `--cache=auto`, the default, such a report therefore neither loads a metadata
 snapshot, which cannot make it cheaper, nor writes one, which no later report reads.
-Content analysis, `--watch`, and an opened index do read, revalidate, and write it.
+Content analysis, `--watch`, and a retained index from the Rust or Python `open` do
+read, revalidate, and write it.
 Use `--cache=on` to leave a snapshot after a one-shot report, for a later `--stale-ok`
 answer or a warm watch.
 
@@ -370,7 +371,7 @@ analysis record cached, while metadata verification still occurs.
 
 | Policy | Behavior |
 | --- | --- |
-| `auto` | Read and write where this kind of run gains from it: analysis, `--watch`, and opened indexes, not one-shot metadata reports |
+| `auto` | Read and write where this kind of run gains from it: analysis, `--watch`, and retained indexes from `open`, not one-shot metadata reports |
 | `on` | Read and write where `auto` does, and also write after one-shot metadata reports |
 | `off` | Neither read nor write fdu cache data |
 

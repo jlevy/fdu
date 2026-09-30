@@ -10,10 +10,11 @@ live change feed, and the Rust and Python libraries.
 ## Use fdu
 
 - [Command-line usage](usage.md)
+- [Comparison to alternatives](../README.md#comparison-to-alternatives)
 - [Live updates](../README.md#live-updates)
 - [Rust library examples](../README.md#as-a-rust-library)
 - [Python package examples](../README.md#as-a-python-module)
-- [0.2.1 release notes](project/release-notes/0.2.1.md) and
+- [0.3.0 release notes](project/release-notes/0.3.0.md) and
   [0.1.0 release notes](project/release-notes/0.1.0.md)
 
 ## Understand the Design
@@ -53,6 +54,7 @@ live change feed, and the Rust and Python libraries.
 - [Performance loop](project/guides/performance-loop.md)
 - [macOS tool comparison](project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
 - [Linux tool comparison](project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
+- [pdu and the Linux peer gap](project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)
 
 ## Build, Test, and Release
 

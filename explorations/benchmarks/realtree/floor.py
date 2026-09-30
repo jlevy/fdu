@@ -78,17 +78,17 @@ here rather than treated as drift.
 The oracle holds each of those four that any instrument reports, taken from the first trial
 that reported it, so a run opening with an instrument that reports fewer tallies still
 compares the rest. A *reference* row neither sets it nor vetoes the subject. `parfloor enum` makes
-no metadata call, so it descends only where `getdents64` reports `DT_DIR`, and on a
-filesystem that leaves `d_type` unknown it undercounts directories -- a fact about that
-instrument, not about the tree or the tiers. A reference that disagrees is dropped from
-the table, with the reason.
+no metadata call where `getdents64` reports each entry's type; on a filesystem that leaves
+`d_type` unknown it has to ask (one `statx` per entry) or miss every directory below, so
+it asks, and its time there is no longer a search tool's floor. A reference that
+disagrees is dropped from the table, with the reason.
 
-`parfloor stat` is the floor and cannot be dropped, which leaves one known gap as a
-limitation of the scoreboard: a directory it cannot open is skipped without being
-counted, while fdu and `arena_spike` count it. **A subject with any directory the
-running user cannot read is refused by the oracle**, so score subjects that are readable
-throughout. A subject root it cannot open would print a wrapped directory count, so an
-unreadable root is refused before anything runs.
+`parfloor stat` is the floor and cannot be dropped. It counts a directory it cannot open
+where it finds it, as fdu and `arena_spike` do, and refuses a root it cannot open rather
+than printing a wrapped count (fdu-fmxk); the harness also refuses an unreadable root
+before anything runs. No subject with an unreadable directory has been scored end to end
+since, so whether every instrument's tallies agree on one is unmeasured: score subjects
+that are readable throughout until one has.
 
 ## The host regime
 
@@ -98,20 +98,21 @@ across instruments, but nothing cancels a host that was quiet for the denominato
 busy for the numerator.
 
 So `quiet` here is the loop's contract rather than a local variant of it. `measure`'s own
-gate -- on Linux, a one-minute load average of at most 0.25 per core -- must hold before
-and after every trial, and a load average that cannot be read refuses the regime rather
-than passing it. A trial that breaches the gate is invalid, and one invalid measured trial
+gate -- on Linux, CPU occupancy of at most 25% over a one-second `/proc/stat` interval --
+must hold before and after every trial, and a reading that cannot be taken refuses the
+regime rather than passing it. A trial that breaches the gate is invalid, and one invalid measured trial
 anywhere downgrades the whole scoreboard to `uncontrolled`: a table cannot say quiet when
 one of its samples was not. It is still written, as the screening-grade table
 `--host-regime uncontrolled` would have recorded.
 
 Before each subject's first trial the harness waits, within a stated bound
 (`--quiet-wait`), for a settling host to meet the gate, because `make perf-floor` builds
-the probe immediately beforehand and a load average remembers a build for minutes. The
-wait decides when measurement starts, never what it accepts. A load average also
-remembers this harness's own instruments, which run N workers back to back, so a long run
-on few cores can cross the gate on its own load and be downgraded; `measure` shares that
-property on Linux.
+the probe immediately beforehand. The wait decides when measurement starts, never what
+it accepts. The gate reads occupancy rather than the one-minute load average because the
+load average remembers this harness's own instruments, which run N workers back to back:
+25 s of N busy workers on an idle four-core Linux host left 0.35 load per core, past the
+old 0.25 bar, with the CPU 1% busy a second later (fdu-hw7f). The load averages are still
+recorded as context.
 """
 
 from __future__ import annotations
@@ -131,6 +132,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import measure
 from benchmarks.realtree.subjects import MINIMUM_DECIDING_ENTRIES
 
@@ -146,14 +148,15 @@ DEFAULT_TIMEOUT_SECONDS = 900.0
 
 #: How long `--host-regime quiet` waits for a settling host before it refuses.
 #:
-#: A load average is a one-minute exponential average, so after load stops it stays over
-#: a 0.25-per-core bar for ln(load per core / 0.25) minutes: 83 s after a build that held
-#: every core busy, 125 s after one that ran twice oversubscribed. `make perf-floor` builds
-#: the probe immediately before this starts. Three minutes covers a build of up to five
-#: runnable threads per core; `--quiet-wait` lifts it.
+#: The wait polls `measure`'s own gate. Where that gate is a load average (neither Linux
+#: nor macOS, which read CPU occupancy), a one-minute exponential average stays over a
+#: 0.25-per-core bar for ln(load per core / 0.25) minutes after load stops: 83 s after a
+#: build that held every core busy, 125 s after one that ran twice oversubscribed. `make
+#: perf-floor` builds the probe immediately before this starts. Three minutes covers a
+#: build of up to five runnable threads per core; `--quiet-wait` lifts it.
 QUIET_WAIT_SECONDS = 180.0
 
-#: How often that wait re-reads the load average, which the kernel updates every 5 s.
+#: How often that wait re-reads the gate; a load average updates every 5 s.
 QUIET_POLL_SECONDS = 5.0
 
 #: max/min at or past which the samples span more than a median can stand for. See
@@ -864,8 +867,14 @@ FLOOR_INSTRUMENT = "parfloor-stat"
 
 
 def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
-    """Divide every instrument's median by the floor's, on one subject."""
+    """Divide every instrument's median by the floor's, on one subject.
+
+    A tier is decided only where the numbers compare and the host held still: a subject
+    the oracle vetoed, or one measured in -- or downgraded to -- the uncontrolled regime,
+    leaves every tier undecided however its ratio falls (fdu-ayzg).
+    """
     instruments = subject["instruments"]
+    decidable = subject.get("host_regime") == "quiet" and not subject.get("oracle_disagreements")
     floor = instruments.get(FLOOR_INSTRUMENT, {}).get("elapsed_ns", {}).get("median")
     if not floor:
         raise FloorError(f"{subject['label']}: no floor measurement to divide by")
@@ -895,9 +904,11 @@ def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
             # floor, the ceiling and the enum reference are context, not contestants.
             # A tier whose samples spread past SPREAD_SUSPECT is left undecided: its
             # median is whichever mode or outlier it landed near, and that must not
-            # close a tier -- or keep one open -- by the luck of a run.
+            # close a tier -- or keep one open -- by the luck of a run. So is every tier
+            # of a subject that is not `decidable`.
             "meets_threshold": (
-                None if not threshold or result["spread_suspect"] else ratio <= threshold
+                None if not threshold or result["spread_suspect"] or not decidable
+                else ratio <= threshold
             ),
         })
     rows.sort(key=lambda row: row["x_floor"])
@@ -1026,6 +1037,13 @@ def run(
         subject["scored"] = score(subject)
         measured.append(subject)
     breached = sum(subject["invalid_trials"] for subject in measured)
+    if breached:
+        # The downgrade is the whole table's, so no subject's row may still claim quiet,
+        # or decide a tier on it (fdu-cvx1). Each keeps its own `invalid_trials`, which
+        # says where the breach happened.
+        for subject in measured:
+            subject["host_regime"] = "uncontrolled"
+            subject["scored"] = score(subject)
     return {
         "schema": "fdu-floor-scoreboard-v1",
         "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -1133,11 +1151,13 @@ def main(argv: Sequence[str]) -> int:
     print(text)
     if arguments.output:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        arguments.output.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
+        write_text_atomic(
+            arguments.output, json.dumps(document, indent=2, sort_keys=True), encoding="utf-8"
+        )
         print(f"wrote {arguments.output}", file=sys.stderr)
     if arguments.markdown:
         arguments.markdown.parent.mkdir(parents=True, exist_ok=True)
-        arguments.markdown.write_text(text, encoding="utf-8")
+        write_text_atomic(arguments.markdown, text, encoding="utf-8")
         print(f"wrote {arguments.markdown}", file=sys.stderr)
 
     if any(subject["oracle_disagreements"] for subject in document["subjects"]):

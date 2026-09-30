@@ -19,6 +19,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi  # noqa: E402
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 
 def populate(root, ndirs, nfiles):
@@ -75,8 +78,7 @@ def main():
     bigc = os.path.join(ctrl, "big"); os.makedirs(bigc); populate(bigc, 20, 100)
     results.append({"control_unmarked": {"root": state(ctrl), "big": state(bigc)}})
     print(json.dumps(results[-1]))
-    with open(out, "w") as fh:
-        json.dump(results, fh, indent=1)
+    write_text_atomic(out, json.dumps(results, indent=1))
 
 
 if __name__ == "__main__":

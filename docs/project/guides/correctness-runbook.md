@@ -165,15 +165,21 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-This run was on 2026-09-29, for the 0.2.1 release commit, `b10fe7b39` on `main`. It used
-the `fdu` of the candidate wheel, built from `672c2188f` and installed with
-`uv tool install` (`fdu 0.2.1-dev+g672c2188f`). The release commit has the same tree as
-`672c2188f`, so the result applies to it by tree identity, and neither the crates nor
-`tests/correctness` changed after `e889694c`, the first 0.2.1 release layer.
+This run was on 2026-09-30, for the 0.3.0 release candidate, `e808f9604`, the head of
+the release branch `claude/release-0.3.0`, whose tree is `df899f7da`; a release commit
+on `main` with that tree inherits the result by tree identity.
+It used the `fdu` of the candidate wheel, built from `e808f9604` and installed with
+`uv tool install` into an isolated tool directory (`fdu 0.3.0-dev+ge808f9604`). The
+gates on the same commit, `make check`, `make cross-lint`, `make semver-check`, and
+`make release-rehearse`, all exited 0, as the Current Status of the
+[QA playbook](../../../tests/qa/cli-installed-e2e.qa.md) records.
+The 0.2.1 record this one replaces, for the same kind of host, is in this file’s
+history.
 
 **Regime.**
 
-- **Host.** A 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18).
+- **Host.** A 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18), otherwise
+  quiet.
 - **Filesystem.** ext4, which is case-sensitive.
   The trees were under a short `/tmp` path.
 - **Privilege.** Both trees were built as root, so the device nodes exist.
@@ -206,6 +212,9 @@ Each pass was checked by breaking it:
 - **Partial answer stored.** Run as `nobody`, a wrapper answered `--stale-ok` with the
   cold output relabeled `cache_only`. All 23 cases reported `PARTIAL-STORED`, and
   `--refusals-only` exited 1.
+
+Every case of every pass, and the commands that ran them, are in the
+[0.3.0 stability-pass report](../reports/report-2026-09-30-release-0.3.0-stability-pass.md).
 
 ### Previous Run: 0.2.0 on macOS
 

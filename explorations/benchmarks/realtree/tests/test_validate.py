@@ -8,6 +8,11 @@ report success over nothing.
 
 from __future__ import annotations
 
+import contextlib
+import gzip
+import io
+import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -15,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.realtree import experiment as experiment_model
-from benchmarks.realtree import record, summary, validate
+from benchmarks.realtree import ledger, record, summary, validate
 from benchmarks.realtree.experiment import VERDICT_TOLERANCE_PCT, kept_arm
 from pydantic import ValidationError
 from test_experiment import _run_document
@@ -253,6 +258,154 @@ class CorpusGateTests(unittest.TestCase):
         self.assertIn("-99.919", message)
         self.assertIn("-2.158", message)
         self.assertIn("default-tree", message)
+
+
+def gzip_deterministically(data: bytes) -> bytes:
+    """Compress the way the performance loop stores a run: no file name, an mtime of 0."""
+    buffer = io.BytesIO()
+    with gzip.GzipFile(filename="", mode="wb", fileobj=buffer, compresslevel=9, mtime=0) as out:
+        out.write(data)
+    return buffer.getvalue()
+
+
+class CompressedRunArtifactTests(unittest.TestCase):
+    """A run stored as ``.json.gz`` reads, records, and validates as its plain form does.
+
+    Committed run artifacts are gzipped, because hundreds of thousands of lines of raw
+    JSON made up most of one pull request's diff; older artifacts stay plain. Both forms
+    have to give the same answer, or compressing a run would change the evidence.
+    """
+
+    def setUp(self) -> None:
+        self.scratch = Path(tempfile.mkdtemp(prefix="fdu-run-artifact-test-"))
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.document = _run_document()
+        encoded = json.dumps(self.document, indent=2, sort_keys=True).encode("utf-8")
+        self.plain = self.scratch / "plain" / "run.json"
+        self.compressed = self.scratch / "compressed" / "run.json.gz"
+        self.plain.parent.mkdir()
+        self.compressed.parent.mkdir()
+        self.plain.write_bytes(encoded)
+        self.compressed.write_bytes(gzip_deterministically(encoded))
+
+    def _record(self, run: Path) -> Path:
+        output = run.parent / "records"
+        argv = [
+            "--run",
+            str(run),
+            "--id",
+            "exp-042",
+            "--title",
+            "Test experiment",
+            "--hypothesis",
+            "H1",
+            "--control",
+            "before",
+            "--candidate",
+            "after",
+            "--decision",
+            "accepted",
+            "--primary-job",
+            "cold-scan-index",
+            "--reason",
+            "faster",
+            "--tree-provenance",
+            "fixture",
+            "--output-dir",
+            str(output),
+            "--no-validate",
+        ]
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(record.main(argv), 0)
+        (written,) = sorted(output.glob("exp-*.md"))
+        return written
+
+    def test_the_loader_reads_both_forms_to_the_same_document(self) -> None:
+        self.assertEqual(ledger.load(self.plain), self.document)
+        self.assertEqual(ledger.load(self.compressed), self.document)
+
+    def test_storing_a_run_compresses_it_deterministically_and_whole(self) -> None:
+        stored = self.scratch / "stored" / "run.json.gz"
+        ledger.store(self.plain, stored)
+        self.assertEqual(stored.read_bytes(), self.compressed.read_bytes())
+        self.assertEqual(ledger.load(stored), self.document)
+        ledger.store(self.plain, stored)
+        self.assertEqual(stored.read_bytes(), self.compressed.read_bytes())
+        self.assertEqual([entry.name for entry in stored.parent.iterdir()], ["run.json.gz"])
+
+        with self.assertRaisesRegex(ValueError, r"must end in \.gz"):
+            ledger.store(self.plain, self.scratch / "stored" / "run.json")
+
+    def test_a_gz_suffix_on_plain_json_fails_rather_than_being_guessed(self) -> None:
+        mislabelled = self.scratch / "mislabelled.json.gz"
+        mislabelled.write_bytes(self.plain.read_bytes())
+        with self.assertRaises(gzip.BadGzipFile):
+            ledger.load(mislabelled)
+
+    def test_recording_from_a_gzipped_run_writes_the_same_record(self) -> None:
+        from_plain = self._record(self.plain).read_text(encoding="utf-8")
+        from_compressed = self._record(self.compressed).read_text(encoding="utf-8")
+
+        self.assertIn(f"    run_artifact: {self.compressed}\n", from_compressed)
+        self.assertIn(f"    run_artifact: {self.plain}\n", from_plain)
+        self.assertEqual(from_compressed.replace(str(self.compressed), str(self.plain)), from_plain)
+
+    def test_a_record_naming_a_gzipped_artifact_validates_with_the_same_figures(self) -> None:
+        try:
+            summary._validator()
+        except Exception:
+            self.skipTest("softschema is not available; run through `make perf-test`")
+        if not SCHEMA.is_file():
+            self.skipTest("compiled schema is not present; run from the repository root")
+
+        loaded: dict[str, dict[str, Any]] = {}
+        for form, run in (("plain", self.plain), ("compressed", self.compressed)):
+            written = self._record(run)
+            shutil.copy(SCHEMA, written.parent / SCHEMA.name)
+            report = validate.validate_corpus(written.parent)
+            self.assertEqual((report.records, report.compared), (1, 1), form)
+            (experiment,) = summary.load_experiments(written.parent)
+            self.assertEqual(experiment["method"]["run_artifact"], str(run), form)
+            loaded[form] = experiment
+
+        plain, compressed = loaded["plain"], loaded["compressed"]
+        self.assertEqual(compressed["verdict"]["change_pct"], -30.0)
+        self.assertEqual(compressed["results"], plain["results"])
+        for experiment in (plain, compressed):
+            del experiment["_path"]
+            del experiment["method"]["run_artifact"]
+        self.assertEqual(compressed, plain)
+
+    def test_every_committed_run_artifact_loads_and_is_stored_deterministically(self) -> None:
+        # A record's `run_artifact` is only a string to the contract, so nothing else
+        # notices a record left pointing at a run that was compressed and removed.
+        if not EXPERIMENTS.is_dir():
+            self.skipTest("the committed corpus is not present; run from the repository root")
+        committed = re.compile(r"^    run_artifact: (docs/project/experiments/evidence/\S+)$", re.M)
+        artifacts = sorted(
+            {
+                Path(match)
+                for path in EXPERIMENTS.glob("exp-*.md")
+                for match in committed.findall(path.read_text(encoding="utf-8"))
+            }
+        )
+        compressed = [path for path in artifacts if path.suffix == ".gz"]
+        self.assertTrue(artifacts, "no record names a committed run artifact")
+        self.assertTrue(compressed, "no record names a gzipped run artifact")
+
+        for path in artifacts:
+            with self.subTest(artifact=str(path)):
+                self.assertTrue(path.is_file(), f"{path} is named by a record but missing")
+                run = ledger.load(path)
+                self.assertIn("statistics", run)
+                self.assertIn("jobs", run)
+        for path in compressed:
+            with self.subTest(artifact=str(path)):
+                header = path.read_bytes()[:8]
+                # No flags (so no stored file name) and a zero mtime: the same run always
+                # compresses to the same header, whoever stores it and whenever.
+                self.assertEqual(header[3], 0, f"{path} stores a file name or other field")
+                self.assertEqual(header[4:8], b"\0\0\0\0", f"{path} stores a timestamp")
 
 
 if __name__ == "__main__":

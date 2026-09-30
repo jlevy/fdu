@@ -536,7 +536,7 @@ strategy and the record is visible in review.
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
   historical Darwin H107–H138 queue after the H116–H120 overnight; current priorities
   are in
-  [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
+  [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-30)
 - [Linux parallel validation](../done/plan-2026-09-19-linux-parallel-validation.md) —
   H139–H143 recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
   virtualized host; base `main`, merges onto `main` then #97

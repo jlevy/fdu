@@ -115,12 +115,20 @@ Detached cold scans may use a private builder that shares admission, classificat
 reducer rules and returns an ordinary `Index`. Subsequent public mutations use the exact
 reducer without a separate engine or a caller-asserted trust flag.
 
-One-shot execution retains less state only when the request is one unfiltered summary
-with no content analysis and no ignore classification, under a delivery that neither
-answers from the snapshot (`stale_ok`) nor asks to keep one (`CachePolicy::On`). That
-derived-report optimization must produce the same `Report` contract; it is not a second
-engine or a user-selectable fast mode.
-It writes no snapshot, so a later `stale_ok` read finds none.
+One-shot execution retains less state only when the request proves it needs less, with
+no content analysis, under a delivery that neither answers from the snapshot
+(`stale_ok`) nor asks to keep one (`CachePolicy::On`). One unfiltered summary retains no
+index (`RetainedState::Summary`); when it reads `.gitignore`, it keeps only the control
+table and the directories that head an ignored subtree, which is enough to classify each
+entry as it counts it.
+An unfiltered tree with a positive share threshold builds a folded index: every
+directory, but only the files large enough to be shown as rows, the rest counted in
+their directory’s roll-ups and in a folded tally its share omission reads
+(`RetainedState::Tree`). The planner reports from a folded index and frees it; it is
+never returned, persisted, or mutated.
+Each derived-report optimization must produce the same `Report` contract; it is not a
+second engine or a user-selectable fast mode.
+Neither writes a snapshot, so a later `stale_ok` read finds none.
 
 Persistence is the plan’s decision too (`Plan::persists`). Under `CachePolicy::Auto` a
 one-shot metadata report writes nothing, since no later one-shot report reads it;
@@ -401,9 +409,10 @@ ignore: `TreeNode`, `SummaryRow`, and `TypeRow` an `IgnoredTally`, and `FileRow`
 The unfiltered tier derives the share from the maintained `all` and `unignored`
 partitions; the traversal tier counts it over the entries the selection admits, so a
 selection by ignored state (`Selection::ignored`) sizes, sorts, and bounds rows by what
-it selected. The share is `None` when the index observed no control state, and the
-aggregate-only plan, which keeps no control table, is taken only by a scan that turned
-observation off.
+it selected. The share is `None` when the scan observed no control state.
+The aggregate-only plan tallies the share as it counts each entry, from the control
+table and the ignored directories it keeps, so it serves the default summary as well as
+one that turned observation off.
 
 #### Content index and sidecar
 
@@ -445,7 +454,7 @@ It observes control state as `ScanConfig::read_controls` says, on by default as 
 `open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must answer the same request identically.
 A one-shot report owns an index nobody else can reach once its answer is built, so the
-last reference to a large one (64k entries or more) is released on a detached thread
+last reference to a large one (4,096 entries or more) is released on a detached thread
 rather than before the call returns; a joined snapshot writer does the same with its
 reference. That thread holds no engine state and reports nothing, so nothing joins it:
 its only effect is returning memory, and a process that exits first lets the operating

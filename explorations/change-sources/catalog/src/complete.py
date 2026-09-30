@@ -20,6 +20,9 @@ import stat
 import subprocess
 import sys
 import time
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 REVIEW = os.environ["REVIEW"]
 
@@ -175,8 +178,7 @@ def mutate(fixture):
     note("untouched_base_dir", os.path.join(fixture, "base-05"), False, False, False)
     note("untouched_base_file", os.path.join(fixture, "base-05", "file-005.txt"), False, False, False)
     os.sync()
-    with open(os.path.join(os.path.dirname(fixture.rstrip("/")), os.path.basename(fixture.rstrip("/")) + ".expected.json"), "w") as fh:
-        json.dump(expected, fh, indent=1)
+    write_text_atomic(os.path.join(os.path.dirname(fixture.rstrip("/")), os.path.basename(fixture.rstrip("/")) + ".expected.json"), json.dumps(expected, indent=1))
     print(f"mutated {fixture}: {len(expected)} expectations")
 
 
@@ -260,8 +262,7 @@ def compare(fixture, t0, dump_ctime, dump_mtime, out_json):
             row["searchfs_ctime_consistent_with_stat"] = row["searchfs_ctime_found"] == row["ctime_new"]
             row["searchfs_mtime_consistent_with_stat"] = row["searchfs_mtime_found"] == row["mtime_new"]
         result["ops"][op] = row
-    with open(out_json, "w") as fh:
-        json.dump(result, fh, indent=1)
+    write_text_atomic(out_json, json.dumps(result, indent=1))
     print(json.dumps({k: v for k, v in result.items() if k != "ops"}, indent=1))
     for op, row in result["ops"].items():
         print(f"{op:32s} ctime_new={row.get('ctime_new')!s:5} mtime_new={row.get('mtime_new')!s:5} "
@@ -309,8 +310,7 @@ def openwriter(fixture, searchfs_bin, vol, outdir):
         runs[f"closed_{attr}"] = {"summary": r.stdout.strip(), "stderr": r.stderr.strip(), "found": st_open.st_ino in rows,
                                   "row": rows.get(st_open.st_ino)}
     summary["runs"] = runs
-    with open(os.path.join(outdir, "openwriter.json"), "w") as fh:
-        json.dump(summary, fh, indent=1)
+    write_text_atomic(os.path.join(outdir, "openwriter.json"), json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
 
 

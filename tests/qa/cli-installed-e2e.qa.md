@@ -33,44 +33,54 @@ Library steps are time-boxed and must stay bounded.
 
 * * *
 
-## Current Status (Last Update 2026-09-29)
+## Current Status (Last Update 2026-09-30)
 
-This table records the 0.2.1 release commit, `b10fe7b39` on `main`. The pass ran on
-`672c2188f`, whose tree (`761850ec6`) the release commit and the release branch head
-`ee97bf337` share byte for byte, so every result applies to `b10fe7b39` by tree
-identity; no crate or script changed after `e889694c`, the first 0.2.1 release layer.
-The installed command was the `cp312-abi3` `manylinux_2_34_x86_64` wheel built from
-`672c2188f` as [Install the Candidate](#11-install-the-candidate) describes, installed
-with `uv tool install` into an isolated tool directory, and `fdu --version` printed
-`fdu 0.2.1-dev+g672c2188f`. The host was a 4-vCPU Linux x86_64 virtual machine
-(Firecracker) on ext4, running as root and otherwise quiet; the gates on `672c2188f`
-(`make check`, `make cross-lint`, `make release-rehearse`, and `make semver-check`)
-passed with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`
-declared, as AGENTS.md prescribes for such a host, and with `UV_PYTHON=3.12`, because
-this host’s default `python3` is 3.11 and `test-performance` runs the benchmark tests,
-which need 3.12, on the interpreter uv finds.
+This table records the 0.3.0 release candidate, `e808f9604`, the head of the release
+branch `claude/release-0.3.0`, whose tree is `df899f7da`. A release commit on `main`
+with that tree inherits every result by tree identity.
+Since `9e4953b0`, where `make check` had already passed, the branch changed only
+documentation and performance evidence, and every gate ran again on `e808f9604` itself.
+`make release-rehearse` builds its artifacts in a temporary directory it removes on
+exit, so the installed command was the `cp312-abi3` `manylinux_2_34_x86_64` wheel built
+from `e808f9604` as [Install the Candidate](#11-install-the-candidate) describes,
+installed with `uv tool install` into an isolated tool directory, and `fdu --version`
+printed `fdu 0.3.0-dev+ge808f9604`. The host was a 4-vCPU Linux x86_64 virtual machine
+(Firecracker, kernel 6.18) on ext4, running as root and otherwise quiet.
+The gates on `e808f9604` all exited 0: `make check`; `make cross-lint`, which linted the
+macOS, Windows, i686, and musl targets and skipped `aarch64-unknown-linux-gnu`, which is
+not installed; `make semver-check`, which printed that `fdu-core` 0.3.0 and `fdu` 0.3.0
+each start a new compatibility series, so there is nothing to check; and
+`make release-rehearse`. They ran with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and
+`FDU_TEST_ALLOW_NO_NATIVE_WATCH=1` declared, as AGENTS.md prescribes for such a host,
+and with `UV_PYTHON=3.12`, because this host’s default `python3` is 3.11 and
+`test-performance` runs the benchmark tests, which need 3.12, on the interpreter uv
+finds. The harness needs GNU time, which this host lacked until `time` 1.9 was installed
+from the distribution.
 Each timing is a single run.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Setup | ✅ Passed | Wheel from `672c2188f`, installed as a uv tool; help lists every flag Phase 1.2 names and no `--no-cache`; `XDG_CACHE_HOME` per arm; user cache listing unchanged before and after |
-| Phase 2: Small-tree views | ✅ Passed | This repository’s checkout with its gate-built virtualenvs and `node_modules` (13,656 files, 419 MiB); all views exit 0; `--ignored=exclude` gives 31 MiB and `--scan-depth=1` 280 KiB; JSON and YAML totals agree; `documents` without `--analyze` exits 2 with the usage line |
-| Phase 3: Cache × analyze | ✅ Passed | `off` stayed `0 cached` and wrote no snapshot; `auto` reused all 13,656 records (0.90 s to 0.18 s for `code`). The second `lines` run re-read 6 files: another process linked the shared uv cache into the checkout’s virtualenvs mid-run, changing their ctime, and a repeat of the sequence re-read none. `words` and `all` exit 0; JSON `physical_lines` is 2,689,062; watch exited on SIGINT |
-| Phase 4: Medium tree | ✅ Passed | A Linux v6.12 source checkout (86,643 files, 358 `.gitignore` files), 0.25 s per metadata run, both `cold scan` as documented; `--analyze=code` on `Documentation/` only (10,121 files, 1.80 s), reused on the second run (0.08 s) |
-| Phase 5: Bounded large tree | ✅ Passed | `~/Library` does not exist on Linux, so `/` stood in as the hostile wide tree (`/proc`, `/sys`, `/dev`, a live `/tmp`). Depth 1 and 2 exit 0, and depth 2’s 148 files match `find`; no SIGKILL; peak 14 MiB. No `Preferences` or `Logs` leaf exists, so none ran |
-| Phase 6: Terminal Progress | ⏳ Pending | `make test-terminal` passed against the installed command. A pty probe passed all 28 of its checks: frames on a 4 s scan, erased before the report; nothing for a small tree, a redirected stderr (only `note:`, `tip:`, and `perf:` lines), `--format json`, `--progress never`, `CI=1`, or `TERM=dumb`; `--progress always --format json` draws; Ctrl-C erases, prints `fdu: interrupted`, and dies by SIGINT; `NO_COLOR` keeps the animation; frames fit at 60 to 12 columns and after narrowing mid-run, spinner and phase word only below 20; `Analyzing` shows a percentage. A person has not watched a window, and Windows has not run |
-| Phase 7: Peer agreement | ✅ Passed | GNU du 9.4, dust 1.2.4, pdu 0.24.0, dua 2.41.1, diskus 0.9.0; BSD du is macOS-only, and so are `/Applications` and `~/Library`. Self-test: all 12 Linux readings agree exactly. On this repository’s checkout, `~/.rustup`, `/usr`, and the Linux checkout, all 48 readings agree exactly, each tree quiet. The script still exits 1, because on ext4 each top-level row differs from GNU du -l by the subtree’s own directory and symbolic-link blocks (`fdu-83km`): 4 self-test rows and 50 of 50 subject rows, each matched to the byte by a separate walk |
-| Phase 8: Results | ✅ Passed | 49 harness checks: 48 ok, and 1 expected warning for `documents` exit 2. That row’s 2.000 s is its exit status, which the harness reads from GNU time’s `Command exited with non-zero status 2` line; it took 0.02 s. Full tables are in the pull request that records this run; the correctness record is in the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) |
+| Phase 1: Setup | ✅ Passed | Wheel from `e808f9604`, installed as a uv tool; help lists every flag Phase 1.2 names and no `--no-cache`; `XDG_CACHE_HOME` per arm; user cache listing unchanged before and after |
+| Phase 2: Small-tree views | ✅ Passed | This repository’s checkout at the candidate, with its gate-built virtualenvs and `node_modules` (13,754 files, 422 MiB); all views exit 0; `--ignored=exclude` gives 34 MiB and `--scan-depth=1` 312 KiB; JSON and YAML totals agree; `documents` without `--analyze` exits 2 with the usage line |
+| Phase 3: Cache × analyze | ✅ Passed | `off` stayed `0 cached` and wrote no snapshot; `auto` reused all 13,754 records (0.96 s to 0.16 s for `code`, 0.54 s to 0.16 s for `lines`), and the second `lines` run re-read none. `words` and `all` exit 0; JSON `physical_lines` is 2,705,144; watch exited on SIGINT |
+| Phase 4: Medium tree | ✅ Passed | A Linux v6.12 source checkout (86,643 files, 358 `.gitignore` files), 0.17 s and 0.09 s for the two metadata runs, both `cold scan` as documented; `--analyze=code` on `Documentation/` only (10,121 files, 0.21 s), reused on the second run (0.08 s, all 10,121 cached) |
+| Phase 5: Bounded large tree | ✅ Passed | `~/Library` does not exist on Linux, so `/` stood in as the hostile wide tree (`/proc`, `/sys`, `/dev`, a live `/tmp`). Depth 1 and 2 exit 0, and depth 2’s 181 files match `find`, as do its directories under every top-level directory but `/proc`, whose process entries come and go; no SIGKILL; peak 15 MiB. No `Preferences` or `Logs` leaf exists, so none ran |
+| Phase 6: Terminal Progress | ⏳ Pending | `make test-terminal` passed against the installed command. A pty probe passed all 38 of its checks: frames on a 1.5 s scan of 1.2 million files, the first at 0.52 s, with counts that climb in a fixed column, erased before the report; nothing for a small tree, a redirected stderr (only `note:`, `tip:`, and `perf:` lines), `--format json`, `--progress never` in text, JSON, or YAML, `CI=1`, or `TERM=dumb`; `--progress always --format json` draws; Ctrl-C erases, prints `fdu: interrupted`, and dies by SIGINT; `NO_COLOR` keeps the animation without color; frames fit at 60 to 12 columns and after narrowing mid-run, spinner and phase word only below 20; `Analyzing` shows a climbing percentage. A person has not watched a window, and Windows has not run |
+| Phase 7: Peer agreement | ✅ Passed | GNU du 9.4, dust 1.2.5, pdu 0.24.0, dua 2.45.0, diskus 0.9.0; dust and dua are newer than the 0.2.1 pass’s, which the self-test covers. BSD du is macOS-only, and so are `/Applications` and `~/Library`. Self-test: all 12 Linux readings agree exactly. On this repository’s checkout, `~/.rustup`, `/usr`, the Linux checkout, and a dense `node_modules` tree, all 60 readings agree exactly, each tree quiet. The script still exits 1, because on ext4 each top-level row differs from GNU du -l by the subtree’s own directory and symbolic-link blocks (`fdu-83km`): 4 self-test rows and 51 of 51 subject rows, each matched to the byte by a separate walk |
+| Phase 8: Results | ✅ Passed | 49 harness checks: 48 ok, and 1 expected warning for `documents` exit 2, whose row now shows its 0.02 s wall time rather than its exit status. Full tables are in the [0.3.0 stability-pass report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md); the correctness record is in the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) |
 
 This pass says nothing about the macOS walk.
 The last macOS pass, for 0.2.0 at `6ec77163a` on bare-metal Apple silicon and APFS,
 passed every phase but Phase 6’s watched window; its table is in this file’s history.
+The 0.2.1 pass, on the same kind of Linux host at `672c2188f` (release commit
+`b10fe7b39`), passed every phase but Phase 6’s watched window too; its table is in this
+file’s history as well.
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
 
 **Test Results:** the 0.1.0 numbers are in
 [report-2026-09-25-release-candidate-qa.md](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md).
-The 0.2.0 and 0.2.1 tables are in the pull requests that record those runs.
+The 0.2.0, 0.2.1, and 0.3.0 tables are in the pull requests that record those runs.
 
 **Next Steps:**
 

@@ -54,7 +54,7 @@ retained paths, no per-entry allocation, no delta contract.
 
 | Variant | Mechanism |
 | --- | --- |
-| `enum` | `openat` + `getdents64` + `close`, classifying by `d_type`; no metadata call. The floor for a search tool’s job, not a disk-usage tool’s |
+| `enum` | `openat` + `getdents64` + `close`, classifying by `d_type`; no metadata call where the filesystem fills `d_type` in, and one `statx(STATX_TYPE)` per entry where it reports `DT_UNKNOWN`. The floor for a search tool’s job, not a disk-usage tool’s |
 | `stat` | `enum` plus `statx(dirfd, name)` per entry. The floor for du’s job, and fdu’s |
 | `abspath` | `stat`, but each entry statted by full absolute path instead of dirfd-relative |
 
@@ -76,6 +76,10 @@ automatic starting pool on a machine with at least six cores.
 
 Tallies match `walkspike`, `arena_spike`, `peerwalk` and fdu’s summary, so any variant
 or thread count that disagrees is broken rather than fast.
+A directory is counted where it is found, so one the process cannot open is still
+counted, as fdu counts it; a root it cannot open is an error (exit 1), not a count.
+Build with `-DPARFLOOR_FORCE_DT_UNKNOWN` to exercise the `DT_UNKNOWN` path on a
+filesystem that fills `d_type` in.
 
 ## peerwalk.rs
 

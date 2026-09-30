@@ -13,9 +13,12 @@ rejected anyway.
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
+
+from benchmarks.atomic_write import open_atomic, write_text_atomic
 
 #: A change has to beat this to be worth carrying. Below it, run-to-run noise on a
 #: laptop is the same size as the effect, and the code is more complex for nothing.
@@ -53,13 +56,63 @@ def evidence_label(entry: Mapping[str, Any]) -> str:
     return "unclear"
 
 
-def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[str, Any]:
+def job_invalid_samples(job_statistics: Mapping[str, Any]) -> int:
+    """Timed samples the harness invalidated in one job, summed over every variant.
+
+    A sample is invalid when the oracle disagreed, the command failed or timed out, the
+    quiet-host gate saw pressure at its boundary, or the tree moved. Every variant
+    counts, not only the pair being compared: the arms share one interleaved fixed-N
+    cell, so a cell with any invalid sample is rerun whole rather than read around.
+    """
+    return sum(
+        int((entry or {}).get("invalid") or 0)
+        for entry in (job_statistics.get("variants") or {}).values()
+    )
+
+
+def verdict_label(decision: Mapping[str, Any]) -> str:
+    """The one word printed for a verdict: ACCEPT, REJECT, or INCONCLUSIVE."""
+    if decision.get("inconclusive"):
+        return "INCONCLUSIVE"
+    return "ACCEPT" if decision.get("accepted") else "REJECT"
+
+
+def verdict(
+    comparison: Mapping[str, Any],
+    *,
+    invalid_samples: int,
+    metric: str = "wall_ns",
+) -> Dict[str, Any]:
     """Decide accept/reject for one comparison on one metric.
 
     Note this asks only the accept question. Use :func:`evidence_label` when reporting
     what a metric actually did: a metric can fail the accept rule by regressing, and
     printing that as "no" is how a regression gets read as noise.
+
+    ``invalid_samples`` is the job's count from :func:`job_invalid_samples`. Any nonzero
+    count makes the verdict inconclusive, neither accept nor reject: the valid pairs
+    that remain are a subset the host chose, and the accept rule requires that no
+    sample was invalidated. Exit code 3 already said so; this makes the printed word
+    say it too, so nobody reads ACCEPT off a cell that has to be run again. It has no
+    default because a caller that left it out would do exactly that: the surviving
+    pairs of an inconclusive cell can clear the accept arithmetic on their own.
     """
+    if invalid_samples:
+        entry = (comparison.get("metrics") or {}).get(metric) or {}
+        plural = "" if invalid_samples == 1 else "s"
+        return {
+            "accepted": False,
+            "inconclusive": True,
+            "reason": f"{invalid_samples} invalid sample{plural}; rerun the cell whole",
+            "change_pct": entry.get("median_change_pct"),
+        }
+    decision = _accept_rule(comparison, metric=metric)
+    decision["inconclusive"] = False
+    return decision
+
+
+def _accept_rule(comparison: Mapping[str, Any], *, metric: str) -> Dict[str, Any]:
+    """The accept arithmetic on a cell whose every sample was valid."""
     entry = (comparison.get("metrics") or {}).get(metric)
     if not entry:
         return {
@@ -226,12 +279,13 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
         if invalid:
             lines.append("")
             lines.append(
-                "**Rejected samples (oracle disagreement or nonzero exit): "
+                "**Invalid samples (oracle, exit, timeout, host pressure, or tree change): "
                 + ", ".join(f"`{name}` {count}" for name, count in invalid.items())
-                + "**"
+                + ". The cell is inconclusive; rerun it whole.**"
             )
         lines.append("")
 
+        job_invalid = job_invalid_samples(stats)
         for key, comparison in stats["comparisons"].items():
             lines.append(f"### Paired comparison: {key}")
             lines.append("")
@@ -247,11 +301,10 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
                     + (f"[{interval[0]:+.2f}%, {interval[1]:+.2f}%]" if interval else "—")
                     + f" | {evidence_label(entry)} | {entry.get('noninferiority', '—')} |"
                 )
-            decision = verdict(comparison)
+            decision = verdict(comparison, invalid_samples=job_invalid)
             lines.append("")
             lines.append(
-                f"**Verdict on wall time: "
-                f"{'ACCEPT' if decision['accepted'] else 'REJECT'}** — {decision['reason']}"
+                f"**Verdict on wall time: {verdict_label(decision)}** — {decision['reason']}"
             )
             qualification = comparison.get("qualification")
             if isinstance(qualification, Mapping):
@@ -308,8 +361,38 @@ def _cell(summary: Optional[Mapping[str, Any]], unit: str) -> str:
 
 def write(document: Mapping[str, Any], destination: Path, *, profiles=()) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(render(document, profiles=profiles), encoding="utf-8")
+    write_text_atomic(destination, render(document, profiles=profiles), encoding="utf-8")
 
 
 def load(path: Path) -> Dict[str, Any]:
+    """Read a stored run document, plain (``*.json``) or gzipped (``*.json.gz``).
+
+    Committed run artifacts are stored gzipped: a run is hundreds of kilobytes of JSON
+    that nobody reviews line by line. Older records, and a run the harness has just
+    written, are plain. Every reader of a run comes through here, so each accepts both
+    forms. The suffix decides, so a ``.gz`` that is not gzip fails loudly instead of
+    being read as something else.
+    """
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as source:
+            return json.load(source)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def store(run: Path, destination: Path) -> None:
+    """Commit the run document at ``run`` as ``destination`` (``*.json.gz``).
+
+    The bytes are the run's own, compressed with no file name and an mtime of 0, so
+    nothing about when or where the file was written lands in it, and compressing an
+    unchanged run again reproduces the committed bytes. The file is written whole: a
+    crash leaves no truncated artifact for a record to name.
+    """
+    if destination.suffix != ".gz":
+        raise ValueError(f"a stored run is gzipped, so {destination} must end in .gz")
+    payload = run.read_bytes()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        open_atomic(destination, "wb") as raw,
+        gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as out,
+    ):
+        out.write(payload)

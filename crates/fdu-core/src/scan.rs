@@ -8,11 +8,19 @@
 //!
 //! # Status
 //!
-//! The serial walk is the portable `read_dir` plus non-following metadata reference.
-//! Parallel scans use the same path on most platforms; on macOS they first try a
+//! The portable `read_dir` plus non-following metadata reference is what every listing
+//! falls back to. Parallel scans use it on most platforms; on macOS they first try a
 //! measured `getattrlistbulk` backend that returns directory entries and stat-tier
 //! metadata together. Unsupported filesystems, malformed results, mount points, and
 //! firmlinks fail closed to the portable path for the complete containing directory.
+//! On Linux with glibc every route that lists a directory (the serial and concurrent
+//! walks, revalidation, reconciliation, opened discovery) first tries a reader that
+//! lists with raw `getdents64` and stats with `statx` against the listing's descriptor,
+//! passing `AT_NO_AUTOMOUNT`; an open or enumeration failure, a malformed record, or a
+//! kernel without `statx` falls back the same way, and the fallback's own stats then
+//! pass the flag too (`observe_dir_entry`), as does every stat of a path a route
+//! verifies by itself (`observe_path`). Only the walk root is resolved through a mount
+//! (`root_device`). So an autofs tree answers the same on every route and delivery.
 //! Every backend produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -27,6 +35,7 @@ use crate::engine_contract::{
     Attrs, Commit, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, PathState,
     Result, ScanScope,
 };
+use crate::execution::TreeRetention;
 use crate::index::{
     DetachedIndexBuilder, Index, IndexHandle, ReconcileErrors, ReconcileFinish,
     collect_child_expectations,
@@ -40,6 +49,11 @@ use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, Sn
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod macos_bulk;
+
+// glibc builds only: `libc` defines `struct statx` for glibc, not for default musl.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[allow(unsafe_code)]
+mod linux_dents;
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
@@ -473,10 +487,16 @@ pub struct ScanReport {
     pub entries: u64,
     /// Regular files whose metadata was observed.
     pub files_walked: u64,
-    /// Apparent bytes represented by the regular files whose metadata was observed.
+    /// Apparent bytes represented by the regular files whose metadata was observed,
+    /// saturating at `u64::MAX`.
+    ///
+    /// A measure of the walk's work, not an answer: a tree whose total no `u64` can hold
+    /// is refused where it is counted ([`crate::Error::UnrepresentableTotal`]), and this
+    /// tally stops at the bound rather than wrapping or panicking before that refusal.
     pub bytes_walked: u64,
     /// Allocated bytes of those files: what the default size metric counts, and what a
-    /// sparse disk image or a clone makes far smaller than their apparent bytes.
+    /// sparse disk image or a clone makes far smaller than their apparent bytes. It
+    /// saturates as `bytes_walked` does.
     pub allocated_walked: u64,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<Error>,
@@ -495,8 +515,8 @@ impl ScanReport {
         self.dirs_read += other.dirs_read;
         self.entries += other.entries;
         self.files_walked += other.files_walked;
-        self.bytes_walked += other.bytes_walked;
-        self.allocated_walked += other.allocated_walked;
+        self.bytes_walked = self.bytes_walked.saturating_add(other.bytes_walked);
+        self.allocated_walked = self.allocated_walked.saturating_add(other.allocated_walked);
         self.errors.extend(other.errors);
         self.attribution.absorb(other.attribution);
     }
@@ -506,8 +526,8 @@ impl ScanReport {
         self.entries += 1;
         if kind == EntryKind::File {
             self.files_walked += 1;
-            self.bytes_walked += attrs.size;
-            self.allocated_walked += attrs.allocated;
+            self.bytes_walked = self.bytes_walked.saturating_add(attrs.size);
+            self.allocated_walked = self.allocated_walked.saturating_add(attrs.allocated);
         }
     }
 }
@@ -776,7 +796,21 @@ pub struct WorkerPolicyDiagnostics {
 }
 
 /// Directory enumeration backends used by one scan.
+///
+/// Each native reader's listings are counted in its own fields, and a directory it
+/// declines is counted as its fallback and then as a portable attempt. On Linux, for the
+/// native reader (`getdents64` and `statx`, glibc builds):
+///
+/// - `linux_dents_attempts` = `linux_dents_successes` + `linux_dents_fallbacks`;
+/// - the report's `dirs_read` = `linux_dents_successes` + `portable_directory_reads`.
+///
+/// `unavailable_reason` describes only the macOS fields.
+///
+/// Non-exhaustive, as [`crate::counters::Counts`] is: a diagnostics record grows with the
+/// backends it describes, so a later field is an additive change. Code outside the engine
+/// reads its fields; only the engine builds one.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScanBackendDiagnostics {
     /// Portable `read_dir` calls attempted.
     pub portable_attempts: u64,
@@ -790,6 +824,13 @@ pub struct ScanBackendDiagnostics {
     pub macos_bulk_fallbacks: Option<u64>,
     /// Why macOS fields are null.
     pub unavailable_reason: Option<&'static str>,
+    /// Linux native `getdents64` listing attempts, or null off Linux (and on a Linux
+    /// build without glibc, where the native reader is not compiled).
+    pub linux_dents_attempts: Option<u64>,
+    /// Successful Linux native listings, or null off Linux.
+    pub linux_dents_successes: Option<u64>,
+    /// Linux native attempts that fell back to portable enumeration, or null off Linux.
+    pub linux_dents_fallbacks: Option<u64>,
 }
 
 impl ScanDiagnostics {
@@ -838,7 +879,9 @@ impl ScanDiagnostics {
         windows.push(']');
         format!(
             concat!(
-                "{{\"backend\":{{\"macos_bulk_attempts\":{},",
+                "{{\"backend\":{{\"linux_dents_attempts\":{},",
+                "\"linux_dents_fallbacks\":{},\"linux_dents_successes\":{},",
+                "\"macos_bulk_attempts\":{},",
                 "\"macos_bulk_fallbacks\":{},\"macos_bulk_successes\":{},",
                 "\"portable_attempts\":{},\"portable_directory_reads\":{},",
                 "\"unavailable_reason\":{}}},",
@@ -854,6 +897,9 @@ impl ScanDiagnostics {
                 "\"ready_directories_at_finish\":{},\"slow_threshold_ns_per_entry\":{},",
                 "\"windows\":{},\"worker_expansions\":{},\"workers_spawned\":{}}}}}"
             ),
+            json_optional_u64(backend.linux_dents_attempts),
+            json_optional_u64(backend.linux_dents_fallbacks),
+            json_optional_u64(backend.linux_dents_successes),
             json_optional_u64(backend.macos_bulk_attempts),
             json_optional_u64(backend.macos_bulk_fallbacks),
             json_optional_u64(backend.macos_bulk_successes),
@@ -1378,40 +1424,37 @@ fn walk_hook(path: &Path) -> Option<WalkHook> {
 /// shape. Keep the binding when editing a call site; dropping it silently removes the loop
 /// from the audit, whose expected count would then look too high rather than wrong.
 #[cfg(test)]
-fn reconcile_listing(
-    listing: fs::ReadDir,
-    dir: &Path,
-) -> impl Iterator<Item = std::io::Result<fs::DirEntry>> {
+fn reconcile_listing<'r>(listing: Listing<'r>, dir: &Path) -> impl Iterator<Item = Listed<'r>> {
     let injected = walk_hook(dir).and_then(|hook| hook(WalkHookPoint::ListingEnd));
-    listing.chain(injected.map(Err))
+    listing.chain(injected.map(Listed::Failed))
 }
 
 /// A reconciliation's listing of `dir`.
 #[cfg(not(test))]
-fn reconcile_listing(listing: fs::ReadDir, _dir: &Path) -> fs::ReadDir {
+fn reconcile_listing<'r>(listing: Listing<'r>, _dir: &Path) -> Listing<'r> {
     listing
 }
 
-/// Metadata for one entry a directory listing returned, or `None` when it is gone.
+/// The error a test hook injects for the metadata lookup of the listed child at `path`.
+#[cfg(all(test, not(windows)))]
+fn child_metadata_hook(path: &Path) -> Option<std::io::Error> {
+    walk_hook(path).and_then(|hook| hook(WalkHookPoint::ChildMetadata(path)))
+}
+
+/// Whether std's stat of a listed child, `DirEntry::file_type` of a `DT_UNKNOWN` entry
+/// included, is one the kernel treats as `AT_NO_AUTOMOUNT`.
 ///
-/// `NotFound` for a name the listing just returned means the entry was deleted in
-/// between, and every walk records it as it records a name the listing never returned: a
-/// cold walk has nothing to record, and a reconciliation removes what its baseline held.
-/// Reported as an error, it would make a walk over a tree being cleaned partial, and in a
-/// reconciliation it would settle as a phantom entry with permanent partial freshness.
-/// Any other error means the entry is present but unreadable.
-#[cfg(not(windows))]
-pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Option<fs::Metadata>> {
-    #[cfg(test)]
-    {
-        let path = entry.path();
-        if let Some(error) =
-            walk_hook(&path).and_then(|hook| hook(WalkHookPoint::ChildMetadata(&path)))
-        {
-            return missing_as_none(Err(error));
-        }
-    }
-    missing_as_none(metadata_for_fingerprint(entry))
+/// It is `fstatat` everywhere but glibc, where it is `statx` without the flag wherever
+/// `statx` is served, and `fstatat` only once the reader has found it unavailable
+/// (`linux_dents`).
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn std_child_stat_never_automounts() -> bool {
+    linux_dents::statx_unavailable()
+}
+
+#[cfg(not(any(windows, all(target_os = "linux", target_env = "gnu"))))]
+const fn std_child_stat_never_automounts() -> bool {
+    true
 }
 
 /// Kind and attributes for one listed child.
@@ -1421,25 +1464,35 @@ pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Opt
 /// not bound to one filesystem. Files and specials still need a metadata lookup for
 /// size, allocated bytes, and mtime. `one_filesystem` still stats directories because
 /// descent compares `attrs.dev` to the root device, and `dev == 0` would otherwise
-/// cross a mount.
+/// cross a mount. The listing's kind is taken only once the listing has proved its
+/// directory searchable ([`Searchability`]); until then every child is stated, and the
+/// skip applies to what the stat found.
 ///
 /// Where `d_type` is `DT_UNKNOWN` (XFS without `ftype`, some FUSE/NFS mounts, older
-/// ext3), std's `file_type` performs the non-following stat itself. The skip is a
-/// no-op there, and the `stats` counter does not see that fallback.
+/// ext3), std's `file_type` performs the non-following stat itself, and the skip then
+/// applies to the kind it found. On glibc that stat would trigger an automount, so
+/// while `statx` is served the listing's `file_type` is not consulted at all: every
+/// child is stated by [`observe_dir_entry`], which never automounts, and the skip
+/// applies to what that stat found, as it does to a `DT_UNKNOWN` entry. That route is
+/// the fallback for a directory the native reader declined; the reader itself keeps
+/// the `d_type` skip.
 ///
 /// Windows never takes the skip: its observation contract reads every listed entry
 /// through a fresh non-following handle ([`observe_dir_entry`]), so the transient fold
 /// there performs exactly the observations the retained walk performs.
 fn listed_child_kind_and_attrs(
     entry: &fs::DirEntry,
-    skip_dir_symlink_stat: bool,
-    one_filesystem: bool,
+    policy: ListingPolicy,
+    searchability: &mut Searchability,
 ) -> std::io::Result<Option<(EntryKind, Attrs)>> {
     #[cfg(not(windows))]
     {
-        if skip_dir_symlink_stat {
+        let listing_kind_suffices = policy.skip_dir_symlink_stat
+            && *searchability == Searchability::Proven
+            && std_child_stat_never_automounts();
+        if listing_kind_suffices {
             if let Ok(file_type) = entry.file_type() {
-                if file_type.is_dir() && !one_filesystem {
+                if file_type.is_dir() && !policy.one_filesystem {
                     return Ok(Some((EntryKind::Dir, Attrs::default())));
                 }
                 if file_type.is_symlink() {
@@ -1447,12 +1500,207 @@ fn listed_child_kind_and_attrs(
                 }
             }
         }
+        let observed = observe_dir_entry(entry)?;
+        if observed.is_some() {
+            *searchability = Searchability::Proven;
+        }
+        if policy.skip_dir_symlink_stat && !listing_kind_suffices {
+            return Ok(observed.map(|(kind, attrs)| match kind {
+                EntryKind::Dir if !policy.one_filesystem => (kind, Attrs::default()),
+                EntryKind::Symlink => (kind, Attrs::default()),
+                EntryKind::Dir | EntryKind::File | EntryKind::Other => (kind, attrs),
+            }));
+        }
+        Ok(observed)
     }
     #[cfg(windows)]
     {
-        let _ = (skip_dir_symlink_stat, one_filesystem);
+        // Windows observes every listed entry through a fresh handle on both routes, so
+        // the skip does not apply there; a successful observation proves the directory
+        // searchable all the same, so the listing's state means the same on every host.
+        let _ = (policy.skip_dir_symlink_stat, policy.one_filesystem);
+        let observed = observe_dir_entry(entry)?;
+        if observed.is_some() {
+            *searchability = Searchability::Proven;
+        }
+        Ok(observed)
     }
-    observe_dir_entry(entry)
+}
+
+/// How a listing observes its children.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ListingPolicy {
+    /// H72: directory and symlink kinds come from the listing without a stat, once the
+    /// listing has proved its directory searchable ([`Searchability`]).
+    pub(crate) skip_dir_symlink_stat: bool,
+    /// Descent compares `attrs.dev`, so directories are stated even under the skip.
+    pub(crate) one_filesystem: bool,
+}
+
+/// Whether one listing has proved its directory searchable, which the skip of
+/// [`ListingPolicy::skip_dir_symlink_stat`] requires before it takes a child's kind from
+/// the listing alone. Per listing: it starts unproven with each directory.
+///
+/// A stat is also an observation of failure. A directory that is readable but not
+/// searchable (mode `0400`) opens and lists, and then every child's stat fails with
+/// `EACCES`; a walk that stats every child reports each child as an error and holds no
+/// entry for it. A `DT_DIR` child admitted on its `d_type` alone would be a directory
+/// entry the full index does not have, queued and then reported again when it fails to
+/// open, and a `DT_LNK` child a symlink entry with no error at all, so the folded tree
+/// and the summary would count one directory more and report one error fewer than the
+/// full index (R163-1). Under the skip, therefore, every child is stated until one stat
+/// in the listing succeeds, which proves the directory searchable, as the skip assumes;
+/// only then are directory and symlink kinds taken from the listing. The cost is one
+/// stat per listing whose first children are directories or symlinks. A child that
+/// vanished before its stat proves nothing here, which costs a stat and never an entry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Searchability {
+    /// No child's stat has succeeded yet, so every child is stated.
+    #[default]
+    Unproven,
+    /// A child's stat succeeded, so the listing's kind stands for a directory or symlink.
+    Proven,
+}
+
+impl ListingPolicy {
+    /// Every child stated: what the retained index, a reconciliation, and discovery need.
+    pub(crate) const fn every_child_stated(one_filesystem: bool) -> Self {
+        Self { skip_dir_symlink_stat: false, one_filesystem }
+    }
+}
+
+/// The platform readers a listing loop keeps between the directories it lists.
+///
+/// One per walker or reconciliation worker: the Linux reader holds a 64 KiB record
+/// buffer that each of its listings borrows for the directory's duration. Elsewhere
+/// there is nothing to keep, and every listing is portable.
+pub(crate) struct Readers {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    dents: linux_dents::Reader,
+}
+
+impl Readers {
+    pub(crate) fn new() -> Self {
+        Self {
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            dents: linux_dents::Reader::new(),
+        }
+    }
+}
+
+/// One item of a directory listing, whichever backend served it.
+pub(crate) enum Listed<'a> {
+    /// The listing failed to yield an item, so the directory is listed incompletely.
+    Failed(std::io::Error),
+    /// A child by name, with its kind and attributes, or `Ok(None)` when it vanished
+    /// between the listing and its stat, or the error that stat failed with.
+    ///
+    /// `NotFound` for a name the listing just returned means the entry was deleted in
+    /// between, and every walk records it as it records a name the listing never
+    /// returned: a cold walk has nothing to record, and a reconciliation removes what
+    /// its baseline held. Reported as an error, it would make a walk over a tree being
+    /// cleaned partial, and in a reconciliation it would settle as a phantom entry with
+    /// permanent partial freshness. A native listing does not yield such a child at all.
+    /// Any other error means the entry is present but unreadable.
+    Child {
+        name: std::borrow::Cow<'a, OsStr>,
+        observed: std::io::Result<Option<(EntryKind, Attrs)>>,
+    },
+}
+
+/// One directory's children, natively where a reader served it and portably otherwise.
+pub(crate) enum Listing<'r> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    Native(linux_dents::Listing<'r>),
+    Portable {
+        entries: fs::ReadDir,
+        policy: ListingPolicy,
+        /// What this listing has proved of its directory so far.
+        searchability: Searchability,
+        readers: std::marker::PhantomData<&'r mut Readers>,
+    },
+}
+
+impl<'r> Iterator for Listing<'r> {
+    type Item = Listed<'r>;
+
+    fn next(&mut self) -> Option<Listed<'r>> {
+        match self {
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            Self::Native(listing) => {
+                let entry = listing.next()?;
+                let observed = match entry.outcome {
+                    linux_dents::Outcome::Observed { kind, attrs } => Ok(Some((kind, attrs))),
+                    linux_dents::Outcome::Failed(error) => Err(error),
+                };
+                Some(Listed::Child { name: std::borrow::Cow::Borrowed(entry.name), observed })
+            }
+            Self::Portable { entries, policy, searchability, .. } => {
+                let item = match entries.next()? {
+                    Ok(item) => item,
+                    Err(error) => return Some(Listed::Failed(error)),
+                };
+                crate::counters::bump(|c| c.dir_entries += 1);
+                let observed = listed_child_kind_and_attrs(&item, *policy, searchability);
+                Some(Listed::Child { name: std::borrow::Cow::Owned(item.file_name()), observed })
+            }
+        }
+    }
+}
+
+/// List `abs_dir` for a walk, a reconciliation, or discovery.
+///
+/// On Linux with glibc the native reader serves the directory unless it declines or a
+/// test hook covers the directory; the portable `read_dir` answers otherwise, and an
+/// error opening it is the caller's to report. Each backend produces the same items:
+/// a native listing counts itself, and the portable one is counted here, as a
+/// `dir_opens` and a portable attempt in `diagnostics`.
+pub(crate) fn list_directory<'r>(
+    readers: &'r mut Readers,
+    abs_dir: &Path,
+    policy: ListingPolicy,
+    diagnostics: Option<&ScanDiagnosticsRecorder>,
+) -> std::io::Result<Listing<'r>> {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // Plain `if`, not `bool::then(|| …)`: the listing borrows the reader.
+        if !walk_hook_covers(abs_dir) {
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.linux_dents_attempted();
+            }
+            let native = linux_dents::StatPolicy {
+                skip_dir_symlink_stat: policy.skip_dir_symlink_stat,
+                one_filesystem: policy.one_filesystem,
+            };
+            if let Some(listing) = readers.dents.read(abs_dir, native) {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.linux_dents_succeeded();
+                }
+                return Ok(Listing::Native(listing));
+            }
+            // A declined directory is counted as a fallback here and as the portable
+            // attempt below, as the walker counts it.
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.linux_dents_fell_back();
+            }
+        }
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    let _ = &readers;
+    crate::counters::bump(|c| c.dir_opens += 1);
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.portable_attempted();
+    }
+    let entries = fs::read_dir(abs_dir)?;
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.portable_succeeded();
+    }
+    Ok(Listing::Portable {
+        entries,
+        policy,
+        searchability: Searchability::Unproven,
+        readers: std::marker::PhantomData,
+    })
 }
 
 fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> {
@@ -1463,14 +1711,14 @@ fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> 
     }
 }
 
-/// Whether a test hook observes lookups or listings under `path`, which a bulk read would
-/// not make.
-#[cfg(all(test, target_os = "macos"))]
+/// Whether a test hook observes lookups or listings under `path`, which a native read
+/// would not make.
+#[cfg(all(test, any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))))]
 fn walk_hook_covers(path: &Path) -> bool {
     walk_hook(path).is_some()
 }
 
-#[cfg(all(not(test), target_os = "macos"))]
+#[cfg(all(not(test), any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))))]
 const fn walk_hook_covers(_path: &Path) -> bool {
     false
 }
@@ -1784,6 +2032,11 @@ fn scan_internal(
         .then(|| crate::control::ControlTable::with_limits(config.control_limits));
     let mut unreadable_controls = std::collections::BTreeSet::new();
     let mut tally = ProgressTally::new(config.progress.as_ref());
+    let mut readers = Readers::new();
+    let policy = ListingPolicy {
+        skip_dir_symlink_stat: sink_mode.skips_dir_symlink_stat(),
+        one_filesystem: config.one_filesystem,
+    };
     // Every batch leaves through here, so the batch is where the serial walk reports
     // its progress: the handoff the consumer already pays for, never the entry.
     let mut emit = |ops: Vec<ObservationOp>, report: &mut ScanReport| {
@@ -1809,17 +2062,8 @@ fn scan_internal(
                 }
             }
         }
-        crate::counters::bump(|c| c.dir_opens += 1);
-        if let Some(diagnostics) = &diagnostics {
-            diagnostics.portable_attempted();
-        }
-        let listing = match fs::read_dir(&abs_dir) {
-            Ok(listing) => {
-                if let Some(diagnostics) = &diagnostics {
-                    diagnostics.portable_succeeded();
-                }
-                listing
-            }
+        let listing = match list_directory(&mut readers, &abs_dir, policy, diagnostics.as_deref()) {
+            Ok(listing) => listing,
             Err(e) => {
                 report.errors.push(Error::io(abs_dir, e));
                 continue;
@@ -1828,25 +2072,19 @@ fn scan_internal(
         report.dirs_read += 1;
 
         for item in listing {
-            let item = match item {
-                Ok(item) => item,
-                Err(e) => {
+            let (name, observed) = match item {
+                Listed::Child { name, observed } => (name, observed),
+                Listed::Failed(e) => {
                     report.errors.push(Error::io(&abs_dir, e));
                     continue;
                 }
             };
-            crate::counters::bump(|c| c.dir_entries += 1);
-            let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let (kind, attrs) = match listed_child_kind_and_attrs(
-                &item,
-                sink_mode.skips_dir_symlink_stat(),
-                config.one_filesystem,
-            ) {
+            let (kind, attrs) = match observed {
                 Ok(Some(observed)) => observed,
                 Ok(None) => continue,
                 Err(error) => {
-                    report.errors.push(Error::io(item.path(), error));
+                    report.errors.push(Error::io(abs_dir.join(&name), error));
                     continue;
                 }
             };
@@ -2045,7 +2283,7 @@ struct PolicyTraceState {
 /// trace mutex is deliberately separate from the directory queue: recording a policy
 /// window may add diagnostic cost, but it cannot alter the queue's synchronization or
 /// the controller's decision.
-struct ScanDiagnosticsRecorder {
+pub(crate) struct ScanDiagnosticsRecorder {
     available_parallelism: usize,
     pool: WorkerPool,
     policy: WorkerPolicyExperiment,
@@ -2067,6 +2305,12 @@ struct ScanDiagnosticsRecorder {
     macos_bulk_successes: std::sync::atomic::AtomicU64,
     #[cfg(target_os = "macos")]
     macos_bulk_fallbacks: std::sync::atomic::AtomicU64,
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    linux_dents_attempts: std::sync::atomic::AtomicU64,
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    linux_dents_successes: std::sync::atomic::AtomicU64,
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    linux_dents_fallbacks: std::sync::atomic::AtomicU64,
 }
 
 impl ScanDiagnosticsRecorder {
@@ -2113,6 +2357,12 @@ impl ScanDiagnosticsRecorder {
             macos_bulk_successes: std::sync::atomic::AtomicU64::new(0),
             #[cfg(target_os = "macos")]
             macos_bulk_fallbacks: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_attempts: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_successes: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_fallbacks: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -2266,6 +2516,21 @@ impl ScanDiagnosticsRecorder {
         self.macos_bulk_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn linux_dents_attempted(&self) {
+        self.linux_dents_attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn linux_dents_succeeded(&self) {
+        self.linux_dents_successes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    fn linux_dents_fell_back(&self) {
+        self.linux_dents_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn finish(&self) -> ScanDiagnostics {
         let trace = self.trace.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let calibration = self.pool.calibration;
@@ -2298,6 +2563,24 @@ impl ScanDiagnosticsRecorder {
             unavailable_reason: Some(
                 "macOS bulk directory enumeration is unavailable on this platform",
             ),
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_attempts: Some(
+                self.linux_dents_attempts.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+            linux_dents_attempts: None,
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_successes: Some(
+                self.linux_dents_successes.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+            linux_dents_successes: None,
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            linux_dents_fallbacks: Some(
+                self.linux_dents_fallbacks.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+            linux_dents_fallbacks: None,
         };
         ScanDiagnostics {
             schema: SCAN_DIAGNOSTICS_SCHEMA,
@@ -2665,9 +2948,9 @@ fn scan_concurrent_detached(
     pool: WorkerPool,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
     policy: WorkerPolicyExperiment,
+    retention: Option<TreeRetention>,
 ) -> Result<(ScanReport, DetachedIndexBuilder)> {
-    let mut builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-        .with_control_limits(config.control_limits);
+    let mut builder = detached_builder(root, config, retention);
     let mut build_error = None;
     let output = {
         let mut consume = |message| match message {
@@ -2694,16 +2977,11 @@ fn scan_concurrent_detached(
                 unreachable!("the shared runner consumes scale-up messages")
             }
         };
-        run_concurrent_walk(
-            root,
-            config,
-            root_dev,
-            pool,
-            diagnostics,
-            policy,
-            walk_detached_worker,
-            &mut consume,
-        )
+        // A folded index takes H72's listing policy (H185); the full index stats every
+        // entry, since its directory attributes are the cache's freshness fingerprint.
+        let worker: WalkWorker =
+            if retention.is_some() { walk_detached_folding_worker } else { walk_detached_worker };
+        run_concurrent_walk(root, config, root_dev, pool, diagnostics, policy, worker, &mut consume)
     };
     if let Some(error) = build_error {
         return Err(error);
@@ -2933,7 +3211,8 @@ trait WalkEmission {
         diagnostics: Option<&ScanDiagnosticsRecorder>,
     );
 
-    /// Transient summary can take directory and symlink kind from the listing.
+    /// The transient summary and the folded index take directory and symlink kind from
+    /// the listing, with default attributes (H72, H185); every other route stats them.
     fn skip_dir_symlink_stat(&self) -> bool {
         false
     }
@@ -3231,6 +3510,14 @@ const DETACHED_SPARE_CHILD_CAPACITY: usize = 64;
 /// to its peers. A reused listing carries exactly the facts a fresh one would: the same
 /// path bytes, and children and control only from this directory's listing.
 struct DetachedEmission {
+    /// H72's listing policy for the folded index (H185): a directory or symlink takes its
+    /// kind from `d_type` and default attributes, as the transient summary does. A
+    /// one-shot tree report reads no directory's or symlink's own attributes: its rows
+    /// carry roll-ups, `newest_mtime_ns` is the files', symlinks and other kinds
+    /// contribute nothing, and `dev` is read only under `--one-filesystem`, where the
+    /// policy keeps the stat. The full index keeps every stat: its directory attributes
+    /// are the cache's freshness fingerprint.
+    skip_dir_symlink_stat: bool,
     directories: Vec<DetachedDirectory>,
     /// Emptied listings ready to be reused by [`WalkEmission::begin_directory`].
     spare: Vec<DetachedDirectory>,
@@ -3241,9 +3528,10 @@ struct DetachedEmission {
 }
 
 impl DetachedEmission {
-    fn new() -> Self {
+    fn new(skip_dir_symlink_stat: bool) -> Self {
         let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
         Self {
+            skip_dir_symlink_stat,
             directories: Vec::new(),
             spare: Vec::new(),
             spare_list: Vec::new(),
@@ -3277,6 +3565,10 @@ impl DetachedEmission {
 
 impl WalkEmission for DetachedEmission {
     type Directory = DetachedDirectory;
+
+    fn skip_dir_symlink_stat(&self) -> bool {
+        self.skip_dir_symlink_stat
+    }
 
     fn begin_directory(&mut self, path: &Path) -> Self::Directory {
         let Some(mut directory) = self.spare.pop() else {
@@ -3374,6 +3666,31 @@ fn walk_detached_worker(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
 ) -> ScanReport {
+    walk_detached_with(root, config, root_dev, queue, sender, diagnostics, false)
+}
+
+/// [`walk_detached_worker`] for a folded index, which describes each directory once, by
+/// its own listing (H185): see [`DetachedEmission::skip_dir_symlink_stat`].
+fn walk_detached_folding_worker(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+) -> ScanReport {
+    walk_detached_with(root, config, root_dev, queue, sender, diagnostics, true)
+}
+
+fn walk_detached_with(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+    skip_dir_symlink_stat: bool,
+) -> ScanReport {
     let report = walk_worker_with(
         root,
         config,
@@ -3381,7 +3698,7 @@ fn walk_detached_worker(
         queue,
         sender,
         diagnostics,
-        DetachedEmission::new(),
+        DetachedEmission::new(skip_dir_symlink_stat),
     );
     // A walker leaves only when the queue is empty with nothing in flight, or when its
     // consumer is gone, so the walk is over. The index may still be assembling the
@@ -3451,6 +3768,8 @@ fn walk_worker_with<E: WalkEmission>(
     let mut consumer_gone = false;
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    let mut dents_reader = linux_dents::Reader::new();
 
     'walk: while let Some(claim) = queue.claim(&mut claimed, &mut report.attribution) {
         // One timing pair per claimed chunk, never per entry: the chunk is the unit
@@ -3503,6 +3822,68 @@ fn walk_worker_with<E: WalkEmission>(
                     diagnostics.macos_bulk_fell_back();
                 }
             }
+            // Counted in the Linux backend fields: an attempt, then a success or a
+            // fallback, and a fallback goes on to count as a portable attempt below, so
+            // `dirs_read` is the native successes plus the portable reads.
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.linux_dents_attempted();
+                }
+                let policy = linux_dents::StatPolicy {
+                    skip_dir_symlink_stat: emission.skip_dir_symlink_stat(),
+                    one_filesystem: config.one_filesystem,
+                };
+                // Plain `if`, not `bool::then(|| …)`: the listing borrows the reader for the
+                // loop.
+                let listing = if walk_hook_covers(&abs_dir) {
+                    None
+                } else {
+                    dents_reader.read(&abs_dir, policy)
+                };
+                if let Some(listing) = listing {
+                    if let Some(diagnostics) = diagnostics {
+                        diagnostics.linux_dents_succeeded();
+                    }
+                    report.dirs_read += 1;
+                    for entry in listing {
+                        let (kind, attrs) = match entry.outcome {
+                            linux_dents::Outcome::Observed { kind, attrs } => (kind, attrs),
+                            linux_dents::Outcome::Failed(error) => {
+                                // The same path std's `DirEntry::path` builds: the listing
+                                // path joined with the name.
+                                report.errors.push(Error::io(abs_dir.join(entry.name), error));
+                                continue;
+                            }
+                        };
+                        if !emission.record_entry(
+                            root,
+                            &rel_dir,
+                            depth,
+                            region,
+                            entry.name,
+                            kind,
+                            attrs,
+                            root_dev,
+                            config,
+                            &mut directory,
+                            &mut discovered,
+                            &mut report,
+                            sender,
+                            &mut chunk_send_ns,
+                            diagnostics.map(AsRef::as_ref),
+                        ) {
+                            consumer_gone = true;
+                            break 'walk;
+                        }
+                    }
+                    emission.finish_directory(directory);
+                    continue;
+                }
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.linux_dents_fell_back();
+                }
+            }
 
             crate::counters::bump(|c| c.dir_opens += 1);
             if let Some(diagnostics) = diagnostics {
@@ -3523,6 +3904,11 @@ fn walk_worker_with<E: WalkEmission>(
             };
             report.dirs_read += 1;
 
+            let policy = ListingPolicy {
+                skip_dir_symlink_stat: emission.skip_dir_symlink_stat(),
+                one_filesystem: config.one_filesystem,
+            };
+            let mut searchability = Searchability::Unproven;
             for item in listing {
                 let item = match item {
                     Ok(item) => item,
@@ -3533,18 +3919,15 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let (kind, attrs) = match listed_child_kind_and_attrs(
-                    &item,
-                    emission.skip_dir_symlink_stat(),
-                    config.one_filesystem,
-                ) {
-                    Ok(Some(observed)) => observed,
-                    Ok(None) => continue,
-                    Err(error) => {
-                        report.errors.push(Error::io(item.path(), error));
-                        continue;
-                    }
-                };
+                let (kind, attrs) =
+                    match listed_child_kind_and_attrs(&item, policy, &mut searchability) {
+                        Ok(Some(observed)) => observed,
+                        Ok(None) => continue,
+                        Err(error) => {
+                            report.errors.push(Error::io(item.path(), error));
+                            continue;
+                        }
+                    };
                 if !emission.record_entry(
                     root,
                     &rel_dir,
@@ -3714,9 +4097,9 @@ fn prepare_walk_entry_reading(
     if disposition == crate::admission::Disposition::Reject {
         return None;
     }
-    let path = rel_dir.join(name);
+    let path = join_listed_name(rel_dir, name);
     let (control, control_error) = if read_control {
-        match read_control_op(config, root, &path, kind) {
+        match read_named_control_op(config, root, &path, name, kind) {
             Ok(control) => (control, None),
             Err(error) => (None, Some(error)),
         }
@@ -3732,6 +4115,21 @@ fn prepare_walk_entry_reading(
         descend: should_descend(kind, attrs, depth, root_dev, config),
         control_error,
     })
+}
+
+/// `rel_dir.join(name)`, allocated once at the joined length.
+///
+/// [`Path::join`] copies `rel_dir` at its exact length and pushes onto the copy, so the
+/// separator grows it and, for a name longer than the directory, so does the name: a
+/// `realloc` for nearly every entry a streaming walk prepares. The summary route's
+/// walkers spent 760-820 instructions per entry joining, and 410-450 in `realloc`
+/// against the detached route's 85-150 (H180). The same push onto a copy that already
+/// fits both makes the same path, byte for byte, on every platform.
+fn join_listed_name(rel_dir: &Path, name: &OsStr) -> PathBuf {
+    let mut path = PathBuf::with_capacity(rel_dir.as_os_str().len() + 1 + name.len());
+    path.as_mut_os_string().push(rel_dir);
+    path.push(name);
+    path
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3793,11 +4191,16 @@ fn record_walk_entry(
         }
     }
     report.observe(kind, attrs);
-    emission.batch.push(ObservationOp::unconditional(Op::Upsert {
-        path: prepared.path.clone(),
-        kind,
-        attrs,
-    }));
+    // Only a directory the walk descends into needs its path twice, in its observation
+    // and in the queue. Every other entry's path moves into its observation, so it is
+    // allocated once and freed with its batch rather than copied and freed at once
+    // (H180).
+    let (path, descend_path) = if prepared.descend {
+        (prepared.path.clone(), Some(prepared.path))
+    } else {
+        (prepared.path, None)
+    };
+    emission.batch.push(ObservationOp::unconditional(Op::Upsert { path, kind, attrs }));
     if !emission.send_if_full(root, rel_dir, config, report, sender, chunk_send_ns, diagnostics) {
         return false;
     }
@@ -3808,12 +4211,12 @@ fn record_walk_entry(
             return false;
         }
     }
-    if prepared.descend {
+    if let Some(path) = descend_path {
         // A child of the root seeds a new region; everything deeper inherits its
         // parent's. Region membership therefore costs one integer copy and never
         // inspects a path.
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((prepared.path, depth + 1, child_region));
+        discovered.push((path, depth + 1, child_region));
     }
     true
 }
@@ -3838,11 +4241,11 @@ fn controls_first(listing: &mut [ObservationOp]) {
 /// control state at all.
 ///
 /// Every control observation goes through here -- each walk and reconcile site, and the
-/// watch layer's verification -- so the policy cannot be forgotten at one of them. A
-/// watch must honor it like a scan does: its scope has to equal the index's, the scope
-/// carries this bit, and a verifier that read control files regardless would grow a
-/// partial rule set, from whichever sources events touched, under a scope that says
-/// there is none.
+/// watch layer's verification -- or through [`read_named_control_op`], which shares its
+/// gate, so the policy cannot be forgotten at one of them. A watch must honor it like a
+/// scan does: its scope has to equal the index's, the scope carries this bit, and a
+/// verifier that read control files regardless would grow a partial rule set, from
+/// whichever sources events touched, under a scope that says there is none.
 ///
 /// It is also where a listed name becomes a control read, by the rule the module
 /// documentation of [`crate::control`] states: the directory's control is what a lookup
@@ -3859,10 +4262,42 @@ pub(crate) fn read_control_op(
     path: &Path,
     kind: EntryKind,
 ) -> Result<Option<Op>> {
+    read_spelled_control_op(config, root, path, kind, crate::control::path_control_spelling)
+}
+
+/// [`read_control_op`] for the entry `name` a listing just produced, at `path`, the
+/// listed directory joined with `name`.
+///
+/// The walker already holds the name, so its spelling is tested on those bytes: a length
+/// comparison for nearly every entry, as in the detached builder. Parsing the last
+/// component back out of the joined path cost the transient summary about 270
+/// instructions for every entry, on a tree with no `.gitignore` as much as on one with
+/// many (H180). A listed name is one normal component, so it is the path's last one and
+/// the decision is the same.
+fn read_named_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    name: &OsStr,
+    kind: EntryKind,
+) -> Result<Option<Op>> {
+    debug_assert_eq!(path.file_name(), Some(name), "a listed name ends its path");
+    read_spelled_control_op(config, root, path, kind, |_| crate::control::control_spelling(name))
+}
+
+/// [`read_control_op`], with the spelling of `path`'s last component found by `spelling`
+/// once the policy allows a read at all.
+fn read_spelled_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    kind: EntryKind,
+    spelling: impl FnOnce(&Path) -> Option<crate::control::ControlSpelling>,
+) -> Result<Option<Op>> {
     if !config.read_controls {
         return Ok(None);
     }
-    match crate::control::path_control_spelling(path) {
+    match spelling(path) {
         Some(crate::control::ControlSpelling::Exact) => {
             read_control_op_unconditional(root, path, kind, config.control_limits.budget)
         }
@@ -3910,9 +4345,8 @@ fn look_up_control(
     control_path: &Path,
     budget: Option<usize>,
 ) -> Result<Option<Op>> {
-    crate::counters::bump(|counts| counts.stats = counts.stats.saturating_add(1));
-    let kind = match fs::symlink_metadata(absolute) {
-        Ok(metadata) if metadata.file_type().is_file() => EntryKind::File,
+    let kind = match observe_path(absolute) {
+        Ok((EntryKind::File, _)) => EntryKind::File,
         Ok(_) => EntryKind::Other,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(absolute, error)),
@@ -4100,6 +4534,11 @@ fn read_control_op_unconditional(
     read_control_source(&root.join(path), path, kind, budget)
 }
 
+/// The most a control file's read buffer is sized from its metadata length (H189): every
+/// `.gitignore` in the nominated subjects is under 16 KiB, and a larger one grows its
+/// buffer by reading, as any file did before.
+const CONTROL_READ_RESERVE_BYTES: usize = 64 * 1024;
+
 /// Read the control at `absolute`, whose kind is `kind`, as an observation of `path`.
 ///
 /// `absolute` is where the lookup went and `path` the canonical control path the
@@ -4114,12 +4553,24 @@ fn read_control_source(
         return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
     }
     let file = open_control_file(absolute).map_err(|error| Error::io(absolute, error))?;
-    if !file.metadata().map_err(|error| Error::io(absolute, error))?.file_type().is_file() {
+    let metadata = file.metadata().map_err(|error| Error::io(absolute, error))?;
+    if !metadata.file_type().is_file() {
         return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
     }
     let read_limit = budget
         .map_or(u64::MAX, |budget| u64::try_from(budget).unwrap_or(u64::MAX).saturating_add(1));
-    let mut source = Vec::new();
+    // Room for the length the metadata already carries, within the read limit and a
+    // fixed bound, plus the byte `read_to_end` reads to see the end (H189). `take` hides
+    // the length from `read_to_end`, which otherwise grows from 32 bytes by doubling: eight
+    // `read` calls for the 2 KiB root `.gitignore` of a kernel tree, two now. A file that
+    // grew since its stat reads on as before; a longer one is bounded by the limit as
+    // before, and its buffer is grown by `read_to_end` past the reservation, not sized
+    // from its length.
+    let reserve = usize::try_from(metadata.len().min(read_limit))
+        .unwrap_or(usize::MAX)
+        .min(CONTROL_READ_RESERVE_BYTES)
+        .saturating_add(1);
+    let mut source = Vec::with_capacity(reserve);
     file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(absolute, error))?;
     crate::counters::bump(|counts| counts.control_reads = counts.control_reads.saturating_add(1));
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
@@ -4739,11 +5190,27 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
     });
 }
 
+/// The private builder a detached walk consumes its listings into: a full index, or with
+/// `retention` a folded one.
+fn detached_builder(
+    root: &Path,
+    config: &ScanConfig,
+    retention: Option<TreeRetention>,
+) -> DetachedIndexBuilder {
+    let builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
+        .with_control_limits(config.control_limits);
+    match retention {
+        Some(retention) => builder.folding(retention),
+        None => builder,
+    }
+}
+
 fn scan_detached_directories(
     root: &Path,
     config: &ScanConfig,
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
+    retention: Option<TreeRetention>,
 ) -> Result<(ScanReport, DetachedIndexBuilder, Option<ScanDiagnostics>)> {
     if let Some(progress) = &config.progress {
         progress.enter(crate::ProgressPhase::Scanning);
@@ -4773,15 +5240,21 @@ fn scan_detached_directories(
         }
         return Ok((
             ScanReport::default(),
-            DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-                .with_control_limits(config.control_limits),
+            detached_builder(root, config, retention),
             diagnostics.as_ref().map(|value| value.finish()),
         ));
     }
 
     let walk_started = crate::counters::enabled().then(std::time::Instant::now);
-    let (output, builder) =
-        scan_concurrent_detached(root, config, root_dev, pool, diagnostics.as_ref(), policy)?;
+    let (output, builder) = scan_concurrent_detached(
+        root,
+        config,
+        root_dev,
+        pool,
+        diagnostics.as_ref(),
+        policy,
+        retention,
+    )?;
     // Also reached by a walk no worker left, such as a single-threaded one, so every
     // cold index ends its walk in the same phase.
     if let Some(progress) = &config.progress {
@@ -4812,7 +5285,7 @@ fn consolidate_detached_index(
         });
     }
     index.record_walk_errors(&mut output.errors);
-    index.set_initial_scan_freshness(&output.errors);
+    index.set_initial_detached_scan_freshness(&output.errors);
     (index, output)
 }
 
@@ -4829,9 +5302,43 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
         )?;
         return Ok((index, report));
     }
-    let (output, builder, _diagnostics) =
-        scan_detached_directories(&root, config, false, WorkerPolicyExperiment::ShippedOneShot)?;
+    let (output, builder, _diagnostics) = scan_detached_directories(
+        &root,
+        config,
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+        None,
+    )?;
     Ok(consolidate_detached_index(output, builder))
+}
+
+/// Walk the canonical `root` into a folded index that keeps what `retention` names
+/// ([`crate::execution::RetainedState::Tree`]), with the diagnostic trace when asked.
+///
+/// The same detached walk and builder as [`scan_into_index`], which a folded index
+/// differs from only in the files it keeps. Crate-private because a folded index answers
+/// one tree report and nothing else; its one caller reports from it and frees it.
+pub(crate) fn scan_into_folded_index(
+    root: &Path,
+    config: &ScanConfig,
+    retention: TreeRetention,
+    collect_diagnostics: bool,
+) -> Result<(Index, ScanReport, Option<ScanDiagnostics>)> {
+    config.validate()?;
+    debug_assert_eq!(
+        config.population,
+        crate::query::IgnoredEntries::Include,
+        "a folded index keeps the whole population; a narrowed one takes the scanner"
+    );
+    let (output, builder, diagnostics) = scan_detached_directories(
+        root,
+        config,
+        collect_diagnostics,
+        WorkerPolicyExperiment::ShippedOneShot,
+        Some(retention),
+    )?;
+    let (index, report) = consolidate_detached_index(output, builder);
+    Ok((index, report, diagnostics))
 }
 
 fn scan_into_index_with_scanner(
@@ -4898,7 +5405,8 @@ pub fn scan_into_index_with_policy_diagnostics(
             scan_into_index_with_scanner(&root, config, true, policy)?;
         return Ok((index, report, diagnostics.expect("diagnostic scanner creates a recorder")));
     }
-    let (output, builder, diagnostics) = scan_detached_directories(&root, config, true, policy)?;
+    let (output, builder, diagnostics) =
+        scan_detached_directories(&root, config, true, policy, None)?;
     let (index, report) = consolidate_detached_index(output, builder);
     Ok((index, report, diagnostics.expect("diagnostic detached scan creates a recorder")))
 }
@@ -4969,6 +5477,8 @@ pub fn revalidate(
     let mut controls = (config.population != crate::query::IgnoredEntries::Include)
         .then(|| index.control_table().clone());
     let mut unreadable_controls = std::collections::BTreeSet::new();
+    let mut readers = Readers::new();
+    let policy = ListingPolicy::every_child_stated(config.one_filesystem);
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
@@ -5000,8 +5510,7 @@ pub fn revalidate(
                 }
             }
         }
-        crate::counters::bump(|c| c.dir_opens += 1);
-        let listing = match fs::read_dir(&abs_dir) {
+        let listing = match list_directory(&mut readers, &abs_dir, policy, None) {
             Ok(listing) => listing,
             Err(e) => {
                 report.errors.push(Error::io(abs_dir, e));
@@ -5014,22 +5523,21 @@ pub fn revalidate(
         let mut listing_complete = true;
         let listing = reconcile_listing(listing, &abs_dir);
         for item in listing {
-            let item = match item {
-                Ok(item) => item,
-                Err(e) => {
+            let (name, observed) = match item {
+                Listed::Child { name, observed } => (name, observed),
+                Listed::Failed(e) => {
                     listing_complete = false;
                     report.errors.push(Error::io(&abs_dir, e));
                     continue;
                 }
             };
-            let name = item.file_name();
             // Seeing the name proves it is not absent even when a following metadata
             // lookup fails. Record it before any fallible per-entry work so an
             // operational error cannot become a false removal in the missing sweep.
-            seen.insert(name.clone());
+            seen.insert(name.to_os_string());
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let (kind, attrs) = match observe_dir_entry(&item) {
+            let (kind, attrs) = match observed {
                 Ok(Some(observed)) => observed,
                 Ok(None) => {
                     let entry_held = baseline.state != PathState::Absent;
@@ -5048,7 +5556,7 @@ pub fn revalidate(
                 }
                 Err(e) => {
                     listed_control.listed(&name);
-                    report.errors.push(Error::io(item.path(), e));
+                    report.errors.push(Error::io(abs_dir.join(&name), e));
                     continue;
                 }
             };
@@ -5416,11 +5924,8 @@ fn refresh_may_expand(
 ) -> Result<bool> {
     let current = target.expectation(path)?.state;
     let absolute = target.root_path()?.join(path);
-    let observed = match fs::symlink_metadata(&absolute) {
-        Ok(metadata) => {
-            let Ok((kind, attrs)) = observe(&absolute, &metadata) else {
-                return Ok(true);
-            };
+    let observed = match observe_path(&absolute) {
+        Ok((kind, attrs)) => {
             work.observe(kind, attrs);
             Some(kind)
         }
@@ -5582,8 +6087,8 @@ fn reconcile_target_inner(
     if !subtree.as_os_str().is_empty() {
         let baseline = target.expectation(subtree)?;
         let absolute = root.join(subtree);
-        let meta = match fs::symlink_metadata(&absolute) {
-            Ok(meta) => meta,
+        let (kind, attrs) = match observe_path(&absolute) {
+            Ok(observed) => observed,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 batch.push(ObservationOp::if_state(
                     Op::Remove { path: subtree.to_path_buf() },
@@ -5619,13 +6124,6 @@ fn reconcile_target_inner(
                     &mut report,
                 )?;
                 flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
-                return Ok(report);
-            }
-        };
-        let (kind, attrs) = match observe(&absolute, &meta) {
-            Ok(observed) => observed,
-            Err(error) => {
-                report.scan.errors.push(Error::io(absolute, error));
                 return Ok(report);
             }
         };
@@ -5696,6 +6194,8 @@ fn reconcile_target_inner(
     let mut unreadable_controls = std::collections::BTreeSet::new();
     #[cfg(target_os = "macos")]
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
+    let mut readers = Readers::new();
+    let policy = ListingPolicy::every_child_stated(config.one_filesystem);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let errors_before = report.scan.errors.len();
         let abs_dir = root.join(&rel_dir);
@@ -5835,8 +6335,7 @@ fn reconcile_target_inner(
         let used_bulk = false;
 
         if !used_bulk {
-            crate::counters::bump(|c| c.dir_opens += 1);
-            let listing = match fs::read_dir(&abs_dir) {
+            let listing = match list_directory(&mut readers, &abs_dir, policy, None) {
                 Ok(listing) => listing,
                 Err(error) => {
                     report.scan.errors.push(Error::io(&abs_dir, error));
@@ -5855,15 +6354,14 @@ fn reconcile_target_inner(
             report.scan.dirs_read += 1;
             let listing = reconcile_listing(listing, &abs_dir);
             for item in listing {
-                let item = match item {
-                    Ok(item) => item,
-                    Err(error) => {
+                let (name, observed) = match item {
+                    Listed::Child { name, observed } => (name.into_owned(), observed),
+                    Listed::Failed(error) => {
                         listing_complete = false;
                         report.scan.errors.push(Error::io(&abs_dir, error));
                         continue;
                     }
                 };
-                let name = item.file_name();
                 // Seeing the name proves it is not absent even if the following
                 // metadata lookup fails. Remove it from the missing set before that
                 // fallible lookup so an operational error cannot turn an existing
@@ -5872,7 +6370,7 @@ fn reconcile_target_inner(
                     Some(baseline) => baseline,
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
-                let (kind, attrs) = match observe_dir_entry(&item) {
+                let (kind, attrs) = match observed {
                     Ok(Some(observed)) => observed,
                     Ok(None) => {
                         let entry_held = baseline.state != PathState::Absent;
@@ -5890,7 +6388,7 @@ fn reconcile_target_inner(
                     }
                     Err(error) => {
                         listed_control.listed(&name);
-                        report.scan.errors.push(Error::io(item.path(), error));
+                        report.scan.errors.push(Error::io(abs_dir.join(&name), error));
                         if baseline.state != PathState::Absent {
                             batch.push(ObservationOp::if_state(
                                 Op::Remove { path: rel_dir.join(&name) },
@@ -6160,6 +6658,8 @@ fn reconcile_wave_worker(
     let mut tally = ProgressTally::new(config.progress.as_ref());
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
+    let mut readers = Readers::new();
+    let policy = ListingPolicy::every_child_stated(config.one_filesystem);
 
     loop {
         let start = next.fetch_add(DIR_CLAIM, std::sync::atomic::Ordering::Relaxed);
@@ -6244,8 +6744,10 @@ fn reconcile_wave_worker(
                         result.scan.entries += 1;
                         if kind == EntryKind::File {
                             result.scan.files_walked += 1;
-                            result.scan.bytes_walked += attrs.size;
-                            result.scan.allocated_walked += attrs.allocated;
+                            result.scan.bytes_walked =
+                                result.scan.bytes_walked.saturating_add(attrs.size);
+                            result.scan.allocated_walked =
+                                result.scan.allocated_walked.saturating_add(attrs.allocated);
                         }
                         if baseline.state == (PathState::Present { kind, attrs }) {
                             result.unchanged += 1;
@@ -6339,8 +6841,7 @@ fn reconcile_wave_worker(
                 let used_bulk = false;
 
                 if !used_bulk {
-                    crate::counters::bump(|c| c.dir_opens += 1);
-                    let listing = match fs::read_dir(&abs_dir) {
+                    let listing = match list_directory(&mut readers, &abs_dir, policy, None) {
                         Ok(listing) => Some(listing),
                         Err(error) => {
                             result.scan.errors.push(Error::io(&abs_dir, error));
@@ -6352,20 +6853,19 @@ fn reconcile_wave_worker(
                         result.scan.dirs_read += 1;
                         let listing = reconcile_listing(listing, &abs_dir);
                         for item in listing {
-                            let item = match item {
-                                Ok(item) => item,
-                                Err(error) => {
+                            let (name, observed) = match item {
+                                Listed::Child { name, observed } => (name.into_owned(), observed),
+                                Listed::Failed(error) => {
                                     result.scan.errors.push(Error::io(&abs_dir, error));
                                     continue;
                                 }
                             };
-                            let name = item.file_name();
                             // Match the serial path: an entry whose name was enumerated is
                             // not missing merely because its metadata could not be read.
                             let baseline = known
                                 .remove(&name)
                                 .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
-                            let (kind, attrs) = match observe_dir_entry(&item) {
+                            let (kind, attrs) = match observed {
                                 Ok(Some(observed)) => observed,
                                 Ok(None) => {
                                     // Removed once this directory's listing is done.
@@ -6374,7 +6874,7 @@ fn reconcile_wave_worker(
                                 }
                                 Err(error) => {
                                     listed_control.listed(&name);
-                                    result.scan.errors.push(Error::io(item.path(), error));
+                                    result.scan.errors.push(Error::io(abs_dir.join(&name), error));
                                     unverified.push((name, baseline.state != PathState::Absent));
                                     continue;
                                 }
@@ -6849,8 +7349,9 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.dirs_read += addition.scan.dirs_read;
     total.scan.entries += addition.scan.entries;
     total.scan.files_walked += addition.scan.files_walked;
-    total.scan.bytes_walked += addition.scan.bytes_walked;
-    total.scan.allocated_walked += addition.scan.allocated_walked;
+    total.scan.bytes_walked = total.scan.bytes_walked.saturating_add(addition.scan.bytes_walked);
+    total.scan.allocated_walked =
+        total.scan.allocated_walked.saturating_add(addition.scan.allocated_walked);
     total.scan.errors.extend(addition.scan.errors);
     total.observations = total.observations.saturating_add(addition.observations);
     merge_apply_stats(&mut total.apply, addition.apply);
@@ -6915,8 +7416,8 @@ fn resolve_subtree_root(
             break; // The boundary entry itself remains visible even when descent stops.
         }
         prefix.push(component.as_os_str());
-        let metadata = match fs::symlink_metadata(root.join(&prefix)) {
-            Ok(metadata) => metadata,
+        let (kind, attrs) = match observe_path(&root.join(&prefix)) {
+            Ok(observed) => observed,
             Err(error)
                 if matches!(
                     error.kind(),
@@ -6927,18 +7428,15 @@ fn resolve_subtree_root(
             }
             Err(_) => break, // The applying pass records operational failures as partial.
         };
-        if metadata.file_type().is_symlink() {
+        if kind == EntryKind::Symlink {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
                 scope: config.scope(),
             });
         }
-        if !metadata.is_dir() {
+        if kind != EntryKind::Dir {
             return Ok(prefix);
         }
-        let Ok(attrs) = attrs_from(&root.join(&prefix), &metadata) else {
-            break;
-        };
         if config.one_filesystem && root_dev != 0 && attrs.dev != 0 && attrs.dev != root_dev {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
@@ -6991,11 +7489,48 @@ pub(crate) fn observe_dir_entry(
     }
     #[cfg(not(windows))]
     {
-        let Some(meta) = listed_child_metadata(entry)? else {
+        #[cfg(test)]
+        {
+            let path = entry.path();
+            if let Some(error) = child_metadata_hook(&path) {
+                return missing_as_none(Err(error));
+            }
+        }
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            // std's `DirEntry::metadata` is `statx` without `AT_NO_AUTOMOUNT` wherever
+            // `statx` is served, and std keeps the listing's descriptor to itself, so the
+            // reader's stat answers by path (fdu-d2fn). This is the route of a directory
+            // the reader declined, so the whole-path resolution is paid rarely.
+            if !linux_dents::statx_unavailable() {
+                crate::counters::bump(|c| c.stats += 1);
+                if let Some(observed) = linux_dents::stat_path(&entry.path()) {
+                    return missing_as_none(observed);
+                }
+                // `statx` has just been found unavailable: std answers, with `fstatat`.
+            }
+        }
+        let Some(meta) = missing_as_none(metadata_for_fingerprint(entry))? else {
             return Ok(None);
         };
         Ok(Some((kind_from(&meta), attrs_from(Path::new(""), &meta)?)))
     }
+}
+
+/// The non-following observation of `path` itself, as [`observe`] reads it from
+/// `symlink_metadata`, and on Linux one that never triggers an automount.
+///
+/// For a path a route holds as an entry and verifies by itself: a reconciliation's
+/// subtree and the prefixes above it, a change the watch verifies, a control looked up
+/// by name. The walk root is not one; [`root_device`] says why.
+pub(crate) fn observe_path(path: &Path) -> std::io::Result<(EntryKind, Attrs)> {
+    crate::counters::bump(|c| c.stats += 1);
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    if let Some(observed) = linux_dents::stat_path(path) {
+        return observed;
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    observe(path, &metadata)
 }
 
 #[cfg(not(windows))]
@@ -7033,7 +7568,9 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
     secs.saturating_mul(1_000_000_000).saturating_add(nanos)
 }
 
-#[cfg(windows)]
+// Windows observation goes through `windows_metadata::observe` on every route; only a
+// test still derives attributes from metadata alone.
+#[cfg(all(windows, test))]
 pub(crate) fn attrs_from(path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
     windows_metadata::observe(path, || Ok(meta.clone())).map(|(_, attrs)| attrs)
 }
@@ -7060,13 +7597,34 @@ pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<A
 ///
 /// Only the device is needed, and on Windows it is read without demanding a consistent
 /// observation of the root's times, which change whenever a child is created or removed.
+/// The device that bounds a `one_filesystem` walk from `root`, whose non-following
+/// metadata is `meta`.
+///
+/// The walk root is resolved. The user named it and the listing that follows opens it,
+/// and on Linux an open mounts an unmounted autofs trigger where a non-following stat
+/// need not: `symlink_metadata` does on glibc (std's `statx` without `AT_NO_AUTOMOUNT`)
+/// and does not on musl (`fstatat`). A trigger's own device would then exclude every
+/// entry the listing finds under it, so on Linux the device is read from an opened
+/// descriptor on every route and under either libc, and `meta`'s device answers only
+/// when the open fails, as the listing then fails the same way. Every other stat of the
+/// tree never mounts ([`observe_dir_entry`], [`observe_path`], `linux_dents`).
 pub(crate) fn root_device(root: &Path, meta: &fs::Metadata) -> std::io::Result<u64> {
     #[cfg(windows)]
     {
         let _ = meta;
         windows_metadata::volume_serial(root)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let opened = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(root)
+            .and_then(|directory| directory.metadata());
+        attrs_from(root, opened.as_ref().unwrap_or(meta)).map(|attrs| attrs.dev)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         attrs_from(root, meta).map(|attrs| attrs.dev)
     }
@@ -7114,6 +7672,7 @@ mod tests {
         write_file(&dir.path().join("a.txt"), b"hello");
         write_file(&dir.path().join("src/main.rs"), b"fn main() {}");
         write_file(&dir.path().join("src/deep/nested.rs"), b"// nested");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -7171,15 +7730,15 @@ mod tests {
                 "every entry is stated at {threads:?}: {observed_stats} < {}",
                 report.entries
             );
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]
             {
                 let observed_enum = after.dir_enumeration_calls - before.dir_enumeration_calls;
                 // The serial walker is the portable `read_dir` path, which cannot see
-                // getdents multiplicity. Enumeration calls are a bulk-backend fact.
+                // getdents multiplicity. Enumeration calls are a native-backend fact.
                 if threads != Some(1) {
                     assert!(
                         observed_enum >= report.dirs_read,
-                        "every successful bulk directory issues at least one enumeration \
+                        "every successful native directory issues at least one enumeration \
                          call at {threads:?}: {observed_enum} < {}",
                         report.dirs_read
                     );
@@ -7220,17 +7779,30 @@ mod tests {
         // Windows observes every listed entry through a fresh handle on both paths, so the
         // fold performs exactly the retained walk's observations there; the skip is a
         // non-Windows saving.
-        #[cfg(not(windows))]
+        #[cfg(unix)]
         assert!(
             fold_stats < scan_stats,
             "fold {fold_stats} should skip directory/symlink stats versus scan {scan_stats}"
         );
+        // The fold stats `a.txt` and, when the listing yields `src` or `link` before it,
+        // the first of those, whose stat proves the directory searchable
+        // ([`Searchability`]); the others take their kind from the listing.
+        #[cfg(not(windows))]
+        let proof = u64::from(first_listed(dir.path()) != "a.txt");
         #[cfg(unix)]
-        assert_eq!(scan_stats.saturating_sub(fold_stats), 2);
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 2 - proof);
         #[cfg(not(any(unix, windows)))]
-        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1 - proof);
         #[cfg(windows)]
         assert_eq!(fold_stats, scan_stats);
+    }
+
+    /// The name the filesystem lists first in `dir`, read rather than assumed: under the
+    /// skip a listing stats its children until one stat succeeds ([`Searchability`]), so
+    /// how many stats the fold saves depends on the enumeration order.
+    #[cfg(not(windows))]
+    fn first_listed(dir: &Path) -> std::ffi::OsString {
+        fs::read_dir(dir).expect("listing").next().expect("an entry").expect("entry").file_name()
     }
 
     #[cfg(unix)]
@@ -7259,7 +7831,11 @@ mod tests {
         crate::counters::enable(false);
 
         assert_eq!(fold_report.entries, scan_report.entries);
-        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+        // `src` and `a.txt` are stated on both routes; `link` takes its kind from the
+        // listing only once one of them has been stated before it, which proves the
+        // directory searchable ([`Searchability`]).
+        let proof = u64::from(first_listed(dir.path()) == "link");
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1 - proof);
     }
 
     #[test]
@@ -7333,13 +7909,80 @@ mod tests {
         }
     }
 
+    /// H185: a folded index describes each directory once, by its own listing, so its
+    /// directory and symlink entries carry the listing's default attributes, as the
+    /// transient summary's do (H72); the full index keeps the parent's stat, which is the
+    /// cache's freshness fingerprint. Under `--one-filesystem` descent reads each
+    /// directory's device, so the folded walk keeps that stat too. macOS lists every
+    /// child's attributes in bulk and Windows never takes the skip, so neither shows it.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn a_folded_index_takes_directory_and_symlink_kinds_from_the_listing() {
+        let root = tempfile::tempdir().expect("temp root");
+        write_file(&root.path().join("dir/file.txt"), b"contents");
+        write_file(&root.path().join("dir/nested/deep.txt"), b"more");
+        write_file(&root.path().join("top.txt"), b"top");
+        std::os::unix::fs::symlink("top.txt", root.path().join("link")).expect("symlink");
+        let canonical = root.path().canonicalize().expect("canonical root");
+        let retention = crate::execution::TreeRetention {
+            largest_files: 100,
+            size: crate::query::SizeMetric::Allocated,
+        };
+        let attrs_by_kind = |index: &Index| -> Vec<(EntryKind, bool)> {
+            let mut seen = Vec::new();
+            let mut stack = vec![(PathBuf::new(), crate::EntryId::ROOT)];
+            while let Some((path, id)) = stack.pop() {
+                let Some(children) = index.children_of(id) else { continue };
+                for (name, child) in children {
+                    let kind = index.kind_of(child).expect("live child");
+                    let attrs = index.attrs_of(child).expect("live child");
+                    seen.push((kind, *attrs == Attrs::default()));
+                    if kind.is_dir() {
+                        stack.push((path.join(name), child));
+                    }
+                }
+            }
+            seen.sort_by_key(|(kind, defaulted)| (*kind as u8, *defaulted));
+            seen
+        };
+
+        for threads in [1, 4] {
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let (folded, _, _) =
+                scan_into_folded_index(&canonical, &config, retention, false).expect("folded");
+            let (full, _) = scan_into_index(&canonical, &config).expect("full");
+            for (kind, defaulted) in attrs_by_kind(&folded) {
+                assert_eq!(
+                    defaulted,
+                    matches!(kind, EntryKind::Dir | EntryKind::Symlink),
+                    "{threads} workers: a folded {kind:?} takes its kind from the listing"
+                );
+            }
+            assert!(
+                attrs_by_kind(&full).iter().all(|(_, defaulted)| !defaulted),
+                "{threads} workers: the full index stats every entry"
+            );
+
+            let bound = ScanConfig { one_filesystem: true, ..config };
+            let (folded, _, _) =
+                scan_into_folded_index(&canonical, &bound, retention, false).expect("folded");
+            for (kind, defaulted) in attrs_by_kind(&folded) {
+                assert_eq!(
+                    defaulted,
+                    kind == EntryKind::Symlink,
+                    "{threads} workers, one filesystem: directories keep their device"
+                );
+            }
+        }
+    }
+
     #[test]
     fn detached_emission_reuses_returned_listings_as_fresh_ones() {
         // H159: the consumer hands drained listings back to the worker that allocated
         // them. A reused listing must be indistinguishable from a fresh one, including
         // after the consumer returned it unapplied, as it does after a build error.
         let (sender, receiver) = std::sync::mpsc::channel();
-        let mut emission = DetachedEmission::new();
+        let mut emission = DetachedEmission::new(false);
 
         let mut skipped = emission.begin_directory(Path::new("a/much/longer/relative/path"));
         skipped.children.push(DetachedChild {
@@ -7468,7 +8111,15 @@ mod tests {
                 .expect("lookup")
             };
             let listed = |path: &str, kind| {
-                read_control_op(&config, dir.path(), Path::new(path), kind).expect("listed read")
+                let path = Path::new(path);
+                let read = read_control_op(&config, dir.path(), path, kind).expect("listed read");
+                let name = path.file_name().expect("a listed name");
+                assert_eq!(
+                    read_named_control_op(&config, dir.path(), path, name, kind).expect("named"),
+                    read,
+                    "{label}: a walker's read by the listed name decides as the path's (H180)"
+                );
+                read
             };
 
             assert_eq!(lookup("exact"), upsert("exact/.gitignore", b"*.log\n"), "{label}");
@@ -7502,6 +8153,39 @@ mod tests {
                 .expect("read"),
                 None,
                 "{label}: a scan that reads no rules looks nothing up"
+            );
+            assert_eq!(
+                read_named_control_op(
+                    &blind,
+                    dir.path(),
+                    Path::new("exact/.gitignore"),
+                    OsStr::new(".gitignore"),
+                    EntryKind::File
+                )
+                .expect("read"),
+                None,
+                "{label}: nor does a read by the listed name"
+            );
+        }
+    }
+
+    /// The walker's join makes [`Path::join`]'s path byte for byte, including under the
+    /// root, whose relative directory is empty, and for a name longer than its directory
+    /// (H180).
+    #[test]
+    fn a_listed_name_joins_as_path_join_does() {
+        for (rel_dir, name) in [
+            ("", "file"),
+            ("", ".gitignore"),
+            ("a", "b"),
+            ("a/b", ".GITIGNORE"),
+            ("node_modules/x", "a-name-longer-than-twice-its-directory.js"),
+        ] {
+            let joined = join_listed_name(Path::new(rel_dir), OsStr::new(name));
+            assert_eq!(
+                joined.as_os_str(),
+                Path::new(rel_dir).join(name).as_os_str(),
+                "{rel_dir:?} and {name:?}"
             );
         }
     }
@@ -8055,6 +8739,30 @@ mod tests {
         assert!(!diagnostics.worker_policy.events_truncated);
         assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
         assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
+        // On glibc the serial walk lists through the native reader too, and the Linux
+        // backend fields count it: every attempt is a success or a fallback, and the
+        // directories read are the native successes plus the portable reads.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            let backend = &diagnostics.backend;
+            assert_eq!(backend.portable_attempts, backend.portable_directory_reads);
+            assert!(
+                backend.portable_directory_reads < report.dirs_read,
+                "native listings are not portable reads: {backend:?}, {} read",
+                report.dirs_read
+            );
+            let (Some(attempts), Some(successes), Some(fallbacks)) = (
+                backend.linux_dents_attempts,
+                backend.linux_dents_successes,
+                backend.linux_dents_fallbacks,
+            ) else {
+                panic!("Linux native counts are present: {backend:?}");
+            };
+            assert_eq!(attempts, successes + fallbacks);
+            assert!(successes > 0, "the serial walk lists natively: {backend:?}");
+            assert_eq!(successes + backend.portable_directory_reads, report.dirs_read);
+        }
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
         assert_eq!(diagnostics.backend.portable_directory_reads, report.dirs_read);
 
         #[cfg(target_os = "macos")]
@@ -8073,6 +8781,42 @@ mod tests {
                 diagnostics.backend.unavailable_reason,
                 Some("macOS bulk directory enumeration is unavailable on this platform")
             );
+        }
+
+        // A parallel walk counts the same way, worker by worker.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+            let (report, diagnostics) =
+                scan_with_diagnostics(dir.path(), &config, &mut |_| {}).expect("diagnostic scan");
+            let backend = &diagnostics.backend;
+            assert!(report.is_complete(), "{:?}", report.errors);
+            assert_eq!(backend.portable_attempts, backend.portable_directory_reads);
+            assert!(
+                backend.portable_directory_reads < report.dirs_read,
+                "native listings are not portable reads: {backend:?}, {} read",
+                report.dirs_read
+            );
+            assert_eq!(
+                backend.unavailable_reason,
+                Some("macOS bulk directory enumeration is unavailable on this platform")
+            );
+            let (Some(attempts), Some(successes), Some(fallbacks)) = (
+                backend.linux_dents_attempts,
+                backend.linux_dents_successes,
+                backend.linux_dents_fallbacks,
+            ) else {
+                panic!("Linux native counts are present: {backend:?}");
+            };
+            assert_eq!(attempts, successes + fallbacks);
+            assert!(successes > 0, "a parallel walk lists natively: {backend:?}");
+            assert_eq!(successes + backend.portable_directory_reads, report.dirs_read);
+        }
+        #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+        {
+            assert_eq!(diagnostics.backend.linux_dents_attempts, None);
+            assert_eq!(diagnostics.backend.linux_dents_successes, None);
+            assert_eq!(diagnostics.backend.linux_dents_fallbacks, None);
         }
     }
 
@@ -8502,6 +9246,7 @@ mod tests {
             &dir.path().join("a-guard/.gitignore"),
             &vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1],
         );
+        crate::test_support::settle_allocations(dir.path());
         let observing =
             ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
         let blind = ScanConfig { read_controls: false, ..observing.clone() };
@@ -8572,6 +9317,7 @@ mod tests {
             // exercised by the same walk.
             write_file(&dir.path().join(format!("t{top}/a/b/c/d/e/deep.txt")), b"deep");
         }
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -8583,6 +9329,7 @@ mod tests {
         write_file(&dir.path().join("t7/.gitignore"), b"!m0/leaf-1.dat\n");
         fs::create_dir_all(dir.path().join("t5/.gitignore")).expect("non-file control directory");
         write_file(&dir.path().join("t5/.gitignore/ordinary.txt"), b"ordinary child");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -8662,6 +9409,7 @@ mod tests {
         write_file(&dir.path().join("file-to-directory"), b"old file");
         write_file(&dir.path().join("removed-tree/nested/gone.md"), b"gone");
         write_file(&dir.path().join("stable/deep/kept.rs"), b"kept");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -8677,6 +9425,7 @@ mod tests {
 
         fs::remove_dir_all(root.join("removed-tree")).expect("remove nested tree");
         write_file(&root.join("added-tree/nested/new.md"), b"new nested file");
+        crate::test_support::settle_allocations(root);
     }
 
     fn effective_ops(commits: &[Commit]) -> Vec<Op> {
@@ -10136,6 +10885,7 @@ mod tests {
         let socket_path = dir.path().join("service.sock");
         let _listener = UnixListener::bind(&socket_path).expect("bind socket");
         write_file(&dir.path().join("replacement"), b"ordinary");
+        crate::test_support::settle_allocations(dir.path());
         let (kept, kept_report) =
             scan_into_index(dir.path(), &ScanConfig::default()).expect("default scan");
         assert!(kept_report.is_complete());
@@ -10668,6 +11418,7 @@ mod tests {
         fs::remove_file(dir.path().join("a.txt")).expect("remove file");
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
         write_file(&dir.path().join("src/added.md"), b"new file");
+        crate::test_support::settle_allocations(dir.path());
 
         let portable_report = reconcile(&mut portable, &portable_config, &mut |_| {})
             .expect("portable reconciliation");
@@ -10933,6 +11684,7 @@ mod tests {
             let dir = tempfile::tempdir().expect("tempdir");
             write_file(&dir.path().join("blocked/old.txt"), b"old");
             write_file(&dir.path().join("verified.txt"), b"verified");
+            crate::test_support::settle_allocations(dir.path());
             let config = ScanConfig { threads: Some(workers), ..ScanConfig::default() };
             let (mut warm, baseline) = scan_into_index(dir.path(), &config).expect("baseline");
             assert!(baseline.is_complete());
@@ -10965,6 +11717,7 @@ mod tests {
         fs::remove_file(dir.path().join("a.txt")).expect("remove file");
         write_file(&dir.path().join("added.md"), b"new file");
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
+        crate::test_support::settle_allocations(dir.path());
 
         let root = index.root_path().to_path_buf();
         let root_meta = {
@@ -11025,6 +11778,7 @@ mod tests {
                 b"changed after the first wave",
             );
         }
+        crate::test_support::settle_allocations(dir.path());
 
         let candidate_report = reconcile_target_inner(
             &mut ReconcileTarget::Direct(&mut candidate),
@@ -11160,6 +11914,7 @@ mod tests {
         for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
             write_file(&dir.path().join(format!("d{directory:04}/file.txt")), changed);
         }
+        crate::test_support::settle_allocations(dir.path());
 
         let progress = crate::Progress::new();
         let observed = ScanConfig { progress: Some(progress.clone()), ..parallel };

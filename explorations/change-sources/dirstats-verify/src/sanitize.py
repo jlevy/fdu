@@ -13,6 +13,9 @@ import json
 import os
 import re
 import sys
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 
 def main():
@@ -46,8 +49,7 @@ def main():
             continue
         with open(os.path.join(src, name)) as fh:
             data = json.load(fh)
-        with open(os.path.join(dest, name), "w") as fh:
-            json.dump(walk(data), fh, indent=1)
+        write_text_atomic(os.path.join(dest, name), json.dumps(walk(data), indent=1))
         print("sanitized", name)
 
 

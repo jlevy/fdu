@@ -1876,6 +1876,7 @@ fn human_coverage_label(reason: CoverageReason) -> &'static str {
         CoverageReason::Unsupported => "unsupported",
         CoverageReason::IoError => "I/O error",
         CoverageReason::ChangedDuringRead => "changed during read",
+        CoverageReason::TextOnly => "counted as text",
     }
 }
 
@@ -2206,6 +2207,7 @@ fn coverage_label(reason: CoverageReason) -> &'static str {
         CoverageReason::Unsupported => "unsupported",
         CoverageReason::IoError => "io_error",
         CoverageReason::ChangedDuringRead => "changed_during_read",
+        CoverageReason::TextOnly => "text_only",
     }
 }
 

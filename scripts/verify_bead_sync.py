@@ -39,19 +39,14 @@ COMPARED_FIELDS = (
     "dependencies",
     "description",
     "notes",
-    "design",
-    "acceptance_criteria",
 )
 
-# The synced body is the description followed by the long-form fields as Markdown
-# sections. Splitting them back apart is what lets notes -- the running commentary a
-# bead accumulates -- be verified as its own field rather than smuggled into the
-# description comparison.
-BODY_SECTIONS = {
-    "Notes": "notes",
-    "Design": "design",
-    "Acceptance Criteria": "acceptance_criteria",
-}
+# The synced body is the description, then, when there are notes, a `## Notes` heading
+# and the notes. tbd reads it back by splitting at the first such heading (its
+# `parseMarkdownWithFrontmatter`, 0.9.0), so notes that themselves open with `## Notes`
+# survive the round trip, and this splits exactly as tbd does. tbd has no other body
+# section: `design` and `acceptance_criteria` are not fields of its schema.
+NOTES_HEADING = re.compile(r"(^|\n)## Notes\n", re.IGNORECASE)
 
 
 class VerifyError(Exception):
@@ -87,63 +82,273 @@ def run(command: list[str]) -> str:
 def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Split a synced bead into its frontmatter mapping and its body.
 
-    Deliberately a small YAML subset -- scalars, scalar lists, and the list-of-mappings
-    shape `dependencies` uses -- so that verifying a sync needs no dependency beyond the
-    standard library. Anything outside that subset is left as a raw string and compared
-    as one.
+    The frontmatter ends at the first line that is exactly `---`, as tbd's reader has it;
+    a `---` inside an indented block scalar is content, not the delimiter.
     """
-    if not text.startswith("---\n"):
+    text = text.replace("\r\n", "\n")
+    match = re.match(r"---\n(.*?)^---[ \t]*(?:\n|\Z)(.*)", text, flags=re.S | re.M)
+    if match is None:
         raise VerifyError("synced bead has no YAML frontmatter")
-    _, frontmatter, body = text.split("---\n", 2)
-
-    fields: dict[str, Any] = {}
-    key: str | None = None
-    for line in frontmatter.splitlines():
-        if not line.strip():
-            continue
-        if not line.startswith(" ") and ":" in line:
-            key, _, value = line.partition(":")
-            key = key.strip()
-            fields[key] = parse_scalar(value.strip()) if value.strip() else []
-        elif key is not None and line.lstrip().startswith("- "):
-            item = line.lstrip()[2:].strip()
-            existing = fields.get(key)
-            if not isinstance(existing, list):
-                existing = []
-            existing.append(parse_scalar(item))
-            fields[key] = existing
-        elif key is not None and isinstance(fields.get(key), list) and fields[key]:
-            # A continuation line of the current list item's mapping.
-            sub_key, _, sub_value = line.strip().partition(":")
-            last = fields[key][-1]
-            if isinstance(last, dict):
-                last[sub_key.strip()] = parse_scalar(sub_value.strip())
+    frontmatter, body = match.groups()
+    fields = parse_yaml(frontmatter)
+    if not isinstance(fields, dict):
+        raise VerifyError("synced bead frontmatter is not a mapping")
     return fields, body
 
 
-def split_body(body: str) -> dict[str, str]:
-    """Split a synced body into the local fields it was assembled from."""
-    headings = "|".join(re.escape(name) for name in BODY_SECTIONS)
-    parts = re.split(rf"^## ({headings})\s*$", body, flags=re.M)
+# YAML parsing, restricted to the block style tbd writes (the `yaml` package's stringify,
+# line width 0): block mappings and sequences, sequences of flat mappings, flow `[]` and
+# `{}`, plain, single- and double-quoted scalars, and literal block scalars. Scalars
+# resolve by the YAML 1.2 core schema, which is the one tbd's writer uses, so `null` is
+# null, `1` is an integer, and `"C:\\"` is one backslash. Anything outside that subset
+# raises `VerifyError` rather than being compared as raw text: a verifier that silently
+# misreads its input reports drift that is not there, or hides drift that is.
+# Standard library only, so verifying a sync needs no dependency.
 
-    fields = {"description": parts[0]}
-    for heading, text in zip(parts[1::2], parts[2::2]):
-        fields[BODY_SECTIONS[heading]] = text
-    return fields
+_KEY = re.compile(r"(?P<key>[A-Za-z_][\w.-]*)[ \t]*:(?:[ \t]+(?P<rest>.*))?$")
+_DOUBLE_QUOTED = re.compile(r'"(?P<body>(?:[^"\\]|\\.)*)"')
+_SINGLE_QUOTED = re.compile(r"'(?P<body>(?:[^']|'')*)'")
+_BLOCK_HEADER = re.compile(
+    r"\|(?:(?P<chomp1>[+-])?(?P<indent1>[1-9])?|(?P<indent2>[1-9])(?P<chomp2>[+-]))$"
+)
+_ESCAPES = {
+    "0": "\0",
+    "a": "\a",
+    "b": "\b",
+    "t": "\t",
+    "\t": "\t",
+    "n": "\n",
+    "v": "\v",
+    "f": "\f",
+    "r": "\r",
+    "e": "\x1b",
+    " ": " ",
+    '"': '"',
+    "/": "/",
+    "\\": "\\",
+    "N": "\x85",
+    "_": "\xa0",
+    "L": "\u2028",
+    "P": "\u2029",
+}
+_HEX_ESCAPES = {"x": 2, "u": 4, "U": 8}
+_NULL = {"", "~", "null", "Null", "NULL"}
+_BOOLEANS = {
+    "true": True,
+    "True": True,
+    "TRUE": True,
+    "false": False,
+    "False": False,
+    "FALSE": False,
+}
+_FLOAT = re.compile(r"[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?")
+_SPECIAL_FLOATS = {
+    **{
+        f"{sign}{spelling}": float(f"{sign}inf")
+        for sign in ("", "+", "-")
+        for spelling in (".inf", ".Inf", ".INF")
+    },
+    **{spelling: float("nan") for spelling in (".nan", ".NaN", ".NAN")},
+}
 
 
-def parse_scalar(value: str) -> Any:
-    """Interpret one YAML scalar, or the opening of an inline mapping."""
-    if ": " in value and not value.startswith('"'):
-        key, _, rest = value.partition(":")
-        return {key.strip(): parse_scalar(rest.strip())}
-    if value.startswith('"') and value.endswith('"') and len(value) >= 2:
-        return value[1:-1]
-    if value == "[]":
-        return []
-    if re.fullmatch(r"-?\d+", value):
-        return int(value)
+def parse_yaml(text: str) -> Any:
+    """Parse one YAML document in the subset tbd writes."""
+    # A final newline ends the last line; it does not begin an empty one.
+    lines = text.removesuffix("\n").split("\n")
+    position = _skip_blank(lines, 0)
+    if position == len(lines):
+        return None
+    value, position = _parse_node(lines, position, _indent_of(lines[position]))
+    position = _skip_blank(lines, position)
+    if position != len(lines):
+        raise VerifyError(f"unexpected YAML at line {position + 1}: {lines[position].strip()}")
     return value
+
+
+def _indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _skip_blank(lines: list[str], position: int) -> int:
+    while position < len(lines) and (
+        not lines[position].strip() or lines[position].lstrip().startswith("#")
+    ):
+        position += 1
+    return position
+
+
+def _parse_node(lines: list[str], position: int, indent: int) -> tuple[Any, int]:
+    """Parse the block collection whose first line, at `position`, is at `indent`."""
+    text = lines[position][indent:]
+    if text == "-" or text.startswith("- "):
+        return _parse_sequence(lines, position, indent)
+    return _parse_mapping(lines, position, indent)
+
+
+def _parse_sequence(lines: list[str], position: int, indent: int) -> tuple[list[Any], int]:
+    items: list[Any] = []
+    while True:
+        position = _skip_blank(lines, position)
+        if position == len(lines) or _indent_of(lines[position]) < indent:
+            return items, position
+        line = lines[position]
+        text = line[indent:]
+        if _indent_of(line) != indent or not (text == "-" or text.startswith("- ")):
+            raise VerifyError(f"unexpected YAML at line {position + 1}: {line.strip()}")
+        rest = text[1:].strip()
+        if rest and _KEY.match(rest):
+            # `- key: value` opens a mapping whose later keys align with this first one.
+            lines[position] = " " * (indent + 2) + rest
+            value, position = _parse_mapping(lines, position, indent + 2)
+        else:
+            value, position = _parse_value(lines, position, indent, rest)
+        items.append(value)
+
+
+def _parse_mapping(lines: list[str], position: int, indent: int) -> tuple[dict[str, Any], int]:
+    mapping: dict[str, Any] = {}
+    while True:
+        position = _skip_blank(lines, position)
+        if position == len(lines) or _indent_of(lines[position]) < indent:
+            return mapping, position
+        line = lines[position]
+        match = _KEY.match(line[indent:])
+        if _indent_of(line) != indent or match is None:
+            raise VerifyError(f"unexpected YAML at line {position + 1}: {line.strip()}")
+        key = match["key"]
+        if key in mapping:
+            raise VerifyError(f"duplicate YAML key {key!r} at line {position + 1}")
+        mapping[key], position = _parse_value(
+            lines, position, indent, (match["rest"] or "").strip()
+        )
+
+
+def _parse_value(lines: list[str], position: int, indent: int, rest: str) -> tuple[Any, int]:
+    """Parse the value that follows a key or a sequence dash on line `position`."""
+    if rest.startswith("|"):
+        return _parse_literal(lines, position, indent, rest)
+    if rest.startswith(">"):
+        raise VerifyError(f"folded block scalar at line {position + 1}; tbd writes literal ones")
+    if rest and not rest.startswith("#"):
+        return parse_scalar(rest), position + 1
+    # Nothing on this line: the value is the nested block below it, or null. A sequence
+    # may sit at its key's own indentation.
+    following = _skip_blank(lines, position + 1)
+    if following < len(lines):
+        child = _indent_of(lines[following])
+        text = lines[following][child:]
+        if child > indent or (child == indent and (text == "-" or text.startswith("- "))):
+            return _parse_node(lines, following, child)
+    return None, position + 1
+
+
+def _parse_literal(lines: list[str], position: int, indent: int, header: str) -> tuple[str, int]:
+    match = _BLOCK_HEADER.match(header.split(" #", 1)[0].strip())
+    if match is None:
+        raise VerifyError(f"unreadable block scalar header at line {position + 1}: {header}")
+    chomp = match["chomp1"] or match["chomp2"] or ""
+    explicit = match["indent1"] or match["indent2"]
+    content: list[str] = []
+    block_indent = indent + int(explicit) if explicit else None
+    position += 1
+    while position < len(lines):
+        line = lines[position]
+        if line.strip():
+            if block_indent is None:
+                block_indent = _indent_of(line)
+            if _indent_of(line) < block_indent or block_indent <= indent:
+                break
+            content.append(line[block_indent:])
+        else:
+            content.append(line[block_indent:] if block_indent is not None else "")
+        position += 1
+    trailing = 0
+    while content and not content[-1].strip():
+        content.pop()
+        trailing += 1
+    text = "\n".join(content)
+    if chomp == "-":
+        return text, position
+    if chomp == "+":
+        return text + "\n" * (trailing + (1 if text else 0)), position
+    return (text + "\n" if text else ""), position
+
+
+def parse_scalar(text: str) -> Any:
+    """Interpret one single-line YAML scalar by the core schema."""
+    text = text.strip()
+    if text.startswith('"'):
+        match = _DOUBLE_QUOTED.match(text)
+        _require_only_comment(text, match)
+        return _unescape_double(match["body"])
+    if text.startswith("'"):
+        match = _SINGLE_QUOTED.match(text)
+        _require_only_comment(text, match)
+        return match["body"].replace("''", "'")
+    text = re.split(r"[ \t]+#", text, maxsplit=1)[0].rstrip()
+    if text in ("[]", "{}"):
+        return [] if text == "[]" else {}
+    if text[:1] in "[{&*!|>%@`" and text:
+        raise VerifyError(f"YAML construct outside the subset tbd writes: {text}")
+    if text in _NULL:
+        return None
+    if text in _BOOLEANS:
+        return _BOOLEANS[text]
+    if re.fullmatch(r"[-+]?[0-9]+", text):
+        return int(text)
+    if re.fullmatch(r"0o[0-7]+", text):
+        return int(text[2:], 8)
+    if re.fullmatch(r"0x[0-9a-fA-F]+", text):
+        return int(text[2:], 16)
+    if _FLOAT.fullmatch(text):
+        return float(text)
+    if text in _SPECIAL_FLOATS:
+        return _SPECIAL_FLOATS[text]
+    return text
+
+
+def _require_only_comment(text: str, match: re.Match[str] | None) -> None:
+    if match is None:
+        raise VerifyError(f"unterminated quoted YAML scalar: {text}")
+    after = text[match.end() :]
+    if after.strip() and not re.match(r"[ \t]+#", after):
+        raise VerifyError(f"unexpected text after a quoted YAML scalar: {text}")
+
+
+def _unescape_double(body: str) -> str:
+    """Decode a double-quoted scalar's escapes, all of YAML 1.2's and no others."""
+    decoded: list[str] = []
+    position = 0
+    while position < len(body):
+        character = body[position]
+        if character != "\\":
+            decoded.append(character)
+            position += 1
+            continue
+        code = body[position + 1]
+        if code in _ESCAPES:
+            decoded.append(_ESCAPES[code])
+            position += 2
+        elif code in _HEX_ESCAPES:
+            width = _HEX_ESCAPES[code]
+            digits = body[position + 2 : position + 2 + width]
+            if not re.fullmatch(rf"[0-9a-fA-F]{{{width}}}", digits):
+                raise VerifyError(f"malformed \\{code} escape in a YAML scalar: \\{code}{digits}")
+            decoded.append(chr(int(digits, 16)))
+            position += 2 + width
+        else:
+            raise VerifyError(f"unknown escape \\{code} in a YAML scalar")
+    return "".join(decoded)
+
+
+def split_body(body: str) -> dict[str, str]:
+    """Split a synced body into description and notes, as tbd's own reader does."""
+    body = body.strip()
+    match = NOTES_HEADING.search(body)
+    if match is None:
+        return {"description": body, "notes": ""}
+    return {"description": body[: match.start()].strip(), "notes": body[match.end() :].strip()}
 
 
 def normalize(value: Any) -> Any:

@@ -677,10 +677,8 @@ fn reverify_observation(
             }
             Op::Upsert { .. } | Op::Remove { .. } => {
                 let absolute = root.join(&relative);
-                match std::fs::symlink_metadata(&absolute) {
-                    Ok(metadata) => {
-                        let (kind, attrs) = scan::observe(&absolute, &metadata)
-                            .map_err(|source| Error::io(&absolute, source))?;
+                match scan::observe_path(&absolute) {
+                    Ok((kind, attrs)) => {
                         match crate::admission::decide_path(
                             &relative,
                             kind,
@@ -1030,7 +1028,7 @@ fn verify_intent(
                     continue;
                 }
                 let absolute = root.join(rel);
-                let mut stat = std::fs::symlink_metadata(&absolute);
+                let mut stat = scan::observe_path(&absolute);
                 if *renamed && !rel.as_os_str().is_empty() && stat.is_ok() {
                     // A lookup on a case- or normalization-insensitive filesystem (APFS
                     // and HFS+ by default, NTFS, casefolded ext4) resolves `Readme` to a
@@ -1045,7 +1043,7 @@ fn verify_intent(
                             // either a stale spelling or a name renamed away since. A
                             // second stat tells them apart: a name that is now gone is an
                             // ordinary removal, verified below like any other.
-                            stat = std::fs::symlink_metadata(&absolute);
+                            stat = scan::observe_path(&absolute);
                             stat.is_ok().then_some(InvalidateReason::UnpairedRename)
                         }
                         // An unlistable parent cannot prove membership either way; its
@@ -1066,14 +1064,7 @@ fn verify_intent(
                     }
                 }
                 match stat {
-                    Ok(meta) => {
-                        let Ok((kind, attrs)) = scan::observe(&absolute, &meta) else {
-                            ops.push(Op::InvalidateSubtree {
-                                path: rel.parent().map_or_else(PathBuf::new, Path::to_path_buf),
-                                reason: InvalidateReason::VerificationFailed,
-                            });
-                            continue;
-                        };
+                    Ok((kind, attrs)) => {
                         let disposition = crate::admission::decide_path(
                             rel,
                             kind,

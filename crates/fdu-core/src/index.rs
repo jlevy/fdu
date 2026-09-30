@@ -90,6 +90,13 @@ std::thread_local! {
     /// made, through the index; this is how a test sees which one happened.
     pub(crate) static CONTROL_PROJECTION_CLONES: std::cell::Cell<u64> =
         const { std::cell::Cell::new(0) };
+
+    /// Children a batched analysis walk has stepped over on this thread, resumed or not.
+    ///
+    /// Every batch walks the same files either way, so only this tells a walk that
+    /// resumes where it stopped from one that steps over the listing again.
+    pub(crate) static ANALYSIS_CHILD_STEPS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
 }
 
 /// Approximate bytes the exact commit history used by [`Index::since`] may retain.
@@ -295,9 +302,275 @@ impl From<&InternedRollUp> for RollUpScalars {
     }
 }
 
+impl RollUpScalars {
+    /// What one entry adds to each of its ancestors' roll-ups on its own: a file's count
+    /// and bytes, a directory's count, nothing for a symlink or other object.
+    fn leaf(kind: EntryKind, attrs: &Attrs) -> Self {
+        match kind {
+            EntryKind::File => {
+                Self { files: 1, bytes: attrs.size, allocated: attrs.allocated, ..Self::default() }
+            }
+            EntryKind::Dir => Self { dirs: 1, ..Self::default() },
+            EntryKind::Symlink | EntryKind::Other => Self::default(),
+        }
+    }
+
+    /// The sum, or the name of the first counter a `u64` cannot hold it in.
+    fn checked_add(self, other: &Self) -> Result<Self, &'static str> {
+        Ok(Self {
+            files: self.files.checked_add(other.files).ok_or("files")?,
+            dirs: self.dirs.checked_add(other.dirs).ok_or("directories")?,
+            bytes: self.bytes.checked_add(other.bytes).ok_or("bytes")?,
+            allocated: self.allocated.checked_add(other.allocated).ok_or("allocated bytes")?,
+            newest_mtime_ns: self.newest_mtime_ns,
+        })
+    }
+
+    /// The difference, saturating at zero as [`InternedRollUp::unmerge`] does.
+    fn saturating_sub(self, other: &Self) -> Self {
+        Self {
+            files: self.files.saturating_sub(other.files),
+            dirs: self.dirs.saturating_sub(other.dirs),
+            bytes: self.bytes.saturating_sub(other.bytes),
+            allocated: self.allocated.saturating_sub(other.allocated),
+            newest_mtime_ns: self.newest_mtime_ns,
+        }
+    }
+}
+
+/// Add one file's sizes to a whole-tree running total, or refuse the file whose sizes no
+/// `u64` can hold the sum of ([`crate::Error::UnrepresentableTotal`]), leaving the total
+/// as it was.
+///
+/// The routes that count a tree without committing observations keep this total where
+/// the apply lane runs [`Index::preflight_totals`]: the summary fold and the detached
+/// builder, full or folded. One total at the root is enough, for the reason the preflight
+/// gives: every directory's roll-up, extension tally, `unignored` partition, and folded
+/// tally is a sub-sum of the root's, so none of them can overflow once the root's fits,
+/// and the merges that build them add plainly. Only the two byte totals are checked: a
+/// count of files or directories cannot reach `u64::MAX`, since each one is an entry a
+/// walk visited. The byte totals can: a sparse file on tmpfs claims up to 8 EiB apparent
+/// and allocates nothing, so three of them carry the sum past `u64::MAX`, and they are
+/// refused alike on every route.
+#[inline]
+pub(crate) fn add_file_sizes(
+    bytes: &mut u64,
+    allocated: &mut u64,
+    attrs: &Attrs,
+    path: impl FnOnce() -> PathBuf,
+) -> crate::Result<()> {
+    match (bytes.checked_add(attrs.size), allocated.checked_add(attrs.allocated)) {
+        (Some(next_bytes), Some(next_allocated)) => {
+            *bytes = next_bytes;
+            *allocated = next_allocated;
+            Ok(())
+        }
+        (None, _) => Err(unrepresentable_file(path(), "bytes")),
+        (Some(_), None) => Err(unrepresentable_file(path(), "allocated bytes")),
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn unrepresentable_file(path: PathBuf, counter: &'static str) -> crate::Error {
+    crate::Error::UnrepresentableTotal { path, counter }
+}
+
+/// What a batch has done to the tree so far, for [`Index::replay_totals`]: which of the
+/// index's subtrees it has cut away and which entries it has put in their place.
+///
+/// The index is not touched; this is the projection a preflight reads instead. A cut is
+/// an index subtree the batch removed or replaced, recorded with what it contributed to
+/// every ancestor, and no cut lies beneath another. A live entry is one the batch
+/// inserted, recorded with what it contributes on its own; a directory the batch
+/// inserted has children only among the live entries beneath it.
+#[derive(Default)]
+struct TotalsOverlay {
+    cuts: BTreeMap<PathBuf, RollUpScalars>,
+    live: BTreeMap<PathBuf, (EntryKind, RollUpScalars)>,
+}
+
+impl TotalsOverlay {
+    /// The index's entry at `path`, if it still counts: it exists and no cut covers it.
+    fn index_alive(&self, index: &Index, path: &Path) -> Option<EntryId> {
+        let id = index.lookup(path)?;
+        let mut ancestor = Some(path);
+        while let Some(current) = ancestor {
+            if self.cuts.contains_key(current) {
+                return None;
+            }
+            ancestor = current.parent();
+        }
+        Some(id)
+    }
+
+    /// The kind the tree holds at `path` right now, if anything.
+    fn kind_at(&self, index: &Index, path: &Path) -> Option<EntryKind> {
+        if let Some((kind, _)) = self.live.get(path) {
+            return Some(*kind);
+        }
+        self.index_alive(index, path).map(|id| index.entry(id).kind)
+    }
+
+    /// The entries of `map` strictly beneath `path`. Paths order by component, so a
+    /// path's descendants follow it contiguously.
+    fn beneath<'a, V>(
+        map: &'a BTreeMap<PathBuf, V>,
+        path: &'a Path,
+    ) -> impl Iterator<Item = (&'a PathBuf, &'a V)> {
+        map.range::<Path, _>((std::ops::Bound::Excluded(path), std::ops::Bound::Unbounded))
+            .take_while(move |(candidate, _)| candidate.starts_with(path))
+    }
+
+    /// What the tree holds at and beneath `path` right now: the index's subtree there
+    /// less the cuts inside it, plus the batch's entries there. Every part of it is
+    /// already inside the running total, so the sum cannot leave `u64`.
+    fn subtree_at(&self, index: &Index, path: &Path) -> RollUpScalars {
+        let mut total = RollUpScalars::default();
+        if let Some(id) = self.index_alive(index, path) {
+            total = index.subtree_scalars(id);
+            for (_, cut) in Self::beneath(&self.cuts, path) {
+                total = total.saturating_sub(cut);
+            }
+        }
+        let live = self
+            .live
+            .range::<Path, _>((std::ops::Bound::Included(path), std::ops::Bound::Unbounded))
+            .take_while(|(candidate, _)| candidate.starts_with(path));
+        for (_, (_, own)) in live {
+            total = total.checked_add(own).unwrap_or_else(|_| {
+                unreachable!("a subtree the tree holds is within its representable total")
+            });
+        }
+        total
+    }
+
+    /// The batch has removed whatever the tree held at `path`, subtree and all.
+    fn cut(&mut self, index: &Index, path: &Path) {
+        if let Some(id) = self.index_alive(index, path) {
+            let covered: Vec<PathBuf> =
+                Self::beneath(&self.cuts, path).map(|(cut, _)| cut.clone()).collect();
+            for cut in covered {
+                self.cuts.remove(&cut);
+            }
+            self.cuts.insert(path.to_path_buf(), index.subtree_scalars(id));
+        }
+        let gone: Vec<PathBuf> = self
+            .live
+            .range::<Path, _>((std::ops::Bound::Included(path), std::ops::Bound::Unbounded))
+            .take_while(|(candidate, _)| candidate.starts_with(path))
+            .map(|(live, _)| live.clone())
+            .collect();
+        for live in gone {
+            self.live.remove(&live);
+        }
+    }
+
+    /// The batch has put an entry of `kind` at `path` in place of whatever was there.
+    fn replace(&mut self, index: &Index, path: &Path, kind: EntryKind, own: RollUpScalars) {
+        self.cut(index, path);
+        self.live.insert(path.to_path_buf(), (kind, own));
+    }
+}
+
+/// Where a batched walk of the files an analysis may read has got to
+/// ([`Index::next_analysis_candidates`]): the directories still to list, each with its
+/// path, and the listing in progress with where it stopped ([`ListingResume`]).
+///
+/// Resuming a listing where it stopped is sound because nothing moves the tree between
+/// two batches of one walk: an analysis pass holds the index exclusively, and applying a
+/// result moves its content tier only.
+#[derive(Debug)]
+pub(crate) struct AnalysisWalk {
+    pending: Vec<(EntryId, PathBuf)>,
+    listing: Option<(EntryId, PathBuf, ListingResume)>,
+}
+
+impl AnalysisWalk {
+    /// A walk that has visited nothing.
+    pub(crate) fn start() -> Self {
+        Self { pending: vec![(EntryId::ROOT, PathBuf::new())], listing: None }
+    }
+}
+
+/// Where a batched walk stopped in one directory's listing: how many children it has
+/// visited, and the name of the last.
+///
+/// Sorted storage resumes at the position and map storage after the name, each without
+/// stepping over what the walk already visited (R164-6). Stepping over them cost a
+/// directory of N files about N²/(2·batch) child visits, each loading an entry, which is
+/// 10^8 for one directory of a million files.
+#[derive(Debug)]
+struct ListingResume {
+    position: usize,
+    last: OsString,
+}
+
+/// A directory's children in name order from where a batched walk stopped
+/// ([`Index::resumed_children`]).
+enum ResumedChildren<'a> {
+    Empty,
+    Sorted { index: &'a Index, ids: std::slice::Iter<'a, EntryId> },
+    Mutable(std::collections::btree_map::Range<'a, OsString, EntryId>),
+}
+
+impl<'a> Iterator for ResumedChildren<'a> {
+    type Item = (&'a OsStr, EntryId);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Sorted { index, ids } => {
+                let id = *ids.next()?;
+                Some((index.entry(id).name.as_os_str(), id))
+            }
+            Self::Mutable(children) => children.next().map(|(name, id)| (name.as_os_str(), *id)),
+        }
+    }
+}
+
+/// The regular files a folded index counted directly in one directory without keeping
+/// them as entries ([`crate::execution::RetainedState::Tree`]).
+///
+/// They are in the directory's roll-ups like any other file. This tally is the rest of
+/// what a tree needs of them: they are rows its share threshold omits, and an omission
+/// states exactly the entries, files, and sizes it stands for, with their ignored part,
+/// which is what [`Index::folded_children`] supplies for them. Each is a single file, so
+/// the entries omitted are the files counted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FoldedFiles {
+    /// Files folded.
+    pub(crate) files: u64,
+    /// Their apparent bytes.
+    pub(crate) bytes: u64,
+    /// Their allocated bytes.
+    pub(crate) allocated: u64,
+    /// The apparent and allocated bytes of those `.gitignore` rules ignore, whether or
+    /// not a report may state them: a row's own classification is withheld where its
+    /// governing rules are unknown, and so is this ([`Index::children_classification_known`]).
+    pub(crate) ignored: crate::query::IgnoredSize,
+}
+
+impl FoldedFiles {
+    fn add(&mut self, attrs: &Attrs, ignored: bool) {
+        self.files += 1;
+        self.bytes += attrs.size;
+        self.allocated += attrs.allocated;
+        if ignored {
+            self.ignored.bytes += attrs.size;
+            self.ignored.allocated += attrs.allocated;
+        }
+    }
+}
+
 impl InternedRollUp {
     /// Fold another roll-up into this one. Commutative and associative, which is what
     /// lets the walk merge subtrees in whatever order threads finish them.
+    ///
+    /// The additions are plain because every sum they form is a sub-sum of a root total
+    /// already proved representable: by [`Index::preflight_totals`] on the apply lane, by
+    /// the running total [`add_file_sizes`] keeps in the detached builder, and by the sum
+    /// check a snapshot load makes.
     fn merge(&mut self, other: &InternedRollUp) {
         let had_files = self.files > 0;
         self.files += other.files;
@@ -950,6 +1223,13 @@ pub struct Index {
     /// Detached indexes deliberately carry `None`, including the standalone CLI's
     /// one-shot scan. Only [`crate::OpenedIndex`] enables this allocation.
     serving: Option<Box<ServingIndexes>>,
+    /// The files a folded index counted in each directory without keeping them, by the
+    /// directory's arena slot, or `None` for an index that keeps every file.
+    ///
+    /// Only the transient tree tier builds a folded index, and it answers that one report
+    /// from it and frees it: such an index is never returned, persisted, or mutated
+    /// ([`Self::is_folded`]), so its slots never change hands.
+    folded: Option<Vec<FoldedFiles>>,
 }
 
 #[derive(Clone, Copy)]
@@ -1580,11 +1860,102 @@ impl IndexHandle {
 /// path back into public observations or manufacturing one full path per file.
 pub(crate) struct DetachedIndexBuilder {
     index: Index,
-    directory_ids: HashMap<PathBuf, EntryId>,
+    /// Each directory listed but not yet itself consumed, with the controls governing its
+    /// parent's children: its own chain is that one plus its own control, if its listing
+    /// brings one (H175).
+    directory_ids: HashMap<PathBuf, (EntryId, Arc<crate::control::ControlChain>)>,
     /// Directories whose name one listing repeated. The walker lists each of them, and
     /// everything below it, once per observation.
     repeated_directories: Vec<PathBuf>,
     inserted: u64,
+    /// The root's apparent and allocated bytes so far, which [`add_file_sizes`] refuses
+    /// to carry past `u64::MAX` before any roll-up merges a file.
+    total_bytes: u64,
+    total_allocated: u64,
+    /// What a folded index has kept and folded so far, when this builds one.
+    tree: Option<TreeFold>,
+}
+
+/// A folded index in construction ([`DetachedIndexBuilder::folding`]).
+///
+/// Every regular file is counted in its directory's roll-ups as it arrives, and offered
+/// to a bounded heap of the largest by the retention's size metric. A file the heap turns
+/// away, or later displaces, is counted in its directory's folded tally instead. The heap
+/// is final only when the walk is, so the files it holds become entries in
+/// [`DetachedIndexBuilder::finish`].
+struct TreeFold {
+    retention: crate::execution::TreeRetention,
+    /// The largest files offered so far, the smallest on top.
+    largest: std::collections::BinaryHeap<std::cmp::Reverse<KeptFile>>,
+    /// Each directory's folded files, by arena slot.
+    folded: Vec<FoldedFiles>,
+}
+
+/// A file a folded index keeps while it stays among the largest, ordered by its size in
+/// the retention's metric alone. Which of several equal files is kept cannot change an
+/// answer: the smallest kept is never shown ([`crate::query::ShareThreshold`]'s bound).
+struct KeptFile {
+    value: u64,
+    parent: EntryId,
+    name: OsString,
+    attrs: Attrs,
+    ignored: bool,
+}
+
+impl PartialEq for KeptFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for KeptFile {}
+
+impl PartialOrd for KeptFile {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KeptFile {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl TreeFold {
+    /// Count one file of `parent` that is not kept.
+    fn fold(folded: &mut Vec<FoldedFiles>, parent: EntryId, attrs: &Attrs, ignored: bool) {
+        let slot = parent.idx();
+        if folded.len() <= slot {
+            folded.resize(slot + 1, FoldedFiles::default());
+        }
+        folded[slot].add(attrs, ignored);
+    }
+
+    /// Offer one file of `parent` for keeping. Its name is taken from the listing only
+    /// if it is kept, so a file folded at once leaves its name for the walker that
+    /// allocated it to free (H159).
+    fn offer(&mut self, parent: EntryId, name: &mut OsString, attrs: Attrs, ignored: bool) {
+        let value = self.retention.size.of(&attrs);
+        let capacity = usize::try_from(self.retention.largest_files).unwrap_or(usize::MAX);
+        if self.largest.len() < capacity {
+            let name = std::mem::take(name);
+            self.largest.push(std::cmp::Reverse(KeptFile { value, parent, name, attrs, ignored }));
+            return;
+        }
+        match self.largest.peek_mut() {
+            Some(mut smallest) if value > smallest.0.value => {
+                let name = std::mem::take(name);
+                let displaced = std::mem::replace(
+                    &mut smallest.0,
+                    KeptFile { value, parent, name, attrs, ignored },
+                );
+                drop(smallest);
+                Self::fold(&mut self.folded, displaced.parent, &displaced.attrs, displaced.ignored);
+            }
+            _ => Self::fold(&mut self.folded, parent, &attrs, ignored),
+        }
+    }
 }
 
 impl DetachedIndexBuilder {
@@ -1598,15 +1969,30 @@ impl DetachedIndexBuilder {
             DirectoryChildren::Sorted(Vec::new());
         Self {
             index,
-            directory_ids: HashMap::from([(PathBuf::new(), EntryId::ROOT)]),
+            directory_ids: HashMap::from([(PathBuf::new(), (EntryId::ROOT, Arc::default()))]),
             repeated_directories: Vec::new(),
             inserted: 0,
+            total_bytes: 0,
+            total_allocated: 0,
+            tree: None,
         }
     }
 
     /// Refuse control sources past either of `limits` while building.
     pub(crate) fn with_control_limits(mut self, limits: crate::control::ControlLimits) -> Self {
         self.index.set_control_limits(limits);
+        self
+    }
+
+    /// Build a folded index ([`crate::execution::RetainedState::Tree`]): every directory,
+    /// symlink, and other entry, but only the largest regular files `retention` names,
+    /// and no extension tallies, which no tree reads (H176).
+    pub(crate) fn folding(mut self, retention: crate::execution::TreeRetention) -> Self {
+        self.tree = Some(TreeFold {
+            retention,
+            largest: std::collections::BinaryHeap::new(),
+            folded: Vec::new(),
+        });
         self
     }
 
@@ -1621,7 +2007,13 @@ impl DetachedIndexBuilder {
     ///
     /// The listing is drained, not consumed: an applied listing is left with its path
     /// and an empty child buffer, so the caller can hand both back to the worker that
-    /// allocated them (H159). A listing that is not applied keeps its children.
+    /// allocated them (H159). A listing that is not applied keeps its children, and one a
+    /// folded index applied keeps the names of the files it folded, for that worker to
+    /// free as well.
+    ///
+    /// A file that would carry the tree's apparent or allocated bytes past `u64::MAX` is
+    /// refused with [`crate::Error::UnrepresentableTotal`], and the build with it, as the
+    /// apply lane refuses the batch that holds it ([`add_file_sizes`]).
     pub(crate) fn push_directory(
         &mut self,
         directory: &mut crate::scan::DetachedDirectory,
@@ -1630,7 +2022,7 @@ impl DetachedIndexBuilder {
         // No descendant can become claimable until its parent's listing has been sent,
         // so the first listing of a directory finds its lookup entry. Retire the entry
         // now instead of retaining every walked directory path until the end of the scan.
-        let Some(parent) = self.directory_ids.remove(path.as_path()) else {
+        let Some((parent, above)) = self.directory_ids.remove(path.as_path()) else {
             if self.repeated_directories.iter().any(|repeated| path.starts_with(repeated)) {
                 return Ok(());
             }
@@ -1644,7 +2036,14 @@ impl DetachedIndexBuilder {
         // its complete fixed-control state before classifying any sibling, and every
         // later child listing will therefore inherit all governing controls without a
         // post-build subtree reclassification pass.
+        let listed_control = control.is_some();
         if let Some(control) = control.take() {
+            debug_assert!(
+                matches!(&control, Op::ControlUpsert { path: control_path, .. }
+                    | Op::ControlRemove { path: control_path }
+                    if control_path.parent() == Some(path.as_path())),
+                "a listing carries only its own directory's control"
+            );
             match control {
                 Op::ControlUpsert { path, source } => {
                     self.index.controls.upsert(&path, source)?;
@@ -1680,49 +2079,139 @@ impl DetachedIndexBuilder {
 
         let parent_ignored = self.index.entry(parent).ignored;
         // Every child shares this directory's governing controls, so they are resolved
-        // once here rather than looked up per child (H163).
-        let chain = (!parent_ignored && !self.index.controls.is_empty())
-            .then(|| self.index.controls.chain_for(path));
-        self.index.reserve_detached_children(parent, children.len());
-        for child in children.drain(..) {
-            let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
-            crate::counters::bump(|counts| counts.upserts += 1);
-            let ext_id = (kind == EntryKind::File)
-                .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
-            let ignored = match &chain {
-                Some(chain) => chain.is_ignored(path, name.as_encoded_bytes(), kind.is_dir()),
-                None => parent_ignored,
-            };
-            let child_path = kind.is_dir().then(|| path.join(&name));
-            let child_id = self.index.alloc(Entry::new_detached(
-                NewEntry {
-                    parent: Some(parent),
-                    name,
-                    ext_id,
-                    ignored,
-                    source: Source::Scanned,
-                    kind,
-                    attrs,
-                },
-                false,
-            ));
-            self.index.push_detached_child(parent, child_id);
-            // Fold the child's own direct contribution while filesystem work is still
-            // in flight. Files are now complete; directories will add only their
-            // descendant roll-up in the short bottom-up finish pass.
-            let direct = self.index.contribution(child_id);
-            crate::counters::bump(|counts| counts.rollup_merges += 1);
-            self.index.entry_mut(parent).rollup_mut().merge(&direct);
-            if let Some(child_path) = child_path {
-                self.directory_ids.insert(child_path, child_id);
+        // once here rather than looked up per child (H163), and the directory's path is
+        // split once for all of them rather than again for each child (H171). Nor are
+        // they resolved from the table: they are the parent's, plus this directory's own
+        // control when its listing brought one, the only control that can have changed
+        // since the parent's listing (H175). Every other listing shares its parent's.
+        let chain =
+            if listed_control { self.index.controls.chain_below(&above, path) } else { above };
+        debug_assert!(
+            chain.same_as(&self.index.controls.chain_for(path)),
+            "a derived control chain is the one the table resolves for {}",
+            path.display()
+        );
+        let classifying = !parent_ignored && !chain.is_empty();
+        let entries = match self.tree {
+            None => children.len(),
+            // Files are kept, if at all, only once the walk is over.
+            Some(_) => children.iter().filter(|child| child.kind != EntryKind::File).count(),
+        };
+        self.index.reserve_detached_children(parent, entries);
+        let path: &Path = path;
+        let mut classify_children = |directory: &[&[u8]]| -> crate::Result<()> {
+            for child in children.iter_mut() {
+                let &mut crate::scan::DetachedChild { ref mut name, kind, attrs, .. } = child;
+                crate::counters::bump(|counts| counts.upserts += 1);
+                if kind == EntryKind::File {
+                    add_file_sizes(
+                        &mut self.total_bytes,
+                        &mut self.total_allocated,
+                        &attrs,
+                        || path.join(&*name),
+                    )?;
+                }
+                let ext_id = (kind == EntryKind::File && self.tree.is_none())
+                    .then(|| self.index.intern_ext(&crate::classify::ext_bucket(name)));
+                let ignored = if classifying {
+                    chain.is_ignored_within(directory, name.as_encoded_bytes(), kind.is_dir())
+                } else {
+                    parent_ignored
+                };
+                if let (EntryKind::File, Some(tree)) = (kind, &mut self.tree) {
+                    // Counted in its directory whether or not it is kept, as the file it is.
+                    let direct = Index::file_contribution(&attrs, None, ignored);
+                    crate::counters::bump(|counts| counts.rollup_merges += 1);
+                    self.index.entry_mut(parent).rollup_mut().merge(&direct);
+                    tree.offer(parent, name, attrs, ignored);
+                    self.inserted = self.inserted.saturating_add(1);
+                    continue;
+                }
+                let name = std::mem::take(name);
+                let child_path = kind.is_dir().then(|| path.join(&name));
+                // Listed in full unless the walk reports otherwise, which only a failure
+                // does (`Index::set_initial_detached_scan_freshness`).
+                let child_id = self.index.alloc(Entry::new_detached(
+                    NewEntry {
+                        parent: Some(parent),
+                        name,
+                        ext_id,
+                        ignored,
+                        source: Source::Scanned,
+                        kind,
+                        attrs,
+                    },
+                    true,
+                ));
+                self.index.push_detached_child(parent, child_id);
+                // Fold the child's own direct contribution while filesystem work is still
+                // in flight. Files are now complete; directories will add only their
+                // descendant roll-up in the short bottom-up finish pass.
+                let direct = self.index.contribution(child_id);
+                crate::counters::bump(|counts| counts.rollup_merges += 1);
+                self.index.entry_mut(parent).rollup_mut().merge(&direct);
+                if let Some(child_path) = child_path {
+                    self.directory_ids.insert(child_path, (child_id, Arc::clone(&chain)));
+                }
+                self.inserted = self.inserted.saturating_add(1);
             }
-            self.inserted = self.inserted.saturating_add(1);
+            Ok(())
+        };
+        if classifying {
+            crate::control::with_directory_components(path, classify_children)?;
+        } else {
+            classify_children(&[])?;
+        }
+        // Every name an entry kept has been taken. Only a folded index leaves any behind.
+        if self.tree.is_none() {
+            children.clear();
         }
         Ok(())
     }
 
+    /// Allocate the files a folded index kept, now that the walk is over and the heap of
+    /// the largest is final, and hand the index what it folded.
+    ///
+    /// Each kept file was already counted in its directory's roll-ups when it arrived, so
+    /// this only makes it an entry: it joins its directory's children, and the directories
+    /// that gained one are put back in name order, the order a listing allocates in.
+    fn keep_largest_files(&mut self, tree: TreeFold) {
+        let TreeFold { largest, folded, .. } = tree;
+        let mut gained = Vec::with_capacity(largest.len());
+        for std::cmp::Reverse(file) in largest {
+            let KeptFile { parent, name, attrs, ignored, .. } = file;
+            let id = self.index.alloc(Entry::new_detached(
+                NewEntry {
+                    parent: Some(parent),
+                    name,
+                    ext_id: None,
+                    ignored,
+                    source: Source::Scanned,
+                    kind: EntryKind::File,
+                    attrs,
+                },
+                true,
+            ));
+            self.index.push_detached_child(parent, id);
+            gained.push(parent.idx());
+        }
+        gained.sort_unstable();
+        gained.dedup();
+        for slot in gained {
+            let parent = EntryId {
+                slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                generation: 0,
+            };
+            self.index.sort_detached_children(parent);
+        }
+        self.index.folded = Some(folded);
+    }
+
     /// Complete the private baseline after every directory listing has arrived.
     pub(crate) fn finish(mut self) -> Index {
+        if let Some(tree) = self.tree.take() {
+            self.keep_largest_files(tree);
+        }
         // Parents are allocated before descendants, so reverse arena order is a valid
         // bottom-up traversal. Direct contributions were merged during the pipelined
         // build; only completed directory descendants remain to propagate here.
@@ -1894,6 +2383,7 @@ impl Index {
             types,
             controls: crate::control::ControlTable::default(),
             unreadable_control_paths: BTreeSet::new(),
+            folded: None,
         }
     }
 
@@ -2198,6 +2688,7 @@ impl Index {
         max_files: Option<u64>,
         track_file_progress: bool,
     ) -> crate::Result<ApplyOutcome> {
+        debug_assert!(!self.is_folded(), "a folded index answers one report and is never mutated");
         if prepared.ops.is_empty()
             && discovery.as_ref().is_none_or(|discovery| {
                 discovery.directory_complete.is_none() && discovery.transition.is_none()
@@ -2314,6 +2805,7 @@ impl Index {
             .unwrap_or(u64::MAX);
         self.validate_known_ancestry(&prepared.ops, &accepted)?;
         let projected_controls = self.projected_controls(&prepared.ops, &accepted)?;
+        self.preflight_totals(&prepared.ops, Some(&accepted), max_files)?;
 
         for (observed, accepted) in prepared.ops.iter().zip(accepted) {
             if !accepted {
@@ -2422,6 +2914,7 @@ impl Index {
                     counts.scanner_control_projection_us.saturating_add(elapsed);
             });
         }
+        self.preflight_totals(&prepared.ops, None, max_files)?;
         let mut stats = ApplyStats::default();
         let mut applied_ids = has_batch_parents.then(|| vec![None; prepared.ops.len()]);
 
@@ -2648,6 +3141,110 @@ impl Index {
         if previous != self.state {
             effects.state(|| StateTransition::IndexState { previous, current: self.state });
         }
+    }
+
+    /// What `id` and everything beneath it contribute to each ancestor's roll-up.
+    fn subtree_scalars(&self, id: EntryId) -> RollUpScalars {
+        let entry = self.entry(id);
+        match entry.kind {
+            EntryKind::Dir => {
+                let mut scalars = RollUpScalars::from(&entry.rollup().all);
+                scalars.dirs = scalars.dirs.saturating_add(1);
+                scalars
+            }
+            EntryKind::File => RollUpScalars::leaf(EntryKind::File, &entry.attrs),
+            EntryKind::Symlink | EntryKind::Other => RollUpScalars::default(),
+        }
+    }
+
+    /// Refuse a batch that would leave a whole-tree total no `u64` can hold, before it
+    /// moves anything ([`crate::Error::UnrepresentableTotal`]).
+    ///
+    /// The root's `all` roll-up bounds every other: each directory's is a sub-sum of it,
+    /// `unignored` is a part of `all`, an extension tally is a part of its directory's,
+    /// and a folded file's tally is a part of the roll-up that counted it. So the batch is
+    /// safe when the root's four counters stay representable after each accepted
+    /// operation, applied in order, which is exactly what the reducer computes.
+    ///
+    /// Two passes, because this runs for every scanner batch. The first adds what each
+    /// accepted upsert would contribute as a new entry and subtracts nothing, so it bounds
+    /// every intermediate total from above at four checked additions per upsert; when it
+    /// fits, nothing else is computed. Only a batch that fails that bound is replayed
+    /// exactly, which is where an exact-fit replacement or a removal that makes room is
+    /// told apart from an overflow.
+    fn preflight_totals(
+        &self,
+        ops: &[ObservationOp],
+        accepted: Option<&[bool]>,
+        max_files: Option<u64>,
+    ) -> crate::Result<()> {
+        let mut bound = self.total_scalars();
+        for (index, observed) in ops.iter().enumerate() {
+            if accepted.is_some_and(|accepted| !accepted[index]) {
+                continue;
+            }
+            if let Op::Upsert { kind, attrs, .. } = &observed.op {
+                match bound.checked_add(&RollUpScalars::leaf(*kind, attrs)) {
+                    Ok(next) => bound = next,
+                    Err(_) => return self.replay_totals(ops, accepted, max_files),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The exact pass of [`Self::preflight_totals`]: the root's totals after each
+    /// accepted operation, with replacements, kind changes, and removals netted in order
+    /// against a projection of the tree ([`TotalsOverlay`]) rather than the tree itself.
+    fn replay_totals(
+        &self,
+        ops: &[ObservationOp],
+        accepted: Option<&[bool]>,
+        max_files: Option<u64>,
+    ) -> crate::Result<()> {
+        let mut total = self.total_scalars();
+        let mut overlay = TotalsOverlay::default();
+        for (index, observed) in ops.iter().enumerate() {
+            if accepted.is_some_and(|accepted| !accepted[index]) {
+                continue;
+            }
+            match &observed.op {
+                Op::Upsert { path, kind, attrs } => {
+                    // The root only ever changes its own attributes, and so does any
+                    // entry re-observed with its kind unless it is a file: only a file's
+                    // attributes reach its ancestors' roll-ups.
+                    if path.as_os_str().is_empty()
+                        || (overlay.kind_at(self, path) == Some(*kind) && *kind != EntryKind::File)
+                    {
+                        continue;
+                    }
+                    let old = overlay.subtree_at(self, path);
+                    let new = RollUpScalars::leaf(*kind, attrs);
+                    let after =
+                        total.saturating_sub(&old).checked_add(&new).map_err(|counter| {
+                            crate::Error::UnrepresentableTotal { path: path.clone(), counter }
+                        })?;
+                    if max_files.is_some_and(|max_files| after.files > max_files) {
+                        // The reducer refuses this upsert for its file budget and moves on.
+                        continue;
+                    }
+                    overlay.replace(self, path, *kind, new);
+                    total = after;
+                }
+                Op::Remove { path } => {
+                    if path.as_os_str().is_empty() {
+                        continue;
+                    }
+                    let old = overlay.subtree_at(self, path);
+                    overlay.cut(self, path);
+                    total = total.saturating_sub(&old);
+                }
+                Op::ControlUpsert { .. }
+                | Op::ControlRemove { .. }
+                | Op::InvalidateSubtree { .. } => {}
+            }
+        }
+        Ok(())
     }
 
     /// Exact regular-file total that would remain after one upsert at the current
@@ -2921,7 +3518,6 @@ impl Index {
     }
 
     pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
-        self.freshness_marks.clear();
         if complete {
             for slot in &mut self.arena {
                 if let Slot::Occupied { entry, .. } = slot {
@@ -2930,6 +3526,39 @@ impl Index {
                     }
                 }
             }
+        }
+        self.set_initial_state(complete);
+    }
+
+    /// Finish a detached cold walk ([`DetachedIndexBuilder`]) as
+    /// [`Self::set_initial_scan_freshness`] does.
+    ///
+    /// The builder allocates every directory as listed in full, so a walk without failures
+    /// leaves each one as it is rather than marking the whole arena complete a second time
+    /// (F6e), and a walk with failures withdraws completeness exactly as any cold walk's
+    /// does.
+    pub(crate) fn set_initial_detached_scan_freshness(&mut self, errors: &[crate::Error]) {
+        if !errors.is_empty() {
+            self.set_initial_scan_freshness(errors);
+            return;
+        }
+        debug_assert!(
+            self.arena.iter().all(|slot| match slot {
+                Slot::Occupied { entry, .. } if entry.kind.is_dir() => {
+                    entry.directory().children_complete
+                }
+                Slot::Occupied { .. } | Slot::Free { .. } => true,
+            }),
+            "a detached builder allocates every directory as listed in full"
+        );
+        self.set_initial_state(true);
+    }
+
+    /// The index-wide lifecycle state a first pass leaves, whatever it records of each
+    /// directory's own listing.
+    fn set_initial_state(&mut self, complete: bool) {
+        self.freshness_marks.clear();
+        if complete {
             self.state.phase = LifecyclePhase::Ready;
             self.state.coverage = Coverage::Complete;
             self.state.freshness = Freshness::Fresh;
@@ -3890,13 +4519,34 @@ impl Index {
         self.try_entry(id).map(|entry| entry.ignored)
     }
 
+    /// The entry's own ignore flag, for a caller that already knows its parent's
+    /// classification is known ([`Self::children_classification_known`]): what
+    /// [`Self::ignored_classification_of`] answers for it without re-deriving that.
+    pub(crate) fn entry_ignored(&self, id: EntryId) -> Option<bool> {
+        self.try_entry(id).map(|entry| entry.ignored)
+    }
+
     pub(crate) fn control_classification_known(&self, path: &Path) -> bool {
-        self.controls.classification_known(path)
+        path.parent().is_none_or(|directory| self.controls_known_in(directory))
+    }
+
+    /// Whether the entries directly in `directory` have a known ignore classification, as
+    /// [`Self::ignored_classification_of`] decides it for each of them: it depends on
+    /// their parent alone, so it is also what a folded tally of them may state
+    /// ([`FoldedFiles::ignored`]).
+    pub(crate) fn children_classification_known(&self, directory: &Path) -> bool {
+        self.observes_controls() && self.controls_known_in(directory)
+    }
+
+    /// Whether every control file that governs the entries in `directory` was admitted
+    /// and read: none was refused, and none could not be read.
+    fn controls_known_in(&self, directory: &Path) -> bool {
+        self.controls.children_classification_known(directory)
             && (self.unreadable_control_paths.is_empty()
-                || !path.parent().into_iter().flat_map(Path::ancestors).any(|directory| {
+                || !directory.ancestors().any(|ancestor| {
                     self.unreadable_control_paths
                         .iter()
-                        .any(|control| control.parent() == Some(directory))
+                        .any(|control| control.parent() == Some(ancestor))
                 }))
     }
 
@@ -3980,6 +4630,29 @@ impl Index {
             let rollup = entry.rollup();
             (RollUpScalars::from(&rollup.all), RollUpScalars::from(&rollup.unignored))
         })
+    }
+
+    /// Whether this index was built by the transient tree tier and keeps only some of the
+    /// files it walked ([`Self::folded_children`]).
+    ///
+    /// Such an index answers the one tree report its plan made it for, and nothing else:
+    /// a flat inventory, extension tallies, or a snapshot of it would omit the files it
+    /// folded. It is unreachable from every route that returns, persists, or mutates an
+    /// index, which assert as much. Subtree measurements over it (a tree of an incomplete
+    /// walk takes them) are exact only in which subtrees are complete, the one part a tree
+    /// reads: completeness is a property of directories, all of which it keeps.
+    pub(crate) const fn is_folded(&self) -> bool {
+        self.folded.is_some()
+    }
+
+    /// The files a folded index counted directly in directory `id` without keeping them,
+    /// or `None` where it kept every one, which is always in an index that keeps every
+    /// file. The one reader of that tally: a tree states them as rows its share threshold
+    /// omits.
+    pub(crate) fn folded_children(&self, id: EntryId) -> Option<FoldedFiles> {
+        let folded = self.folded.as_ref()?;
+        self.try_entry(id)?;
+        folded.get(id.idx()).copied().filter(|folded| folded.files > 0)
     }
 
     /// Whether a live directory's in-scope child set is authoritative: the id form of
@@ -4093,20 +4766,36 @@ impl Index {
     /// [`AnalysisApplyOutcome::Stale`]; [`analyze_index`] is the entry that works.
     ///
     /// [`analyze_index`]: crate::content::analyze_index
+    #[cfg(test)]
     pub(crate) fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
         let root_files = self.entry(EntryId::ROOT).rollup().files;
         let mut candidates = Vec::with_capacity(usize::try_from(root_files).unwrap_or(0));
-        self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
-            candidates.push(AnalysisCandidate {
-                entry_id: id,
-                revision,
-                absolute_path: self.root_path.join(&relative_path),
-                classification: self.classify(&relative_path),
-                relative_path,
-                attrs,
-            });
-        });
+        self.walk_analysis_files(
+            profile,
+            &mut AnalysisWalk::start(),
+            |id, revision, attrs, relative_path| {
+                candidates.push(self.analysis_candidate(id, revision, attrs, relative_path));
+                true
+            },
+        );
         candidates
+    }
+
+    fn analysis_candidate(
+        &self,
+        entry_id: EntryId,
+        revision: u64,
+        attrs: Attrs,
+        relative_path: PathBuf,
+    ) -> AnalysisCandidate {
+        AnalysisCandidate {
+            entry_id,
+            revision,
+            absolute_path: self.root_path.join(&relative_path),
+            classification: self.classify(&relative_path),
+            relative_path,
+            attrs,
+        }
     }
 
     /// File identities restore matches against sidecar records, without classifying.
@@ -4136,17 +4825,52 @@ impl Index {
         profile: AnalysisSet,
         mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf),
     ) {
+        self.walk_analysis_files(
+            profile,
+            &mut AnalysisWalk::start(),
+            |id, revision, attrs, path| {
+                visit(id, revision, attrs, path);
+                true
+            },
+        );
+    }
+
+    /// Visit the files an analysis under `profile` may read, from where `walk` left off,
+    /// until `visit` answers `false`; the walk then resumes at the next file.
+    ///
+    /// Depth first, directories in listing order, so every call over one walk visits
+    /// each file once and in the order [`Self::for_each_analysis_file`] does. The parent
+    /// path the walk already holds is joined for each file; `path_of` would walk
+    /// ancestors per file for the same bytes.
+    fn walk_analysis_files(
+        &self,
+        profile: AnalysisSet,
+        walk: &mut AnalysisWalk,
+        mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf) -> bool,
+    ) {
         if !profile.is_enabled() {
             return;
         }
-        // Join the parent path this walk already holds. `path_of` would walk
-        // ancestors per file for the same bytes.
-        let mut stack = vec![(EntryId::ROOT, PathBuf::new())];
-        while let Some((parent, parent_path)) = stack.pop() {
-            for (name, id) in self.children_of(parent).into_iter().flatten() {
+        loop {
+            let (parent, parent_path, resume) = match walk.listing.take() {
+                Some((parent, parent_path, resume)) => (parent, parent_path, Some(resume)),
+                None => match walk.pending.pop() {
+                    Some((parent, parent_path)) => (parent, parent_path, None),
+                    None => return,
+                },
+            };
+            let visited = resume.as_ref().map_or(0, |resume| resume.position);
+            let children = self.resumed_children(parent, resume.as_ref());
+            #[cfg(test)]
+            let children = children.inspect(|_| {
+                ANALYSIS_CHILD_STEPS.with(|steps| steps.set(steps.get() + 1));
+            });
+            // Each child's position counts it as visited, so a walk that stops at it
+            // resumes after it.
+            for (position, (name, id)) in (visited + 1..).zip(children) {
                 let entry = self.entry(id);
                 if entry.kind == EntryKind::Dir {
-                    stack.push((id, parent_path.join(name)));
+                    walk.pending.push((id, parent_path.join(name)));
                     continue;
                 }
                 if entry.kind != EntryKind::File {
@@ -4159,34 +4883,115 @@ impl Index {
                 {
                     continue;
                 }
-                let revision = entry.revision;
-                let attrs = entry.attrs;
-                visit(id, revision, attrs, relative_path);
+                if !visit(id, entry.revision, entry.attrs, relative_path) {
+                    let resume = ListingResume { position, last: name.to_os_string() };
+                    walk.listing = Some((parent, parent_path, resume));
+                    return;
+                }
             }
+        }
+    }
+
+    /// The children of `parent` in name order, from after where `resume` says a walk
+    /// stopped, or all of them; none for a stale handle or a non-directory, as
+    /// [`Self::children_of`] gives.
+    fn resumed_children(
+        &self,
+        parent: EntryId,
+        resume: Option<&ListingResume>,
+    ) -> ResumedChildren<'_> {
+        use std::ops::Bound::{Excluded, Unbounded};
+
+        let Some(entry) = self.try_entry(parent) else { return ResumedChildren::Empty };
+        match entry.directory.as_deref().map(|directory| &directory.children) {
+            None => ResumedChildren::Empty,
+            Some(DirectoryChildren::Sorted(ids)) => {
+                let from = resume.map_or(0, |resume| resume.position).min(ids.len());
+                ResumedChildren::Sorted { index: self, ids: ids[from..].iter() }
+            }
+            Some(DirectoryChildren::Mutable(children)) => ResumedChildren::Mutable(match resume {
+                Some(resume) => {
+                    children.range::<OsStr, _>((Excluded(resume.last.as_os_str()), Unbounded))
+                }
+                None => children.range::<OsStr, _>(..),
+            }),
         }
     }
 
     /// The candidates `request` still has to read: every one, unless the content tier
     /// holds exactly `request`'s identity, and then those without a record whose
     /// fingerprint matches.
+    ///
+    /// Every candidate at once. An analysis pass takes them in bounded batches through
+    /// [`Self::next_analysis_candidates`] instead, so this is for a caller that wants the
+    /// whole set, such as a test.
+    #[cfg(test)]
     pub(crate) fn pending_analysis_candidates(
         &self,
         request: crate::content::AnalysisRequest,
+    ) -> Vec<AnalysisCandidate> {
+        self.next_analysis_candidates(request, &mut AnalysisWalk::start(), usize::MAX)
+    }
+
+    /// Whether `request` still has to read the file at `relative_path` with `attrs`,
+    /// given what the content tier holds for `request`'s identity.
+    fn pending_analysis(
+        held: Option<crate::stored_state::ContentProjection<'_>>,
+        relative_path: &Path,
+        attrs: &Attrs,
+    ) -> bool {
+        held.and_then(|content| content.file(relative_path))
+            .is_none_or(|record| record.fingerprint != attrs.fingerprint() || !record.is_reusable())
+    }
+
+    /// The next batch of at most `limit` candidates `request` still has to read, from
+    /// where `walk` left off; empty once the walk is over.
+    ///
+    /// A candidate holds two paths and a classification, so materializing every one of a
+    /// million-file tree before the first read cost hundreds of megabytes that the bounded
+    /// worker channel then drained one at a time (fdu-xjfk). Handing them out in batches
+    /// keeps the scheduling memory at the batch, and each candidate still carries the
+    /// revision and fingerprint its result is conditionally applied under.
+    pub(crate) fn next_analysis_candidates(
+        &self,
+        request: crate::content::AnalysisRequest,
+        walk: &mut AnalysisWalk,
+        limit: usize,
     ) -> Vec<AnalysisCandidate> {
         let wanted = self.content_identity(request.profile);
         // The tier refuses a record of any identity but its own, so one comparison here
         // decides for every record it holds.
         let held = self.content().and_then(|content| content.admit(&wanted));
-        self.analysis_candidates(request.profile)
-            .into_iter()
-            .filter(|candidate| {
-                held.and_then(|content| content.file(&candidate.relative_path)).is_none_or(
-                    |record| {
-                        record.fingerprint != candidate.attrs.fingerprint() || !record.is_reusable()
-                    },
-                )
-            })
-            .collect()
+        let root_files = usize::try_from(self.entry(EntryId::ROOT).rollup().files).unwrap_or(0);
+        let mut candidates = Vec::with_capacity(limit.min(root_files));
+        self.walk_analysis_files(request.profile, walk, |id, revision, attrs, relative_path| {
+            if Self::pending_analysis(held, &relative_path, &attrs) {
+                candidates.push(self.analysis_candidate(id, revision, attrs, relative_path));
+            }
+            candidates.len() < limit
+        });
+        candidates
+    }
+
+    /// How many candidates `request` still has to read: what
+    /// [`Self::next_analysis_candidates`] hands out over a whole walk, counted without
+    /// building any of them, so an analysis knows its denominator before its first read.
+    pub(crate) fn count_pending_analysis_candidates(
+        &self,
+        request: crate::content::AnalysisRequest,
+    ) -> u64 {
+        let wanted = self.content_identity(request.profile);
+        let held = self.content().and_then(|content| content.admit(&wanted));
+        let mut count = 0_u64;
+        self.walk_analysis_files(
+            request.profile,
+            &mut AnalysisWalk::start(),
+            |_, _, attrs, path| {
+                count += u64::from(Self::pending_analysis(held, &path, &attrs));
+                true
+            },
+        );
+        count
     }
 
     /// Conditionally commit a worker result if its entry and metadata expectation still
@@ -4940,6 +5745,18 @@ impl Index {
         Self::bump_children_revision(entry);
     }
 
+    /// Put a detached directory's children back in name order after entries were
+    /// appended to it out of order.
+    fn sort_detached_children(&mut self, parent: EntryId) {
+        let DirectoryChildren::Sorted(ids) = &mut self.entry_mut(parent).directory_mut().children
+        else {
+            unreachable!("detached directories retain sorted child storage")
+        };
+        let mut ids = std::mem::take(ids);
+        ids.sort_unstable_by(|left, right| self.entry(*left).name.cmp(&self.entry(*right).name));
+        self.entry_mut(parent).directory_mut().children = DirectoryChildren::Sorted(ids);
+    }
+
     /// Merge a completed detached directory without cloning its retained roll-up.
     fn merge_detached_descendants(&mut self, parent: EntryId, child: EntryId) {
         debug_assert!(parent.idx() < child.idx(), "cold parents must precede descendants");
@@ -5249,30 +6066,35 @@ impl Index {
                 }
                 InternedPartitionRollUp { all, unignored }
             }
-            EntryKind::File => {
-                let mut all = InternedRollUp {
-                    files: 1,
-                    dirs: 0,
-                    bytes: entry.attrs.size,
-                    allocated: entry.attrs.allocated,
-                    newest_mtime_ns: entry.attrs.mtime_ns,
-                    by_ext: BTreeMap::new(),
-                };
-                if let Some(ext_id) = entry.ext_id {
-                    all.by_ext.insert(
-                        ext_id,
-                        ExtTally {
-                            files: 1,
-                            bytes: entry.attrs.size,
-                            allocated: entry.attrs.allocated,
-                        },
-                    );
-                }
-                let unignored = if entry.ignored { InternedRollUp::default() } else { all.clone() };
-                InternedPartitionRollUp { all, unignored }
-            }
+            EntryKind::File => Self::file_contribution(&entry.attrs, entry.ext_id, entry.ignored),
             EntryKind::Symlink | EntryKind::Other => InternedPartitionRollUp::default(),
         }
+    }
+
+    /// What a regular file contributes to each of its ancestors, whether or not the index
+    /// keeps it as an entry: a folded index counts the files it does not keep through this
+    /// too, without an extension, since it keeps no extension tallies.
+    fn file_contribution(
+        attrs: &Attrs,
+        ext_id: Option<ExtId>,
+        ignored: bool,
+    ) -> InternedPartitionRollUp {
+        let mut all = InternedRollUp {
+            files: 1,
+            dirs: 0,
+            bytes: attrs.size,
+            allocated: attrs.allocated,
+            newest_mtime_ns: attrs.mtime_ns,
+            by_ext: BTreeMap::new(),
+        };
+        if let Some(ext_id) = ext_id {
+            all.by_ext.insert(
+                ext_id,
+                ExtTally { files: 1, bytes: attrs.size, allocated: attrs.allocated },
+            );
+        }
+        let unignored = if ignored { InternedRollUp::default() } else { all.clone() };
+        InternedPartitionRollUp { all, unignored }
     }
 
     fn merge_upward(
@@ -6064,6 +6886,130 @@ mod tests {
                 .collect::<Vec<_>>(),
             [OsString::from("a.txt"), OsString::from("m.txt"), OsString::from("z.txt")]
         );
+    }
+
+    /// A folded builder keeps the largest files as entries, counts every file in the
+    /// roll-ups, tallies the rest in their directory, keeps the last observation of a
+    /// repeated name as the full builder does, keeps no extension tallies, and leaves the
+    /// names of the files it folded at once in the listing, for the walker to free.
+    #[test]
+    fn a_folded_builder_keeps_the_largest_files_and_leaves_folded_names_to_the_walker() {
+        let child = |name: &str, kind, size, position| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs: file_attrs(size, 1),
+            position,
+        };
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        )
+        .folding(crate::execution::TreeRetention {
+            largest_files: 2,
+            size: crate::query::SizeMetric::Apparent,
+        });
+        let mut root = crate::scan::DetachedDirectory {
+            path: PathBuf::new(),
+            children: vec![
+                child("small.log", EntryKind::File, 1, 0),
+                child("dir", EntryKind::Dir, 0, 1),
+                child("big.bin", EntryKind::File, 50, 2),
+                child("twice.txt", EntryKind::File, 3, 3),
+                child("twice.txt", EntryKind::File, 40, 4),
+                child("mid.rs", EntryKind::File, 5, 5),
+            ],
+            control: Some(Op::ControlUpsert {
+                path: PathBuf::from(".gitignore"),
+                source: b"*.log\n".to_vec(),
+            }),
+        };
+        builder.push_directory(&mut root).expect("root listing");
+        // `big.bin` and `mid.rs` filled the heap; `small.log` was turned away at once, so
+        // its name is still in the listing; `twice.txt` then displaced `mid.rs`, whose name
+        // the heap already held.
+        let left: Vec<_> =
+            root.children.iter().filter(|child| !child.name.is_empty()).map(|c| &c.name).collect();
+        assert_eq!(left, [&OsString::from("small.log")]);
+
+        let index = builder.finish();
+        assert!(index.is_folded());
+        assert_eq!(index.len(), 4, "the root, the directory, and the two largest files");
+        assert_eq!(
+            index
+                .children(Path::new(""))
+                .expect("root children")
+                .map(|(name, _)| name.to_os_string())
+                .collect::<Vec<_>>(),
+            [OsString::from("big.bin"), OsString::from("dir"), OsString::from("twice.txt")],
+            "kept files join their directory in name order"
+        );
+        assert_eq!(index.attrs(Path::new("twice.txt")), Some(&file_attrs(40, 1)));
+        let total = index.total();
+        assert_eq!((total.files, total.dirs, total.bytes), (4, 1, 96));
+        assert!(total.by_ext.is_empty(), "a folded index keeps no extension tallies");
+        assert_eq!(
+            index.partition_total().expect("observed").unignored.bytes,
+            95,
+            "the folded ignored file left the unignored partition"
+        );
+        assert_eq!(
+            index.folded_children(EntryId::ROOT),
+            Some(FoldedFiles {
+                files: 2,
+                bytes: 6,
+                allocated: 1_024,
+                ignored: crate::query::IgnoredSize { bytes: 1, allocated: 512 },
+            })
+        );
+        assert!(index.children_classification_known(Path::new("")));
+        let dir = index.lookup(Path::new("dir")).expect("the directory");
+        assert_eq!(index.folded_children(dir), None, "nothing was folded there");
+    }
+
+    /// A file the heap displaces folds into its own directory, not into the directory of
+    /// the file that displaced it, which is listed later and elsewhere.
+    #[test]
+    fn a_displaced_file_folds_into_its_own_directory() {
+        let child = |name: &str, kind, size, position| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs: file_attrs(size, 1),
+            position,
+        };
+        let listing = |path: &str, children| crate::scan::DetachedDirectory {
+            path: PathBuf::from(path),
+            children,
+            control: None,
+        };
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        )
+        .folding(crate::execution::TreeRetention {
+            largest_files: 1,
+            size: crate::query::SizeMetric::Apparent,
+        });
+        builder
+            .push_directory(&mut listing(
+                "",
+                vec![child("first", EntryKind::File, 10, 0), child("dir", EntryKind::Dir, 0, 1)],
+            ))
+            .expect("root listing");
+        builder
+            .push_directory(&mut listing("dir", vec![child("larger", EntryKind::File, 20, 0)]))
+            .expect("nested listing");
+        let index = builder.finish();
+        assert_eq!(
+            index.folded_children(EntryId::ROOT),
+            Some(FoldedFiles { files: 1, bytes: 10, allocated: 512, ..FoldedFiles::default() })
+        );
+        let dir = index.lookup(Path::new("dir")).expect("the directory");
+        assert_eq!(index.folded_children(dir), None);
+        assert_eq!(index.kind(Path::new("dir/larger")), Some(EntryKind::File));
+        assert_eq!(index.kind(Path::new("first")), None);
+        assert_eq!(index.total().bytes, 30, "both files count in the totals");
     }
 
     #[test]
@@ -10436,5 +11382,351 @@ mod tests {
         );
         assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
         assert!(index.active_reconciles.is_empty(), "closed passes retain no shadow history");
+    }
+
+    // A whole-tree total no u64 can hold is refused before any mutation (fdu-sqyk).
+
+    fn sized(size: u64) -> Attrs {
+        Attrs { size, allocated: size, mtime_ns: 1, ctime_ns: 1, inode: size ^ 7, dev: 1 }
+    }
+
+    fn assert_unrepresentable(error: &crate::Error, path: &str, counter: &str) {
+        match error {
+            crate::Error::UnrepresentableTotal { path: at, counter: which } => {
+                assert_eq!(at, Path::new(path));
+                assert_eq!(*which, counter);
+            }
+            other => panic!("expected an unrepresentable-total refusal, got {other:?}"),
+        }
+    }
+
+    /// Everything a refused batch must leave alone.
+    fn observable_state(index: &Index) -> (u64, Clock, RollUp, Vec<PathBuf>, usize) {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        let mut pending = vec![EntryId::ROOT];
+        while let Some(id) = pending.pop() {
+            paths.push(index.path_of(id).expect("live entry"));
+            if index.entry(id).kind.is_dir() {
+                pending.extend(index.child_ids(id));
+            }
+        }
+        paths.sort();
+        (index.len(), index.clock(), index.total(), paths, index.journal.len())
+    }
+
+    #[test]
+    fn a_batch_whose_byte_total_would_exceed_u64_is_refused_before_any_mutation() {
+        let mut index = Index::new("/root");
+        let before = observable_state(&index);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("a", EntryKind::File, sized(u64::MAX)),
+                upsert("b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("two files summing past u64::MAX cannot be represented");
+        assert_unrepresentable(&error, "b", "bytes");
+        assert_eq!(observable_state(&index), before, "a refused batch changes nothing");
+
+        // The first file alone fits exactly; the next byte does not, and the directory that
+        // would fit on its own is refused with it, because the batch is one commit.
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(u64::MAX))]));
+        let before = observable_state(&index);
+        assert_eq!(before.2.bytes, u64::MAX);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("one more byte is unrepresentable");
+        assert_unrepresentable(&error, "dir/b", "bytes");
+        assert_eq!(observable_state(&index), before);
+        assert!(index.lookup(Path::new("dir")).is_none(), "the batch is fault-atomic");
+
+        // Allocated bytes are checked as their own total.
+        let error = index
+            .apply(&Observation::new(vec![upsert(
+                "c",
+                EntryKind::File,
+                Attrs { size: 0, allocated: 1, ..sized(0) },
+            )]))
+            .expect_err("allocated bytes overflow on their own");
+        assert_unrepresentable(&error, "c", "allocated bytes");
+        assert_eq!(observable_state(&index), before);
+    }
+
+    #[test]
+    fn exact_fit_replacement_removal_and_kind_change_batches_are_accepted() {
+        // Replacing the largest file and adding another lands exactly on u64::MAX.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(u64::MAX))]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::File, sized(1)),
+            upsert("b", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!(index.total().files, 2);
+
+        // A removal first makes room for an insertion in the same batch; the batch is
+        // applied in order, so the reverse order is refused: the index would have to hold
+        // u64::MAX + 5 between the two operations.
+        let before = observable_state(&index);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("c", EntryKind::File, sized(5)),
+                Op::Remove { path: PathBuf::from("b") },
+            ]))
+            .expect_err("an insertion before the removal that makes room for it");
+        assert_unrepresentable(&error, "c", "bytes");
+        assert_eq!(observable_state(&index), before);
+        index.apply_ok(&Observation::new(vec![
+            Op::Remove { path: PathBuf::from("b") },
+            upsert("c", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+
+        // A kind change drops the subtree it replaces, and that room counts.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, Attrs::default()),
+            upsert("d/f", EntryKind::File, sized(u64::MAX)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::File, sized(5)),
+            upsert("e", EntryKind::File, sized(u64::MAX - 5)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!((index.total().files, index.total().dirs), (2, 0));
+
+        // A later operation on the same path supersedes an earlier one in the batch.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("x", EntryKind::File, sized(u64::MAX)),
+            upsert("x", EntryKind::File, sized(1)),
+            upsert("y", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+
+        // Removing a subtree that an earlier operation in the batch grew.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, Attrs::default()),
+            upsert("d/f", EntryKind::File, sized(u64::MAX - 10)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("d/g", EntryKind::File, sized(10)),
+            Op::Remove { path: PathBuf::from("d") },
+            upsert("z", EntryKind::File, sized(u64::MAX)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!((index.total().files, index.total().dirs), (1, 0));
+    }
+
+    #[test]
+    fn a_stale_conditional_upsert_does_not_count_toward_the_projected_total() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(5))]));
+        let stale = index.expectation(Path::new("b"));
+        index.apply_ok(&Observation::new(vec![upsert("b", EntryKind::File, sized(1))]));
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
+            ObservationOp::if_state(upsert("b", EntryKind::File, sized(u64::MAX)), stale),
+            ObservationOp::unconditional(upsert("c", EntryKind::File, sized(u64::MAX - 6))),
+        ]));
+        assert_eq!(outcome.stats.stale, 1);
+        assert_eq!(index.total().bytes, u64::MAX);
+    }
+
+    #[test]
+    fn the_baseline_and_scanner_lanes_refuse_unrepresentable_totals() {
+        let mut index = Index::new("/root");
+        let before = observable_state(&index);
+        let error = index
+            .apply_baseline(&Observation::new(vec![
+                upsert("a", EntryKind::File, sized(u64::MAX)),
+                upsert("b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("the baseline lane refuses too");
+        assert_unrepresentable(&error, "b", "bytes");
+        assert_eq!(observable_state(&index), before);
+
+        let error = index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a", EntryKind::File, sized(u64::MAX)),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("the scanner lane refuses too");
+        assert_unrepresentable(&error, "dir/b", "bytes");
+        assert_eq!(observable_state(&index), before);
+
+        // The scanner lane's exact projection accepts what fits.
+        index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a", EntryKind::File, sized(u64::MAX - 1)),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect("an exact fit");
+        assert_eq!(index.total().bytes, u64::MAX);
+    }
+
+    // Analysis candidates are handed out in bounded batches over one resumable walk
+    // (fdu-xjfk), in the order a whole walk gives them.
+
+    fn tree_for_analysis() -> Index {
+        let mut index = Index::new("/root");
+        let mut ops = vec![upsert("z.txt", EntryKind::File, file_attrs(3, 1))];
+        for directory in ["a", "b", "c"] {
+            ops.push(upsert(directory, EntryKind::Dir, Attrs::default()));
+            ops.push(upsert(&format!("{directory}/deep"), EntryKind::Dir, Attrs::default()));
+            for file in 0..4 {
+                ops.push(upsert(
+                    &format!("{directory}/f{file}.rs"),
+                    EntryKind::File,
+                    file_attrs(10 + file, 1),
+                ));
+            }
+            ops.push(upsert(&format!("{directory}/deep/d.md"), EntryKind::File, file_attrs(7, 2)));
+            ops.push(upsert(&format!("{directory}/link"), EntryKind::Symlink, Attrs::default()));
+        }
+        index.apply_ok(&Observation::new(ops));
+        index
+    }
+
+    #[test]
+    fn analysis_candidates_come_in_bounded_batches_in_walk_order() {
+        let index = tree_for_analysis();
+        let request = crate::content::AnalysisRequest {
+            profile: AnalysisSet::NONE.with_lines(),
+            ..crate::content::AnalysisRequest::default()
+        };
+        let whole: Vec<PathBuf> = index
+            .pending_analysis_candidates(request)
+            .into_iter()
+            .map(|candidate| candidate.relative_path)
+            .collect();
+        assert_eq!(whole.len(), 16, "one root file and five files under each directory");
+        assert_eq!(index.count_pending_analysis_candidates(request), 16);
+
+        for limit in [1, 3, 5, 16, 17, usize::MAX] {
+            let mut walk = AnalysisWalk::start();
+            let mut collected = Vec::new();
+            let mut batch_count = 0;
+            loop {
+                let batch = index.next_analysis_candidates(request, &mut walk, limit);
+                if batch.is_empty() {
+                    break;
+                }
+                assert!(batch.len() <= limit, "a batch is bounded by its limit");
+                batch_count += 1;
+                collected.extend(batch.into_iter().map(|candidate| candidate.relative_path));
+            }
+            assert_eq!(
+                collected, whole,
+                "batches of {limit} walk the same files in the same order"
+            );
+            assert_eq!(batch_count, whole.len().div_ceil(limit.min(whole.len())));
+            assert!(
+                index.next_analysis_candidates(request, &mut walk, limit).is_empty(),
+                "a finished walk stays finished"
+            );
+        }
+    }
+
+    /// A directory of more than two batches is walked once, in order: each batch resumes
+    /// the listing where the last one stopped rather than stepping over what it already
+    /// walked (R164-6), whether the directory keeps its children sorted, as a cold scan
+    /// builds it, or in a map, as an applied batch leaves it.
+    #[test]
+    fn a_long_listing_is_resumed_where_the_last_batch_stopped() {
+        let names: Vec<String> = (0..11).map(|file| format!("f{file:02}.rs")).collect();
+        let request = crate::content::AnalysisRequest {
+            profile: AnalysisSet::NONE.with_lines(),
+            ..crate::content::AnalysisRequest::default()
+        };
+        let sorted = {
+            let mut builder = DetachedIndexBuilder::new(
+                "/root",
+                ScanScope::default(),
+                crate::classify::TypeRegistry::compiled_shared(),
+            );
+            let mut listing = crate::scan::DetachedDirectory {
+                path: PathBuf::new(),
+                children: (0_u32..)
+                    .zip(&names)
+                    .map(|(position, name)| crate::scan::DetachedChild {
+                        name: OsString::from(name),
+                        kind: EntryKind::File,
+                        attrs: file_attrs(10, 1),
+                        position,
+                    })
+                    .collect(),
+                control: None,
+            };
+            builder.push_directory(&mut listing).expect("listing");
+            builder.finish()
+        };
+        let mut mapped = Index::new("/root");
+        mapped.apply_ok(&Observation::new(
+            names.iter().map(|name| upsert(name, EntryKind::File, file_attrs(10, 1))).collect(),
+        ));
+        for (storage, index) in [("sorted", &sorted), ("mapped", &mapped)] {
+            ANALYSIS_CHILD_STEPS.with(|steps| steps.set(0));
+            let mut walk = AnalysisWalk::start();
+            let mut walked = Vec::new();
+            let mut batches = 0;
+            loop {
+                let batch = index.next_analysis_candidates(request, &mut walk, 3);
+                if batch.is_empty() {
+                    break;
+                }
+                batches += 1;
+                walked.extend(batch.into_iter().map(|candidate| candidate.relative_path));
+            }
+            assert_eq!(batches, 4, "{storage}: eleven files in batches of three");
+            assert_eq!(
+                walked,
+                names.iter().map(PathBuf::from).collect::<Vec<_>>(),
+                "{storage}: every file once, in listing order"
+            );
+            assert_eq!(
+                ANALYSIS_CHILD_STEPS.with(std::cell::Cell::get),
+                11,
+                "{storage}: each child is stepped over once across all four batches"
+            );
+        }
+    }
+
+    #[test]
+    fn batches_skip_what_the_content_tier_already_holds() {
+        let root = tempfile::tempdir().expect("root");
+        for name in ["one.rs", "two.rs", "three.rs"] {
+            std::fs::write(root.path().join(name), b"fn main() {}\n").expect("file");
+        }
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        let request =
+            crate::content::AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 1 };
+        assert_eq!(index.count_pending_analysis_candidates(request), 3);
+        crate::content::analyze_index(&mut index, request);
+        assert_eq!(index.count_pending_analysis_candidates(request), 0);
+        assert!(index.next_analysis_candidates(request, &mut AnalysisWalk::start(), 2).is_empty());
+
+        std::fs::write(root.path().join("two.rs"), b"fn main() { changed(); }\n").expect("grow");
+        let (rescanned, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default())
+                .expect("rescan");
+        index
+            .apply(&Observation::new(vec![upsert(
+                "two.rs",
+                EntryKind::File,
+                *rescanned.attrs(Path::new("two.rs")).expect("attrs"),
+            )]))
+            .expect("apply");
+        assert_eq!(index.count_pending_analysis_candidates(request), 1);
+        let batch = index.next_analysis_candidates(request, &mut AnalysisWalk::start(), 2);
+        assert_eq!(
+            batch.iter().map(|candidate| candidate.relative_path.clone()).collect::<Vec<_>>(),
+            [PathBuf::from("two.rs")]
+        );
     }
 }

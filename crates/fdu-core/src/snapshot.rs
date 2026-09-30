@@ -261,6 +261,7 @@ fn engine_fingerprint_under(ignore_rules_version: u64) -> u64 {
 
 /// Write `index` to `path`, replacing any existing snapshot atomically.
 pub fn save(index: &Index, path: &Path) -> Result<()> {
+    debug_assert!(!index.is_folded(), "a folded index omits files, so it is never persisted");
     if !crate::stored_state::entries_writable(index) {
         return Err(Error::Snapshot(
             "refusing to persist an index that is stale, reconciling, or incomplete".into(),
@@ -836,6 +837,12 @@ fn parse_stream(
     // safe to size from: reserving here removes the geometric regrowth of a 450k-element
     // vector without letting a corrupt count drive the allocation.
     let mut ids: Vec<EntryId> = Vec::with_capacity(usize::try_from(count).unwrap_or(0));
+    // Roll-ups are u64 totals and every record is merged into them as it lands, so an
+    // image whose file sizes sum past u64 is corrupt however sound its checksum: it is
+    // refused before the record that would carry a total out of range is inserted, and
+    // the index built so far is dropped with the error (fdu-sqyk).
+    let mut bytes_total = 0_u64;
+    let mut allocated_total = 0_u64;
     for slot in 0..count {
         let parent_slot = read_u32(reader)?;
         let kind = EntryKind::from_u8(read_u8(reader)?).ok_or(ParseError::Invalid)?;
@@ -869,6 +876,11 @@ fn parse_stream(
             .ok_or(ParseError::Invalid)?;
         if !is_snapshot_name(&name) {
             return Err(ParseError::Invalid);
+        }
+        if kind == EntryKind::File {
+            bytes_total = bytes_total.checked_add(attrs.size).ok_or(ParseError::Invalid)?;
+            allocated_total =
+                allocated_total.checked_add(attrs.allocated).ok_or(ParseError::Invalid)?;
         }
         // The parent's id is already in hand, so the record is inserted straight beneath
         // it. Resolving a path to rediscover that parent, and then searching the parent's
@@ -2335,6 +2347,35 @@ mod tests {
         // Claim far more entries than the body holds.
         let count_at = entry_count_offset(&bytes);
         bytes[count_at..count_at + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        rewrite_checksum(&mut bytes);
+        fs::write(&path, &bytes).expect("write");
+
+        assert!(load(&path).expect("load must not error").is_none());
+    }
+
+    #[test]
+    fn a_snapshot_whose_sizes_sum_past_u64_fails_closed() {
+        // The image is structurally valid and its checksum is right; only the arithmetic
+        // is impossible. A load that summed it would panic in debug builds and wrap in
+        // release builds, so it is refused like any other corrupt image (fdu-sqyk).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let mut bytes = fs::read(&path).expect("read");
+        let mut files = 0;
+        for (name, attrs) in entry_record_fields(&bytes) {
+            let kind_at = name.start - 1;
+            if EntryKind::from_u8(bytes[kind_at]) != Some(EntryKind::File) {
+                continue;
+            }
+            bytes[attrs.start..attrs.start + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+            files += 1;
+            if files == 2 {
+                break;
+            }
+        }
+        assert_eq!(files, 2, "the sample has two files to inflate");
         rewrite_checksum(&mut bytes);
         fs::write(&path, &bytes).expect("write");
 

@@ -27,7 +27,7 @@ class MetadataTests(unittest.TestCase):
             (ROOT / "crates/fdu-py/pyproject.toml").read_text(encoding="utf-8")
         )
         version = crate["package"]["version"]
-        self.assertEqual(version, "0.2.1")
+        self.assertEqual(version, "0.3.0")
         self.assertEqual(python_crate["package"]["version"], version)
         self.assertEqual(workspace["workspace"]["dependencies"]["fdu"]["version"], version)
         self.assertEqual(pyproject["project"]["name"], "fdu")
@@ -537,6 +537,7 @@ REVIEWED_PUBLISH_STEPS = """
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --require-identical
+          --wait 300
 """
 
 # The plan job's step that refuses, in release mode, a run whose ref is not the version's

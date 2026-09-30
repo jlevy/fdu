@@ -629,11 +629,15 @@ rules better, and whether to accept a dependency is the maintainer’s decision.
 
 ## Recommendations
 
-1. **Decide #150 (H159) as the maintainer.** It is rejected twice on its deciding
-   subject (exp-188, exp-189) and pays −10.6% on the generated tree the published
-   comparison uses.
-2. **Build H164 next.** It targets the largest remaining default-path cost on a real
-   tree, and H165 and H170 depend on it.
+1. **H159 is decided** (updated 2026-09-29): no `default-tree` effect on the sparse
+   `linux-v6.12` (exp-188, exp-189; exp-189’s `cold-scan-index` interval, +3.22%
+   [+1.21%, +12.87%], is a regression interval), accepted on the directory-dense
+   `node-modules-dense` (exp-190, −8.61%); #150 merged into 0.2.1.
+2. **Take the build order from the runbook** (2026-09-29). The order now lives in
+   [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30); as
+   of this brief, H171 came next, from the
+   [design study](research-2026-09-29-linux-default-tree-point-solution.md), whose
+   outcomes are registry rows [H171–H173](../guides/performance-loop.md#hypotheses).
 3. **Run H166 and H167 as the index-tier pair** for the generated tree: they address the
    scheduling part and the cross-thread-free part of the user-space gap.
 4. **Treat H169 as the Linux-native lever** after those, since it touches a native
@@ -653,7 +657,10 @@ rules better, and whether to accept a dependency is the maintainer’s decision.
 - [x] Register H164–H170 in
   [the hypothesis registry](../guides/performance-loop.md#hypotheses), with beads
 - [ ] Attribute the 20 MiB the classifying summary holds on `linux-v6.12`
-- [ ] Decide how H161’s Linux result is recorded (wall met, RSS missed)
+- [x] Decide how H161’s Linux result is recorded (wall met, RSS missed):
+  [H161’s registry row](../guides/performance-loop.md#current-engine-010) records it as
+  accepted on wall, one of its two Linux bars; whether the RSS bar binds on Linux is
+  left to the maintainer
 - [ ] Put the allocator question to the maintainer
 
 ## Methodology

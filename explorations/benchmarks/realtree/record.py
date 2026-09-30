@@ -16,7 +16,6 @@ those are the parts a measurement cannot supply.
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -24,7 +23,9 @@ from typing import Any, Dict, List, Mapping, Sequence
 
 from pydantic import ValidationError
 
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import experiment as experiment_model
+from benchmarks.realtree import ledger
 from benchmarks.realtree.summary import SummaryError, _validator, model_error
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
@@ -33,7 +34,12 @@ SCHEMA_NAME = "experiment.schema.yaml"
 
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="benchmarks.realtree record", description=__doc__)
-    parser.add_argument("--run", required=True, type=Path)
+    parser.add_argument(
+        "--run",
+        required=True,
+        type=Path,
+        help="the run document, plain (.json) or gzipped (.json.gz); recorded as run_artifact",
+    )
     parser.add_argument("--id", required=True, help="exp-NNN")
     parser.add_argument("--title", required=True)
     parser.add_argument("--hypothesis", action="append", default=[], dest="hypotheses")
@@ -44,6 +50,10 @@ def main(argv: Sequence[str]) -> int:
         required=True,
         choices=(
             "accepted", "rejected", "superseded", "blocked", "in-progress", "baseline"
+        ),
+        help=(
+            "'accepted' is refused when the primary job holds any invalid timed sample: "
+            "that cell is inconclusive and is rerun whole"
         ),
     )
     parser.add_argument("--primary-job", required=True)
@@ -106,9 +116,10 @@ def main(argv: Sequence[str]) -> int:
             "revision, the clone source and revision, or the reason no recipe exists"
         )
 
-    run = json.loads(arguments.run.read_text(encoding="utf-8"))
+    run = ledger.load(arguments.run)
     try:
         headline = _headline(run, arguments)
+        _refuse_an_accept_from_an_inconclusive_cell(run, arguments)
     except ValueError as error:
         parser.error(str(error))
     payload = experiment_model.from_run(
@@ -159,7 +170,7 @@ def main(argv: Sequence[str]) -> int:
     )
     destination = arguments.output_dir / f"{arguments.id}-{_slug(arguments.title)}.md"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(_render(payload, body), encoding="utf-8")
+    write_text_atomic(destination, _render(payload, body), encoding="utf-8")
     print(f"wrote {destination}", file=sys.stderr)
 
     if not arguments.no_validate:
@@ -185,6 +196,45 @@ def _headline(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:
             f"comparison has no metric named {arguments.primary_metric!r}; it has {available}"
         )
     return entry["median_change_pct"]
+
+
+def _refuse_an_accept_from_an_inconclusive_cell(
+    run: Mapping[str, Any], arguments: argparse.Namespace
+) -> None:
+    """Refuse ``accepted`` when the primary job holds any invalid timed sample.
+
+    The accept rule requires that no sample was invalidated, and the loop reruns such a
+    cell whole rather than reading a verdict off the valid pairs that remain. The
+    harness exits 3 and prints INCONCLUSIVE for it, and this is the same rule at the
+    point where it would otherwise become permanent. Every variant of the job counts,
+    as it does for the printed verdict, because the arms share one interleaved cell.
+
+    Only ``accepted`` claims the accept arithmetic passed. The other decisions are
+    judgments it does not make -- a rejection, a supersession, a block, a provisional
+    retention, a baseline -- and stay recordable; the record carries the pair's invalid
+    count, and the ledger says those jobs prove nothing.
+    """
+    if arguments.decision != "accepted":
+        return
+    statistics = run["statistics"].get(arguments.primary_job)
+    if statistics is None:
+        # `_headline` has already refused a job the run does not hold.
+        return
+    total = ledger.job_invalid_samples(statistics)
+    if not total:
+        return
+    counts = ", ".join(
+        f"{name} {entry['invalid']}"
+        for name, entry in sorted((statistics.get("variants") or {}).items())
+        if (entry or {}).get("invalid")
+    )
+    plural = "" if total == 1 else "s"
+    raise ValueError(
+        f"--decision accepted refused: job {arguments.primary_job!r} has {total} invalid "
+        f"timed sample{plural} ({counts}), so the cell is inconclusive. The accept rule "
+        "requires that no sample was invalidated: rerun the cell whole rather than "
+        "recording an accept from the valid pairs that remain"
+    )
 
 
 def _selected_comparison(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:

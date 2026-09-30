@@ -710,7 +710,11 @@ fn read_outcome<T>(
     read_value: fn(&mut Reader<'_>) -> Option<T>,
 ) -> Option<AnalyzerOutcome<T>> {
     let coverage = read_coverage(reader.u8()?)?;
-    let value = if coverage == CoverageReason::Analyzed { Some(read_value(reader)?) } else { None };
+    let value = if matches!(coverage, CoverageReason::Analyzed | CoverageReason::TextOnly) {
+        Some(read_value(reader)?)
+    } else {
+        None
+    };
     AnalyzerOutcome::from_parts(coverage, value)
 }
 
@@ -888,6 +892,7 @@ fn coverage_code(value: CoverageReason) -> u8 {
         CoverageReason::Unsupported => 4,
         CoverageReason::IoError => 5,
         CoverageReason::ChangedDuringRead => 6,
+        CoverageReason::TextOnly => 7,
     }
 }
 
@@ -900,6 +905,7 @@ fn read_coverage(code: u8) -> Option<CoverageReason> {
         4 => Some(CoverageReason::Unsupported),
         5 => Some(CoverageReason::IoError),
         6 => Some(CoverageReason::ChangedDuringRead),
+        7 => Some(CoverageReason::TextOnly),
         _ => None,
     }
 }

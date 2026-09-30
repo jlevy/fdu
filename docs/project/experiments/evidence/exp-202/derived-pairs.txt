@@ -1,0 +1,85 @@
+Derived from run-tools-linux-v6.12.json.gz, run-tools-node-modules-dense.json.gz and
+run-tools-linux-balanced-1m.json.gz: 0.2.1's own standing against each peer, paired at
+equal ordinals, as exp-201's derived-pairs.txt paired the final head. The release engine
+is the anchor of these runs, so its pairs with each peer and with 0.2.1 are the
+harness's own and are not re-derived here. This file is the in-run regime check: it
+places 0.2.1 against the peers in the same session, to compare with exp-175 and
+exp-176, which measured the same engine (the Q0 probe, `e5a71c8a`, whose crate sources
+are identical to v0.2.1's) against the same peers on 2026-09-29.
+
+linux-v6.12: peers against fdu-0.2.1, same-ordinal pairs, (peer - fdu-0.2.1) / fdu-0.2.1
+  pdu-default  n=20  -41.4% [-45.9%, -37.4%]
+  pdu          n=20  -45.5% [-48.2%, -42.1%]
+  diskus       n=20  -44.8% [-47.0%, -41.0%]
+anchor-normalized (each sample over its adjacent anchor run):
+  pdu-default  n=20  -41.6% [-47.1%, -38.0%]
+  pdu          n=20  -48.1% [-49.5%, -43.8%]
+  diskus       n=20  -43.6% [-47.9%, -37.2%]
+
+node-modules-dense: peers against fdu-0.2.1, same-ordinal pairs, (peer - fdu-0.2.1) / fdu-0.2.1
+  pdu-default  n=20  -0.9% [-7.4%, +2.6%]
+  pdu          n=20  -12.4% [-13.5%, -0.5%]
+  diskus       n=20  -9.0% [-12.3%, -4.2%]
+anchor-normalized (each sample over its adjacent anchor run):
+  pdu-default  n=20  -0.8% [-6.2%, +3.3%]
+  pdu          n=20  -8.3% [-15.3%, -3.0%]
+  diskus       n=20  -7.1% [-11.5%, +0.5%]
+
+linux-balanced-1m: peers against fdu-0.2.1, same-ordinal pairs, (peer - fdu-0.2.1) / fdu-0.2.1
+  pdu-default  n=20  +5.8% [+4.3%, +8.6%]
+  pdu          n=20  +0.8% [-2.4%, +1.7%]
+  diskus       n=20  +3.2% [+0.2%, +6.1%]
+anchor-normalized (each sample over its adjacent anchor run):
+  pdu-default  n=20  +3.7% [+1.5%, +6.3%]
+  pdu          n=20  -1.6% [-3.7%, +0.8%]
+  diskus       n=20  +3.4% [-0.9%, +6.7%]
+
+The script (exp-201's, unchanged; the second argument names the base tool):
+
+"""Derived from a compare_tools artifact: the final head's own change against each peer.
+
+The harness pairs every competitor with the anchor, not with each other. Two competitors'
+timed samples at the same ordinal ran within one rotation of the anchor of each other, so
+this pairs them at equal ordinals, exactly as the harness pairs variants, and reports the
+peer's wall against the final head's as (peer - final) / final with the harness's own
+deterministic percentile bootstrap of the median (2000 resamples, seed 0x5EED). The
+anchor-normalized variant divides each sample by its adjacent anchor run first, which
+removes whatever the host was doing to that rotation.
+"""
+import json, random, statistics, sys
+
+def bootstrap(values, resamples=2000, seed=0x5EED):
+    g = random.Random(seed); n = len(values); meds = []
+    for _ in range(resamples):
+        meds.append(statistics.median([values[g.randrange(n)] for _ in range(n)]))
+    meds.sort()
+    return meds[int(0.025 * (resamples - 1))], meds[int(0.975 * (resamples - 1))]
+
+d = json.load(open(sys.argv[1]))
+base = sys.argv[2] if len(sys.argv) > 2 else "fdu-final"
+timed = [s for s in d["samples"] if not s["warmup"] and s.get("valid", True)]
+wall = {}   # (tool, pair, ordinal) -> wall_ns
+for s in timed:
+    wall[(s["tool"], s["pair"], s["ordinal"])] = s["metrics"]["wall_ns"]
+anchor = d["anchor"] if isinstance(d["anchor"], str) else d["anchor"]["name"]
+ordinals = sorted({s["ordinal"] for s in timed})
+def rows(normalize):
+    out = []
+    for peer in d["competitor_order"]:
+        if peer == base: continue
+        ratios = []
+        for o in ordinals:
+            try:
+                b = wall[(base, base, o)]; p = wall[(peer, peer, o)]
+                if normalize:
+                    b /= wall[(anchor, base, o)]; p /= wall[(anchor, peer, o)]
+            except KeyError:
+                continue
+            ratios.append((p - b) / b)
+        m = statistics.median(ratios); lo, hi = bootstrap(ratios)
+        out.append(f"  {peer:12s} n={len(ratios):2d}  {m*100:+.1f}% [{lo*100:+.1f}%, {hi*100:+.1f}%]")
+    return out
+print(f"{d['tree']['label'] if isinstance(d.get('tree'), dict) and 'label' in d['tree'] else sys.argv[1]}: peers against {base}, same-ordinal pairs, (peer - {base}) / {base}")
+print("\n".join(rows(False)))
+print("anchor-normalized (each sample over its adjacent anchor run):")
+print("\n".join(rows(True)))

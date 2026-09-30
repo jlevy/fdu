@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import json
 import re
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from email.message import Message
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
@@ -197,6 +200,120 @@ class RegistryStateTests(unittest.TestCase):
 
     def test_inspector_and_registry_audit_name_the_same_crates(self) -> None:
         self.assertEqual(CRATE_PACKAGES, inspect_artifacts.CRATE_PACKAGES)
+
+
+class SettlingTests(unittest.TestCase):
+    """
+    `--wait` rereads a registry still catching up with an upload, and nothing else.
+
+    In the v0.1.0 run, wait-pypi saw every file and the audit straight after it read a 404
+    from the same JSON API; a rerun found everything identical (fdu-zx9y).
+    """
+
+    VERSION = "0.1.0"
+    PYPI = f"https://pypi.org/pypi/fdu/{VERSION}/json"
+    FILES = MappingProxyType(
+        {"fdu-0.1.0.tar.gz": "a" * 64, "fdu-0.1.0-cp312-abi3-linux.whl": "b" * 64}
+    )
+    CRATES = MappingProxyType({"fdu-core": "c" * 64, "fdu": "d" * 64})
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.manifest = Path(self.temporary.name) / "manifest.json"
+        artifacts = [
+            {"filename": f"{package}-0.1.0.crate", "kind": "crate", "sha256": digest}
+            for package, digest in self.CRATES.items()
+        ] + [
+            {
+                "filename": name,
+                "kind": "sdist" if name.endswith(".tar.gz") else "wheel",
+                "sha256": digest,
+            }
+            for name, digest in self.FILES.items()
+        ]
+        self.manifest.write_text(json.dumps({"artifacts": artifacts}), encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    @staticmethod
+    def pypi(files: dict[str, str]) -> bytes:
+        urls = [{"filename": name, "digests": {"sha256": digest}} for name, digest in files.items()]
+        return json.dumps({"urls": urls}).encode()
+
+    def audit(
+        self, answers: list[bytes | Exception | None], *options: str
+    ) -> tuple[int, list[float], int]:
+        """Run the command line against scripted PyPI answers; crates.io is identical."""
+        remaining = list(answers)
+        reads = 0
+        now = [0.0]
+        slept: list[float] = []
+
+        def fetch(url: str) -> bytes | None:
+            nonlocal reads
+            if url.startswith(CRATES_IO):
+                package = url.split("/")[-2]
+                return version_record(checksum=self.CRATES[package])
+            self.assertEqual(url, self.PYPI)
+            reads += 1
+            answer = remaining.pop(0) if len(remaining) > 1 else remaining[0]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        def sleep(seconds: float) -> None:
+            slept.append(seconds)
+            now[0] += seconds
+
+        argv = ["--manifest", str(self.manifest), "--version", self.VERSION, *options]
+        with (
+            redirect_stdout(io.StringIO()),
+            redirect_stderr(io.StringIO()),
+            self.assertRaises(SystemExit) as exited,
+        ):
+            registry_state.main(argv, fetch=fetch, clock=lambda: now[0], sleep=sleep)
+        return int(exited.exception.code or 0), slept, reads
+
+    WAIT = ("--require-identical", "--wait", "60", "--interval", "15")
+
+    def test_a_transient_404_after_the_upload_is_reread_until_identical(self) -> None:
+        status, slept, reads = self.audit([None, self.pypi(dict(self.FILES))], *self.WAIT)
+        self.assertEqual((status, slept, reads), (0, [15.0], 2))
+
+    def test_a_partial_listing_and_an_unreadable_answer_are_reread_too(self) -> None:
+        partial = self.pypi({"fdu-0.1.0.tar.gz": "a" * 64})
+        answers = [partial, RegistryError("HTTP 503"), self.pypi(dict(self.FILES))]
+        status, slept, _ = self.audit(answers, *self.WAIT)
+        self.assertEqual((status, slept), (0, [15.0, 15.0]))
+
+    def test_a_hash_mismatch_or_an_unexpected_file_fails_at_once(self) -> None:
+        changed = self.pypi({**self.FILES, "fdu-0.1.0.tar.gz": "e" * 64})
+        extra = self.pypi({**self.FILES, "fdu-0.1.0-extra.whl": "f" * 64})
+        mixed = self.pypi({"fdu-0.1.0.tar.gz": "e" * 64})
+        for answer in (changed, extra, mixed):
+            status, slept, reads = self.audit([answer, self.pypi(dict(self.FILES))], *self.WAIT)
+            self.assertEqual((status, slept, reads), (2, [], 1))
+
+    def test_a_release_still_missing_at_the_deadline_fails_as_missing(self) -> None:
+        status, slept, reads = self.audit([None], *self.WAIT)
+        self.assertEqual(status, 3)
+        self.assertEqual(sum(slept), 60.0)
+        self.assertEqual(reads, 5)
+
+    def test_without_wait_one_read_decides(self) -> None:
+        status, slept, reads = self.audit(
+            [None, self.pypi(dict(self.FILES))], "--require-identical"
+        )
+        self.assertEqual((status, slept, reads), (3, [], 1))
+
+    def test_wait_needs_require_identical(self) -> None:
+        with redirect_stderr(io.StringIO()) as stderr, self.assertRaises(SystemExit) as exited:
+            registry_state.parser_arguments(
+                ["--manifest", "m.json", "--version", self.VERSION, "--wait", "60"]
+            )
+        self.assertEqual(exited.exception.code, 2)
+        self.assertIn("--wait needs --require-identical", stderr.getvalue())
 
 
 def write_crate_manifest(directory: Path, digests: dict[str, str]) -> Path:

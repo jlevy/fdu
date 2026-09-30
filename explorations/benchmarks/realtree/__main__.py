@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks import corpus as corpus_tools
+from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import ledger, measure, profile, provenance, tree
 from benchmarks.realtree import subjects as subjects_module
 
@@ -157,6 +158,12 @@ def main(argv: Sequence[str]) -> int:
     rendered.add_argument("--profiles", type=Path)
     rendered.add_argument("--output", type=Path)
 
+    stored = subparsers.add_parser(
+        "store", help="commit a run beside its record, gzipped deterministically"
+    )
+    stored.add_argument("--run", required=True, type=Path)
+    stored.add_argument("--out", required=True, type=Path, help="the .json.gz to write")
+
     arguments = parser.parse_args(list(argv))
     if arguments.command == "baseline":
         return _baseline(arguments)
@@ -166,6 +173,10 @@ def main(argv: Sequence[str]) -> int:
         return _profile(arguments)
     if arguments.command == "subjects":
         return _subjects(arguments)
+    if arguments.command == "store":
+        ledger.store(arguments.run, arguments.out)
+        print(f"wrote {arguments.out}", file=sys.stderr)
+        return 0
     return _render(arguments)
 
 
@@ -186,7 +197,7 @@ def _baseline(arguments: argparse.Namespace) -> int:
     _require_external(arguments.root, destination, description="baseline output")
     document = tree.fingerprint(arguments.root, label=arguments.label)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
+    write_text_atomic(destination, json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
     print(f"wrote {destination}", file=sys.stderr)
     print(json.dumps({key: document[key] for key in ("counts", "sizes", "engine_digest")}))
     return 0
@@ -271,7 +282,7 @@ def _measure(arguments: argparse.Namespace) -> int:
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
     run_path = arguments.output_dir / f"run-{slug}.json"
     report_path = arguments.output_dir / f"run-{slug}.md"
-    run_path.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
+    write_text_atomic(run_path, json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
     ledger.write(document, report_path)
 
     print(f"\nwrote {run_path}\nwrote {report_path}", file=sys.stderr)
@@ -279,6 +290,11 @@ def _measure(arguments: argparse.Namespace) -> int:
     if document["tree_mutated_during_run"] or document["baseline_drift"]:
         return 2
     if document["invalid_samples"]:
+        print(
+            f"\n{document['invalid_samples']} timed samples were invalidated: the cell is "
+            "inconclusive and is rerun whole, never recorded as an accept (exit 3)",
+            file=sys.stderr,
+        )
         return 3
     return 0
 
@@ -451,7 +467,7 @@ def _profile(arguments: argparse.Namespace) -> int:
             print(f"  {frame['percent']:6.2f}%  {frame['symbol'][:80]}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(captured, indent=2, sort_keys=True), encoding="utf-8")
+    write_text_atomic(destination, json.dumps(captured, indent=2, sort_keys=True), encoding="utf-8")
     print(f"\nwrote {destination}", file=sys.stderr)
     return 0
 
@@ -472,7 +488,7 @@ def _render(arguments: argparse.Namespace) -> int:
     text = ledger.render(document, profiles=profiles)
     if arguments.output:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        arguments.output.write_text(text, encoding="utf-8")
+        write_text_atomic(arguments.output, text, encoding="utf-8")
         print(f"wrote {arguments.output}", file=sys.stderr)
     else:
         print(text)
@@ -515,13 +531,14 @@ def _print_headline(document: Dict[str, Any]) -> None:
                 print(
                     f"  {name:<16} wall {wall['median'] / 1e6:8.1f} ms"
                     + (f"   component {component['median'] / 1e6:8.1f} ms" if component else "")
-                    + f"   (n={entry['samples']})"
+                    + f"   (n={entry['samples']}"
+                    + (f", invalid={entry['invalid']}" if entry.get("invalid") else "")
+                    + ")"
                 )
+        invalid = ledger.job_invalid_samples(statistics)
         for key, comparison in statistics["comparisons"].items():
-            decision = ledger.verdict(comparison)
-            print(
-                f"  {key}: {'ACCEPT' if decision['accepted'] else 'REJECT'} — {decision['reason']}"
-            )
+            decision = ledger.verdict(comparison, invalid_samples=invalid)
+            print(f"  {key}: {ledger.verdict_label(decision)} — {decision['reason']}")
     for name, entry in (document.get("reference_tools") or {}).items():
         if entry["wall_ns"]:
             print(f"\nreference {name}: wall {entry['wall_ns']['median'] / 1e6:8.1f} ms")

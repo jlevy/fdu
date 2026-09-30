@@ -91,11 +91,17 @@ It runs the same build-feature combinations CI does, notably `--no-default-featu
 which is how library consumers build and is otherwise never exercised locally.
 
 Give each worktree its own Cargo target directory for handoff gates.
-A shared `CARGO_TARGET_DIR` can reuse workspace artifacts from another branch based on
-source modification times, including a stale core library under a different toolchain
-(`fdu-8whh`). If reusing a target directory, invalidate the workspace artifacts or
-refresh all Rust source timestamps first, then verify that each tested toolchain
-recompiles the workspace crates.
+The gates ask cargo where it builds (`cargo metadata`), so a `CARGO_TARGET_DIR` outside
+the checkout works. A shared `CARGO_TARGET_DIR` can reuse workspace artifacts from
+another branch based on source modification times, including a stale core library under
+a different toolchain (`fdu-8whh`). Every Make target that compiles a workspace crate
+first runs `target-owner`, which records the owning checkout in the target directory and
+removes the workspace crates’ fingerprints when another checkout, or an unrecorded one,
+built there last. `make semver-check` builds rustdoc JSON through cargo-semver-checks
+outside the `target-owner` guard, so run it in a target directory this checkout owns.
+A cargo command run outside Make has no such guard: if reusing a target directory that
+way, invalidate the workspace artifacts or refresh all Rust source timestamps first,
+then verify that each tested toolchain recompiles the workspace crates.
 A fast “fresh” result after switching worktrees is not evidence of the new source.
 Keep golden and wheel consumers on that same verified build, and never let another
 worktree overwrite it during the gate.
@@ -207,7 +213,7 @@ is a lost event and fails regardless.
 ## Performance Work
 
 To run one more iteration, start at
-[the runbook’s Current Pickup](docs/project/guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+[the runbook’s Current Pickup](docs/project/guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 The rules that decide whether a speed change is kept are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md); the
 current strategy — what to work on next, with floor-anchored priorities and per-tier

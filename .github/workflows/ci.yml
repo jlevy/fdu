@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.18.0
-      - run: node --test scripts/check-supply-chain.test.mjs scripts/check-uv-version.test.mjs
+      - run: node --test scripts/check-supply-chain.test.mjs scripts/check-uv-version.test.mjs scripts/cargo-target.test.mjs
       - run: node scripts/check-supply-chain.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -89,6 +89,8 @@ jobs:
         run: node scripts/check-rust-module-names.mjs
       - name: Check every inventory producer routes through shared admission
         run: npm run check:admission-sites
+      - name: Check every file is written whole, through the atomic helpers
+        run: npm run check:atomic-writes
       - name: Check the golden corpus never resolves fdu through PATH
         run: node scripts/check-golden-invocations.mjs
       - name: Check golden sessions expose complete product behavior
@@ -163,6 +165,28 @@ jobs:
       # Compiling a test is not running it: the guide named `--watch` to a binary without
       # it while every build of this shape passed.
       - run: cargo test --locked -p fdu --no-default-features --lib
+
+  test-linux-arm64:
+    name: Engine on Linux arm64
+    needs: supply-chain
+    # The manylinux aarch64 wheel ships the Linux native reader, `scan/linux_dents.rs`,
+    # whose `unsafe` getdents64 and statx calls take their syscall numbers, open flags,
+    # and `statx` layout from the target. The release cross-builds that wheel and cannot
+    # run it, and every other job here is x86-64, so until this job the reader had never
+    # executed on the architecture it ships to (fdu-64cu). The environment is the
+    # workflow's, as for the Linux test job: `FDU_TEST_ALLOW_*` stay unset, so a pass
+    # proves the permission and native-watch assertions ran.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+          components: clippy
+      - run: cargo clippy --locked -p fdu-core --all-targets --all-features -- -D warnings
+      - run: cargo test --locked -p fdu-core --all-features
 
   msrv:
     name: MSRV (1.85)

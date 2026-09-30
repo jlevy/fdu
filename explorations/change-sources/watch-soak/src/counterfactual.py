@@ -18,6 +18,9 @@ import os
 import re
 import sys
 from collections import Counter
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import complete_lines  # noqa: E402
 
 PRIV = sys.argv[1]
 ROOT = sys.argv[2].rstrip("/")
@@ -77,7 +80,7 @@ n_samples = len(glob.glob(os.path.join(PRIV, "writers", "w_*.tsv")))
 
 # raw FSEvents paths seen in the 10-minute livewatch capture (relative to root)
 live_paths = set()
-for line in open(os.path.join(PRIV, "livewatch.jsonl")):
+for line in complete_lines(os.path.join(PRIV, "livewatch.jsonl")):
     d = json.loads(line)
     if d["type"] == "event" and d.get("inside"):
         live_paths.add(d["rel"])

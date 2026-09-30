@@ -16,7 +16,7 @@ const PRODUCERS = new Map([
   [
     "crates/fdu-core/src/scan.rs",
     {
-      loops: 8,
+      loops: 9,
       routes: [
         "admission::decide(",
         "emission.record_entry(",
@@ -38,6 +38,7 @@ const NON_INVENTORY_READERS = new Map([
   ["crates/fdu-core/src/cache.rs", "cache-status enumeration"],
   ["crates/fdu-core/src/snapshot.rs", "snapshot temporary-file housekeeping"],
   ["crates/fdu-core/src/opened/golden_support.rs", "test fixture serialization"],
+  ["crates/fdu-core/src/scan/linux_dents.rs", "platform adapter reference tests"],
   ["crates/fdu-core/src/scan/macos_bulk.rs", "platform adapter reference tests"],
   ["crates/fdu-core/src/watch.rs", "case-only rename name lookup, never admitted"],
 ]);
@@ -77,7 +78,10 @@ function characterLiteralLength(source, index) {
   return source[index + 1 + width] === "'" ? width + 2 : 0;
 }
 
-function rustStructure(source) {
+// `source` with comments and the contents of string and character literals blanked,
+// newlines kept, so offsets and line numbers still match. Shared with
+// check-atomic-writes.mjs, which audits Rust writes the same way.
+export function rustStructure(source) {
   let result = "";
   const state = { kind: "code", blockDepth: 0, rawHashes: 0 };
 

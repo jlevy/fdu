@@ -295,6 +295,48 @@ improvements. The existing runner establishes `warm-steady`, not controlled-cold
 Keep the evidence outside disposable scratch; clean up only the recorded generator
 `run_root` with `benchmarks.generate cleanup` after results are preserved.
 
+### Source-Line Counters
+
+`fdu --analyze=code` compares with scc and tokei in two arms, each a separate matrix
+anchored on its fdu contract:
+
+- **Ignore rules off:** `fdu-code-no-ignore`, `scc-no-ignore`, and `tokei-no-ignore`
+  turn off every ignore-file source and count hidden files, so all three walk one
+  population. Measure a copy of the tree without `.git`, made with `tar` rather than hard
+  links: a hard-linked copy gives every file a second link, and fdu’s shared-file
+  accounting would then do work the others skip.
+- **Each tool’s own ignore handling:** `fdu-code-gitignore`, `scc-gitignore`, and
+  `tokei-gitignore` on the real clone.
+  tokei applies `.gitignore` only inside a git repository.
+- **A repeated fdu run:** `fdu-code-cached-no-ignore` is the ignore-off count under the
+  default cache policy.
+  The first warm-up writes the content cache into the comparison’s isolated cache
+  directory, and the timed runs revalidate against it; anchor a separate matrix on it to
+  compare a repeated fdu run with the peers, which have no cache.
+
+```shell
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations \
+  uv run --project explorations/benchmarks --frozen \
+  python -m benchmarks.realtree.compare_tools \
+  --root "$TREE_COPY" --label linux-v6.12-src \
+  --anchor "fdu:fdu-code-no-ignore=$FDU_BIN" \
+  --tool "scc:scc-no-ignore=$(command -v scc)" \
+  --tool "tokei:tokei-no-ignore=$(command -v tokei)" \
+  --trials 12 --warmups 3 --host-regime quiet \
+  --baseline-output "$RESULTS/tree-linux-v6.12-src.json" \
+  --output-dir "$RESULTS" --name sloc-no-ignore
+```
+
+The harness refuses to pair contracts that measure different things, so the arms and the
+disk-usage contracts cannot mix.
+Every command prints its text table, which the harness parses for its total row.
+The tools recognize different languages, so their totals differ by design and are not
+checked against each other; a sample is valid when it prints one total row with no
+stderr and a zero exit, and every sample of one tool must report the same totals.
+Check agreement between tools separately, untimed, from each tool’s per-file JSON. The
+current result, on Linux v6.12, is in
+[the SLOC tools survey](../../docs/project/research/research-2026-09-29-sloc-tools-survey.md#speed-on-linux-v612).
+
 ### Future Linux Cold Comparison
 
 The

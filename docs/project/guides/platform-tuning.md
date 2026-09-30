@@ -34,7 +34,7 @@ metadata layout move as a unit.
 | Platform | Status | What is different about it |
 | --- | --- | --- |
 | macOS / APFS | Primary; most ledger experiments, counted in its regime coverage table | `getattrlistbulk` returns enumeration and complete stat-tier metadata per directory, so the per-entry metadata wait the portable path pays is largely hidden |
-| Linux / ext4 | A minority of ledger experiments, all on virtualized hosts | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor |
+| Linux / ext4 | A minority of ledger experiments, all on virtualized hosts | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor. **Amended 2026-09-29:** a native reader on those same calls still paid off above that floor. H169 phase 1 (names used in place from a reused `getdents64` buffer, no `opendir` `fstat`) was accepted on glibc, −6.25% and −7.90% on the `--no-controls` summary ([exp-185](../experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md), [exp-186](../experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)); what it saved is user-space per-entry work and glibc’s per-directory `fstat`, not kernel time per entry |
 | Windows / NTFS | CI-tested for correctness; unmeasured for speed | — |
 
 ### Host
@@ -97,6 +97,7 @@ Prefer the doc comment: it is what the next person editing the value will read.
 | `RECONCILE_WAVE_DIRECTORIES` | 1,024 | M1 Pro; 4,096 refuted at 60k (exp-031) | **None** |
 | `DEFAULT_BATCH_SIZE` | 1,024 | M1 Pro | **None** |
 | `macos_bulk::BUFFER_BYTES` | 64 KiB | M1 Pro; 256 KiB refuted (exp-029/039) | Not applicable — macOS only |
+| `linux_dents::CHUNK_BYTES` | 64 KiB | Never measured; mirrors `macos_bulk::BUFFER_BYTES`, twice glibc’s 32 KiB `readdir` request | **None yet.** H169 phase 1 measures the reader, not this size |
 | `content_analysis::READ_CHUNK_BYTES` | 64 KiB | M1 Pro, 307–2,001-entry trees; deciding-scale metabrowser read-call mix ~2/file (exp-121) | **None.** A larger chunk cannot clear 3% wall: almost every admitted file is already one data read plus EOF |
 | Global allocator | system | Never chosen by measurement | Measured, not adopted. mimalloc wins **only the aggregate tier** (−23.0% [−28.4%, −16.7%]); the index tier and snapshot load both span zero. Costs +139% peak RSS on that tier and is unmeasured on macOS, where the system allocator differs. See H74/H85 |
 
@@ -113,7 +114,7 @@ The Linux scouting measured a warm single-threaded floor of about **1.5 µs per 
 some twenty times below the threshold.
 If warm Linux service time never approaches 30 µs, the trigger never fires, and an
 automatic scan stays at its six-worker cap in every regime the threshold was meant to
-distinguish. That is a concrete mechanism for the one place Linux measurement found fdu
+distinguish. That is a concrete mechanism for the one place the Linux scouting found fdu
 behind: `diskus`, which runs three times the core count, led the cold scalar class by
 22.8%.
 
@@ -153,6 +154,29 @@ Future sweeps must still record the bounded policy history: otherwise a threshol
 describes an unknown mixture of decisions.
 The characterization, experiments, and no-change decision are in
 [the adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md).
+
+### The Linux native reader in backend diagnostics
+
+The Linux reader (`scan/linux_dents.rs`, glibc builds) has three fields in
+`ScanBackendDiagnostics` since 0.3.0, serialized in the `backend` object of the
+`__FDU_SCAN_DIAGNOSTICS__` trace ahead of the macOS keys so the object stays
+alphabetical: `linux_dents_attempts`, the directories the reader was asked to list;
+`linux_dents_successes`, the listings it served; and `linux_dents_fallbacks`, the
+directories it declined, each of which then counts as a portable attempt.
+So `linux_dents_attempts` equals successes plus fallbacks, and `dirs_read` equals
+`linux_dents_successes` plus `portable_directory_reads`. Every route that lists
+directories counts them: the walker, revalidation, reconciliation, and opened discovery.
+The three are `null` off Linux and on a Linux build without glibc, where the reader is
+not compiled; `unavailable_reason` still describes only the macOS fields.
+Traces that predate the fields have no keys, and the harness reads them as zero native
+listings. In the 0.2 series the reader was invisible here, and the directories it served
+were `dirs_read` less `portable_directory_reads`.
+
+The realtree harness’s claim-grade backend check reads the Linux triplet like the macOS
+one and, off macOS, compares `dirs_read` with the portable reads plus the Linux
+successes, so a Linux `--diagnostics` job passes once the reader serves the walk.
+The only job requiring scan diagnostics in the loop, `adaptive-scan-index`, also
+requires the macOS backend counts, so it still cannot pass on Linux.
 
 ## How a divergence is expressed in code
 
