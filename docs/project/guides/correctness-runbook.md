@@ -54,8 +54,16 @@ run scans and then writes a snapshot, which the `--stale-ok` run finds.
 cold output relabeled `cache_only` must make every case report `PARTIAL-STORED` and
 `--refusals-only` exit 1. A partial answer exits 2, so a check that trusted a zero exit
 would have called that stored snapshot `withheld`; the first version of this pass did.
+The two wrappers are `tests/correctness/break_no_snapshot.py` and
+`tests/correctness/break_partial_stored.py`: name one as `FDU_BIN`, and the real binary
+as `FDU_REAL`.
 
 ## Running It
+
+Before a release, `make release-stability` runs all three passes and both breaks against
+the installed candidate, the refusal pass as `nobody` when it runs as root; see the
+release process’s [Stability Pass](release-process.md#stability-pass).
+By hand, against a build of the checkout:
 
 ```shell
 make build

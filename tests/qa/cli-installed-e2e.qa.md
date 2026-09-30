@@ -84,12 +84,11 @@ The 0.2.0, 0.2.1, and 0.3.0 tables are in the pull requests that record those ru
 
 **Next Steps:**
 
-1. Run `scripts/run_installed_cli_qa.py` with the fixture env vars for this machine.
+1. Run `make release-stability` with the fixture env vars for this machine, as
+   [How to Run](#how-to-run) describes.
 2. Replace the dated report table when revising numbers.
 3. File beads for product failures; do not treat a Library TCC partial (exit 2) as a
    crash.
-4. On Linux, until `fdu-83km` teaches the top-level check ext4’s directory blocks, check
-   each top-level row against the subtree’s own directory and symbolic-link blocks.
 
 * * *
 
@@ -128,11 +127,29 @@ It does not invent defaults that point at a home directory.
 | `FDU_QA_MEDIUM_ANALYZE` | Subtree for `--analyze=code` on the medium tree | Optional; default `$FDU_QA_MEDIUM/docs` if that directory exists |
 | `FDU_QA_LARGE` | Hostile wide tree (often a home Library) | Optional; omit to skip |
 | `FDU_QA_OUT` | Transcript and results directory | Optional temp dir |
+| `FDU_QA_PEER_TREES` | Real trees for Phase 7, separated like `PATH` | Optional; `make release-stability` skips the real-tree run without it |
+| `FDU_QA_PROGRESS_TREE` | Tree whose metadata scan takes well over half a second, for the Phase 6 pty probe | Optional; default `$FDU_QA_MEDIUM` |
+| `FDU_QA_PROGRESS_ANALYZE` | Tree that takes several seconds under `--analyze all`, for the probe’s long runs | Optional; default `$FDU_QA_MEDIUM_ANALYZE`, then `$FDU_QA_MEDIUM` |
 
 This machine’s 2026-09-18 bindings are recorded only in the dated report, so a later run
 can point the same variables at other trees.
 
 ## How to Run
+
+Before a release, one command runs this whole playbook on a candidate it builds from the
+release commit, with the gates and the correctness runbook, and writes the tables
+[Phase 8](#phase-8-results) records:
+
+```bash
+export COMMIT=<release commit> RELEASE=<a directory outside any checkout>
+export FDU_QA_SMALL=/path/to/small-tree   # and the other variables above
+make release-stability
+```
+
+The release process’s
+[Stability Pass](../../docs/project/guides/release-process.md#stability-pass) says what
+it runs and how to rerun one part; Phase 6’s watched window stays for a person.
+The harness and each phase’s scripts also run on their own, as follows.
 
 One process at a time.
 The harness never overlaps fdu invocations and is not wired into `make check`.
@@ -454,6 +471,12 @@ The automated `make test-terminal` covers drawing, erasing, and Ctrl-C in a
 pseudo-terminal; this phase covers what only a person judges.
 Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
 
+Every check below but the Windows one can also be judged in a pseudo-terminal, and
+`scripts/qa/pty_probe.py` does so against real trees, `$FDU_QA_PROGRESS_TREE` and
+`$FDU_QA_PROGRESS_ANALYZE`; it exits 2 when a tree is too fast to draw frames.
+A pass of it is evidence, not the phase: the phase stays pending until a person has
+watched a window.
+
 **Verify**:
 
 - [ ] `fdu "$FDU_QA_MEDIUM"` shows one animated line on stderr after about half a
@@ -497,8 +520,8 @@ counted. It answers the question a user asks first: does fdu agree with the tool
 already trust?
 Not always byte for byte, because tools count some things differently, but
 every difference must have a measured cause.
-It is written for macOS and APFS, where directories and symbolic links occupy no blocks;
-on another filesystem, run the self-test there first.
+It covers APFS, where directories and symbolic links occupy no blocks, and ext4, where
+they do; on another filesystem, run the self-test there first.
 
 **Subjects**, at least these four: this repository (a `.gitignore`, build output,
 symbolic links), `~/.rustup` or another quiet mid-size tree, `/Applications` (bundles,
@@ -521,7 +544,8 @@ python3 scripts/qa_peer_agreement.py . ~/.rustup /Applications ~/Library \
 The self-test builds a small tree with every case below (hard links within and across
 directories; symbolic links to a file, a directory, and nowhere, directly inside the
 root and deeper; an unreadable folder; a sparse file; a name with spaces) and requires
-all 13 tool readings to agree with their counting models exactly.
+every tool reading to agree with its counting model exactly: 13 on macOS, and 12
+elsewhere, where there is no BSD du.
 Run it first, and after upgrading any peer tool.
 On APFS it can test the directory and link terms only in apparent size, since they
 occupy no blocks. The script exits non-zero if any reading is `UNEXPLAINED` or missing.
@@ -562,14 +586,15 @@ directory again, and a second failure would be reported.
 
 **Verify**:
 
-- [ ] The self-test agrees exactly for all 13 readings, with no tool missing
+- [ ] The self-test agrees exactly for every reading, with no tool missing
 - [ ] The script ends with “Every reading is explained”, or with every other reading
   explained and a dua reading that could not be checked: each tool agrees exactly on a
   quiet tree, one whose every fdu reading was the same; within the tree’s movement or
   fdu’s nearby movement on a live one; or short by what the folders it gave up on hold
-- [ ] Every top-level directory’s allocated size agrees with GNU du’s, exactly on a
-  quiet tree and within fdu’s readings around it on a live one, and none is present on
-  only one side
+- [ ] Every top-level directory’s allocated size agrees with GNU du’s once the subtree’s
+  own directory and symbolic-link blocks are added to fdu’s, which the walk measures and
+  which are zero on APFS: exactly on a quiet tree, within fdu’s readings around it on a
+  live one, and none is present on only one side
 - [ ] fdu’s error count on `~/Library` equals GNU du’s denied count and the script’s
   walk (its unlistable directories plus the files it could not stat), and fdu exits 2
   (partial)
