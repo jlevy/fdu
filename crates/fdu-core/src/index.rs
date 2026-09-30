@@ -300,12 +300,9 @@ impl RollUpScalars {
     /// and bytes, a directory's count, nothing for a symlink or other object.
     fn leaf(kind: EntryKind, attrs: &Attrs) -> Self {
         match kind {
-            EntryKind::File => Self {
-                files: 1,
-                bytes: attrs.size,
-                allocated: attrs.allocated,
-                ..Self::default()
-            },
+            EntryKind::File => {
+                Self { files: 1, bytes: attrs.size, allocated: attrs.allocated, ..Self::default() }
+            }
             EntryKind::Dir => Self { dirs: 1, ..Self::default() },
             EntryKind::Symlink | EntryKind::Other => Self::default(),
         }
@@ -3098,9 +3095,10 @@ impl Index {
                     }
                     let old = overlay.subtree_at(self, path);
                     let new = RollUpScalars::leaf(*kind, attrs);
-                    let after = total.saturating_sub(&old).checked_add(&new).map_err(|counter| {
-                        crate::Error::UnrepresentableTotal { path: path.clone(), counter }
-                    })?;
+                    let after =
+                        total.saturating_sub(&old).checked_add(&new).map_err(|counter| {
+                            crate::Error::UnrepresentableTotal { path: path.clone(), counter }
+                        })?;
                     if max_files.is_some_and(|max_files| after.files > max_files) {
                         // The reducer refuses this upsert for its file budget and moves on.
                         continue;
@@ -3116,8 +3114,9 @@ impl Index {
                     overlay.cut(self, path);
                     total = total.saturating_sub(&old);
                 }
-                Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
-                }
+                Op::ControlUpsert { .. }
+                | Op::ControlRemove { .. }
+                | Op::InvalidateSubtree { .. } => {}
             }
         }
         Ok(())

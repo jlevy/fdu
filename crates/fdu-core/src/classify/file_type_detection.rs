@@ -200,7 +200,9 @@ fn modeline_names<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = &'a s
     text.match_indices(key).map(move |(at, _)| {
         let value = &text[at + key.len()..];
         let end = value
-            .find(|character: char| character.is_ascii_whitespace() || matches!(character, ';' | ':'))
+            .find(|character: char| {
+                character.is_ascii_whitespace() || matches!(character, ';' | ':')
+            })
             .unwrap_or(value.len());
         let value = &value[..end];
         value.strip_suffix("-*-").unwrap_or(value)

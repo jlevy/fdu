@@ -3423,7 +3423,8 @@ mod tests {
         // The index refuses any total a u64 cannot hold (fdu-sqyk), so every selected
         // subset of it fits too; the filtered tier re-aggregates entry by entry and must
         // reach the exact bound without saturating or wrapping.
-        let exact = |size: u64, mtime_ns: i64| Attrs { size, allocated: size, ..attrs(1, mtime_ns) };
+        let exact =
+            |size: u64, mtime_ns: i64| Attrs { size, allocated: size, ..attrs(1, mtime_ns) };
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![
             upsert("big", EntryKind::Dir, Attrs::default()),
