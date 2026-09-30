@@ -51,11 +51,13 @@ as tbd writes it and splits the body as tbd reads it, so YAML escapes, empty ver
 mismatches. The notes case was the verifier’s split, not data loss: tbd splits at the
 first such heading and keeps the rest.
 
-`fdu-cw36` separately tracks managed tbd skill drift after repository Markdown
-formatting. Current generated content is present, but `tbd doctor` compares its
-unformatted representation.
-Resolve formatter ownership or semantic normalization without suppressing real
-generated-content drift.
+`fdu-cw36`, managed tbd skill drift after repository Markdown formatting, is closed as a
+tbd defect. tbd 0.9.0 generates the skill in the formatter’s normal form except five
+guideline-group notes it writes unwrapped, and `tbd doctor` compares byte for byte, so
+the committed skill, which is exactly the formatted output, reads as stale.
+The fix belongs in tbd: emit those notes wrapped, or normalize Markdown whitespace
+before comparing. Until then that `tbd doctor` warning is expected, and excluding the
+skills from the documentation check is not the remedy.
 
 ## Skill Installation Follow-Ups
 
