@@ -94,6 +94,14 @@ No command-line option, report or cache schema, or Python API changed.
   releases matched the mark as part of the first rule, so it never applied, and kept the
   bytes after a NUL as part of the rule. The `.gitignore` semantics version is 4, so a
   snapshot written under 3 is rebuilt rather than served.
+- `--analyze` no longer materializes every candidate file before its first read.
+  A candidate holds two paths and a classification, so a million-file tree cost
+  hundreds of megabytes of scheduling memory that the bounded worker channel then
+  drained one at a time. Candidates are now walked in batches of 4,096 over one
+  resumable walk of the index; the count is taken first, without building any, so the
+  progress denominator is exact as before, and every result is still applied
+  conditionally on the revision and fingerprint its candidate carried. Answers,
+  records, and counts are unchanged.
 - `fdu --watch` no longer repaints its aggregate views when nothing a reader sees has
   changed: a touch that leaves a file's size alone, or a change to an entry the
   selection leaves out, moves the index but printed the same tree again under a new

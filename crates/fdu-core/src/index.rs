@@ -428,6 +428,26 @@ impl TotalsOverlay {
     }
 }
 
+/// Where a batched walk of the files an analysis may read has got to
+/// ([`Index::next_analysis_candidates`]): the directories still to list, each with its
+/// path, and the listing in progress with how many of its children have been visited.
+///
+/// Resuming a listing by position is sound because nothing moves the tree between two
+/// batches of one walk: an analysis pass holds the index exclusively, and applying a
+/// result moves its content tier only.
+#[derive(Debug)]
+pub(crate) struct AnalysisWalk {
+    pending: Vec<(EntryId, PathBuf)>,
+    listing: Option<(EntryId, PathBuf, usize)>,
+}
+
+impl AnalysisWalk {
+    /// A walk that has visited nothing.
+    pub(crate) fn start() -> Self {
+        Self { pending: vec![(EntryId::ROOT, PathBuf::new())], listing: None }
+    }
+}
+
 /// The regular files a folded index counted directly in one directory without keeping
 /// them as entries ([`crate::execution::RetainedState::Tree`]).
 ///
@@ -4634,20 +4654,36 @@ impl Index {
     /// [`AnalysisApplyOutcome::Stale`]; [`analyze_index`] is the entry that works.
     ///
     /// [`analyze_index`]: crate::content::analyze_index
+    #[cfg(test)]
     pub(crate) fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
         let root_files = self.entry(EntryId::ROOT).rollup().files;
         let mut candidates = Vec::with_capacity(usize::try_from(root_files).unwrap_or(0));
-        self.for_each_analysis_file(profile, |id, revision, attrs, relative_path| {
-            candidates.push(AnalysisCandidate {
-                entry_id: id,
-                revision,
-                absolute_path: self.root_path.join(&relative_path),
-                classification: self.classify(&relative_path),
-                relative_path,
-                attrs,
-            });
-        });
+        self.walk_analysis_files(
+            profile,
+            &mut AnalysisWalk::start(),
+            |id, revision, attrs, relative_path| {
+                candidates.push(self.analysis_candidate(id, revision, attrs, relative_path));
+                true
+            },
+        );
         candidates
+    }
+
+    fn analysis_candidate(
+        &self,
+        entry_id: EntryId,
+        revision: u64,
+        attrs: Attrs,
+        relative_path: PathBuf,
+    ) -> AnalysisCandidate {
+        AnalysisCandidate {
+            entry_id,
+            revision,
+            absolute_path: self.root_path.join(&relative_path),
+            classification: self.classify(&relative_path),
+            relative_path,
+            attrs,
+        }
     }
 
     /// File identities restore matches against sidecar records, without classifying.
@@ -4677,17 +4713,46 @@ impl Index {
         profile: AnalysisSet,
         mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf),
     ) {
+        self.walk_analysis_files(
+            profile,
+            &mut AnalysisWalk::start(),
+            |id, revision, attrs, path| {
+                visit(id, revision, attrs, path);
+                true
+            },
+        );
+    }
+
+    /// Visit the files an analysis under `profile` may read, from where `walk` left off,
+    /// until `visit` answers `false`; the walk then resumes at the next file.
+    ///
+    /// Depth first, directories in listing order, so every call over one walk visits
+    /// each file once and in the order [`Self::for_each_analysis_file`] does. The parent
+    /// path the walk already holds is joined for each file; `path_of` would walk
+    /// ancestors per file for the same bytes.
+    fn walk_analysis_files(
+        &self,
+        profile: AnalysisSet,
+        walk: &mut AnalysisWalk,
+        mut visit: impl FnMut(EntryId, u64, Attrs, PathBuf) -> bool,
+    ) {
         if !profile.is_enabled() {
             return;
         }
-        // Join the parent path this walk already holds. `path_of` would walk
-        // ancestors per file for the same bytes.
-        let mut stack = vec![(EntryId::ROOT, PathBuf::new())];
-        while let Some((parent, parent_path)) = stack.pop() {
-            for (name, id) in self.children_of(parent).into_iter().flatten() {
+        loop {
+            let (parent, parent_path, visited) = match walk.listing.take() {
+                Some(listing) => listing,
+                None => match walk.pending.pop() {
+                    Some((parent, parent_path)) => (parent, parent_path, 0),
+                    None => return,
+                },
+            };
+            let mut position = visited;
+            for (name, id) in self.children_of(parent).into_iter().flatten().skip(visited) {
+                position += 1;
                 let entry = self.entry(id);
                 if entry.kind == EntryKind::Dir {
-                    stack.push((id, parent_path.join(name)));
+                    walk.pending.push((id, parent_path.join(name)));
                     continue;
                 }
                 if entry.kind != EntryKind::File {
@@ -4700,9 +4765,10 @@ impl Index {
                 {
                     continue;
                 }
-                let revision = entry.revision;
-                let attrs = entry.attrs;
-                visit(id, revision, attrs, relative_path);
+                if !visit(id, entry.revision, entry.attrs, relative_path) {
+                    walk.listing = Some((parent, parent_path, position));
+                    return;
+                }
             }
         }
     }
@@ -4710,24 +4776,77 @@ impl Index {
     /// The candidates `request` still has to read: every one, unless the content tier
     /// holds exactly `request`'s identity, and then those without a record whose
     /// fingerprint matches.
+    ///
+    /// Every candidate at once. An analysis pass takes them in bounded batches through
+    /// [`Self::next_analysis_candidates`] instead, so this is for a caller that wants the
+    /// whole set, such as a test.
+    #[cfg(test)]
     pub(crate) fn pending_analysis_candidates(
         &self,
         request: crate::content::AnalysisRequest,
+    ) -> Vec<AnalysisCandidate> {
+        self.next_analysis_candidates(request, &mut AnalysisWalk::start(), usize::MAX)
+    }
+
+    /// Whether `request` still has to read the file at `relative_path` with `attrs`,
+    /// given what the content tier holds for `request`'s identity.
+    fn pending_analysis(
+        held: Option<crate::stored_state::ContentProjection<'_>>,
+        relative_path: &Path,
+        attrs: &Attrs,
+    ) -> bool {
+        held.and_then(|content| content.file(relative_path))
+            .is_none_or(|record| record.fingerprint != attrs.fingerprint() || !record.is_reusable())
+    }
+
+    /// The next batch of at most `limit` candidates `request` still has to read, from
+    /// where `walk` left off; empty once the walk is over.
+    ///
+    /// A candidate holds two paths and a classification, so materializing every one of a
+    /// million-file tree before the first read cost hundreds of megabytes that the bounded
+    /// worker channel then drained one at a time (fdu-xjfk). Handing them out in batches
+    /// keeps the scheduling memory at the batch, and each candidate still carries the
+    /// revision and fingerprint its result is conditionally applied under.
+    pub(crate) fn next_analysis_candidates(
+        &self,
+        request: crate::content::AnalysisRequest,
+        walk: &mut AnalysisWalk,
+        limit: usize,
     ) -> Vec<AnalysisCandidate> {
         let wanted = self.content_identity(request.profile);
         // The tier refuses a record of any identity but its own, so one comparison here
         // decides for every record it holds.
         let held = self.content().and_then(|content| content.admit(&wanted));
-        self.analysis_candidates(request.profile)
-            .into_iter()
-            .filter(|candidate| {
-                held.and_then(|content| content.file(&candidate.relative_path)).is_none_or(
-                    |record| {
-                        record.fingerprint != candidate.attrs.fingerprint() || !record.is_reusable()
-                    },
-                )
-            })
-            .collect()
+        let root_files = usize::try_from(self.entry(EntryId::ROOT).rollup().files).unwrap_or(0);
+        let mut candidates = Vec::with_capacity(limit.min(root_files));
+        self.walk_analysis_files(request.profile, walk, |id, revision, attrs, relative_path| {
+            if Self::pending_analysis(held, &relative_path, &attrs) {
+                candidates.push(self.analysis_candidate(id, revision, attrs, relative_path));
+            }
+            candidates.len() < limit
+        });
+        candidates
+    }
+
+    /// How many candidates `request` still has to read: what
+    /// [`Self::next_analysis_candidates`] hands out over a whole walk, counted without
+    /// building any of them, so an analysis knows its denominator before its first read.
+    pub(crate) fn count_pending_analysis_candidates(
+        &self,
+        request: crate::content::AnalysisRequest,
+    ) -> u64 {
+        let wanted = self.content_identity(request.profile);
+        let held = self.content().and_then(|content| content.admit(&wanted));
+        let mut count = 0_u64;
+        self.walk_analysis_files(
+            request.profile,
+            &mut AnalysisWalk::start(),
+            |_, _, attrs, path| {
+                count += u64::from(Self::pending_analysis(held, &path, &attrs));
+                true
+            },
+        );
+        count
     }
 
     /// Conditionally commit a worker result if its entry and metadata expectation still
@@ -11303,5 +11422,99 @@ mod tests {
             ]))
             .expect("an exact fit");
         assert_eq!(index.total().bytes, u64::MAX);
+    }
+
+    // Analysis candidates are handed out in bounded batches over one resumable walk
+    // (fdu-xjfk), in the order a whole walk gives them.
+
+    fn tree_for_analysis() -> Index {
+        let mut index = Index::new("/root");
+        let mut ops = vec![upsert("z.txt", EntryKind::File, file_attrs(3, 1))];
+        for directory in ["a", "b", "c"] {
+            ops.push(upsert(directory, EntryKind::Dir, Attrs::default()));
+            ops.push(upsert(&format!("{directory}/deep"), EntryKind::Dir, Attrs::default()));
+            for file in 0..4 {
+                ops.push(upsert(
+                    &format!("{directory}/f{file}.rs"),
+                    EntryKind::File,
+                    file_attrs(10 + file, 1),
+                ));
+            }
+            ops.push(upsert(&format!("{directory}/deep/d.md"), EntryKind::File, file_attrs(7, 2)));
+            ops.push(upsert(&format!("{directory}/link"), EntryKind::Symlink, Attrs::default()));
+        }
+        index.apply_ok(&Observation::new(ops));
+        index
+    }
+
+    #[test]
+    fn analysis_candidates_come_in_bounded_batches_in_walk_order() {
+        let index = tree_for_analysis();
+        let request = crate::content::AnalysisRequest {
+            profile: AnalysisSet::NONE.with_lines(),
+            ..crate::content::AnalysisRequest::default()
+        };
+        let whole: Vec<PathBuf> = index
+            .pending_analysis_candidates(request)
+            .into_iter()
+            .map(|candidate| candidate.relative_path)
+            .collect();
+        assert_eq!(whole.len(), 16, "one root file and five files under each directory");
+        assert_eq!(index.count_pending_analysis_candidates(request), 16);
+
+        for limit in [1, 3, 5, 16, 17, usize::MAX] {
+            let mut walk = AnalysisWalk::start();
+            let mut collected = Vec::new();
+            let mut batch_count = 0;
+            loop {
+                let batch = index.next_analysis_candidates(request, &mut walk, limit);
+                if batch.is_empty() {
+                    break;
+                }
+                assert!(batch.len() <= limit, "a batch is bounded by its limit");
+                batch_count += 1;
+                collected.extend(batch.into_iter().map(|candidate| candidate.relative_path));
+            }
+            assert_eq!(collected, whole, "batches of {limit} walk the same files in the same order");
+            assert_eq!(batch_count, whole.len().div_ceil(limit.min(whole.len())));
+            assert!(
+                index.next_analysis_candidates(request, &mut walk, limit).is_empty(),
+                "a finished walk stays finished"
+            );
+        }
+    }
+
+    #[test]
+    fn batches_skip_what_the_content_tier_already_holds() {
+        let root = tempfile::tempdir().expect("root");
+        for name in ["one.rs", "two.rs", "three.rs"] {
+            std::fs::write(root.path().join(name), b"fn main() {}\n").expect("file");
+        }
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        let request =
+            crate::content::AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 1 };
+        assert_eq!(index.count_pending_analysis_candidates(request), 3);
+        crate::content::analyze_index(&mut index, request);
+        assert_eq!(index.count_pending_analysis_candidates(request), 0);
+        assert!(index.next_analysis_candidates(request, &mut AnalysisWalk::start(), 2).is_empty());
+
+        std::fs::write(root.path().join("two.rs"), b"fn main() { changed(); }\n").expect("grow");
+        let (rescanned, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default())
+                .expect("rescan");
+        index
+            .apply(&Observation::new(vec![upsert(
+                "two.rs",
+                EntryKind::File,
+                *rescanned.attrs(Path::new("two.rs")).expect("attrs"),
+            )]))
+            .expect("apply");
+        assert_eq!(index.count_pending_analysis_candidates(request), 1);
+        let batch = index.next_analysis_candidates(request, &mut AnalysisWalk::start(), 2);
+        assert_eq!(
+            batch.iter().map(|candidate| candidate.relative_path.clone()).collect::<Vec<_>>(),
+            [PathBuf::from("two.rs")]
+        );
     }
 }

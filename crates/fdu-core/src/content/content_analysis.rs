@@ -19,6 +19,10 @@ use super::{
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 const CLASSIFICATION_PREFIX_BYTES: usize = 16 * 1024;
 const MAX_ERROR_BYTES: usize = 512;
+/// Candidates scheduled at once ([`analyze_index_in_batches`]): enough to keep every
+/// worker reading between two walks of the index, and a few megabytes of paths and
+/// classifications at most, whatever the tree holds.
+const ANALYSIS_BATCH_CANDIDATES: usize = 4096;
 
 /// Operational counters from one content-analysis pass.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -132,6 +136,24 @@ pub(crate) fn analyze_index_observed(
     request: AnalysisRequest,
     progress: Option<&crate::Progress>,
 ) -> AnalysisReport {
+    analyze_index_in_batches(index, request, progress, ANALYSIS_BATCH_CANDIDATES)
+}
+
+/// [`analyze_index_observed`], scheduling at most `batch` candidates at a time.
+///
+/// The candidates are walked in batches rather than materialized whole: each holds two
+/// paths and a classification, so a million-file tree cost hundreds of megabytes before
+/// the first read (fdu-xjfk). The count is taken first, without building any, so the
+/// denominator is exact before the first read. Within a batch the workers pull from a
+/// shared cursor and the caller's thread applies every result as it arrives, so one
+/// batch bounds the candidates alive at once and nothing else changes: every result is
+/// still applied conditionally on the revision and fingerprint its candidate carried.
+fn analyze_index_in_batches(
+    index: &mut Index,
+    request: AnalysisRequest,
+    progress: Option<&crate::Progress>,
+    batch: usize,
+) -> AnalysisReport {
     if !request.profile.is_enabled() {
         return AnalysisReport::default();
     }
@@ -139,9 +161,8 @@ pub(crate) fn analyze_index_observed(
         crate::query::system_time_to_nanos(std::time::SystemTime::now()).unwrap_or(0);
     let previous_state = index.content().and_then(super::ContentIndex::state);
     index.prepare_content_analysis(request);
-    let candidates = index.pending_analysis_candidates(request);
     let mut report = AnalysisReport {
-        candidates: u64::try_from(candidates.len()).unwrap_or(u64::MAX),
+        candidates: index.count_pending_analysis_candidates(request),
         code: request.profile.includes_code().then(AnalyzerCoverage::default),
         words: request.profile.includes_words().then(AnalyzerCoverage::default),
         ..AnalysisReport::default()
@@ -150,16 +171,42 @@ pub(crate) fn analyze_index_observed(
         progress.enter(crate::ProgressPhase::Analyzing);
         progress.begin_analysis(report.candidates);
     }
-    if candidates.is_empty() {
+    if report.candidates == 0 {
         finish_content_tier(index, &report, previous_state, pass_started_at_ns);
         return report;
     }
 
     let started = std::time::Instant::now();
-    // Cloned out before the scope: the workers need the index's rules while the receive
+    // Cloned out before the scopes: the workers need the index's rules while the receive
     // loop holds the index mutably, and an `Arc` is what lets both be true.
     let types = index.types_shared();
-    let workers = worker_count(request.workers, candidates.len());
+    let workers =
+        worker_count(request.workers, usize::try_from(report.candidates).unwrap_or(usize::MAX));
+    let mut walk = crate::index::AnalysisWalk::start();
+    loop {
+        let candidates = index.next_analysis_candidates(request, &mut walk, batch.max(1));
+        if candidates.is_empty() {
+            break;
+        }
+        analyze_batch(index, &types, candidates, request, workers, &mut report, progress);
+    }
+    report.elapsed_ns = elapsed_ns(started);
+    finish_content_tier(index, &report, previous_state, pass_started_at_ns);
+    report
+}
+
+/// Read one batch of candidates on `workers` threads and apply each result as it
+/// arrives.
+fn analyze_batch(
+    index: &mut Index,
+    types: &Arc<TypeRegistry>,
+    candidates: Vec<AnalysisCandidate>,
+    request: AnalysisRequest,
+    workers: usize,
+    report: &mut AnalysisReport,
+    progress: Option<&crate::Progress>,
+) {
+    let workers = workers.clamp(1, candidates.len().max(1));
     let next = AtomicUsize::new(0);
     let candidates = Arc::new(candidates);
     let (sender, receiver) = mpsc::sync_channel(workers.saturating_mul(2).max(1));
@@ -169,7 +216,6 @@ pub(crate) fn analyze_index_observed(
             let sender = sender.clone();
             let candidates = Arc::clone(&candidates);
             let next = &next;
-            let types = &types;
             scope.spawn(move || {
                 let _counter_guard = crate::counters::thread_flush_guard();
                 loop {
@@ -184,7 +230,7 @@ pub(crate) fn analyze_index_observed(
         drop(sender);
         for (observation, bytes_read) in receiver {
             report.bytes_read = report.bytes_read.saturating_add(bytes_read);
-            count_coverage(&mut report, &observation.analysis);
+            count_coverage(report, &observation.analysis);
             match index.apply_analysis(observation) {
                 AnalysisApplyOutcome::Applied => report.applied = report.applied.saturating_add(1),
                 AnalysisApplyOutcome::Stale => report.stale = report.stale.saturating_add(1),
@@ -196,9 +242,6 @@ pub(crate) fn analyze_index_observed(
             }
         }
     });
-    report.elapsed_ns = elapsed_ns(started);
-    finish_content_tier(index, &report, previous_state, pass_started_at_ns);
-    report
 }
 
 fn finish_content_tier(
@@ -666,6 +709,44 @@ mod tests {
                 "content analysis had operational failures (I/O errors: 1; changed during read: 2; stale results: 3). File and byte totals remain complete; content metrics omit affected files"
             )
         );
+    }
+
+    /// Batched scheduling changes what is alive at once and nothing else (fdu-xjfk):
+    /// one candidate at a time and every candidate at once leave the same records,
+    /// counts, and denominator.
+    #[test]
+    fn scheduling_in_batches_of_one_leaves_the_same_records_as_all_at_once() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(root.path().join("src/deep")).expect("directories");
+        fs::write(root.path().join("src/main.rs"), b"fn main() {\n    // hi\n}\n").expect("write");
+        fs::write(root.path().join("src/deep/lib.rs"), b"pub fn f() {}\n").expect("write");
+        fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
+        fs::write(root.path().join("blob.bin"), b"\x00\x01\x02").expect("write");
+        fs::write(root.path().join("latin.txt"), b"caf\xe9\n").expect("write");
+        let request = AnalysisRequest { profile: AnalysisSet::ALL, workers: 3 };
+        let records = |batch: usize| {
+            let (mut index, _) =
+                crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            let report = analyze_index_in_batches(&mut index, request, None, batch);
+            let content = index.content().expect("content");
+            let records: BTreeMap<_, _> = content
+                .records()
+                .map(|(path, analysis)| (path.to_path_buf(), format!("{analysis:?}")))
+                .collect();
+            (report, records)
+        };
+        let (one_at_a_time, singly) = records(1);
+        let (all_at_once, whole) = records(usize::MAX);
+        assert_eq!(singly.len(), 5);
+        assert_eq!(singly, whole);
+        assert_eq!(one_at_a_time.candidates, 5);
+        assert_eq!(all_at_once.candidates, 5);
+        assert_eq!(one_at_a_time.applied, all_at_once.applied);
+        assert_eq!(one_at_a_time.stale, all_at_once.stale);
+        assert_eq!(one_at_a_time.bytes_read, all_at_once.bytes_read);
+        assert_eq!(one_at_a_time.lines, all_at_once.lines);
+        assert_eq!(one_at_a_time.code, all_at_once.code);
+        assert_eq!(one_at_a_time.words, all_at_once.words);
     }
 
     /// Every words-unit metric is independent of whether code was also requested.
