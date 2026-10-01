@@ -60,8 +60,11 @@ If the release commit changes, start again with a new directory.
    make release-stability
    ```
 
-   This may run alongside steps 3 to 5, and must pass before step 6. See
-   [Stability Pass](#stability-pass).
+   This may run alongside steps 3 to 5, and must pass before step 6: the command exits 0
+   only once every step of the pass has passed.
+   Exit 3 means that none has failed but one was skipped or has not run.
+   That blocks the tag as a failure does, until the step runs or the record explains why
+   it could not. See [Stability Pass](#stability-pass).
 
 3. **Preflight.** Every line must print `ok`:
 
@@ -381,7 +384,8 @@ One pull request prepares the release, and its merge commit is the release commi
 
 `make release-stability` runs the whole pass on the release commit and writes its
 record. It reads `COMMIT` and `RELEASE` as the other steps do, works in
-`$RELEASE/stability`, and takes its trees from the QA playbook’s
+`$RELEASE/stability`, which like `RELEASE` must be outside any checkout, and takes its
+trees from the QA playbook’s
 [Local Fixtures](../../../tests/qa/cli-installed-e2e.qa.md#local-fixtures) variables:
 
 ```shell
@@ -396,34 +400,70 @@ In order, it:
    [AGENTS.md](../../../AGENTS.md#build-and-test) requires, and runs the four gates
    there, each with its own log: `make check`, `make cross-lint`, `make semver-check`,
    and `make release-rehearse`.
-2. Builds the release wheel from that worktree, installs it into a uv tool directory of
-   its own, and requires `fdu --version` to name the commit.
+2. Builds the release wheel from that worktree, after the Makefile’s `target-owner`
+   guard, installs it into a uv tool directory of its own, and requires `fdu --version`
+   to name the commit.
 3. Runs the QA playbook’s harness, peer agreement (the self-test, then the real trees),
    the Phase 6 pty probe, and the terminal tests against that candidate.
 4. Builds the correctness runbook’s two trees and runs its three passes, then both
-   deliberate breaks, each of which must make its script exit 1.
+   deliberate breaks. Each break must make its script exit 1 and catch every case the
+   script holds to serving, not only the first.
 5. Writes a dated report, in the shape of
    [the 0.3.0 record](../reports/report-2026-09-30-release-0.3.0-stability-pass.md), and
-   the QA playbook’s and correctness runbook’s summary tables, with each private path
-   replaced by a label; and, when nothing failed, removes the worktree and target
-   directory.
+   the QA playbook’s and correctness runbook’s summary tables, with private paths
+   replaced by labels. Unless a step has failed, it then removes the worktree and the
+   target directory it made.
 
-Before anything runs it names each missing prerequisite and exits 2: GNU time at
-`/usr/bin/time`, uv at the Makefile’s floor, the reviewed `cargo-semver-checks` (with
-the one install command to use), the trees, and free space.
-A missing peer tool, or, when running as root, a missing `setpriv` or `nobody` account,
-is reported instead, and marks the part that needs it skipped, never passed: a pass with
-a skip exits 3. As root the refusal pass runs as `nobody`, so the work directory and
-this checkout must be where every user can reach them.
+**Prerequisites.** Before anything runs it names each missing prerequisite and exits 2:
 
-Each stage can run on its own, so a rerun after a host failure repeats nothing else:
-`ARGS="--only gates"`, `candidate`, `qa`, or `correctness`, one step such as
-`--only peer-trees`, or `--only report` to write the report again.
-`state.json` in the work directory records every result, and the report always covers
-the whole pass. `ARGS="--wheels $RELEASE/rehearsal/files"` installs the rehearsal’s own
-wheel instead of building one, which is closer to what users receive, and `--wrap`
-prefixes the gates and the build with a command such as a lock;
-`python3 scripts/release/stability_pass.py --help` lists every option.
+- GNU time at `/usr/bin/time`, and uv at the Makefile’s floor;
+- the reviewed `cargo-semver-checks`, with the one install command to use;
+- every rustup target `make cross-lint` checks, with the `rustup target add` command for
+  those missing, since that gate skips a target that is not installed;
+- `FDU_QA_SMALL`, and a directory behind every tree variable that is set;
+- free space for the builds;
+- as root, `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1`, without which `make check` stops at
+  its preflight.
+
+**Skips.** What the pass could not do is recorded as skipped, never passed, and a pass
+with a skip exits 3:
+
+- peer agreement without GNU du or one of the peers, and the real-tree run without
+  `FDU_QA_PEER_TREES`;
+- the pty probe without its trees;
+- as root, the refusal pass and its break without `setpriv` or a `nobody` account;
+- the harness when it exits 0 having left something out: Phase 4 or 5 without
+  `FDU_QA_MEDIUM` or `FDU_QA_LARGE`, which the command says before it starts, or the
+  checks after a stop at its memory limit;
+- `make cross-lint` when its log shows a skipped target.
+
+As root the refusal pass runs as `nobody`, so the work directory and this checkout must
+be where every user can reach them.
+A command still running after six hours is stopped and its step fails
+(`--timeout-minutes`).
+
+**Reruns.** Each stage can run on its own, so a rerun after a host failure repeats
+nothing else: `ARGS="--only gates"`, `candidate`, `qa`, or `correctness`, one step such
+as `--only peer-trees`, or `--only report` to write the report again.
+`state.json` in the work directory records every result, and the report and the exit
+status always describe the whole pass: after `--only`, the command still exits 1 while
+any recorded step has failed, and 3 while one is skipped or has not run.
+A failed step keeps the worktree and target for inspection until a rerun of it passes.
+
+**Options.** `python3 scripts/release/stability_pass.py --help` lists them all.
+
+- `ARGS="--wheels $RELEASE/rehearsal/files"` installs the rehearsal’s own wheel instead
+  of building one, which is closer to what users receive.
+  That wheel is stamped as the release, so `fdu --version` names no commit.
+  The pass instead requires `$RELEASE/state.json` to record the commit and the
+  rehearsal’s `SHA256SUMS` to list the installed wheel, and the report names the wheel.
+- `--wrap` prefixes the gates and the build with a command such as a lock.
+- `--target-dir` builds in a directory of the caller’s, which the pass never removes.
+- `--label PATH=LABEL` chooses how the report names a path.
+  Without it, a tree under the home directory is written relative to it
+  (`~/work/<name>`), a system path such as `/usr` as it is, and any other tree by its
+  last component. Read the report’s Trees line and its Reproduce block before committing
+  it, and relabel any name that should not be published.
 
 No command can watch a real window, so Phase 6 stays pending until a person does, and
 the report leaves the host’s regime to confirm: whether it was bare metal and quiet.
@@ -462,6 +502,8 @@ command writes one to its work directory, to copy there once its regime is confi
 The records describe the release commit, so they need not be part of it.
 A failure, or a peer-agreement row marked `UNEXPLAINED`, blocks the tag until a new
 commit fixes it or the records explain it.
+So does a skipped step, until it runs or the records say why it could not and what
+covers it instead, as the 0.3.0 record does for the arm64 target.
 
 The 0.2.0 pass filed four beads against these procedures; check them before relying on
 the phases they name.

@@ -123,9 +123,9 @@ It does not invent defaults that point at a home directory.
 | --- | --- | --- |
 | `FDU` | Binary under test | PATH `fdu` if unset |
 | `FDU_QA_SMALL` | Typed / engine checkout used for the view and analyze matrix | Required for those phases |
-| `FDU_QA_MEDIUM` | Larger working tree | Optional; omit to skip |
+| `FDU_QA_MEDIUM` | Larger working tree | Optional; omit to skip Phase 4, which leaves `make release-stability` incomplete (exit 3) |
 | `FDU_QA_MEDIUM_ANALYZE` | Subtree for `--analyze=code` on the medium tree | Optional; default `$FDU_QA_MEDIUM/docs` if that directory exists |
-| `FDU_QA_LARGE` | Hostile wide tree (often a home Library) | Optional; omit to skip |
+| `FDU_QA_LARGE` | Hostile wide tree (often a home Library) | Optional; omit to skip Phase 5, which leaves `make release-stability` incomplete (exit 3) |
 | `FDU_QA_OUT` | Transcript and results directory | Optional temp dir |
 | `FDU_QA_PEER_TREES` | Real trees for Phase 7, separated like `PATH` | Optional; `make release-stability` skips the real-tree run without it |
 | `FDU_QA_PROGRESS_TREE` | Tree whose metadata scan takes well over half a second, for the Phase 6 pty probe | Optional; default `$FDU_QA_MEDIUM` |
@@ -473,7 +473,8 @@ Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
 
 Every check below but the Windows one can also be judged in a pseudo-terminal, and
 `scripts/qa/pty_probe.py` does so against real trees, `$FDU_QA_PROGRESS_TREE` and
-`$FDU_QA_PROGRESS_ANALYZE`; it exits 2 when a tree is too fast to draw frames.
+`$FDU_QA_PROGRESS_ANALYZE`, each falling back as the [Local Fixtures](#local-fixtures)
+table says; it exits 2 when a tree is too fast to draw frames.
 A pass of it is evidence, not the phase: the phase stays pending until a person has
 watched a window.
 
