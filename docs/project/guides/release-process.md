@@ -60,11 +60,12 @@ If the release commit changes, start again with a new directory.
    make release-stability
    ```
 
-   This may run alongside steps 3 to 5, and must pass before step 6: the command exits 0
-   only once every step of the pass has passed.
-   Exit 3 means that none has failed but one was skipped or has not run.
-   That blocks the tag as a failure does, until the step runs or the record explains why
-   it could not. See [Stability Pass](#stability-pass).
+   This may run alongside steps 3 to 5, and must pass before step 6: the command
+   succeeds only once every step of the pass has passed.
+   When none has failed but one was skipped or has not run, it exits 3 (`make` reports
+   `Error 3`). That blocks the tag as a failure does, until the step runs or the record
+   explains why it could not.
+   See [Stability Pass](#stability-pass).
 
 3. **Preflight.** Every line must print `ok`:
 
@@ -414,9 +415,12 @@ In order, it:
    replaced by labels. Unless a step has failed, it then removes the worktree and the
    target directory it made.
 
+The statuses below are the script’s own.
+Through `make` each shows as `Error N`, and `make` itself exits 2 for all of them.
+
 **Prerequisites.** Before anything runs it names each missing prerequisite and exits 2:
 
-- GNU time at `/usr/bin/time`, and uv at the Makefile’s floor;
+- `/usr/bin/time`, which on Linux must be GNU time, and uv at the Makefile’s floor;
 - the reviewed `cargo-semver-checks`, with the one install command to use;
 - every rustup target `make cross-lint` checks, with the `rustup target add` command for
   those missing, since that gate skips a target that is not installed;
@@ -456,7 +460,8 @@ A failed step keeps the worktree and target for inspection until a rerun of it p
   of building one, which is closer to what users receive.
   That wheel is stamped as the release, so `fdu --version` names no commit.
   The pass instead requires `$RELEASE/state.json` to record the commit and the
-  rehearsal’s `SHA256SUMS` to list the installed wheel, and the report names the wheel.
+  rehearsal’s `SHA256SUMS` to list the installed wheel, whether or not the commit is
+  tagged yet, and the report names the wheel.
 - `--wrap` prefixes the gates and the build with a command such as a lock.
 - `--target-dir` builds in a directory of the caller’s, which the pass never removes.
 - `--label PATH=LABEL` chooses how the report names a path.
@@ -481,7 +486,7 @@ Then install the candidate as a user would, and run the two manual procedures on
   [Install the Candidate](../../../tests/qa/cli-installed-e2e.qa.md#11-install-the-candidate)
   describes, or, after step 4, install the rehearsal’s own wheel for this platform,
   which is closer to what users receive:
-  `uv tool install --force --python 3.12 --no-index --find-links "$RELEASE/rehearsal/files" fdu`.
+  `uv tool install --force --python 3.12 --no-index --no-build --find-links "$RELEASE/rehearsal/files" fdu`.
   Run the whole [installed-CLI QA playbook](../../../tests/qa/cli-installed-e2e.qa.md),
   including its
   [peer-agreement phase](../../../tests/qa/cli-installed-e2e.qa.md#phase-7-peer-agreement-on-real-trees):
@@ -503,7 +508,7 @@ The records describe the release commit, so they need not be part of it.
 A failure, or a peer-agreement row marked `UNEXPLAINED`, blocks the tag until a new
 commit fixes it or the records explain it.
 So does a skipped step, until it runs or the records say why it could not and what
-covers it instead, as the 0.3.0 record does for the arm64 target.
+covers it instead.
 
 The 0.2.0 pass filed four beads against these procedures; check them before relying on
 the phases they name.

@@ -56,7 +56,7 @@ cold output relabeled `cache_only` must make every case report `PARTIAL-STORED` 
 would have called that stored snapshot `withheld`; the first version of this pass did.
 The two wrappers are `tests/correctness/break_no_snapshot.py` and
 `tests/correctness/break_partial_stored.py`: name one as `FDU_BIN`, and the real binary
-as `FDU_REAL`. A script exits 1 on its first failing case, so read the table as well as
+as `FDU_REAL`. A script exits 1 when any one case fails, so read the table as well as
 the status: every case must be caught.
 `cross_warm.py` prints the number of `pairs held to serving`, which is how many
 `NOT-WARM` rows the first break must produce; `make release-stability` checks all three

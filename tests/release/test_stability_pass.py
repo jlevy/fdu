@@ -7,6 +7,8 @@ import hashlib
 import io
 import json
 import os
+import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -51,6 +53,7 @@ class FakeHost(sp.Host):
         checkout: str | None = None,
         tooling: str = SHA,
         dirty: bool = False,
+        tags: str = "",
     ) -> None:
         self.tools = ALL_TOOLS if tools is None else tools
         pinned = semver_check.pinned_tool_version(ROOT)
@@ -71,6 +74,7 @@ class FakeHost(sp.Host):
         self.checkout = checkout
         self.tooling = tooling
         self.dirty = dirty
+        self.tags = tags
         self.executed: list[tuple[list[str], dict[str, str]]] = []
 
     def which(self, name: str) -> str | None:
@@ -96,6 +100,8 @@ class FakeHost(sp.Host):
                 return 0, self.tooling + "\n"
             if command[:2] == ("status", "--porcelain") and args[2] == str(ROOT):
                 return 0, " M scripts/x.py\n" if self.dirty else ""
+            if command[:2] == ("tag", "--points-at"):
+                return 0, self.tags
             if command[:2] == ("worktree", "add"):
                 Path(command[3]).mkdir(parents=True)
                 return 0, ""
@@ -442,11 +448,12 @@ class VersionTests(unittest.TestCase):
         other = "fdu 0.3.0-dev+g123456789"
         self.assertFalse(sp.version_names_commit(other, self.IDENTITY, bare_ok=True))
 
-    def test_a_bare_version_is_the_commit_only_when_stamped_as_the_release(self) -> None:
+    def test_a_bare_version_is_the_commit_only_with_other_proof_of_it(self) -> None:
         self.assertFalse(sp.version_names_commit("fdu 0.3.0", self.IDENTITY, bare_ok=False))
         self.assertTrue(sp.version_names_commit("fdu 0.3.0", self.IDENTITY, bare_ok=True))
+        # The tag is the caller's proof to weigh: it says nothing of a wheel from elsewhere.
         tagged = replace(self.IDENTITY, tagged=True)
-        self.assertTrue(sp.version_names_commit("fdu 0.3.0", tagged, bare_ok=False))
+        self.assertFalse(sp.version_names_commit("fdu 0.3.0", tagged, bare_ok=False))
         self.assertFalse(sp.version_names_commit("fdu 0.2.9", tagged, bare_ok=True))
 
 
@@ -485,6 +492,26 @@ class RedactionTests(unittest.TestCase):
             sp.redact(text, pairs, "/home/alice"),
             "<fdu checkout>/crates <work>/logs/x.log `linux tree` /srv/src/linux2 "
             "<trees>/served <tmp>/other <fdu checkout>/scripts",
+        )
+
+    def test_a_known_path_is_replaced_only_where_it_starts_a_path(self) -> None:
+        state = {
+            "paths": {
+                "trees": {"small": "/home/alice/tmp/fixture", "medium": "/tests"},
+                "root": "/src",
+                "tmp": "/tmp",
+            },
+            "trees_base": "/tmp/fdu-trees-abc",
+        }
+        pairs = sp.label_pairs(state, "/home/alice")
+        text = (
+            "~/tmp/fixture src/tmp/x /tmp/fdu-trees-abc/tmp/y crates/fdu-core/src/lib.rs "
+            "[playbook](../../../tests/qa/x.md) FDU_BIN=/src/bin/fdu `/tests` /tmp/z"
+        )
+        self.assertEqual(
+            sp.redact(text, pairs, "/home/alice"),
+            "~/tmp/fixture src/tmp/x <trees>/tmp/y crates/fdu-core/src/lib.rs "
+            "[playbook](../../../tests/qa/x.md) FDU_BIN=<fdu checkout>/bin/fdu `tests` <tmp>/z",
         )
 
     def test_anything_left_that_names_a_home_is_replaced(self) -> None:
@@ -682,7 +709,10 @@ class RunTests(Scratch):
         argv = ["--commit", SHA, "--work-dir", str(work), "--date", "2026-10-01", *map(str, more)]
         for item in only:
             argv += ["--only", item]
-        status = quietly(lambda: sp.main(argv, host))
+        stdout = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+            status = sp.main(argv, host)
+        self.said = stdout.getvalue()
         return status, json.loads((work / "state.json").read_text(encoding="utf-8"))
 
     def test_the_correctness_stage_and_both_breaks_pass(self) -> None:
@@ -711,7 +741,7 @@ class RunTests(Scratch):
         self.assertEqual(state["steps"]["break-partial-stored"]["status"], "failed")
 
     def test_a_break_that_catches_only_some_cases_fails_the_pass(self) -> None:
-        # Each script exits 1 on its first failing case, so the exit status says nothing
+        # Each script exits 1 when any one case fails, so the exit status says nothing
         # about the cases a blinded check would have called ok.
         self.install(self.base / "work", self.all_but("breaks"))
         status, state = self.run_pass(FakeHost(script=correctness_script(caught=1)), "breaks")
@@ -768,6 +798,23 @@ class RunTests(Scratch):
                         self.assertIn("the pass: failed. Failed: check. Skipped: peer-trees.", said)
                     if expected == 0:
                         self.assertIn("the pass: every step has passed.", said)
+
+    def test_an_interrupted_rerun_leaves_its_step_not_run(self) -> None:
+        # The rerun has already overwritten the logs its old verdict was read from.
+        work = self.base / "work"
+        self.install(work, self.all_but())
+
+        class Interrupted(FakeHost):
+            def execute(self, argv: Any, **kwargs: Any) -> int:
+                raise KeyboardInterrupt
+
+        argv = ["--commit", SHA, "--work-dir", str(work), "--only", "served"]
+        with self.assertRaises(KeyboardInterrupt):
+            quietly(lambda: sp.main(argv, Interrupted()))
+        state = json.loads((work / "state.json").read_text(encoding="utf-8"))
+        self.assertNotIn("served", state["steps"])
+        status, _ = self.run_pass(FakeHost(), "report")
+        self.assertEqual(status, sp.EXIT_INCOMPLETE)
 
     def test_steps_that_have_not_run_leave_the_pass_incomplete(self) -> None:
         self.install(self.base / "work")
@@ -883,6 +930,7 @@ class RunTests(Scratch):
         # Without FDU_QA_LARGE the harness skips Phase 5 and still exits 0.
         step = self.run_harness(harness_script([("sanity", "ok"), ("medium", "ok")]))
         self.assertEqual((step["exit"], step["status"]), (sp.EXIT_INCOMPLETE, "skipped"))
+        self.assertIn("note: FDU_QA_LARGE is not set, so the harness skips", self.said)
         self.assertEqual(
             step["detail"],
             "2 checks: 2 ok, 0 warn, 0 fail; its `large` phase did not run, which needs "
@@ -890,13 +938,26 @@ class RunTests(Scratch):
         )
 
     def test_a_harness_that_stopped_at_its_memory_limit_is_skipped(self) -> None:
-        rows = [("sanity", "ok"), ("medium", "ok"), ("large", "ok"), ("large", "skip")]
-        script = harness_script(rows, stopped="large-tree: RSS limit")
+        # The check that hit the limit keeps its own `ok`, and the rest of the phase is
+        # never written: on an exit of 0, only the reason says anything was left out.
+        rows = [("sanity", "ok"), ("medium", "ok"), ("large", "ok")]
+        script = harness_script(rows, stopped="large-2: RSS limit")
         step = self.run_harness(script, large=self.base / "large")
         self.assertEqual((step["exit"], step["status"]), (sp.EXIT_INCOMPLETE, "skipped"))
-        self.assertIn("3 ok, 0 warn, 0 fail, 1 skip", step["detail"])
-        self.assertIn(
-            "it stopped early (large-tree: RSS limit); 1 checks did not run", step["detail"]
+        self.assertEqual(
+            step["detail"], "3 checks: 3 ok, 0 warn, 0 fail; it stopped early (large-2: RSS limit)"
+        )
+        # After a SIGKILL the later checks are `skip` rows, and are counted.
+        harness_script([("large", "fail"), ("large", "skip")], "x: SIGKILL")(
+            [], {"FDU_QA_OUT": str(self.base / "out")}
+        )
+        self.assertEqual(
+            sp.harness_gaps(self.base / "out" / "results.json"),
+            [
+                "it stopped early (x: SIGKILL)",
+                "1 checks did not run",
+                "its `medium` phase did not run, which needs FDU_QA_MEDIUM",
+            ],
         )
 
     def test_a_harness_that_fails_is_failed_whatever_it_left_out(self) -> None:
@@ -1011,6 +1072,24 @@ class RunTests(Scratch):
         self.assertTrue((self.base / "shared" / "kept").exists())
         self.assertTrue((work / "target" / "kept").exists())
 
+    def test_what_cleanup_could_not_remove_stays_the_passes_to_remove(self) -> None:
+        with mock.patch.object(sp.shutil, "rmtree"):
+            status, state, _, work = self.run_gates()
+        self.assertEqual(status, sp.EXIT_INCOMPLETE)
+        self.assertEqual(state["created"], {"worktree": True, "target": True})
+        # The next run that passes removes them.
+        _, state, _, _ = self.run_gates(only="semver-check")
+        self.assertEqual(state["created"], {})
+        self.assertFalse((work / "worktree").exists())
+
+    def test_writing_the_report_again_removes_nothing(self) -> None:
+        _, state, _, work = self.run_gates(more=["--keep"])
+        self.assertEqual(state["created"], {"worktree": True, "target": True})
+        status, state = self.run_pass(FakeHost(), "report")
+        self.assertEqual(status, sp.EXIT_INCOMPLETE)
+        self.assertTrue((work / "worktree").exists())
+        self.assertTrue((work / "target").exists())
+
     def test_the_wheel_build_runs_the_target_guard_first(self) -> None:
         def build(args: list[str], env: Mapping[str, str]) -> tuple[int, str]:
             if "maturin" in args:
@@ -1087,9 +1166,10 @@ class GivenWheelTests(Scratch):
         (self.base / "release" / "state.json").write_text(json.dumps(state), encoding="utf-8")
         return files
 
-    def install(self, wheels: Path, version: str = "fdu 0.3.0") -> dict[str, Any]:
+    def install(self, wheels: Path, version: str = "fdu 0.3.0", tags: str = "") -> dict[str, Any]:
         work = Path(tempfile.mkdtemp(dir=self.base))
-        host = FakeHost(answers={(str(work / "bin" / "fdu"), "--version"): (0, version + "\n")})
+        answers = {(str(work / "bin" / "fdu"), "--version"): (0, version + "\n")}
+        host = FakeHost(answers=answers, tags=tags)
         argv = ["--commit", SHA, "--work-dir", str(work), "--wheels", str(wheels)]
         quietly(lambda: sp.main([*argv, "--only", "candidate"], host))
         state = json.loads((work / "state.json").read_text(encoding="utf-8"))
@@ -1122,6 +1202,9 @@ class GivenWheelTests(Scratch):
         step = self.install(loose)
         self.assertEqual(step["status"], "failed")
         self.assertIn("is not in a release directory's rehearsal/files", step["detail"])
+        # A tag on the commit says nothing of a wheel from elsewhere: a pass rerun after
+        # the tag still needs the rehearsal's record.
+        self.assertEqual(self.install(loose, tags="v0.3.0\n")["status"], "failed")
         # A wheel that names the commit itself needs no record.
         self.assertEqual(self.install(loose, version=VERSION)["status"], "passed")
 
@@ -1155,7 +1238,7 @@ class TimeoutTests(Scratch):
         started = time.monotonic()
         with self.assertRaises(sp.StepError) as raised:
             sp.Host().execute(
-                ["sh", "-c", "echo begun; sleep 60 & sleep 60"],
+                ["sh", "-c", "trap 'echo cleaned > marker' TERM; echo begun; sleep 60 & sleep 60"],
                 cwd=self.base,
                 env=dict(os.environ),
                 log=log,
@@ -1168,7 +1251,70 @@ class TimeoutTests(Scratch):
         self.assertEqual(raised.exception.logs, [log])
         text = log.read_text(encoding="utf-8")
         self.assertRegex(text, r"== end: \S+ \(stopped after ")
-        self.assertEqual(sp.body(log), "begun")
+        self.assertEqual(sp.body(log).splitlines()[0], "begun")
+        # It was asked to stop before it was made to: its own cleanup ran.
+        self.assertEqual((self.base / "marker").read_text(encoding="utf-8"), "cleaned\n")
+
+    def test_a_descendant_outside_the_group_cannot_hold_the_pass_by_the_pipe(self) -> None:
+        stray = (
+            "import os, time\n"
+            "if os.fork() == 0:\n"
+            "    os.setsid()\n"
+            "    time.sleep(40)\n"
+            "    os._exit(0)\n"
+            "time.sleep(60)\n"
+        )
+        started = time.monotonic()
+        with self.assertRaises(sp.StepError):
+            sp.Host().execute(
+                [sys.executable, "-c", stray],
+                cwd=self.base,
+                env=dict(os.environ),
+                log=self.base / "stray.log",
+                header=[],
+                timeout=0.5,
+            )
+        self.assertLess(time.monotonic() - started, 30)
+
+    def test_a_termination_signal_to_the_driver_stops_the_running_step_too(self) -> None:
+        # The step is in a process group of its own, which the signal does not reach.
+        pidfile = self.base / "step.pid"
+        driver = (
+            "import os, sys\n"
+            f"sys.path.insert(0, {str(ROOT)!r})\n"
+            "from pathlib import Path\n"
+            "from scripts.release import stability_pass as sp\n"
+            "sp.TERMINATION.install()\n"
+            "sp.Host().execute(['sh', '-c', 'echo $$ > step.pid; sleep 60'], cwd=Path.cwd(),\n"
+            "                  env=dict(os.environ), log=Path('driver.log'), header=[])\n"
+        )
+        process = subprocess.Popen([sys.executable, "-c", driver], cwd=self.base)
+        try:
+            deadline = time.monotonic() + 30
+            while not (pidfile.exists() and pidfile.read_text().strip()):
+                self.assertLess(time.monotonic(), deadline, "the step never started")
+                time.sleep(0.05)
+            step = int(pidfile.read_text())
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=30), 128 + signal.SIGTERM)
+        finally:
+            process.kill()
+            process.wait()
+        with self.assertRaises(ProcessLookupError):
+            os.kill(step, 0)
+
+    def test_a_signal_while_a_step_starts_waits_until_the_step_can_be_stopped(self) -> None:
+        termination = sp.Termination()
+        termination.hold()
+        termination.handle(signal.SIGTERM, None)
+        self.assertEqual(termination.pending, signal.SIGTERM)
+        with self.assertRaises(SystemExit) as raised:
+            termination.release()
+        self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
+        # Once released, a signal is raised where it lands; Ctrl-C stays Ctrl-C.
+        with self.assertRaises(KeyboardInterrupt):
+            termination.handle(signal.SIGINT, None)
+        termination.release()
 
     def test_a_command_inside_its_time_runs_to_its_own_status(self) -> None:
         log = self.base / "quick.log"
@@ -1327,18 +1473,38 @@ class ReportTests(Scratch):
 
     def test_a_phase_the_harness_stopped_in_is_blocked_and_shows_its_skips(self) -> None:
         work = self.write_pass()
+        # A memory-limit stop as the harness writes it: the check that hit the limit
+        # keeps `ok`, and nothing after it is written.
         rows = [
             {"phase": "sanity", "name": "help", "verdict": "ok"},
+            {"phase": "medium", "name": "medium-default", "verdict": "ok"},
             {"phase": "large", "name": "large-summary", "verdict": "ok"},
-            {"phase": "large", "name": "large-tree", "verdict": "skip"},
         ]
         results = {"stopped_reason": "large-summary: RSS limit", "rows": rows}
         (work / "qa" / "results.json").write_text(json.dumps(results), encoding="utf-8")
         _, tables = self.written(work)
         self.assertIn("| Phase 2: Small-tree views | ✅ Passed | 1 checks: 1 ok |", tables)
+        self.assertIn("| Phase 4: Medium tree | ✅ Passed | 1 checks: 1 ok |", tables)
         self.assertIn(
-            "| Phase 5: Bounded large tree | ⏸️ Blocked | 2 checks: 1 ok, 1 skip; the harness "
+            "| Phase 5: Bounded large tree | ⏸️ Blocked | 1 checks: 1 ok; the harness "
             "stopped at large-summary: RSS limit |",
+            tables,
+        )
+        # A stop in an earlier phase cuts every later one, rows or none; a SIGKILL's
+        # later checks are `skip` rows.
+        rows = [
+            {"phase": "sanity", "name": "help", "verdict": "ok"},
+            {"phase": "medium", "name": "medium-default", "verdict": "fail"},
+            {"phase": "medium", "name": "medium-tree", "verdict": "skip"},
+        ]
+        results = {"stopped_reason": "medium-default: SIGKILL", "rows": rows}
+        (work / "qa" / "results.json").write_text(json.dumps(results), encoding="utf-8")
+        _, tables = self.written(work)
+        self.assertIn("| Phase 2: Small-tree views | ✅ Passed | 1 checks: 1 ok |", tables)
+        self.assertIn("| Phase 4: Medium tree | ❌ Failed | 2 checks: 1 fail, 1 skip", tables)
+        self.assertIn(
+            "| Phase 5: Bounded large tree | ⏸️ Blocked | No rows; the harness stopped at "
+            "medium-default: SIGKILL |",
             tables,
         )
 

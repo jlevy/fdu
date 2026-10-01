@@ -16,15 +16,15 @@ harness, peer agreement (its self-test, then the real trees), the Phase 6 pty pr
 the terminal tests against that candidate; builds the correctness runbook's two trees and
 runs its three passes, then both deliberate breaks, each of which must make its script
 exit 1; and writes a dated report and the two summary tables the QA playbook and the
-correctness runbook record, with every private path replaced by a label.
+correctness runbook record, with private paths replaced by labels.
 
 Every path comes from arguments or the environment. Each step's log, and `state.json`,
 which records every result, are under the work directory (default `$RELEASE/stability`),
 so `--only` can rerun a stage or a step and the report still covers the whole pass. A
 work directory belongs to one commit, and is outside any checkout.
 
-Prerequisites are checked before anything runs, each with one message: GNU time at
-`/usr/bin/time`, uv, the reviewed `cargo-semver-checks`, every rustup target
+Prerequisites are checked before anything runs, each with one message: `/usr/bin/time`
+(GNU time on Linux), uv, the reviewed `cargo-semver-checks`, every rustup target
 `make cross-lint` checks, `FDU_QA_SMALL`, and free space. A missing peer tool, or, when
 running as root, a missing `setpriv` or `nobody` account, is reported and the part that
 needs it is marked skipped, never passed. So is a step that ran and left part of itself
@@ -34,10 +34,15 @@ limit, and a cross-lint that skipped a target.
 Exit status, which describes the whole recorded pass and not only the steps this run
 ran: 0 when every step has passed, 1 when one has failed, and 3 when none has failed but
 one was skipped or has not run. So a rerun with `--only` exits 0 only once the pass is
-whole. 2 means a prerequisite or an argument is wrong and nothing ran. Unless a step in
-the record has failed, the worktree and the target directory the pass made are removed;
-a `--target-dir` is the caller's and is kept, as are the candidate, the logs, and the
-report.
+whole. 2 means a prerequisite or an argument is wrong and nothing ran. Through `make`
+each shows as `Error N`, and `make` itself exits 2. Unless a step in the record has
+failed, a run that ran a step removes the worktree and the target directory the pass
+made; a `--target-dir` is the caller's and is kept, as are the candidate, the logs, and
+the report.
+
+A step runs in a process group of its own, so that one still running after
+`--timeout-minutes` can be stopped whole; Ctrl-C, SIGTERM, and SIGHUP stop the running
+step with the pass, and leave it not run in the record.
 """
 
 from __future__ import annotations
@@ -51,6 +56,7 @@ import os
 import platform
 import pwd
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -58,7 +64,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import tomllib
 import traceback
@@ -108,6 +113,11 @@ EXIT_FAILED, EXIT_USAGE, EXIT_INCOMPLETE = 1, 2, 3
 GB = 10**9
 # An atomically rewritten log shows a long step's output so far this often.
 LOG_REFRESH_SECONDS = 15.0
+# How long a stopped step has to clean up after SIGTERM before SIGKILL, and how long its
+# output is still read after that, in case something outside its group holds the pipe.
+STOP_GRACE_SECONDS = 5.0
+# The harness's phases in the order it runs them; a stop leaves the later ones unrun.
+HARNESS_PHASES = ("sanity", "views", "cache-analyze", "analyze-extra", "watch", "medium", "large")
 # Host preconditions the Makefile reads, and the interpreter pin; the report states each.
 DECLARED = ("FDU_TEST_ALLOW_NO_PERMISSION_BITS", "FDU_TEST_ALLOW_NO_NATIVE_WATCH", "UV_PYTHON")
 # The harness phases that run only when their tree is named, and the variable that names it.
@@ -149,6 +159,9 @@ SYSTEM_ROOTS = (
 )
 HOME_DIRECTORY = re.compile(r"^/(?:home|Users)/[^/]+$")
 BOUNDARY = r"(?=$|[/\s`'\"|),:;\]])"
+# What cannot precede the start of an absolute path: `/tmp` is not a path in `~/tmp`,
+# `src/tmp`, or `../tmp`.
+PATH_START = r"(?<![\w.~/-])"
 PEER_SCRATCH = re.compile(r"[^\s`'\"]*fdu-peer-agreement-[A-Za-z0-9_]+")
 ANY_HOME = re.compile(r"/(?:home|Users)/[^/\s`'\"|),:;\]]+")
 ROOT_HOME = re.compile(r"/root" + BOUNDARY)
@@ -291,11 +304,15 @@ class Host:
 
         The log is rewritten whole every few seconds while the command runs, so it can be
         followed, and once more with the exit status when it ends. A command still running
-        after `timeout` seconds is stopped with everything it started, and that is a
-        `StepError`: a hung step fails, and the rest of the pass still runs."""
+        after `timeout` seconds has its process group stopped, and that is a `StepError`:
+        a hung step fails, and the rest of the pass still runs. A descendant that left the
+        group is not stopped, but it cannot hold the pass by holding the pipe."""
         command = [str(arg) for arg in argv]
         head = "\n".join([*header, f"== command: {shlex.join(command)}", f"== start: {utc_now()}"])
         write_text_atomic(log, head + "\n", encoding="utf-8")
+        # A signal that arrives while the step is being started waits until it can be
+        # stopped: raised inside `Popen`, it would leave a step nothing holds.
+        TERMINATION.hold()
         try:
             process = subprocess.Popen(
                 command,
@@ -310,51 +327,58 @@ class Host:
         except OSError as error:
             tail = f"== end: {utc_now()}\n== could not start: {error}\n== exit status: 127\n"
             write_text_atomic(log, f"{head}\n{tail}", encoding="utf-8")
+            TERMINATION.release()
             return 127
-        expired = threading.Event()
-
-        def stop() -> None:
-            with contextlib.suppress(OSError):
-                os.killpg(process.pid, signal.SIGKILL)
-
-        def expire() -> None:
-            expired.set()
-            stop()
-
-        timer = threading.Timer(timeout, expire) if timeout else None
-        if timer is not None:
-            timer.start()
+        except BaseException:
+            TERMINATION.release()
+            raise
         chunks: list[bytes] = []
-        written = time.monotonic()
-        assert process.stdout is not None
+        expired = False
         try:
-            for line in iter(process.stdout.readline, b""):
-                chunks.append(line)
-                if time.monotonic() - written > LOG_REFRESH_SECONDS:
-                    output = b"".join(chunks).decode("utf-8", "replace")
-                    write_text_atomic(log, f"{head}\n{output}", encoding="utf-8")
-                    written = time.monotonic()
+            TERMINATION.release()
+            fd = process.stdout.fileno() if process.stdout else -1
+            written = time.monotonic()
+            deadline = time.monotonic() + timeout if timeout else None
+            while True:
+                # Never a blocking read: the deadline has to be seen while nothing is written.
+                if select.select([fd], [], [], 1.0)[0]:
+                    chunk = os.read(fd, 65536)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    if time.monotonic() - written > LOG_REFRESH_SECONDS:
+                        output = b"".join(chunks).decode("utf-8", "replace")
+                        write_text_atomic(log, f"{head}\n{output}", encoding="utf-8")
+                        written = time.monotonic()
+                if deadline is not None and time.monotonic() >= deadline:
+                    if expired:
+                        # The group is gone, and something outside it still holds the pipe.
+                        with contextlib.suppress(OSError):
+                            process.kill()
+                        break
+                    expired = True
+                    stop_group(process)
+                    deadline = time.monotonic() + STOP_GRACE_SECONDS
             status = process.wait()
         except BaseException:
-            # Ctrl-C reaches this process but not the step's group, so stop that too.
-            stop()
+            # Ctrl-C and a termination signal reach this process, not the step's group.
+            stop_group(process)
             process.wait()
             raise
         finally:
-            if timer is not None:
-                timer.cancel()
-            process.stdout.close()
+            if process.stdout:
+                process.stdout.close()
         output = b"".join(chunks).decode("utf-8", "replace")
         if output and not output.endswith("\n"):
             output += "\n"
         ended = f"== end: {utc_now()}"
-        if expired.is_set():
+        if expired:
             assert timeout is not None
             ended += f" (stopped after {timeout / 60:g} minutes)"
         write_text_atomic(
             log, f"{head}\n{output}{ended}\n== exit status: {status}\n", encoding="utf-8"
         )
-        if expired.is_set():
+        if expired:
             assert timeout is not None
             raise StepError(
                 f"`{shlex.join(command[:3])}` was still running after {timeout / 60:g} minutes "
@@ -362,6 +386,64 @@ class Host:
                 [log],
             )
         return status
+
+
+def stop_group(process: subprocess.Popen[bytes]) -> None:
+    """Stop a step's process group: SIGTERM, so a recipe's own cleanup can run, then
+    SIGKILL for whatever is left once the grace is over."""
+    with contextlib.suppress(OSError):
+        os.killpg(process.pid, signal.SIGTERM)
+    deadline = time.monotonic() + STOP_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        process.poll()  # reap the leader, so an emptied group reads as gone
+        try:
+            os.killpg(process.pid, 0)
+        except OSError:
+            return
+        time.sleep(0.1)
+    with contextlib.suppress(OSError):
+        os.killpg(process.pid, signal.SIGKILL)
+
+
+class Termination:
+    """SIGINT, SIGTERM, and SIGHUP as exceptions, held back while a step is starting.
+
+    Each step runs in a process group of its own, so a signal that only killed this
+    process, or that only the terminal's foreground group received, would leave the step
+    building on. Raised instead, it unwinds through `Host.execute`, which stops the group."""
+
+    def __init__(self) -> None:
+        self.held = False
+        self.pending: int | None = None
+
+    def install(self) -> None:
+        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(number, self.handle)
+
+    def handle(self, number: int, _frame: object) -> None:
+        if self.held:
+            self.pending = number
+        else:
+            self.throw(number)
+
+    def hold(self) -> None:
+        self.held = True
+
+    def release(self) -> None:
+        """Stop holding, and raise what arrived meanwhile."""
+        self.held = False
+        if self.pending is not None:
+            number, self.pending = self.pending, None
+            self.throw(number)
+
+    @staticmethod
+    def throw(number: int) -> None:
+        if number == signal.SIGINT:
+            raise KeyboardInterrupt
+        raise SystemExit(128 + number)
+
+
+TERMINATION = Termination()
 
 
 # --- Arguments --------------------------------------------------------------------------
@@ -714,14 +796,15 @@ def gnu_du(host: Host) -> str | None:
 
 
 def version_names_commit(version: str, identity: Identity, *, bare_ok: bool) -> bool:
-    """`fdu --version` names the commit: its nine-digit revision, not dirty, or the bare
-    version where the build was stamped as the release (a tag, or the rehearsal's own)."""
+    """`fdu --version` names the commit: its nine-digit revision, not dirty, or, where
+    the caller has other proof of the commit, the bare version a release-stamped build
+    prints."""
     text = version.strip()
     if ".dirty" in text:
         return False
     if f"+g{identity.sha[:9]}" in text:
         return True
-    return (bare_ok or identity.tagged) and text == f"fdu {identity.version}"
+    return bare_ok and text == f"fdu {identity.version}"
 
 
 # --- State ------------------------------------------------------------------------------
@@ -966,7 +1049,10 @@ def candidate(ctx: Context) -> Outcome:
         "built": not given,
         "proof": proof if proven else "",
     }
-    if not (status == 0 and version_names_commit(version, ctx.identity, bare_ok=proven)):
+    # A bare version proves nothing by itself. A wheel built here from a tagged commit
+    # is that commit's; a given one is only what the rehearsal's record says it is.
+    bare_ok = proven if given else ctx.identity.tagged
+    if not (status == 0 and version_names_commit(version, ctx.identity, bare_ok=bare_ok)):
         detail = f"`fdu --version` printed `{version}`, which does not name {ctx.identity.sha[:9]}"
         if given and not proven and version == f"fdu {ctx.identity.version}":
             detail += f", and {proof}"
@@ -1376,8 +1462,8 @@ def not_warm_caught(text: str) -> tuple[bool, str]:
 
 def break_no_snapshot(ctx: Context) -> Outcome:
     """With nothing ever stored, both scripts over the served tree must exit 1, and each
-    must catch every case it holds to serving. A script exits 1 on its first failing
-    case, so the exit status alone would pass a check that had gone blind to the rest."""
+    must catch every case it holds to serving. A script exits 1 when any one case fails,
+    so the exit status alone would pass a check that had gone blind to the rest."""
     tree = correctness_tree(ctx, "served")
     wrapper = ctx.script("tests", "correctness", "break_no_snapshot.py")
     env = ctx.env(FDU_BIN=str(wrapper), FDU_REAL=str(ctx.fdu))
@@ -1449,6 +1535,10 @@ def run_steps(ctx: Context, steps: Sequence[str], skips: Mapping[str, str]) -> l
     for index, step in enumerate(steps, 1):
         print(f"[{index}/{len(steps)}] {step}", flush=True)
         started = time.monotonic()
+        # Its old verdict goes first: a rerun that is interrupted has overwritten the logs
+        # that verdict was read from, and must leave the step not run, not still passed.
+        if ctx.state["steps"].pop(step, None) is not None:
+            save_state(ctx.work, ctx.state)
         if step in skips:
             outcome = Outcome("skipped", skips[step])
         elif step in NEEDS_CANDIDATE and ctx.state.get("candidate") is None:
@@ -1486,7 +1576,13 @@ def cleanup(ctx: Context) -> None:
     own_target = ctx.work / "target"
     if created.get("target") and own_target.exists():
         shutil.rmtree(own_target, ignore_errors=True)
-    ctx.state["created"] = {}
+    # What could not be removed stays the pass's to remove, and is said.
+    left = {"worktree": ctx.worktree, "target": own_target}
+    ctx.state["created"] = {
+        what: True for what, path in left.items() if created.get(what) and path.exists()
+    }
+    for what in ctx.state["created"]:
+        print(f"note: could not remove {left[what]}; remove it by hand", flush=True)
     save_state(ctx.work, ctx.state)
 
 
@@ -1592,8 +1688,11 @@ def label_pairs(state: Mapping[str, Any], home: str) -> list[tuple[str, str]]:
 def redact(text: str, pairs: Sequence[tuple[str, str]], home: str) -> str:
     """The text with each known path replaced by its label, then anything left that names
     a home directory replaced too."""
-    for path, label in pairs:
-        text = re.sub(re.escape(path) + BOUNDARY, lambda _, label=label: label, text)
+    if pairs:
+        # One pass, longest path first, so a label is never read again as a path.
+        labels = dict(pairs)
+        known = "|".join(re.escape(path) for path, _ in pairs)
+        text = re.sub(f"{PATH_START}({known}){BOUNDARY}", lambda found: labels[found[1]], text)
     text = PEER_SCRATCH.sub("<scratch>", text)
     if home and home != "/":
         text = re.sub(re.escape(home) + BOUNDARY, "~", text)
@@ -1911,22 +2010,35 @@ def harness_note(evidence: Evidence, phases: Sequence[str]) -> tuple[str, str]:
     rows = [row for row in evidence.harness_rows if row.get("phase") in phases]
     if not rows:
         step = evidence.step("harness")
-        reason = "not run" if step is None else "no rows; the harness skipped this phase"
-        return "⏸️ Blocked", reason.capitalize()
+        reason = "Not run" if step is None else "No rows; the harness skipped this phase"
+        if evidence.harness_stopped:
+            reason = f"No rows; the harness stopped at {evidence.harness_stopped}"
+        return "⏸️ Blocked", reason
     counts = Counter(str(row.get("verdict")) for row in rows)
-    # A phase the harness stopped in has not passed, whatever its earlier rows say.
-    status = (
-        "❌ Failed" if counts.get("fail") else "⏸️ Blocked" if counts.get("skip") else "✅ Passed"
-    )
+    # A phase the harness stopped in, or never reached, has not passed, whatever its rows
+    # say: the row a memory-limit stop names keeps its own `ok`.
+    cut = counts.get("skip") or stopped_before(evidence, phases)
+    status = "❌ Failed" if counts.get("fail") else "⏸️ Blocked" if cut else "✅ Passed"
     notes = f"{len(rows)} checks: " + ", ".join(
         f"{counts[key]} {key}" for key in ("ok", "warn", "fail", "skip") if counts.get(key)
     )
     warned = [str(row.get("name")) for row in rows if row.get("verdict") in ("warn", "fail")]
     if warned:
         notes += f" ({', '.join(f'`{name}`' for name in warned)})"
-    if counts.get("skip") and evidence.harness_stopped:
+    if cut and evidence.harness_stopped:
         notes += f"; the harness stopped at {evidence.harness_stopped}"
     return status, notes
+
+
+def stopped_before(evidence: Evidence, phases: Sequence[str]) -> bool:
+    """Whether the harness stopped in one of these phases or before reaching them. Its
+    reason names the check it stopped at; one it cannot be found by cuts every phase."""
+    if not evidence.harness_stopped:
+        return False
+    name = evidence.harness_stopped.partition(":")[0]
+    at = next((row.get("phase") for row in evidence.harness_rows if row.get("name") == name), None)
+    first = HARNESS_PHASES.index(at) if at in HARNESS_PHASES else 0
+    return any(phase in HARNESS_PHASES[first:] for phase in phases)
 
 
 def playbook_status(step: Mapping[str, Any] | None) -> str:
@@ -2112,11 +2224,13 @@ def main(argv: Sequence[str] | None = None, host: Host | None = None) -> int:
     }
     summary = "" if status == 0 else f" {overall(state)}"
     print(f"the pass: {verdicts[status]}{summary}")
-    if status != EXIT_FAILED and not config.keep:
-        # A failure anywhere in the record keeps the worktree and target it was built in.
+    if outcomes and status != EXIT_FAILED and not config.keep:
+        # A failure anywhere in the record keeps the worktree and target it was built in,
+        # and a run that ran no step removes nothing.
         cleanup(ctx)
     return status
 
 
 if __name__ == "__main__":
+    TERMINATION.install()
     sys.exit(main())
