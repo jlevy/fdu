@@ -673,9 +673,9 @@ def prerequisites(config: Config, host: Host) -> tuple[list[str], dict[str, str]
                 f"uv {'.'.join(map(str, installed))} is older than the reviewed {floor} the "
                 f"Makefile pins: install it with {remedy}"
             )
-    if steps & set(GATES):
-        if host.which("make") is None:
-            problems.append("make is not on PATH, and the gates are Make targets")
+    if steps & set(GATES) and host.which("make") is None:
+        problems.append("make is not on PATH, and the gates are Make targets")
+    if "semver-check" in steps:
         pinned = semver_check.pinned_tool_version(config.root)
         status, output = host.capture(["cargo", "semver-checks", "--version"])
         match = re.fullmatch(rf"{semver_check.TOOL} (\S+)\s*", output) if status == 0 else None

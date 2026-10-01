@@ -370,6 +370,21 @@ class PrerequisiteTests(Scratch):
             free=0,
         )
         self.assertEqual(sp.prerequisites(self.config(["served", "cross-warm"]), bare), ([], {}))
+        # One gate needs only its own tools: the reviewed semver tool is semver-check's,
+        # and the rustup targets are cross-lint's.
+        lean = FakeHost(
+            answers={
+                ("cargo", "semver-checks", "--version"): (101, "no such command"),
+                ("rustup", "target", "list", "--installed"): (0, ""),
+            }
+        )
+        self.assertEqual(sp.prerequisites(self.config(["release-rehearse"]), lean), ([], {}))
+        self.assertEqual(len(sp.prerequisites(self.config(["semver-check"]), lean)[0]), 1)
+        without_make = FakeHost(tools=ALL_TOOLS - {"make"})
+        self.assertIn(
+            "make is not on PATH",
+            sp.prerequisites(self.config(["release-rehearse"]), without_make)[0][0],
+        )
         # Installing from given wheels builds nothing, so it needs no cargo or space.
         wheels = self.config(["candidate"], wheels=self.base / "small")
         problems, _ = sp.prerequisites(wheels, FakeHost(tools={"git"}, free=0))
