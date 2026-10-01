@@ -21,17 +21,23 @@ correctness runbook record, with every private path replaced by a label.
 Every path comes from arguments or the environment. Each step's log, and `state.json`,
 which records every result, are under the work directory (default `$RELEASE/stability`),
 so `--only` can rerun a stage or a step and the report still covers the whole pass. A
-work directory belongs to one commit.
+work directory belongs to one commit, and is outside any checkout.
 
 Prerequisites are checked before anything runs, each with one message: GNU time at
-`/usr/bin/time`, uv, the reviewed `cargo-semver-checks`, the trees, and free space. A
-missing peer tool, or, when running as root, a missing `setpriv` or `nobody` account, is
-reported and the part that needs it is marked skipped, never passed.
+`/usr/bin/time`, uv, the reviewed `cargo-semver-checks`, every rustup target
+`make cross-lint` checks, `FDU_QA_SMALL`, and free space. A missing peer tool, or, when
+running as root, a missing `setpriv` or `nobody` account, is reported and the part that
+needs it is marked skipped, never passed. So is a step that ran and left part of itself
+out: a harness without its medium or large tree, or one that stopped at its memory
+limit, and a cross-lint that skipped a target.
 
-Exit status: 0 when every selected step passed, 1 when one failed, 2 when a prerequisite
-or an argument is wrong and nothing ran, and 3 when nothing failed but a step was
-skipped. When nothing failed, the worktree and target directory are removed; the
-candidate, the logs, and the report stay.
+Exit status, which describes the whole recorded pass and not only the steps this run
+ran: 0 when every step has passed, 1 when one has failed, and 3 when none has failed but
+one was skipped or has not run. So a rerun with `--only` exits 0 only once the pass is
+whole. 2 means a prerequisite or an argument is wrong and nothing ran. Unless a step in
+the record has failed, the worktree and the target directory the pass made are removed;
+a `--target-dir` is the caller's and is kept, as are the candidate, the logs, and the
+report.
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import hashlib
 import json
 import os
 import platform
@@ -46,10 +53,12 @@ import pwd
 import re
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 import traceback
@@ -99,6 +108,10 @@ EXIT_FAILED, EXIT_USAGE, EXIT_INCOMPLETE = 1, 2, 3
 GB = 10**9
 # An atomically rewritten log shows a long step's output so far this often.
 LOG_REFRESH_SECONDS = 15.0
+# Host preconditions the Makefile reads, and the interpreter pin; the report states each.
+DECLARED = ("FDU_TEST_ALLOW_NO_PERMISSION_BITS", "FDU_TEST_ALLOW_NO_NATIVE_WATCH", "UV_PYTHON")
+# The harness phases that run only when their tree is named, and the variable that names it.
+HARNESS_TREE_PHASES = {"medium": "FDU_QA_MEDIUM", "large": "FDU_QA_LARGE"}
 
 # The QA playbook's variables, and the tree each names.
 TREE_ROLES = {
@@ -151,6 +164,10 @@ class UsageError(Exception):
 class StepError(Exception):
     """A step could not run to a verdict; the message says why."""
 
+    def __init__(self, message: str, logs: Sequence[Path] = ()) -> None:
+        super().__init__(message)
+        self.logs = list(logs)
+
 
 @dataclass(frozen=True)
 class Trees:
@@ -186,6 +203,7 @@ class Config:
     min_free_gb: float = 12.0
     labels: tuple[tuple[str, str], ...] = ()
     date: str = ""
+    timeout: float | None = None
 
 
 @dataclass(frozen=True)
@@ -267,11 +285,14 @@ class Host:
         env: Mapping[str, str],
         log: Path,
         header: Sequence[str],
+        timeout: float | None = None,
     ) -> int:
         """Run a command to completion, its stdout and stderr together into `log`.
 
         The log is rewritten whole every few seconds while the command runs, so it can be
-        followed, and once more with the exit status when it ends."""
+        followed, and once more with the exit status when it ends. A command still running
+        after `timeout` seconds is stopped with everything it started, and that is a
+        `StepError`: a hung step fails, and the rest of the pass still runs."""
         command = [str(arg) for arg in argv]
         head = "\n".join([*header, f"== command: {shlex.join(command)}", f"== start: {utc_now()}"])
         write_text_atomic(log, head + "\n", encoding="utf-8")
@@ -283,26 +304,63 @@ class Host:
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                # A group of its own, so the whole step can be stopped, not only `make`.
+                process_group=0,
             )
         except OSError as error:
-            tail = f"== could not start: {error}\n== end: {utc_now()}\n== exit status: 127\n"
+            tail = f"== end: {utc_now()}\n== could not start: {error}\n== exit status: 127\n"
             write_text_atomic(log, f"{head}\n{tail}", encoding="utf-8")
             return 127
+        expired = threading.Event()
+
+        def stop() -> None:
+            with contextlib.suppress(OSError):
+                os.killpg(process.pid, signal.SIGKILL)
+
+        def expire() -> None:
+            expired.set()
+            stop()
+
+        timer = threading.Timer(timeout, expire) if timeout else None
+        if timer is not None:
+            timer.start()
         chunks: list[bytes] = []
         written = time.monotonic()
         assert process.stdout is not None
-        for line in iter(process.stdout.readline, b""):
-            chunks.append(line)
-            if time.monotonic() - written > LOG_REFRESH_SECONDS:
-                output = b"".join(chunks).decode("utf-8", "replace")
-                write_text_atomic(log, f"{head}\n{output}", encoding="utf-8")
-                written = time.monotonic()
-        status = process.wait()
+        try:
+            for line in iter(process.stdout.readline, b""):
+                chunks.append(line)
+                if time.monotonic() - written > LOG_REFRESH_SECONDS:
+                    output = b"".join(chunks).decode("utf-8", "replace")
+                    write_text_atomic(log, f"{head}\n{output}", encoding="utf-8")
+                    written = time.monotonic()
+            status = process.wait()
+        except BaseException:
+            # Ctrl-C reaches this process but not the step's group, so stop that too.
+            stop()
+            process.wait()
+            raise
+        finally:
+            if timer is not None:
+                timer.cancel()
+            process.stdout.close()
         output = b"".join(chunks).decode("utf-8", "replace")
         if output and not output.endswith("\n"):
             output += "\n"
-        tail = f"== end: {utc_now()}\n== exit status: {status}\n"
-        write_text_atomic(log, f"{head}\n{output}{tail}", encoding="utf-8")
+        ended = f"== end: {utc_now()}"
+        if expired.is_set():
+            assert timeout is not None
+            ended += f" (stopped after {timeout / 60:g} minutes)"
+        write_text_atomic(
+            log, f"{head}\n{output}{ended}\n== exit status: {status}\n", encoding="utf-8"
+        )
+        if expired.is_set():
+            assert timeout is not None
+            raise StepError(
+                f"`{shlex.join(command[:3])}` was still running after {timeout / 60:g} minutes "
+                "and was stopped (--timeout-minutes)",
+                [log],
+            )
         return status
 
 
@@ -356,7 +414,11 @@ def parser() -> argparse.ArgumentParser:
         + ", ".join([*STAGES, *ALIASES])
         + ", or a step name",
     )
-    result.add_argument("--target-dir", type=Path, help="Cargo target (default: WORK/target)")
+    result.add_argument(
+        "--target-dir",
+        type=Path,
+        help="Cargo target, which is then kept (default: WORK/target, removed after a pass)",
+    )
     result.add_argument(
         "--wheels", type=Path, help="install the candidate from these wheels instead of building"
     )
@@ -373,6 +435,12 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--keep", action="store_true", help="keep the worktree and target")
     result.add_argument("--min-free-gb", type=float, default=12.0)
+    result.add_argument(
+        "--timeout-minutes",
+        type=float,
+        default=360.0,
+        help="stop a command still running after this long and fail its step; 0 waits forever",
+    )
     result.add_argument("--date", help="the report's date (default: today, UTC)")
     return result
 
@@ -433,6 +501,7 @@ def configure(args: argparse.Namespace, environ: Mapping[str, str]) -> Config:
         min_free_gb=args.min_free_gb,
         labels=tuple(labels),
         date=args.date or datetime.now(UTC).strftime("%Y-%m-%d"),
+        timeout=args.timeout_minutes * 60 if args.timeout_minutes > 0 else None,
     )
 
 
@@ -474,6 +543,20 @@ def uv_floor(root: Path) -> str:
     if match is None:
         raise UsageError("the Makefile pins no UV_MIN_VERSION")
     return match[1]
+
+
+def declared(name: str) -> bool:
+    """Whether the environment declares a host precondition, as the Makefile reads it."""
+    return os.environ.get(name) == "1"
+
+
+def cross_targets(root: Path) -> tuple[str, ...]:
+    """The targets `make cross-lint` checks, each of which it skips when not installed."""
+    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    match = re.search(r"^CROSS_TARGETS\s*:?=\s*((?:.*\\\n)*.*)$", makefile, re.M)
+    if match is None or not match[1].replace("\\\n", " ").split():
+        raise UsageError("the Makefile names no CROSS_TARGETS")
+    return tuple(match[1].replace("\\\n", " ").split())
 
 
 def traversable(path: Path) -> bool:
@@ -520,6 +603,21 @@ def prerequisites(config: Config, host: Host) -> tuple[list[str], dict[str, str]
                 f"{semver_check.TOOL} {found}, not the reviewed {pinned} that make semver-check "
                 f"needs: {semver_check.install_command(pinned)}"
             )
+    if "cross-lint" in steps:
+        wanted = cross_targets(config.root)
+        status, output = host.capture(["rustup", "target", "list", "--installed"], cwd=config.root)
+        installed = set(output.split()) if status == 0 else set()
+        if missing := [target for target in wanted if target not in installed]:
+            problems.append(
+                f"make cross-lint skips a target rustup has not installed, and {len(missing)} of "
+                f"its {len(wanted)} are missing: rustup target add {' '.join(missing)}"
+            )
+    if "check" in steps and host.euid() == 0 and not declared("FDU_TEST_ALLOW_NO_PERMISSION_BITS"):
+        problems.append(
+            "running as root, where mode bits bind no one and make check stops at its "
+            "permission-bits preflight: run as an unprivileged user, or declare the host "
+            "unable with FDU_TEST_ALLOW_NO_PERMISSION_BITS=1, as AGENTS.md describes"
+        )
     if builds:
         if host.which("cargo") is None:
             problems.append("cargo is not on PATH, and the gates and the wheel build need it")
@@ -591,6 +689,19 @@ def prerequisites(config: Config, host: Host) -> tuple[list[str], dict[str, str]
     return problems, skips
 
 
+def notices(config: Config) -> list[str]:
+    """What will leave the pass incomplete though nothing is wrong, said before it runs."""
+    found = []
+    if "harness" in config.steps:
+        for phase, variable in HARNESS_TREE_PHASES.items():
+            if getattr(config.trees, phase) is None:
+                found.append(
+                    f"{variable} is not set, so the harness skips its `{phase}` phase and is "
+                    "recorded as skipped: the pass will be incomplete (exit 3)"
+                )
+    return found
+
+
 def gnu_du(host: Host) -> str | None:
     """GNU du, which macOS installs from coreutils as `gdu`, found as the peer script does."""
     for name in ("gdu", "du"):
@@ -654,6 +765,9 @@ class Context:
     state: dict[str, Any]
     trees_base: Path | None = None
     built: set[str] = field(default_factory=set)
+    # Recorded with each step, so a pass assembled from several runs says which was which.
+    tooling: str = ""
+    user: str = ""
 
     @property
     def work(self) -> Path:
@@ -696,11 +810,21 @@ class Context:
             *header,
             f"== free: {self.host.free_bytes(self.work) / GB:.1f} GB",
         ]
-        return self.host.execute(argv, cwd=cwd, env=env or self.env(), log=log, header=lines)
+        return self.host.execute(
+            argv,
+            cwd=cwd,
+            env=env or self.env(),
+            log=log,
+            header=lines,
+            timeout=self.config.timeout,
+        )
 
 
 def body(log: Path) -> str:
-    """A step's output: its log without the pass's own `==` header and footer lines."""
+    """A step's output: its log without the pass's own `==` header and footer lines.
+
+    The header ends at its `== start:` line and the footer begins at `== end:`, so output
+    that itself opens or closes with `== ` lines, as `make cross-lint`'s does, is kept."""
     try:
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
@@ -708,8 +832,12 @@ def body(log: Path) -> str:
     start, end = 0, len(lines)
     while start < end and lines[start].startswith("== "):
         start += 1
+        if lines[start - 1].startswith("== start:"):
+            break
     while end > start and lines[end - 1].startswith("== "):
         end -= 1
+        if lines[end].startswith("== end:"):
+            break
     return "\n".join(lines[start:end]).strip("\n")
 
 
@@ -731,10 +859,21 @@ def ensure_worktree(ctx: Context) -> Path:
     status, output = ctx.host.capture([*git, ctx.identity.sha])
     if status != 0:
         raise StepError(f"git worktree add failed: {output.strip()}")
+    made(ctx, "worktree")
     return tree
 
 
+def made(ctx: Context, what: str) -> None:
+    """Record that this pass created the worktree or the target, so `cleanup` may remove it."""
+    ctx.state.setdefault("created", {})[what] = True
+    save_state(ctx.work, ctx.state)
+
+
 def build_env(ctx: Context) -> dict[str, str]:
+    """The environment of a build, whose target directory the pass makes when it is its own."""
+    if ctx.config.target is None and not ctx.target.exists():
+        ctx.target.mkdir(parents=True)
+        made(ctx, "target")
     return ctx.env(CARGO_TARGET_DIR=str(ctx.target))
 
 
@@ -753,6 +892,18 @@ def gate(ctx: Context, name: str) -> Outcome:
         ]
         if said:
             detail += ": " + "; ".join(said)
+    if name == "cross-lint":
+        # It exits 0 for a target rustup has not installed, having linted nothing there.
+        linted = re.findall(r"^== clippy: (\S+)", body(log), re.M)
+        skipped = re.findall(r"^== skipping (\S+)", body(log), re.M)
+        detail += f": linted {', '.join(linted) or 'no target'}"
+        if skipped:
+            detail += (
+                f"; skipped {', '.join(skipped)}, not installed "
+                f"(rustup target add {' '.join(skipped)})"
+            )
+        if status == 0 and (skipped or not linted):
+            return Outcome("skipped", detail, [log], [status])
     return Outcome.of(status == 0, detail, [log], [status])
 
 
@@ -766,6 +917,14 @@ def candidate(ctx: Context) -> Outcome:
         source.mkdir(parents=True, exist_ok=True)
         for old in source.glob("*.whl"):
             old.unlink()
+        # The build is a cargo command outside Make's guard against a target directory
+        # that another checkout built in, so run that guard first, as each gate does.
+        log = ctx.log("candidate-target-owner")
+        logs.append(log)
+        guard = [*ctx.config.wrap, "make", "target-owner"]
+        status = ctx.execute(guard, cwd=tree, env=build_env(ctx), log=log)
+        if status != 0:
+            return Outcome("failed", f"`make target-owner` exited {status}", logs, [status])
         log = ctx.log("candidate-build")
         logs.append(log)
         build = [
@@ -782,9 +941,11 @@ def candidate(ctx: Context) -> Outcome:
         directory.chmod(0o755)
     log = ctx.log("candidate-install")
     logs.append(log)
+    # `--no-build`: a wheel or nothing. Given files may hold a source distribution too,
+    # and one built here would be a candidate nobody published.
     install = [
         *("uv", "tool", "install", "--force", "--python", ctx.config.python),
-        *("--no-index", "--find-links", str(source), "fdu"),
+        *("--no-index", "--no-build", "--find-links", str(source), "fdu"),
     ]
     env = ctx.env(UV_TOOL_DIR=str(tools), UV_TOOL_BIN_DIR=str(binaries))
     status = ctx.execute(install, cwd=ctx.work, env=env, log=log)
@@ -793,24 +954,89 @@ def candidate(ctx: Context) -> Outcome:
     fdu = binaries / "fdu"
     status, version = ctx.host.capture([str(fdu), "--version"])
     version = version.strip()
-    wheels = sorted(path.name for path in source.glob("fdu-*.whl"))
+    given = ctx.config.wheels is not None
+    wheel = installed_wheel(tools, source)
+    # A given wheel is stamped as the release and names no commit, so only the rehearsal's
+    # own record can say which commit it is.
+    proven, proof = rehearsal_proof(wheel, source, ctx.identity) if given else (False, "")
     ctx.state["candidate"] = {
         "fdu": str(fdu),
         "version": version,
-        "wheels": wheels if ctx.config.wheels is None else [],
-        "built": ctx.config.wheels is None,
+        "wheel": wheel.name if wheel else None,
+        "built": not given,
+        "proof": proof if proven else "",
     }
-    ok = status == 0 and version_names_commit(
-        version, ctx.identity, bare_ok=ctx.config.wheels is not None
-    )
-    if not ok:
-        return Outcome(
-            "failed",
-            f"`fdu --version` printed `{version}`, which does not name {ctx.identity.sha[:9]}",
-            logs,
-            [status],
+    if not (status == 0 and version_names_commit(version, ctx.identity, bare_ok=proven)):
+        detail = f"`fdu --version` printed `{version}`, which does not name {ctx.identity.sha[:9]}"
+        if given and not proven and version == f"fdu {ctx.identity.version}":
+            detail += f", and {proof}"
+        return Outcome("failed", detail, logs, [status])
+    detail = f"`fdu --version` printed `{version}`"
+    if wheel:
+        detail += f", from `{wheel.name}`"
+    return Outcome("passed", detail, logs, [0])
+
+
+def wheel_tags(name: str) -> set[str] | None:
+    """The compatibility tags a wheel's filename declares, as its `WHEEL` file lists them."""
+    parts = name.removesuffix(".whl").split("-")
+    if len(parts) < 5:
+        return None
+    python, abi, platforms = parts[-3:]
+    return {
+        f"{p}-{a}-{m}"
+        for p in python.split(".")
+        for a in abi.split(".")
+        for m in platforms.split(".")
+    }
+
+
+def installed_wheel(tools: Path, source: Path) -> Path | None:
+    """Which of the wheels in `source` uv installed: the one whose tags the installed
+    metadata repeats, or the only one there."""
+    wheels = sorted(source.glob("fdu-*.whl"))
+    for metadata in sorted(tools.glob("fdu/lib/python*/site-packages/fdu-*.dist-info/WHEEL")):
+        try:
+            lines = metadata.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        tags = {line.partition(":")[2].strip() for line in lines if line.startswith("Tag:")}
+        matches = [wheel for wheel in wheels if wheel_tags(wheel.name) == tags]
+        if len(matches) == 1:
+            return matches[0]
+    return wheels[0] if len(wheels) == 1 else None
+
+
+def rehearsal_proof(wheel: Path | None, source: Path, identity: Identity) -> tuple[bool, str]:
+    """Whether a given wheel is the rehearsal's wheel of this commit, and why or why not.
+
+    The release checklist keeps a rehearsal's files in `$RELEASE/rehearsal/files`, their
+    checksums beside them in `evidence/SHA256SUMS`, and the commit in `$RELEASE/state.json`."""
+    if wheel is None:
+        return False, "the installed wheel could not be told from the others given"
+    try:
+        release = json.loads((source.parent.parent / "state.json").read_text(encoding="utf-8"))
+        sums = (source.parent / "evidence" / "SHA256SUMS").read_text(encoding="utf-8")
+        recorded = release.get("commit")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return False, (
+            f"`{wheel.name}` is not in a release directory's rehearsal/files, whose record "
+            "would say which commit it was built from"
         )
-    return Outcome("passed", f"`fdu --version` printed `{version}`", logs, [0])
+    if recorded != identity.sha:
+        return False, f"the release directory of `{wheel.name}` records commit {str(recorded)[:9]}"
+    listed = {
+        match[2]: match[1]
+        for line in sums.splitlines()
+        if (match := re.fullmatch(r"([0-9a-f]{64})  (\S+)", line))
+    }
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    if listed.get(wheel.name) != digest:
+        return False, f"the rehearsal's SHA256SUMS does not list `{wheel.name}` with its digest"
+    return (
+        True,
+        "which the rehearsal's SHA256SUMS lists and whose release directory records the commit",
+    )
 
 
 def candidate_ready(ctx: Context) -> bool:
@@ -839,18 +1065,44 @@ def harness(ctx: Context) -> Outcome:
     detail = f"the harness exited {status}"
     if counts:
         total = sum(counts.values())
+        shown = ["ok", "warn", "fail", *(["skip"] if counts.get("skip") else [])]
         detail = f"{total} checks: " + ", ".join(
-            f"{counts[verdict]} {verdict}" for verdict in ("ok", "warn", "fail")
+            f"{counts[verdict]} {verdict}" for verdict in shown
         )
+    # The harness exits 0 when nothing it ran failed, whatever it left out.
+    gaps = harness_gaps(out / "results.json")
+    if status == 0 and gaps:
+        return Outcome("skipped", f"{detail}; {'; '.join(gaps)}", [log], [status])
     return Outcome.of(status == 0, detail, [log], [status])
 
 
-def harness_rows(path: Path) -> list[dict[str, Any]]:
+def harness_results(path: Path) -> dict[str, Any]:
     try:
-        rows = json.loads(path.read_text(encoding="utf-8")).get("rows", [])
-    except (OSError, json.JSONDecodeError, AttributeError):
-        return []
-    return [row for row in rows if isinstance(row, dict)]
+        results = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return results if isinstance(results, dict) else {}
+
+
+def harness_rows(path: Path) -> list[dict[str, Any]]:
+    rows = harness_results(path).get("rows", [])
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def harness_gaps(path: Path) -> list[str]:
+    """What the harness left out of a run it exited 0 from: a stop on SIGKILL or the RSS
+    limit, after which every later check is a `skip` row, or a phase whose tree is unset."""
+    rows = harness_rows(path)
+    gaps = []
+    if reason := harness_results(path).get("stopped_reason"):
+        gaps.append(f"it stopped early ({reason})")
+    if skipped := sum(row.get("verdict") == "skip" for row in rows):
+        gaps.append(f"{skipped} checks did not run")
+    phases = {row.get("phase") for row in rows}
+    for phase, variable in HARNESS_TREE_PHASES.items():
+        if phase not in phases:
+            gaps.append(f"its `{phase}` phase did not run, which needs {variable}")
+    return gaps
 
 
 def harness_counts(path: Path, phases: Iterable[str] | None = None) -> Counter[str]:
@@ -1101,25 +1353,47 @@ def cross_warm(ctx: Context) -> Outcome:
     return Outcome.of(status == 0, f"{detail}; exit status {status}", [log], [status])
 
 
+def no_snapshot_caught(text: str) -> tuple[bool, str]:
+    """Whether `warm_cold.py` caught every case of a cache that stored nothing, and how
+    many of each kind: a metadata case `NO-SNAPSHOT`, an analysis case `NOT-WARM`."""
+    rows = table_rows(text)
+    missing = sum("NO-SNAPSHOT(" in row for row in rows)
+    cold = sum("NOT-WARM(" in row and "NO-SNAPSHOT(" not in row for row in rows)
+    said = f"{missing + cold} of {len(rows)} cases caught"
+    if rows:
+        said += f" ({missing} `NO-SNAPSHOT`, {cold} `NOT-WARM`)"
+    return bool(rows) and missing + cold == len(rows), said
+
+
+def not_warm_caught(text: str) -> tuple[bool, str]:
+    """Whether `cross_warm.py` caught every pair it holds to serving, which it counts."""
+    held = count(text, "pairs held to serving")
+    caught = sum("NOT-WARM(" in row for row in table_rows(text))
+    if held is None:
+        return False, f"{caught} pairs `NOT-WARM`, and no count of the pairs held to serving"
+    return held > 0 and caught == held, f"{caught} of {held} same-analyzer pairs `NOT-WARM`"
+
+
 def break_no_snapshot(ctx: Context) -> Outcome:
-    """With nothing ever stored, both scripts over the served tree must exit 1."""
+    """With nothing ever stored, both scripts over the served tree must exit 1, and each
+    must catch every case it holds to serving. A script exits 1 on its first failing
+    case, so the exit status alone would pass a check that had gone blind to the rest."""
     tree = correctness_tree(ctx, "served")
     wrapper = ctx.script("tests", "correctness", "break_no_snapshot.py")
     env = ctx.env(FDU_BIN=str(wrapper), FDU_REAL=str(ctx.fdu))
     logs, exits, parts, ok = [], [], [], True
-    for name, script, marker in (
-        ("warm-cold", "warm_cold.py", "NO-SNAPSHOT"),
-        ("cross-warm", "cross_warm.py", "NOT-WARM(scanned)"),
+    for name, script, judge in (
+        ("warm-cold", "warm_cold.py", no_snapshot_caught),
+        ("cross-warm", "cross_warm.py", not_warm_caught),
     ):
         log = ctx.log(f"break-no-snapshot-{name}")
         argv = [sys.executable, ctx.script("tests", "correctness", script), tree]
         status = ctx.execute(argv, cwd=trees_base(ctx), env=env, log=log)
-        text = body(log)
         logs.append(log)
         exits.append(status)
-        caught = sum(marker in row for row in table_rows(text))
-        ok = ok and status == 1 and caught > 0
-        parts.append(f"`{script}` exited {status}, {caught} rows `{marker}`")
+        every, said = judge(body(log))
+        ok = ok and status == 1 and every
+        parts.append(f"`{script}` exited {status}, {said}")
     return Outcome.of(ok, "; ".join(parts), logs, exits)
 
 
@@ -1137,7 +1411,7 @@ def break_partial_stored(ctx: Context) -> Outcome:
     rows = table_rows(body(log))
     caught = sum("PARTIAL-STORED" in row for row in rows)
     detail = f"`warm_cold.py --refusals-only` exited {status}, {caught} of {len(rows)} cases `PARTIAL-STORED`"
-    return Outcome.of(status == 1 and caught > 0, detail, [log], [status])
+    return Outcome.of(status == 1 and bool(rows) and caught == len(rows), detail, [log], [status])
 
 
 RUNNERS: dict[str, Callable[[Context], Outcome]] = {
@@ -1164,6 +1438,8 @@ def record(ctx: Context, step: str, outcome: Outcome, seconds: float) -> None:
         "exits": outcome.exits,
         "finished": utc_now(),
         "seconds": round(seconds, 1),
+        "tooling": ctx.tooling,
+        "user": ctx.user,
     }
     save_state(ctx.work, ctx.state)
 
@@ -1181,12 +1457,12 @@ def run_steps(ctx: Context, steps: Sequence[str], skips: Mapping[str, str]) -> l
             step in NEEDS_CANDIDATE
             and ctx.state["steps"].get("candidate", {}).get("status") != "passed"
         ):
-            outcome = Outcome("skipped", "the candidate failed to install")
+            outcome = Outcome("skipped", "the candidate step did not pass")
         else:
             try:
                 outcome = RUNNERS[step](ctx)
             except StepError as error:
-                outcome = Outcome("failed", str(error))
+                outcome = Outcome("failed", str(error), error.logs)
             except Exception as error:  # recorded, so the rest of the pass still runs
                 traceback.print_exc()
                 outcome = Outcome("failed", f"internal error: {error!r}")
@@ -1197,15 +1473,30 @@ def run_steps(ctx: Context, steps: Sequence[str], skips: Mapping[str, str]) -> l
 
 
 def cleanup(ctx: Context) -> None:
-    """Remove the worktree and the target directory; the candidate and records stay."""
-    if ctx.worktree.exists():
+    """Remove the worktree and the target directory this pass made. The candidate and the
+    records stay, and so does a directory the pass found there or was pointed at: a
+    `--target-dir` is the caller's, whatever is in it."""
+    created = ctx.state.get("created", {})
+    if created.get("worktree") and ctx.worktree.exists():
         ctx.host.capture(
             ["git", "-C", str(ctx.config.root), "worktree", "remove", "--force", str(ctx.worktree)]
         )
         shutil.rmtree(ctx.worktree, ignore_errors=True)
         ctx.host.capture(["git", "-C", str(ctx.config.root), "worktree", "prune"])
-    if ctx.target.exists():
-        shutil.rmtree(ctx.target, ignore_errors=True)
+    own_target = ctx.work / "target"
+    if created.get("target") and own_target.exists():
+        shutil.rmtree(own_target, ignore_errors=True)
+    ctx.state["created"] = {}
+    save_state(ctx.work, ctx.state)
+
+
+def enclosing_checkout(work: Path, host: Host) -> str | None:
+    """The checkout the work directory is inside, if it is inside one."""
+    existing = work
+    while not existing.exists() and existing != existing.parent:
+        existing = existing.parent
+    status, output = host.capture(["git", "-C", str(existing), "rev-parse", "--show-toplevel"])
+    return output.strip() if status == 0 and output.strip() else None
 
 
 # --- Regime -----------------------------------------------------------------------------
@@ -1217,12 +1508,22 @@ def first_line(host: Host, argv: Sequence[str]) -> str | None:
     return lines[0].strip() if status == 0 and lines else None
 
 
+def tooling_revision(config: Config, host: Host) -> str:
+    """The checkout the QA and correctness scripts run from: its commit, and whether its
+    tracked files differ from it."""
+    git = ["git", "-C", str(config.root)]
+    _, head = host.capture([*git, "rev-parse", "HEAD"])
+    _, changed = host.capture([*git, "status", "--porcelain", "--untracked-files=no"])
+    return head.strip()[:9] + ("+dirty" if changed.strip() else "")
+
+
+def user_kind(host: Host) -> str:
+    """Root or not, which is what decides the refusal pass; never the login name."""
+    return "root" if host.euid() == 0 else "unprivileged"
+
+
 def regime(config: Config, host: Host) -> dict[str, Any]:
     """The host a result is evidence about, as far as it can be read rather than known."""
-    try:
-        user = pwd.getpwuid(host.euid()).pw_name
-    except KeyError:
-        user = str(host.euid())
     filesystem = None
     if host.platform == "linux":
         filesystem = first_line(host, ["findmnt", "-no", "FSTYPE", "-T", str(config.work)])
@@ -1234,26 +1535,17 @@ def regime(config: Config, host: Host) -> dict[str, Any]:
     peers = {"GNU du": first_line(host, [du, "--version"]) if du else None}
     for tool in PEERS:
         peers[tool] = first_line(host, [tool, "--version"]) if host.which(tool) else None
-    declared = {
-        name: os.environ[name]
-        for name in (
-            "FDU_TEST_ALLOW_NO_PERMISSION_BITS",
-            "FDU_TEST_ALLOW_NO_NATIVE_WATCH",
-            "UV_PYTHON",
-        )
-        if name in os.environ
-    }
-    _, tooling = host.capture(["git", "-C", str(config.root), "rev-parse", "HEAD"])
+    stated = {name: os.environ[name] for name in DECLARED if name in os.environ}
     return {
         "system": f"{platform.system()} {platform.machine()}",
         "kernel": platform.release(),
         "cpus": os.cpu_count(),
         "virtualization": virtualization,
         "filesystem": filesystem,
-        "user": user,
-        "declared": declared,
+        "user": user_kind(host),
+        "declared": stated,
         "peers": peers,
-        "tooling": tooling.strip(),
+        "tooling": tooling_revision(config, host),
     }
 
 
@@ -1341,12 +1633,14 @@ def demoted(text: str) -> str:
 
 @dataclass
 class Evidence:
-    """What the report is written from: the state, and each log's redacted output."""
+    """What the report is written from: the state, and each log's output. None of it is
+    redacted yet; `write_report` redacts what is rendered from it, whole."""
 
     state: Mapping[str, Any]
     bodies: dict[str, str]
     harness_table: str | None
     harness_rows: list[dict[str, Any]]
+    harness_stopped: str = ""
 
     def step(self, name: str) -> Mapping[str, Any] | None:
         return self.state.get("steps", {}).get(name)
@@ -1355,24 +1649,38 @@ class Evidence:
         return self.bodies.get(log)
 
 
-def gather(work: Path, state: Mapping[str, Any], home: str) -> Evidence:
-    pairs = label_pairs(state, home)
+def gather(work: Path, state: Mapping[str, Any]) -> Evidence:
     bodies = {}
     for step in state.get("steps", {}).values():
         for log in step.get("logs", []):
-            bodies[Path(log).stem] = redact(body(Path(log)), pairs, home)
+            bodies[Path(log).stem] = body(Path(log))
     table_path = work / "qa" / "results.md"
-    table = None
-    if table_path.exists():
-        table = redact(table_path.read_text(encoding="utf-8").strip(), pairs, home)
-    return Evidence(state, bodies, table, harness_rows(work / "qa" / "results.json"))
+    table = table_path.read_text(encoding="utf-8").strip() if table_path.exists() else None
+    results = work / "qa" / "results.json"
+    stopped = str(harness_results(results).get("stopped_reason") or "")
+    return Evidence(state, bodies, table, harness_rows(results), stopped)
 
 
-def overall(state: Mapping[str, Any]) -> str:
+def tally(state: Mapping[str, Any]) -> tuple[list[str], list[str], list[str]]:
+    """The recorded pass's steps that failed, were skipped, and have not run."""
     steps = state.get("steps", {})
     failed = [name for name in STEPS if steps.get(name, {}).get("status") == "failed"]
     skipped = [name for name in STEPS if steps.get(name, {}).get("status") == "skipped"]
     missing = [name for name in STEPS if name not in steps]
+    return failed, skipped, missing
+
+
+def pass_status(state: Mapping[str, Any]) -> int:
+    """The exit status of the whole recorded pass, whichever steps this run ran: a rerun
+    of one stage must not read as the pass when another stage has failed or not run."""
+    failed, skipped, missing = tally(state)
+    if failed:
+        return EXIT_FAILED
+    return EXIT_INCOMPLETE if skipped or missing else 0
+
+
+def overall(state: Mapping[str, Any]) -> str:
+    failed, skipped, missing = tally(state)
     parts = []
     if failed:
         parts.append(f"Failed: {', '.join(failed)}.")
@@ -1394,6 +1702,26 @@ def note(step: Mapping[str, Any] | None) -> str:
     return verdict(step)
 
 
+def step_fact(state: Mapping[str, Any], step: str, key: str) -> str:
+    """What a step recorded of the run it was part of, else what the last run recorded."""
+    recorded = state.get("steps", {}).get(step, {}).get(key)
+    return str(recorded or state.get("regime", {}).get(key) or "")
+
+
+def refusal_user(state: Mapping[str, Any], step: str) -> str:
+    """Who the refusals had to bind: `nobody` when the step's run was root's."""
+    return "`nobody`" if step_fact(state, step, "user") == "root" else "an unprivileged user"
+
+
+def grouped(state: Mapping[str, Any], key: str) -> dict[str, list[str]]:
+    """Each distinct value the steps recorded for `key`, with the steps that recorded it."""
+    found: dict[str, list[str]] = {}
+    for name in STEPS:
+        if name in state.get("steps", {}) and (value := step_fact(state, name, key)):
+            found.setdefault(value, []).append(name)
+    return found
+
+
 def phase_six(evidence: Evidence) -> str:
     return (
         "Pending: a person has not watched a real window, and Windows has not run. "
@@ -1405,8 +1733,7 @@ def phase_six(evidence: Evidence) -> str:
 def render_report(evidence: Evidence, date: str) -> str:
     state = evidence.state
     version, sha, tree = state["version"], state["commit"], state["tree"]
-    regime_facts = state.get("regime", {})
-    as_user = "`nobody`" if regime_facts.get("user") == "root" else "an unprivileged user"
+    as_user = refusal_user(state, "refusals")
     rows = [
         ("`make check`", "check"),
         ("`make cross-lint`", "cross-lint"),
@@ -1475,12 +1802,27 @@ def regime_lines(state: Mapping[str, Any]) -> list[str]:
         host += f", virtualized ({virtualization})"
     if facts.get("filesystem"):
         host += f", the work directory on {facts['filesystem']}"
-    host += f", running as {facts.get('user', 'unknown')}."
-    declared = facts.get("declared", {})
-    stated = ", ".join(f"`{k}={v}`" for k, v in declared.items()) or "none"
+    users = grouped(state, "user") or {str(facts.get("user", "")): []}
+    spoken = {"root": "root", "unprivileged": "an unprivileged user"}
+    if len(users) == 1:
+        # Anything else is an older record's login name, which a report does not repeat.
+        host += f", running as {spoken.get(next(iter(users)), 'an unprivileged user')}."
+    else:
+        host += ", running as " + " and as ".join(
+            f"{spoken.get(user, 'an unprivileged user')} for {', '.join(steps)}"
+            for user, steps in users.items()
+        )
+        host += "."
+    stated = ", ".join(f"`{k}={v}`" for k, v in facts.get("declared", {}).items()) or "none"
     candidate_facts = state.get("candidate", {})
-    wheels = ", ".join(f"`{name}`" for name in candidate_facts.get("wheels", []))
-    source = f"The {wheels} wheel built from the commit" if wheels else "The given wheel"
+    wheel = candidate_facts.get("wheel") or next(iter(candidate_facts.get("wheels", [])), None)
+    named = f"`{wheel}` wheel" if wheel else "wheel"
+    if candidate_facts.get("built", True):
+        source = f"The {named} built from the commit"
+    else:
+        source = f"The given {named}"
+        if candidate_facts.get("proof"):
+            source += f", {candidate_facts['proof']}"
     peers = ", ".join(
         f"{version}" if version else f"{tool} not installed"
         for tool, version in facts.get("peers", {}).items()
@@ -1503,9 +1845,24 @@ def regime_lines(state: Mapping[str, Any]) -> list[str]:
     ]
     if kinds:
         lines.append(f"- **Correctness trees.** {kinds}.")
-    if facts.get("tooling"):
-        lines.append(f"- **Tooling.** The QA and correctness scripts at `{facts['tooling'][:9]}`.")
-    return lines
+    lines.append(tooling_line(state))
+    return [line for line in lines if line]
+
+
+def tooling_line(state: Mapping[str, Any]) -> str:
+    """The revision of the QA and correctness scripts, per step when the runs differed."""
+
+    def named(revision: str) -> str:
+        commit, _, dirty = revision.partition("+")
+        return f"`{commit[:9]}`" + (" with uncommitted changes" if dirty else "")
+
+    revisions = grouped(state, "tooling")
+    if not revisions:
+        return ""
+    if len(revisions) == 1:
+        return f"- **Tooling.** The QA and correctness scripts at {named(next(iter(revisions)))}."
+    parts = "; ".join(f"{named(rev)} for {', '.join(steps)}" for rev, steps in revisions.items())
+    return f"- **Tooling.** The runs used more than one revision of the scripts: {parts}."
 
 
 def reproduce_lines(state: Mapping[str, Any]) -> list[str]:
@@ -1557,13 +1914,18 @@ def harness_note(evidence: Evidence, phases: Sequence[str]) -> tuple[str, str]:
         reason = "not run" if step is None else "no rows; the harness skipped this phase"
         return "⏸️ Blocked", reason.capitalize()
     counts = Counter(str(row.get("verdict")) for row in rows)
-    status = "❌ Failed" if counts.get("fail") else "✅ Passed"
+    # A phase the harness stopped in has not passed, whatever its earlier rows say.
+    status = (
+        "❌ Failed" if counts.get("fail") else "⏸️ Blocked" if counts.get("skip") else "✅ Passed"
+    )
     notes = f"{len(rows)} checks: " + ", ".join(
-        f"{counts[key]} {key}" for key in ("ok", "warn", "fail") if counts.get(key)
+        f"{counts[key]} {key}" for key in ("ok", "warn", "fail", "skip") if counts.get(key)
     )
     warned = [str(row.get("name")) for row in rows if row.get("verdict") in ("warn", "fail")]
     if warned:
         notes += f" ({', '.join(f'`{name}`' for name in warned)})"
+    if counts.get("skip") and evidence.harness_stopped:
+        notes += f"; the harness stopped at {evidence.harness_stopped}"
     return status, notes
 
 
@@ -1606,16 +1968,14 @@ def render_tables(evidence: Evidence) -> str:
         ),
     ]
     trees = "; ".join(f"{name.replace('_', ' ')} `{label}`" for name, label in labels.items())
-    as_user = (
-        "`nobody`" if state.get("regime", {}).get("user") == "root" else "an unprivileged user"
-    )
+    as_user = refusal_user(state, "refusals")
     passes = [
         (f"`--refusals-only`, refusal tree, as {as_user}", "refusals"),
         ("`warm_cold.py`, complete tree", "served"),
         ("`cross_warm.py`, complete tree", "cross-warm"),
     ]
     lines = [
-        f"# {state['version']} stability pass: summary tables",
+        f"# {state['version']} Stability Pass: Summary Tables",
         "",
         f"Commit `{state['commit']}`, tree `{state['tree']}`. Trees: {trees or 'none recorded'}.",
         "",
@@ -1648,10 +2008,13 @@ def report_paths(work: Path, state: Mapping[str, Any], date: str) -> tuple[Path,
 
 
 def write_report(work: Path, state: Mapping[str, Any], date: str, home: str) -> tuple[Path, Path]:
-    evidence = gather(work, state, home)
+    """Write the report and the tables, each redacted whole: a step's detail, a declared
+    value, and a log all reach the page, and any of them can carry a private path."""
+    evidence = gather(work, state)
+    pairs = label_pairs(state, home)
     report, tables = report_paths(work, state, date)
-    write_text_atomic(report, render_report(evidence, date), encoding="utf-8")
-    write_text_atomic(tables, render_tables(evidence), encoding="utf-8")
+    for path, text in ((report, render_report(evidence, date)), (tables, render_tables(evidence))):
+        write_text_atomic(path, redact(text, pairs, home), encoding="utf-8")
     return report, tables
 
 
@@ -1683,7 +2046,8 @@ def remember(config: Config, host: Host, state: dict[str, Any]) -> None:
     if peers:
         variables[PEER_TREES_VARIABLE] = os.pathsep.join(peers)
     state["variables"] = variables
-    state["regime"] = regime(config, host)
+    if config.steps or "regime" not in state:
+        state["regime"] = regime(config, host)
 
 
 def main(argv: Sequence[str] | None = None, host: Host | None = None) -> int:
@@ -1695,26 +2059,35 @@ def main(argv: Sequence[str] | None = None, host: Host | None = None) -> int:
         if host.platform not in ("linux", "darwin"):
             raise UsageError(f"the stability pass runs on Linux or macOS, not {host.platform}")
         identity = identify(config, host)
+        if checkout := enclosing_checkout(config.work, host):
+            raise UsageError(
+                f"the work directory {config.work} is inside the checkout {checkout}: the pass "
+                "makes a worktree and builds there, so use a directory outside any checkout, "
+                "as RELEASE is"
+            )
         state = load_state(config.work, identity)
+        ctx = Context(config, identity, host, state)
+        steps = list(config.steps)
+        if set(steps) & NEEDS_CANDIDATE and "candidate" not in steps and not candidate_ready(ctx):
+            steps.insert(next(i for i, s in enumerate(steps) if s in NEEDS_CANDIDATE), "candidate")
+            config = dataclasses.replace(config, steps=tuple(steps))
+            ctx.config = config
+        problems, skips = prerequisites(config, host)
     except UsageError as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_USAGE
-    ctx = Context(config, identity, host, state)
-    steps = list(config.steps)
-    if set(steps) & NEEDS_CANDIDATE and "candidate" not in steps and not candidate_ready(ctx):
-        steps.insert(next(i for i, s in enumerate(steps) if s in NEEDS_CANDIDATE), "candidate")
-        config = dataclasses.replace(config, steps=tuple(steps))
-        ctx.config = config
-    problems, skips = prerequisites(config, host)
     if problems:
         for problem in problems:
             print(f"error: {problem}", file=sys.stderr)
         return EXIT_USAGE
+    for notice in notices(config):
+        print(f"note: {notice}", flush=True)
     config.work.mkdir(parents=True, exist_ok=True)
     if set(steps) & AS_NOBODY and host.euid() == 0:
         # Nobody runs the refusal pass, and the candidate it runs is installed here.
         config.work.chmod(config.work.stat().st_mode | stat.S_IXOTH)
     remember(config, host, state)
+    ctx.tooling, ctx.user = tooling_revision(config, host), user_kind(host)
     save_state(config.work, state)
     print(f"stability pass of {identity.sha[:9]} ({identity.version}) in {config.work}", flush=True)
     try:
@@ -1725,16 +2098,24 @@ def main(argv: Sequence[str] | None = None, host: Host | None = None) -> int:
         save_state(config.work, state)
     report, tables = write_report(config.work, state, config.date, os.path.expanduser("~"))
     print(f"\nreport: {report}\ntables: {tables}")
-    failed = [outcome for outcome in outcomes if outcome.status == "failed"]
-    if outcomes and not failed and not config.keep:
+    if outcomes:
+        ran = Counter(outcome.status for outcome in outcomes)
+        counts = ", ".join(f"{ran[word]} {word}" for word in STATUS_WORDS if ran[word])
+        print(f"this run: {counts}")
+    # The status is the whole record's, not this run's: after `--only`, a step another run
+    # failed, skipped, or never reached still decides whether the pass has passed.
+    status = pass_status(state)
+    verdicts = {
+        0: "every step has passed.",
+        EXIT_FAILED: "failed.",
+        EXIT_INCOMPLETE: "nothing has failed, but it is incomplete.",
+    }
+    summary = "" if status == 0 else f" {overall(state)}"
+    print(f"the pass: {verdicts[status]}{summary}")
+    if status != EXIT_FAILED and not config.keep:
+        # A failure anywhere in the record keeps the worktree and target it was built in.
         cleanup(ctx)
-    if failed:
-        print(f"{len(failed)} of {len(outcomes)} steps failed")
-        return EXIT_FAILED
-    if any(outcome.status == "skipped" for outcome in outcomes):
-        print("nothing failed, but a step was skipped: the pass is incomplete")
-        return EXIT_INCOMPLETE
-    return 0
+    return status
 
 
 if __name__ == "__main__":

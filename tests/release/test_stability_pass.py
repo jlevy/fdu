@@ -3,10 +3,13 @@ and the steps' verdicts, against a host that answers instead of building or runn
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
+import sys
 import tempfile
+import time
 import unittest
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import redirect_stderr, redirect_stdout
@@ -23,6 +26,10 @@ SHA = "e808f96042b9b92b722f03bd4fce8d8e2fca7efe"
 TREE = "df899f7da7fd2fabd908b1ec6e893f392233e273"
 VERSION = "fdu 0.3.0-dev+ge808f9604"
 ALL_TOOLS = {"git", "make", "cargo", "du", "setpriv", *sp.PEERS}
+CROSS_TARGETS = sp.cross_targets(ROOT)
+# What `make cross-lint` prints for each target it lints.
+CROSS_LINT = "\n".join(f"== clippy: {target}\n    Finished" for target in CROSS_TARGETS)
+PERMISSION_BITS = "FDU_TEST_ALLOW_NO_PERMISSION_BITS"
 
 Script = Callable[[list[str], Mapping[str, str]], tuple[int, str]]
 
@@ -41,12 +48,16 @@ class FakeHost(sp.Host):
         accounts: dict[str, tuple[int, int]] | None = None,
         free: int = 100 * sp.GB,
         script: Script | None = None,
+        checkout: str | None = None,
+        tooling: str = SHA,
+        dirty: bool = False,
     ) -> None:
         self.tools = ALL_TOOLS if tools is None else tools
         pinned = semver_check.pinned_tool_version(ROOT)
         self.answers = {
             ("uv", "--version"): (0, "uv 0.12.1 (x86_64-unknown-linux-gnu)"),
             ("cargo", "semver-checks", "--version"): (0, f"cargo-semver-checks {pinned}\n"),
+            ("rustup", "target", "list", "--installed"): (0, "\n".join(CROSS_TARGETS) + "\n"),
             (sp.GNU_TIME, "--version"): (0, "time (GNU Time) UNKNOWN\n"),
             ("du", "--version"): (0, "du (GNU coreutils) 9.4\n"),
             **(answers or {}),
@@ -55,6 +66,11 @@ class FakeHost(sp.Host):
         self.accounts = {"nobody": (65534, 65534)} if accounts is None else accounts
         self.free = free
         self.script = script
+        # The checkout the work directory is inside, the tooling checkout's HEAD, and
+        # whether its tracked files are modified.
+        self.checkout = checkout
+        self.tooling = tooling
+        self.dirty = dirty
         self.executed: list[tuple[list[str], dict[str, str]]] = []
 
     def which(self, name: str) -> str | None:
@@ -72,6 +88,17 @@ class FakeHost(sp.Host):
                 return answer
         if args[0] == "git":
             command = args[3:]
+            if command == ("rev-parse", "--show-toplevel"):
+                return (
+                    (0, self.checkout + "\n") if self.checkout else (128, "fatal: not a git repo")
+                )
+            if command == ("rev-parse", "HEAD") and args[2] == str(ROOT):
+                return 0, self.tooling + "\n"
+            if command[:2] == ("status", "--porcelain") and args[2] == str(ROOT):
+                return 0, " M scripts/x.py\n" if self.dirty else ""
+            if command[:2] == ("worktree", "add"):
+                Path(command[3]).mkdir(parents=True)
+                return 0, ""
             if command[:2] == ("rev-parse", "--verify") or command == ("rev-parse", "HEAD"):
                 return 0, SHA + "\n"
             if command[:1] == ("rev-parse",) and command[-1].endswith("^{tree}"):
@@ -100,6 +127,7 @@ class FakeHost(sp.Host):
         env: Mapping[str, str],
         log: Path,
         header: Sequence[str],
+        timeout: float | None = None,
     ) -> int:
         args = [str(arg) for arg in argv]
         self.executed.append((args, dict(env)))
@@ -128,6 +156,12 @@ class Scratch(unittest.TestCase):
         self.base = Path(self.scratch.name)
         for name in ("small", "medium", "large", "slow", "analyze", "peer-a", "peer-b"):
             (self.base / name).mkdir()
+
+        # Whether the host declares its permission bits is a test's own choice, not the
+        # environment's the tests happen to run in.
+        patch = mock.patch.dict(os.environ, {PERMISSION_BITS: "1"})
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def tearDown(self) -> None:
         self.scratch.cleanup()
@@ -241,6 +275,12 @@ class ConfigureTests(Scratch):
         with self.assertRaisesRegex(sp.UsageError, "PATH=LABEL"):
             self.configure(["--label", "nolabel"], {"COMMIT": SHA, "RELEASE": "/r"})
 
+    def test_a_command_has_six_hours_unless_told_otherwise(self) -> None:
+        environ = {"COMMIT": SHA, "RELEASE": "/r"}
+        self.assertEqual(self.configure([], environ).timeout, 6 * 3600)
+        self.assertEqual(self.configure(["--timeout-minutes", "1.5"], environ).timeout, 90)
+        self.assertIsNone(self.configure(["--timeout-minutes", "0"], environ).timeout)
+
 
 class PrerequisiteTests(Scratch):
     def test_a_host_with_everything_needs_nothing(self) -> None:
@@ -268,6 +308,48 @@ class PrerequisiteTests(Scratch):
                 problems, _ = sp.prerequisites(self.config(), FakeHost(answers=answers))
                 self.assertEqual(len(problems), 1, problems)
                 self.assertIn(message, problems[0])
+
+    def test_cross_lint_needs_every_target_it_would_otherwise_skip(self) -> None:
+        installed = "x86_64-apple-darwin\nx86_64-pc-windows-msvc\n"
+        host = FakeHost(answers={("rustup", "target", "list", "--installed"): (0, installed)})
+        problems, skips = sp.prerequisites(self.config(), host)
+        self.assertEqual((len(problems), skips), (1, {}), problems)
+        self.assertIn("3 of its 5 are missing: rustup target add i686-unknown-linux-gnu "
+                      "x86_64-unknown-linux-musl aarch64-unknown-linux-gnu", problems[0])  # fmt: skip
+        # Without rustup none is installed, and only cross-lint asks.
+        bare = FakeHost(answers={("rustup", "target", "list", "--installed"): (127, "")})
+        self.assertIn("5 of its 5 are missing", sp.prerequisites(self.config(), bare)[0][0])
+        self.assertEqual(sp.prerequisites(self.config(["check"]), bare), ([], {}))
+
+    def test_the_makefile_names_the_cross_targets_across_continued_lines(self) -> None:
+        self.assertEqual(len(CROSS_TARGETS), 5)
+        self.assertIn("aarch64-unknown-linux-gnu", CROSS_TARGETS)
+        (self.base / "Makefile").write_text("CROSS_TARGETS := a \\\n\tb\nNEXT := c\n")
+        self.assertEqual(sp.cross_targets(self.base), ("a", "b"))
+        (self.base / "Makefile").write_text("all:\n")
+        for read in (sp.cross_targets, sp.uv_floor):
+            with self.assertRaises(sp.UsageError):
+                read(self.base)
+
+    def test_as_root_make_check_needs_the_host_declared(self) -> None:
+        with mock.patch.dict(os.environ):
+            del os.environ[PERMISSION_BITS]
+            problems, _ = sp.prerequisites(self.config(["check"]), FakeHost(euid=0))
+            self.assertEqual(len(problems), 1, problems)
+            self.assertIn(f"declare the host unable with {PERMISSION_BITS}=1", problems[0])
+            # Only make check runs the permission fixtures, and only root escapes them.
+            self.assertEqual(sp.prerequisites(self.config(["check"]), FakeHost()), ([], {}))
+            self.assertEqual(
+                sp.prerequisites(self.config(["semver-check"]), FakeHost(euid=0)), ([], {})
+            )
+
+    def test_an_unset_harness_tree_is_announced_before_the_pass_runs(self) -> None:
+        self.assertEqual(sp.notices(self.config()), [])
+        said = sp.notices(self.config(trees=self.trees(medium=None, large=None)))
+        self.assertEqual(len(said), 2)
+        self.assertIn("FDU_QA_MEDIUM is not set, so the harness skips its `medium` phase", said[0])
+        self.assertIn("exit 3", said[1])
+        self.assertEqual(sp.notices(self.config(["served"], trees=self.trees(large=None))), [])
 
     def test_too_little_space_for_the_builds(self) -> None:
         problems, _ = sp.prerequisites(self.config(), FakeHost(free=3 * sp.GB))
@@ -455,7 +537,9 @@ CROSS = """warmer   ask                   rc  analysis.analyze           verdict
 ----------------------------------------------------------------------------------
 W_none   a_lines                0  ['lines']                  ok
 W_lines  a_lines                0  ['lines']                  {verdict}
+W_lines  a_lines_documents      0  ['lines']                  {second}
 
+pairs held to serving: 2
 cross-warm violations: {violations}"""
 
 
@@ -473,9 +557,9 @@ class SummaryTests(unittest.TestCase):
         )
 
     def test_cross_warm_and_peer_outputs_are_counted(self) -> None:
-        cross = CROSS.format(verdict="ok", violations=0)
+        cross = CROSS.format(verdict="ok", second="ok", violations=0)
         self.assertEqual(
-            sp.cross_warm_summary(cross), "2 of 2 pairs matched the cold answer; 0 violations"
+            sp.cross_warm_summary(cross), "3 of 3 pairs matched the cold answer; 0 violations"
         )
         self.assertEqual(
             sp.peer_summary(PEER_OUTPUT.format(root="/t"), 0),
@@ -491,25 +575,76 @@ class SummaryTests(unittest.TestCase):
             )
             self.assertEqual(sp.body(log), "line one\n== inside\nlast")
             self.assertEqual(sp.body(Path(temporary) / "missing.log"), "")
+            # Output that opens and closes with its own `==` lines keeps them.
+            log.write_text(
+                "== commit: x\n== start: y\n== clippy: a\nwarning\n== skipping b\n"
+                "== end: z\n== exit status: 0\n"
+            )
+            self.assertEqual(sp.body(log), "== clippy: a\nwarning\n== skipping b")
+            log.write_text("== start: y\n== end: z\n== could not start: no\n== exit status: 127\n")
+            self.assertEqual(sp.body(log), "")
+
+    def test_a_break_must_catch_every_case_it_holds_to_serving(self) -> None:
+        self.assertEqual(
+            sp.no_snapshot_caught(NO_SNAPSHOT),
+            (True, "2 of 2 cases caught (2 `NO-SNAPSHOT`, 0 `NOT-WARM`)"),
+        )
+        mixed = NO_SNAPSHOT.replace("NO-SNAPSHOT(rc=1)", "NOT-WARM(scanned)", 1)
+        self.assertEqual(
+            sp.no_snapshot_caught(mixed),
+            (True, "2 of 2 cases caught (1 `NO-SNAPSHOT`, 1 `NOT-WARM`)"),
+        )
+        # Seventeen of twenty-three once printed `ok` against a cache that never served.
+        blind = NO_SNAPSHOT.replace("NO-SNAPSHOT(rc=1)", "ok", 1)
+        self.assertEqual(sp.no_snapshot_caught(blind)[0], False)
+        self.assertEqual(sp.no_snapshot_caught("no table")[0], False)
+        both = CROSS.format(verdict="NOT-WARM(scanned)", second="NOT-WARM(scanned)", violations=2)
+        self.assertEqual(sp.not_warm_caught(both), (True, "2 of 2 same-analyzer pairs `NOT-WARM`"))
+        one = CROSS.format(verdict="NOT-WARM(scanned)", second="ok", violations=1)
+        self.assertEqual(sp.not_warm_caught(one), (False, "1 of 2 same-analyzer pairs `NOT-WARM`"))
+        uncounted = both.replace("pairs held to serving: 2\n", "")
+        self.assertEqual(sp.not_warm_caught(uncounted)[0], False)
 
 
-def correctness_script(broken_exit: int = 1) -> Script:
-    """Canned output for each command the correctness steps run."""
+def correctness_script(broken_exit: int = 1, caught: int = 2) -> Script:
+    """Canned output for each command the correctness steps run; a break's wrapper makes
+    its script catch `caught` of the two cases it must."""
 
     def answer(args: list[str], env: Mapping[str, str]) -> tuple[int, str]:
-        script = Path(next(arg for arg in args if arg.endswith(".py"))).name
+        script = Path(next((arg for arg in args if arg.endswith(".py")), "")).name
         wrapper = Path(env.get("FDU_BIN", "")).name
+        marks = ["NOT-WARM(scanned)"] * caught + ["ok"] * (2 - caught)
         if script == "build_tree.py":
             return 0, "running as uid 1000\n\nkinds present: 15, absent: 1\nabsent: chardev"
         if wrapper == "break_no_snapshot.py":
             if script == "cross_warm.py":
-                return broken_exit, CROSS.format(verdict="NOT-WARM(scanned)", violations=1)
-            return broken_exit, NO_SNAPSHOT
+                return broken_exit, CROSS.format(verdict=marks[0], second=marks[1], violations=1)
+            return broken_exit, NO_SNAPSHOT.replace("NO-SNAPSHOT(rc=1)", "ok", 2 - caught)
         if wrapper == "break_partial_stored.py":
-            return broken_exit, PARTIAL_STORED
+            return broken_exit, PARTIAL_STORED.replace("PARTIAL-STORED", "withheld", 2 - caught)
         if script == "cross_warm.py":
-            return 0, CROSS.format(verdict="ok", violations=0)
-        return 0, REFUSALS if "--refusals-only" in args else SERVED
+            return 0, CROSS.format(verdict="ok", second="ok", violations=0)
+        if script == "warm_cold.py":
+            return 0, REFUSALS if "--refusals-only" in args else SERVED
+        return 0, ""
+
+    return answer
+
+
+def harness_script(rows: Sequence[tuple[str, str]], stopped: str = "", status: int = 0) -> Script:
+    """A harness that writes these (phase, verdict) rows as its results and exits."""
+
+    def answer(args: list[str], env: Mapping[str, str]) -> tuple[int, str]:
+        out = Path(env["FDU_QA_OUT"])
+        out.mkdir(parents=True, exist_ok=True)
+        results = {
+            "stopped_reason": stopped,
+            "rows": [
+                {"phase": p, "name": f"{p}-{i}", "verdict": v} for i, (p, v) in enumerate(rows)
+            ],
+        }
+        (out / "results.json").write_text(json.dumps(results), encoding="utf-8")
+        return status, "verdicts"
 
     return answer
 
@@ -517,29 +652,41 @@ def correctness_script(broken_exit: int = 1) -> Script:
 class RunTests(Scratch):
     """The steps' verdicts, the state, the exit status, and the report, end to end."""
 
-    def install(self, work: Path) -> None:
-        """A candidate a previous run installed and verified."""
+    def install(self, work: Path, done: Sequence[str] = ("candidate",), **steps: str) -> None:
+        """A work directory a previous run left: a verified candidate, the `done` steps
+        passed, and any others with the status named."""
         work.mkdir(parents=True, exist_ok=True)
         (work / "bin").mkdir()
+        run = {"logs": [], "tooling": SHA[:9], "user": "unprivileged"}
+        recorded = {step: {"status": "passed", "detail": "installed", **run} for step in done}
+        for step, status in steps.items():
+            recorded[step.replace("_", "-")] = {"status": status, "detail": "earlier", **run}
         state = {
             "commit": SHA,
             "tree": TREE,
             "version": "0.3.0",
-            "steps": {"candidate": {"status": "passed", "detail": "installed", "logs": []}},
+            "steps": recorded,
             "candidate": {"fdu": str(work / "bin" / "fdu"), "version": VERSION, "wheels": []},
         }
         (work / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
-    def run_pass(self, host: FakeHost, *only: str) -> tuple[int, dict[str, Any]]:
+    def all_but(self, *running: str) -> list[str]:
+        """Every step but those a test is about to run, so its run completes the pass."""
+        chosen = set(sp.select_steps(running)) if running else set()
+        return [step for step in sp.STEPS if step not in chosen]
+
+    def run_pass(
+        self, host: FakeHost, *only: str, more: Sequence[str | Path] = ()
+    ) -> tuple[int, Any]:
         work = self.base / "work"
-        argv = ["--commit", SHA, "--work-dir", str(work), "--date", "2026-10-01"]
+        argv = ["--commit", SHA, "--work-dir", str(work), "--date", "2026-10-01", *map(str, more)]
         for item in only:
             argv += ["--only", item]
         status = quietly(lambda: sp.main(argv, host))
         return status, json.loads((work / "state.json").read_text(encoding="utf-8"))
 
     def test_the_correctness_stage_and_both_breaks_pass(self) -> None:
-        self.install(self.base / "work")
+        self.install(self.base / "work", self.all_but("correctness"))
         host = FakeHost(script=correctness_script())
         status, state = self.run_pass(host, "correctness")
         self.assertEqual(status, 0, state["steps"])
@@ -547,8 +694,8 @@ class RunTests(Scratch):
             self.assertEqual(state["steps"][step]["status"], "passed", step)
         self.assertEqual(
             state["steps"]["break-no-snapshot"]["detail"],
-            "`warm_cold.py` exited 1, 2 rows `NO-SNAPSHOT`; "
-            "`cross_warm.py` exited 1, 1 rows `NOT-WARM(scanned)`",
+            "`warm_cold.py` exited 1, 2 of 2 cases caught (2 `NO-SNAPSHOT`, 0 `NOT-WARM`); "
+            "`cross_warm.py` exited 1, 2 of 2 same-analyzer pairs `NOT-WARM`",
         )
         self.assertEqual(state["kinds"]["tree"], "15 kinds present, 1 absent (chardev)")
         # Each tree is built once, and removed once the pass is done with it.
@@ -563,25 +710,75 @@ class RunTests(Scratch):
         self.assertEqual(state["steps"]["break-no-snapshot"]["status"], "failed")
         self.assertEqual(state["steps"]["break-partial-stored"]["status"], "failed")
 
+    def test_a_break_that_catches_only_some_cases_fails_the_pass(self) -> None:
+        # Each script exits 1 on its first failing case, so the exit status says nothing
+        # about the cases a blinded check would have called ok.
+        self.install(self.base / "work", self.all_but("breaks"))
+        status, state = self.run_pass(FakeHost(script=correctness_script(caught=1)), "breaks")
+        self.assertEqual(status, sp.EXIT_FAILED)
+        no_snapshot, partial = (state["steps"][step] for step in sp.ALIASES["breaks"])
+        self.assertEqual(no_snapshot["status"], "failed")
+        self.assertIn("`warm_cold.py` exited 1, 1 of 2 cases caught", no_snapshot["detail"])
+        self.assertIn("1 of 2 same-analyzer pairs `NOT-WARM`", no_snapshot["detail"])
+        self.assertEqual(partial["status"], "failed")
+        self.assertIn("1 of 2 cases `PARTIAL-STORED`", partial["detail"])
+
     def test_the_refusal_steps_run_as_nobody_when_running_as_root(self) -> None:
-        self.install(self.base / "work")
+        self.install(self.base / "work", self.all_but("refusals"))
         host = FakeHost(euid=0, answers={("setpriv",): (0, "")}, script=correctness_script())
         # Whether nobody can reach these paths is the prerequisite tests' question.
         with mock.patch.object(sp, "traversable", return_value=True):
-            status, _ = self.run_pass(host, "refusals")
+            status, state = self.run_pass(host, "refusals")
         self.assertEqual(status, 0)
         (refusal,) = [args for args, _ in host.executed if "--refusals-only" in args]
         self.assertEqual(
             refusal[:4], ["setpriv", "--reuid=65534", "--regid=65534", "--clear-groups"]
         )
+        self.assertEqual(state["steps"]["refusals"]["user"], "root")
 
     def test_a_skipped_step_leaves_the_pass_incomplete(self) -> None:
-        self.install(self.base / "work")
+        self.install(self.base / "work", self.all_but("refusals,served"))
         host = FakeHost(euid=0, tools=ALL_TOOLS - {"setpriv"}, script=correctness_script())
         status, state = self.run_pass(host, "refusals,served")
         self.assertEqual(status, sp.EXIT_INCOMPLETE)
         self.assertEqual(state["steps"]["refusals"]["status"], "skipped")
         self.assertEqual(state["steps"]["served"]["status"], "passed")
+
+    def test_a_rerun_exits_with_the_whole_records_status(self) -> None:
+        # One stage rerun after a host failure must not read as the pass.
+        cases = [
+            ({"check": "failed", "peer_trees": "skipped"}, sp.EXIT_FAILED),
+            ({"peer_trees": "skipped"}, sp.EXIT_INCOMPLETE),
+            ({}, 0),
+        ]
+        for index, (earlier, expected) in enumerate(cases):
+            for only in ("served", "report"):
+                with self.subTest(earlier=earlier, only=only):
+                    work = self.base / f"work-{index}-{only}"
+                    self.install(work, self.all_but(), **earlier)
+                    stdout = io.StringIO()
+                    argv = ["--commit", SHA, "--work-dir", str(work), "--only", only]
+                    with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+                        status = sp.main(argv, FakeHost(script=correctness_script()))
+                    self.assertEqual(status, expected)
+                    said = stdout.getvalue()
+                    if only == "served":
+                        self.assertIn("this run: 1 passed", said)
+                    if expected == sp.EXIT_FAILED:
+                        self.assertIn("the pass: failed. Failed: check. Skipped: peer-trees.", said)
+                    if expected == 0:
+                        self.assertIn("the pass: every step has passed.", said)
+
+    def test_steps_that_have_not_run_leave_the_pass_incomplete(self) -> None:
+        self.install(self.base / "work")
+        stdout = io.StringIO()
+        argv = ["--commit", SHA, "--work-dir", str(self.base / "work"), "--only", "served"]
+        with redirect_stdout(stdout), redirect_stderr(io.StringIO()):
+            status = sp.main(argv, FakeHost(script=correctness_script()))
+        self.assertEqual(status, sp.EXIT_INCOMPLETE)
+        self.assertIn(
+            "nothing has failed, but it is incomplete. Not run: check,", stdout.getvalue()
+        )
 
     def test_a_missing_prerequisite_runs_nothing(self) -> None:
         self.install(self.base / "work")
@@ -590,6 +787,30 @@ class RunTests(Scratch):
         self.assertEqual(status, sp.EXIT_USAGE)
         self.assertNotIn("harness", state["steps"])
         self.assertEqual(host.executed, [])
+
+    def test_a_makefile_without_its_pins_is_one_message_not_a_traceback(self) -> None:
+        stderr = io.StringIO()
+        argv = ["--commit", SHA, "--work-dir", str(self.base / "work"), "--only", "gates"]
+        error = sp.UsageError("the Makefile pins no UV_MIN_VERSION")
+        with (
+            mock.patch.object(sp, "uv_floor", side_effect=error),
+            redirect_stdout(io.StringIO()),
+            redirect_stderr(stderr),
+        ):
+            status = sp.main(argv, FakeHost())
+        self.assertEqual(status, sp.EXIT_USAGE)
+        self.assertEqual(stderr.getvalue(), "error: the Makefile pins no UV_MIN_VERSION\n")
+
+    def test_a_work_directory_inside_a_checkout_is_refused(self) -> None:
+        stderr = io.StringIO()
+        work = self.base / "work"
+        with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+            status = sp.main(
+                ["--commit", SHA, "--work-dir", str(work)], FakeHost(checkout="/src/fdu")
+            )
+        self.assertEqual(status, sp.EXIT_USAGE)
+        self.assertIn(f"{work} is inside the checkout /src/fdu", stderr.getvalue())
+        self.assertFalse(work.exists())
 
     def test_a_qa_step_without_a_candidate_installs_one_first(self) -> None:
         def build(args: list[str], env: Mapping[str, str]) -> tuple[int, str]:
@@ -605,32 +826,109 @@ class RunTests(Scratch):
         argv = ["--commit", SHA, "--work-dir", str(work), "--wheels", str(wheels)]
         status = quietly(lambda: sp.main([*argv, "--only", "terminal"], host))
         state = json.loads((work / "state.json").read_text(encoding="utf-8"))
-        self.assertEqual(status, 0, state["steps"])
-        self.assertEqual(list(state["steps"]), ["candidate", "terminal"])
+        # Both steps passed; the rest of the pass has not run.
+        self.assertEqual(status, sp.EXIT_INCOMPLETE, state["steps"])
+        self.assertEqual(
+            {step: record["status"] for step, record in state["steps"].items()},
+            {"candidate": "passed", "terminal": "passed"},
+        )
         self.assertEqual(state["candidate"]["version"], VERSION)
         install = next(args for args, _ in host.executed if args[:2] == ["uv", "tool"])
+        # A wheel or nothing: a source distribution among the files is never built.
         self.assertIn("--no-index", install)
+        self.assertIn("--no-build", install)
         self.assertEqual(install[-1], "fdu")
 
-    def run_gates(self, check_status: int) -> tuple[int, dict[str, Any], FakeHost, Path]:
+    def test_a_candidate_that_names_another_commit_fails_and_nothing_runs_on_it(self) -> None:
+        work = self.base / "work"
+        wheels = self.base / "wheels"
+        wheels.mkdir()
+        other = {(str(work / "bin" / "fdu"), "--version"): (0, "fdu 0.3.0-dev+g123456789\n")}
+        host = FakeHost(answers=other, script=correctness_script())
+        status, state = self.run_pass(host, "candidate,terminal,served", more=["--wheels", wheels])
+        self.assertEqual(status, sp.EXIT_FAILED)
+        self.assertEqual(state["steps"]["candidate"]["status"], "failed")
+        self.assertIn("does not name e808f9604", state["steps"]["candidate"]["detail"])
+        for step in ("terminal", "served"):
+            self.assertEqual(state["steps"][step]["status"], "skipped")
+            self.assertEqual(state["steps"][step]["detail"], "the candidate step did not pass")
+        self.assertEqual([args[:3] for args, _ in host.executed], [["uv", "tool", "install"]])
+
+    def test_a_probe_whose_trees_cannot_support_it_fails_and_says_so(self) -> None:
+        self.install(self.base / "work", self.all_but("pty-probe"))
+        host = FakeHost(script=lambda args, env: (2, "error: --tree took 0.10 s"))
+        status, state = self.run_pass(
+            host, "pty-probe", more=["--small", self.base / "small", "--medium", self.base / "slow"]
+        )
+        self.assertEqual(status, sp.EXIT_FAILED)
+        self.assertEqual(
+            state["steps"]["pty-probe"]["detail"],
+            "the trees cannot support the probe; its log says why",
+        )
+
+    def run_harness(self, script: Script, **trees: Path) -> dict[str, Any]:
+        self.install(self.base / "work", self.all_but("harness"))
+        named = {"small": self.base / "small", "medium": self.base / "medium", **trees}
+        more = [part for name, path in named.items() for part in (f"--{name}", path)]
+        status, state = self.run_pass(FakeHost(script=script), "harness", more=more)
+        return {"exit": status, **state["steps"]["harness"]}
+
+    def test_a_harness_that_ran_every_phase_passes(self) -> None:
+        rows = [("sanity", "ok"), ("views", "warn"), ("medium", "ok"), ("large", "ok")]
+        step = self.run_harness(harness_script(rows), large=self.base / "large")
+        self.assertEqual((step["exit"], step["status"]), (0, "passed"))
+        self.assertEqual(step["detail"], "4 checks: 3 ok, 1 warn, 0 fail")
+
+    def test_a_harness_that_exits_0_after_leaving_a_phase_out_is_skipped(self) -> None:
+        # Without FDU_QA_LARGE the harness skips Phase 5 and still exits 0.
+        step = self.run_harness(harness_script([("sanity", "ok"), ("medium", "ok")]))
+        self.assertEqual((step["exit"], step["status"]), (sp.EXIT_INCOMPLETE, "skipped"))
+        self.assertEqual(
+            step["detail"],
+            "2 checks: 2 ok, 0 warn, 0 fail; its `large` phase did not run, which needs "
+            "FDU_QA_LARGE",
+        )
+
+    def test_a_harness_that_stopped_at_its_memory_limit_is_skipped(self) -> None:
+        rows = [("sanity", "ok"), ("medium", "ok"), ("large", "ok"), ("large", "skip")]
+        script = harness_script(rows, stopped="large-tree: RSS limit")
+        step = self.run_harness(script, large=self.base / "large")
+        self.assertEqual((step["exit"], step["status"]), (sp.EXIT_INCOMPLETE, "skipped"))
+        self.assertIn("3 ok, 0 warn, 0 fail, 1 skip", step["detail"])
+        self.assertIn(
+            "it stopped early (large-tree: RSS limit); 1 checks did not run", step["detail"]
+        )
+
+    def test_a_harness_that_fails_is_failed_whatever_it_left_out(self) -> None:
+        step = self.run_harness(harness_script([("sanity", "fail")], status=1))
+        self.assertEqual((step["exit"], step["status"]), (sp.EXIT_FAILED, "failed"))
+
+    def run_gates(
+        self,
+        check_status: int = 0,
+        cross_lint: str = CROSS_LINT,
+        more: Sequence[str | Path] = (),
+        only: str = "gates",
+    ) -> tuple[int, dict[str, Any], FakeHost, Path]:
         def make(args: list[str], env: Mapping[str, str]) -> tuple[int, str]:
             if args[-1] == "semver-check":
                 return 0, "fdu 0.3.0: starts a new compatibility series; nothing to check"
+            if args[-1] == "cross-lint":
+                return 0, cross_lint
             return (check_status if args[-1] == "check" else 0), "OK"
 
         work = self.base / "work"
-        # The worktree `git worktree add` would have made.
-        (work / "worktree").mkdir(parents=True)
-        (work / "target").mkdir()
         host = FakeHost(script=make)
-        argv = ["--commit", SHA, "--work-dir", str(work), "--only", "gates"]
+        argv = ["--commit", SHA, "--work-dir", str(work), "--only", only, *map(str, more)]
         status = quietly(lambda: sp.main([*argv, "--wrap", "flock -s /lock"], host))
         state = json.loads((work / "state.json").read_text(encoding="utf-8"))
         return status, state, host, work
 
     def test_the_gates_run_in_the_worktree_with_their_own_target(self) -> None:
-        status, state, host, work = self.run_gates(check_status=0)
-        self.assertEqual(status, 0, state["steps"])
+        status, state, host, work = self.run_gates()
+        # Every gate passed; the candidate, QA, and correctness have not run.
+        self.assertEqual(status, sp.EXIT_INCOMPLETE, state["steps"])
+        self.assertEqual({state["steps"][gate]["status"] for gate in sp.GATES}, {"passed"})
         self.assertEqual([args for args, _ in host.executed], [
             ["flock", "-s", "/lock", "make", gate] for gate in sp.GATES
         ])  # fmt: skip
@@ -641,9 +939,14 @@ class RunTests(Scratch):
             "`make semver-check` exited 0: fdu 0.3.0: starts a new compatibility series; "
             "nothing to check",
         )
-        # Nothing failed, so the worktree and target are gone; the records stay.
+        self.assertEqual(
+            state["steps"]["cross-lint"]["detail"],
+            f"`make cross-lint` exited 0: linted {', '.join(CROSS_TARGETS)}",
+        )
+        # Nothing failed, so the worktree and target the pass made are gone; the records stay.
         self.assertFalse((work / "worktree").exists())
         self.assertFalse((work / "target").exists())
+        self.assertEqual(state["created"], {})
         self.assertEqual(len(list(work.glob("report-*-release-0.3.0-stability-pass.md"))), 1)
         self.assertTrue((work / "summary-tables.md").exists())
         log = (work / "logs" / "gate-check.log").read_text(encoding="utf-8")
@@ -658,6 +961,101 @@ class RunTests(Scratch):
         self.assertEqual(len(host.executed), len(sp.GATES))
         self.assertTrue((work / "worktree").exists())
         self.assertTrue((work / "target").exists())
+        self.assertEqual(state["created"], {"worktree": True, "target": True})
+        # A later run that passes does not remove what the failed gate was built in.
+        status, state, _, _ = self.run_gates(only="semver-check")
+        self.assertEqual(status, sp.EXIT_FAILED)
+        self.assertEqual(state["steps"]["semver-check"]["status"], "passed")
+        self.assertTrue((work / "worktree").exists())
+        self.assertTrue((work / "target").exists())
+        # Once the gate passes, nothing in the record has failed, and they go.
+        status, state, _, _ = self.run_gates(only="check")
+        self.assertEqual(status, sp.EXIT_INCOMPLETE)
+        self.assertFalse((work / "worktree").exists())
+        self.assertFalse((work / "target").exists())
+
+    def test_a_cross_lint_that_skipped_a_target_has_not_passed(self) -> None:
+        linted, missing = CROSS_TARGETS[:2], CROSS_TARGETS[2:]
+        output = "\n".join(
+            [f"== clippy: {target}" for target in linted]
+            + [f"== skipping {target} (rustup target add {target})" for target in missing]
+        )
+        status, state, _, _ = self.run_gates(cross_lint=output)
+        self.assertEqual(status, sp.EXIT_INCOMPLETE)
+        step = state["steps"]["cross-lint"]
+        self.assertEqual(step["status"], "skipped")
+        self.assertEqual(
+            step["detail"],
+            f"`make cross-lint` exited 0: linted {', '.join(linted)}; skipped "
+            f"{', '.join(missing)}, not installed (rustup target add {' '.join(missing)})",
+        )
+        # A cross-lint that names no target it linted has shown nothing either.
+        _, state, _, _ = self.run_gates(cross_lint="OK")
+        self.assertEqual(state["steps"]["cross-lint"]["status"], "skipped")
+        self.assertIn("linted no target", state["steps"]["cross-lint"]["detail"])
+
+    def test_cleanup_removes_only_what_the_pass_made(self) -> None:
+        work = self.base / "work"
+        # A reused work directory's worktree and target, and the caller's own target.
+        for directory in (work / "worktree", work / "target", self.base / "shared"):
+            directory.mkdir(parents=True)
+            (directory / "kept").write_text("x", encoding="utf-8")
+        status, state, host, _ = self.run_gates()
+        self.assertEqual(status, sp.EXIT_INCOMPLETE, state["steps"])
+        self.assertTrue((work / "worktree" / "kept").exists())
+        self.assertTrue((work / "target" / "kept").exists())
+        status, state, host, _ = self.run_gates(more=["--target-dir", self.base / "shared"])
+        self.assertEqual({state["steps"][gate]["status"] for gate in sp.GATES}, {"passed"})
+        for _, env in host.executed:
+            self.assertEqual(env["CARGO_TARGET_DIR"], str(self.base / "shared"))
+        self.assertTrue((self.base / "shared" / "kept").exists())
+        self.assertTrue((work / "target" / "kept").exists())
+
+    def test_the_wheel_build_runs_the_target_guard_first(self) -> None:
+        def build(args: list[str], env: Mapping[str, str]) -> tuple[int, str]:
+            if "maturin" in args:
+                wheel = (
+                    Path(args[args.index("--out") + 1]) / "fdu-0.3.0-cp312-abi3-linux_x86_64.whl"
+                )
+                wheel.write_text("wheel", encoding="utf-8")
+            return 0, ""
+
+        host = FakeHost(script=build)
+        _, state = self.run_pass(host, "candidate")
+        work = self.base / "work"
+        self.assertEqual(state["steps"]["candidate"]["status"], "passed", state["steps"])
+        commands = [args for args, _ in host.executed]
+        self.assertEqual(commands[0], ["make", "target-owner"])
+        self.assertEqual(
+            commands[1][:6], ["uv", "run", "--frozen", "--only-group", "dev", "maturin"]
+        )
+        for _, env in host.executed[:2]:
+            self.assertEqual(env["CARGO_TARGET_DIR"], str(work / "target"))
+        self.assertEqual(
+            state["steps"]["candidate"]["detail"],
+            f"`fdu --version` printed `{VERSION}`, from `fdu-0.3.0-cp312-abi3-linux_x86_64.whl`",
+        )
+        self.assertEqual(state["candidate"]["wheel"], "fdu-0.3.0-cp312-abi3-linux_x86_64.whl")
+
+    def test_steps_record_the_tooling_and_the_user_of_their_own_run(self) -> None:
+        self.install(self.base / "work")
+        self.run_pass(FakeHost(script=correctness_script()), "served")
+        later = FakeHost(script=correctness_script(), tooling="f" * 40, dirty=True)
+        _, state = self.run_pass(later, "cross-warm")
+        self.assertEqual(state["steps"]["served"]["tooling"], "e808f9604")
+        self.assertEqual(state["steps"]["cross-warm"]["tooling"], "fffffffff+dirty")
+        self.assertEqual(state["steps"]["served"]["user"], "unprivileged")
+        work = self.base / "work"
+        report = next(work.glob("report-*.md")).read_text(encoding="utf-8")
+        self.assertIn(
+            "- **Tooling.** The runs used more than one revision of the scripts: `e808f9604` "
+            "for candidate, served; `fffffffff` with uncommitted changes for cross-warm.",
+            report,
+        )
+        # Writing the report again is not a run, and describes none.
+        regime = state["regime"]
+        _, state = self.run_pass(FakeHost(tooling="0" * 40, euid=0), "report")
+        self.assertEqual(state["regime"], regime)
 
     def test_a_work_directory_belongs_to_one_commit(self) -> None:
         work = self.base / "work"
@@ -668,6 +1066,139 @@ class RunTests(Scratch):
             status = sp.main(["--commit", SHA, "--work-dir", str(work)], FakeHost())
         self.assertEqual(status, sp.EXIT_USAGE)
         self.assertIn("holds the pass for commit 000000000", stderr.getvalue())
+
+
+class GivenWheelTests(Scratch):
+    """With `--wheels`, the rehearsal's record is what ties a release-stamped wheel to the commit."""
+
+    WHEEL = "fdu-0.3.0-cp312-abi3-manylinux_2_34_x86_64.whl"
+
+    def release(self, commit: str = SHA, listed: bool = True) -> Path:
+        """A release directory as the checklist leaves it, and its rehearsal's files."""
+        files = self.base / "release" / "rehearsal" / "files"
+        files.mkdir(parents=True)
+        (files / self.WHEEL).write_bytes(b"the wheel")
+        (files / "fdu-0.3.0.tar.gz").write_bytes(b"the source distribution")
+        digest = hashlib.sha256(b"the wheel" if listed else b"another").hexdigest()
+        evidence = files.parent / "evidence"
+        evidence.mkdir()
+        (evidence / "SHA256SUMS").write_text(f"{digest}  {self.WHEEL}\n", encoding="utf-8")
+        state = {"version": "0.3.0", "commit": commit}
+        (self.base / "release" / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        return files
+
+    def install(self, wheels: Path, version: str = "fdu 0.3.0") -> dict[str, Any]:
+        work = Path(tempfile.mkdtemp(dir=self.base))
+        host = FakeHost(answers={(str(work / "bin" / "fdu"), "--version"): (0, version + "\n")})
+        argv = ["--commit", SHA, "--work-dir", str(work), "--wheels", str(wheels)]
+        quietly(lambda: sp.main([*argv, "--only", "candidate"], host))
+        state = json.loads((work / "state.json").read_text(encoding="utf-8"))
+        return {**state["steps"]["candidate"], "candidate": state["candidate"]}
+
+    def test_the_rehearsals_wheel_of_the_commit_passes_and_is_named(self) -> None:
+        step = self.install(self.release())
+        self.assertEqual(step["status"], "passed", step["detail"])
+        self.assertEqual(
+            step["detail"], f"`fdu --version` printed `fdu 0.3.0`, from `{self.WHEEL}`"
+        )
+        self.assertEqual(step["candidate"]["wheel"], self.WHEEL)
+        self.assertIn("SHA256SUMS lists", step["candidate"]["proof"])
+
+    def test_a_rehearsal_of_another_commit_is_not_the_candidate(self) -> None:
+        step = self.install(self.release(commit="1" * 40))
+        self.assertEqual(step["status"], "failed")
+        self.assertIn("which does not name e808f9604, and the release directory", step["detail"])
+        self.assertIn("records commit 111111111", step["detail"])
+
+    def test_a_wheel_the_checksums_do_not_list_is_not_the_candidate(self) -> None:
+        step = self.install(self.release(listed=False))
+        self.assertEqual(step["status"], "failed")
+        self.assertIn(f"SHA256SUMS does not list `{self.WHEEL}` with its digest", step["detail"])
+
+    def test_a_bare_version_from_wheels_with_no_record_is_not_the_candidate(self) -> None:
+        loose = self.base / "loose"
+        loose.mkdir()
+        (loose / self.WHEEL).write_bytes(b"the wheel")
+        step = self.install(loose)
+        self.assertEqual(step["status"], "failed")
+        self.assertIn("is not in a release directory's rehearsal/files", step["detail"])
+        # A wheel that names the commit itself needs no record.
+        self.assertEqual(self.install(loose, version=VERSION)["status"], "passed")
+
+    def test_the_installed_wheel_is_the_one_whose_tags_the_metadata_repeats(self) -> None:
+        self.assertEqual(
+            sp.wheel_tags("fdu-0.3.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"),
+            {"cp312-abi3-manylinux_2_17_x86_64", "cp312-abi3-manylinux2014_x86_64"},
+        )
+        self.assertIsNone(sp.wheel_tags("fdu.whl"))
+        source = self.base / "files"
+        source.mkdir()
+        names = [self.WHEEL, "fdu-0.3.0-cp312-abi3-macosx_11_0_arm64.whl"]
+        for name in names:
+            (source / name).write_bytes(b"x")
+        tools = self.base / "tools"
+        # Two wheels and nothing installed: no telling which.
+        self.assertIsNone(sp.installed_wheel(tools, source))
+        info = tools / "fdu" / "lib" / "python3.12" / "site-packages" / "fdu-0.3.0.dist-info"
+        info.mkdir(parents=True)
+        (info / "WHEEL").write_text(
+            "Wheel-Version: 1.0\nTag: cp312-abi3-macosx_11_0_arm64\n", encoding="utf-8"
+        )
+        self.assertEqual(sp.installed_wheel(tools, source), source / names[1])
+
+
+class TimeoutTests(Scratch):
+    """A command that outlives its time is stopped with everything it started."""
+
+    def test_a_hung_command_is_stopped_and_fails_its_step(self) -> None:
+        log = self.base / "hung.log"
+        started = time.monotonic()
+        with self.assertRaises(sp.StepError) as raised:
+            sp.Host().execute(
+                ["sh", "-c", "echo begun; sleep 60 & sleep 60"],
+                cwd=self.base,
+                env=dict(os.environ),
+                log=log,
+                header=["== gate: hung"],
+                timeout=0.5,
+            )
+        # The background sleep held the pipe open: only stopping the group ends the read.
+        self.assertLess(time.monotonic() - started, 30)
+        self.assertIn("was still running after", str(raised.exception))
+        self.assertEqual(raised.exception.logs, [log])
+        text = log.read_text(encoding="utf-8")
+        self.assertRegex(text, r"== end: \S+ \(stopped after ")
+        self.assertEqual(sp.body(log), "begun")
+
+    def test_a_command_inside_its_time_runs_to_its_own_status(self) -> None:
+        log = self.base / "quick.log"
+        status = sp.Host().execute(
+            [sys.executable, "-c", "print('done'); raise SystemExit(3)"],
+            cwd=self.base,
+            env=dict(os.environ),
+            log=log,
+            header=[],
+            timeout=60,
+        )
+        self.assertEqual((status, sp.body(log)), (3, "done"))
+
+    def test_a_stopped_step_is_recorded_failed_with_its_log(self) -> None:
+        log = self.base / "work" / "logs" / "gate-check.log"
+
+        class Hung(FakeHost):
+            def execute(self, argv: Any, **kwargs: Any) -> int:
+                if list(map(str, argv))[-1] == "check":
+                    raise sp.StepError("`make check` was still running after 360 minutes", [log])
+                return super().execute(argv, **kwargs)
+
+        argv = ["--commit", SHA, "--work-dir", str(self.base / "work"), "--only", "gates"]
+        status = quietly(lambda: sp.main(argv, Hung(script=lambda args, env: (0, CROSS_LINT))))
+        state = json.loads((self.base / "work" / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(status, sp.EXIT_FAILED)
+        self.assertEqual(state["steps"]["check"]["status"], "failed")
+        self.assertEqual(state["steps"]["check"]["logs"], [str(log)])
+        # The gates after it still ran.
+        self.assertEqual(state["steps"]["release-rehearse"]["status"], "passed")
 
 
 class ReportTests(Scratch):
@@ -749,8 +1280,91 @@ class ReportTests(Scratch):
         for text in (report, tables):
             self.assertNotIn(str(self.base), text)
 
+    def test_a_private_path_in_a_detail_a_declared_value_or_the_user_is_not_printed(self) -> None:
+        work = self.write_pass()
+        state = json.loads((work / "state.json").read_text(encoding="utf-8"))
+        # A failure's detail names paths: a worktree, a log, an interpreter's last error.
+        state["steps"]["check"] = {
+            "status": "failed",
+            "detail": f"/home/alice/releases/0.3.0/stability/worktree is not a clean checkout; "
+            f"see {work}/logs/gate-check.log",
+            "logs": [],
+        }
+        state["steps"]["refusals"]["detail"] = (
+            "nobody cannot read the correctness scripts (PermissionError: [Errno 13] "
+            "Permission denied: '/Users/bob/src/fdu/tests/correctness/warm_cold.py')"
+        )
+        state["steps"]["break-partial-stored"]["detail"] = "internal error: OSError('/root/x')"
+        # An older record held the login name, and a declared value can be a path.
+        state["regime"]["user"] = "alice"
+        state["regime"]["declared"] = {"UV_PYTHON": "/home/alice/.pyenv/versions/3.12/bin/python"}
+        (work / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        report, tables = self.written(work)
+        for text in (report, tables):
+            for private in ("alice", "bob", "/root", str(self.base)):
+                self.assertNotIn(private, text)
+        self.assertIn(
+            "| `make check` | Failed: <home>/releases/0.3.0/stability/worktree is", report
+        )
+        self.assertIn("see <work>/logs/gate-check.log |", report)
+        self.assertIn("Permission denied: '<home>/src/fdu/tests/correctness/warm_cold.py'", tables)
+        self.assertIn("`UV_PYTHON=<home>/.pyenv/versions/3.12/bin/python`", report)
+        self.assertIn("running as an unprivileged user.", report)
+
+    def test_the_refusal_rows_name_who_ran_those_steps_not_the_last_run(self) -> None:
+        work = self.write_pass()
+        state = json.loads((work / "state.json").read_text(encoding="utf-8"))
+        # Root ran the pass; an unprivileged user wrote the report again later.
+        for step in state["steps"].values():
+            step["user"] = "root"
+        state["steps"]["served"]["user"] = "unprivileged"
+        state["regime"]["user"] = "unprivileged"
+        (work / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        report, tables = self.written(work)
+        self.assertIn("| Correctness, refusal tree as `nobody` |", report)
+        self.assertIn("| `--refusals-only`, refusal tree, as `nobody` |", tables)
+        self.assertIn("and as an unprivileged user for served.", report)
+
+    def test_a_phase_the_harness_stopped_in_is_blocked_and_shows_its_skips(self) -> None:
+        work = self.write_pass()
+        rows = [
+            {"phase": "sanity", "name": "help", "verdict": "ok"},
+            {"phase": "large", "name": "large-summary", "verdict": "ok"},
+            {"phase": "large", "name": "large-tree", "verdict": "skip"},
+        ]
+        results = {"stopped_reason": "large-summary: RSS limit", "rows": rows}
+        (work / "qa" / "results.json").write_text(json.dumps(results), encoding="utf-8")
+        _, tables = self.written(work)
+        self.assertIn("| Phase 2: Small-tree views | ✅ Passed | 1 checks: 1 ok |", tables)
+        self.assertIn(
+            "| Phase 5: Bounded large tree | ⏸️ Blocked | 2 checks: 1 ok, 1 skip; the harness "
+            "stopped at large-summary: RSS limit |",
+            tables,
+        )
+
+    def test_a_given_wheel_is_named_with_what_ties_it_to_the_commit(self) -> None:
+        work = self.write_pass()
+        state = json.loads((work / "state.json").read_text(encoding="utf-8"))
+        self.assertIn(
+            "- **Candidate.** The `fdu.whl` wheel built from the commit,", self.written(work)[0]
+        )
+        state["candidate"] = {
+            "fdu": f"{work}/bin/fdu",
+            "version": "fdu 0.3.0",
+            "wheel": "fdu-0.3.0-cp312-abi3-manylinux_2_34_x86_64.whl",
+            "built": False,
+            "proof": "which the rehearsal's SHA256SUMS lists",
+        }
+        (work / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        self.assertIn(
+            "- **Candidate.** The given `fdu-0.3.0-cp312-abi3-manylinux_2_34_x86_64.whl` wheel, "
+            "which the rehearsal's SHA256SUMS lists, installed with",
+            self.written(work)[0],
+        )
+
     def test_the_summary_tables_take_the_playbook_and_runbook_shapes(self) -> None:
         _, tables = self.written(self.write_pass())
+        self.assertTrue(tables.startswith("# 0.3.0 Stability Pass: Summary Tables\n"))
         self.assertIn("| Phase | Status | Notes |", tables)
         self.assertIn("| Phase 1: Setup | ✅ Passed | candidate detail |", tables)
         self.assertIn(
