@@ -108,6 +108,7 @@ def main():
     print(f"{'warmer':<8} {'ask':<20} {'rc':>3}  {'analysis.analyze':<26} verdict")
     print("-" * 82)
     bad = []
+    held = 0
     for wname, wargs in WARMERS.items():
         for ask, aargs in ASKS.items():
             cache = Path(tempfile.mkdtemp(prefix="fdu-cross-"))
@@ -130,7 +131,9 @@ def main():
                 # records. A wider set may not yet (the containment deferral, fdu-7dj6),
                 # so only the matching pairs are held to serving; every pair is held to
                 # the cold answer.
-                if analyzers(wargs) == analyzers(aargs) and content_source_of(out) != "revalidated":
+                same = analyzers(wargs) == analyzers(aargs)
+                held += same
+                if same and content_source_of(out) != "revalidated":
                     v.append(f"NOT-WARM({content_source_of(out)})")
                 if v:
                     bad.append(f"{wname} -> {ask}: {' '.join(v)}")
@@ -141,6 +144,8 @@ def main():
                 shutil.rmtree(cache, ignore_errors=True)
     print()
     bad.extend(STALE_REFERENCES)
+    # What a deliberate break is judged against: every one of these pairs must fail it.
+    print(f"pairs held to serving: {held}")
     print(f"cross-warm violations: {len(bad)}")
     for b in bad:
         print(f"  - {b}")

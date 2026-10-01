@@ -50,7 +50,7 @@ TARGET_OWNER_TARGETS := build release rust-test reference-model opened-root-gold
 
 $(TARGET_OWNER_TARGETS): target-owner
 
-.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
+.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-stability release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -82,6 +82,7 @@ help:
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
 	@echo "make release-rehearse  Build and inspect this host's release artifacts locally"
 	@echo "make semver-check  Check the Rust API against the last compatible release (needs cargo-semver-checks)"
+	@echo "make release-stability  Run the release stability pass on COMMIT, gates to report"
 	@echo "make release-preflight  First maintainer release step (docs/project/guides/release-process.md)"
 	@echo "make cli        Build and run the CLI against this repo"
 	@echo "make docs-format  Auto-format all Markdown with flowmark"
@@ -245,7 +246,7 @@ uv-version:
 
 # Standalone entry points must fail before any recipe asks uv to parse repository
 # configuration. Keep this list aligned with the recipe-coverage test.
-UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test test-terminal release-rehearse semver-check docs-format docs-format-check \
+UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test test-terminal release-rehearse semver-check release-stability docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
 	perf-compare-tools perf-floor perf-record perf-store perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
@@ -484,7 +485,7 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/atomic_write.py ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
+PYTHON_LINT_PATHS := python tests examples ../../scripts/atomic_write.py ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../scripts/qa ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
 
 # pytest imports the editable install, whose compiled half uv rebuilds only when a cache
 # key changes -- by default Python metadata files, never the Rust. A reused .venv then
@@ -572,6 +573,13 @@ release-rehearse: release-test
 # whose install command it prints when that is missing or another version.
 semver-check:
 	$(UV) run --no-project --python 3.12 python scripts/release/semver_check.py $(ARGS)
+
+# The release checklist's stability pass (step 2) as one command, from a clean worktree of
+# COMMIT to a dated report under $RELEASE/stability; see the Stability Pass section of
+# docs/project/guides/release-process.md. The QA playbook's FDU_QA_* variables name the
+# trees, and ARGS passes its own options, such as ARGS="--only qa" to rerun one stage.
+release-stability:
+	$(UV) run --no-project --python 3.12 python scripts/release/stability_pass.py $(ARGS)
 
 # The maintainer's release checklist, one step per target in order, then the recovery
 # audit; see docs/project/guides/release-process.md. Each reads VERSION, COMMIT, RELEASE,
