@@ -719,12 +719,12 @@ def top_level(
     else:
         return 0
     assert fdu_before is not None
-    own = steps["allocated"]
+    moved = steps["allocated"]
     churn = (
         0
         if quiet
         else max(
-            (own[j] for j in (tool_index - 1, tool_index, tool_index + 1) if 0 <= j < len(own)),
+            (moved[j] for j in (tool_index - 1, tool_index, tool_index + 1) if 0 <= j < len(moved)),
             default=0,
         )
     )

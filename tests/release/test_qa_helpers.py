@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 BREAKS = ROOT / "tests" / "correctness"
@@ -75,6 +76,30 @@ class FrameReadingTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("--tree, --small, --analyze-tree not given", result.stderr)
+
+    def test_the_slow_trees_fall_back_on_the_medium_tree_as_the_playbook_says(self) -> None:
+        environment = {"FDU_QA_SMALL": "/s", "FDU_QA_MEDIUM": "/m"}
+        with mock.patch.dict(os.environ, environment, clear=True):
+            args = self.probe.parser().parse_args([])
+            self.assertEqual((args.tree, args.small, args.analyze_tree), ("/m", "/s", "/m"))
+            os.environ["FDU_QA_MEDIUM_ANALYZE"] = "/m/docs"
+            self.assertEqual(self.probe.parser().parse_args([]).analyze_tree, "/m/docs")
+            os.environ.update(FDU_QA_PROGRESS_TREE="/slow", FDU_QA_PROGRESS_ANALYZE="/deep")
+            args = self.probe.parser().parse_args([])
+            self.assertEqual((args.tree, args.analyze_tree), ("/slow", "/deep"))
+
+    def test_a_child_that_cannot_set_itself_up_exits_and_runs_none_of_the_parents_code(
+        self,
+    ) -> None:
+        # The child inherits this patch across the fork, and only the child calls setsid.
+        # Unwinding instead of exiting, it would go on to run this test's own assertions.
+        cache = tempfile.mkdtemp(prefix="fdu-pty-test-")
+        self.addCleanup(lambda: os.path.isdir(cache) and os.rmdir(cache))
+        probe = self.probe.Probe("/bin/sh", cache)
+        with mock.patch.object(os, "setsid", side_effect=OSError("no session")):
+            run = probe.run(["-c", "exit 0"], probe.env(), timeout=30)
+        self.assertEqual(self.probe.exit_code(run.status), 127)
+        self.assertTrue(os.path.isdir(cache))
 
 
 @unittest.skipIf(sys.platform == "win32", "the wrappers stand in for a Unix fdu")

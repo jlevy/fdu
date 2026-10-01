@@ -20,9 +20,10 @@ phase against real trees.
 `--tree` must take well over half a second to scan, metadata only, or no frame is drawn;
 `--analyze-tree` must take several seconds under `--analyze all`, and is the long run for
 the width, narrowing, and Ctrl-C checks; `--small` must scan in well under half a second.
-Each defaults to the playbook's variable (`FDU_QA_PROGRESS_TREE`,
-`FDU_QA_PROGRESS_ANALYZE`, `FDU_QA_SMALL`), and the probe times the two slow trees first
-and stops with a message if either is too fast, rather than failing every check.
+Each defaults to the playbook's variable: `FDU_QA_PROGRESS_TREE`, else `FDU_QA_MEDIUM`;
+`FDU_QA_PROGRESS_ANALYZE`, else `FDU_QA_MEDIUM_ANALYZE`, else `FDU_QA_MEDIUM`; and
+`FDU_QA_SMALL`. The probe times the two slow trees first and stops with a message if
+either is too fast, rather than failing every check.
 
 Exit status: 0 when every check passed, 1 when any failed, 2 when the trees or the
 binary cannot support the checks. Unix only; stdlib only, like the other QA scripts.
@@ -111,17 +112,19 @@ class Probe:
         set_size(master, cols)
         pid = os.fork()
         if pid == 0:
-            os.setsid()
-            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
-            os.dup2(slave, 0)
-            for fd, how in ((1, stdout), (2, stderr)):
-                if how == "pty":
-                    os.dup2(slave, fd)
-                    continue
-                path = os.devnull if how == "null" else how
-                os.dup2(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC), fd)
-            os.close(master)
+            # Whatever fails here, the child exits: one that unwound instead would run the
+            # parent's code, down to the cleanup that removes the cache directory in use.
             try:
+                os.setsid()
+                fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                os.dup2(slave, 0)
+                for fd, how in ((1, stdout), (2, stderr)):
+                    if how == "pty":
+                        os.dup2(slave, fd)
+                        continue
+                    path = os.devnull if how == "null" else how
+                    os.dup2(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC), fd)
+                os.close(master)
                 os.execve(self.fdu, [self.fdu, *args], env)
             finally:
                 os._exit(127)
@@ -404,10 +407,11 @@ def probe(p: Probe, slow: str, small: str, analyze: str) -> None:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     env = os.environ.get
+    medium = env("FDU_QA_MEDIUM")
     result.add_argument("--fdu", default=env("FDU", "fdu"), help="the binary under test")
     result.add_argument(
         "--tree",
-        default=env("FDU_QA_PROGRESS_TREE"),
+        default=env("FDU_QA_PROGRESS_TREE") or medium,
         help="a tree whose metadata scan takes well over half a second",
     )
     result.add_argument(
@@ -415,7 +419,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--analyze-tree",
-        default=env("FDU_QA_PROGRESS_ANALYZE"),
+        default=env("FDU_QA_PROGRESS_ANALYZE") or env("FDU_QA_MEDIUM_ANALYZE") or medium,
         help="a tree that takes several seconds under --analyze all",
     )
     return result
