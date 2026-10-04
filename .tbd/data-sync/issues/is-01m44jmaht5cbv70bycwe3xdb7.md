@@ -5,10 +5,11 @@ title: Update research brief, spike README, and PR for the new pipeline pieces
 kind: task
 status: open
 priority: 2
-version: 1
+version: 3
+spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
 labels: []
 dependencies: []
 parent_id: is-01m44jm7xwyb4m5vqpf3ethg4w
 created_at: 2026-10-04T23:05:20.698Z
-updated_at: 2026-10-04T23:05:20.698Z
+updated_at: 2026-10-04T23:22:49.082Z
 ---

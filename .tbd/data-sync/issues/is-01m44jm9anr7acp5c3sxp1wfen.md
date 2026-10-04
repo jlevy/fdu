@@ -5,7 +5,8 @@ title: Research how human keystroke timing is modeled (bigrams, hand alternation
 kind: task
 status: in_progress
 priority: 2
-version: 3
+version: 5
+spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
 delegate: claude-code@vm
 labels: []
 dependencies:
@@ -15,7 +16,7 @@ parent_id: is-01m44jm7xwyb4m5vqpf3ethg4w
 hold: null
 hold_until: null
 created_at: 2026-10-04T23:05:19.444Z
-updated_at: 2026-10-04T23:05:38.651Z
+updated_at: 2026-10-04T23:22:48.074Z
 started_at: 2026-10-04T23:05:38.650Z
 ---
 Literature: Salthouse 1986, Gentner 1983, Dhakal et al. CHI 2018, KLM; distributions; write findings into the research brief.

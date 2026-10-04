@@ -5,13 +5,14 @@ title: Crop rendered video to the terminal window plus a small margin
 kind: task
 status: open
 priority: 2
-version: 2
+version: 4
+spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m44jma47th1s2hjvstvm7c2s
 parent_id: is-01m44jm7xwyb4m5vqpf3ethg4w
 created_at: 2026-10-04T23:05:18.999Z
-updated_at: 2026-10-04T23:05:20.263Z
+updated_at: 2026-10-04T23:22:47.730Z
 ---
 Size the capture to the window's bounding box, even dimensions, optional 2x scale.

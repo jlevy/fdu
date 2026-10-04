@@ -5,7 +5,8 @@ title: Fetch Planetaire Mono at build time and use it in the web player and the 
 kind: task
 status: in_progress
 priority: 2
-version: 3
+version: 5
+spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
 delegate: claude-code@vm
 labels: []
 dependencies:
@@ -15,7 +16,7 @@ parent_id: is-01m44jm7xwyb4m5vqpf3ethg4w
 hold: null
 hold_until: null
 created_at: 2026-10-04T23:05:18.515Z
-updated_at: 2026-10-04T23:05:38.337Z
+updated_at: 2026-10-04T23:22:47.430Z
 started_at: 2026-10-04T23:05:38.337Z
 ---
 Pinned v0.2.0 WOFF2 from raw.githubusercontent.com, sha256-verified, gitignored; Regular 400 plus ExtraBold 800 for terminal bold; one stage for both outputs.
