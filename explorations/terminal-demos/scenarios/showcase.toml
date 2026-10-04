@@ -11,7 +11,7 @@ env = { COLUMNS = "104", TIMEFORMAT = "\u001b[2mreal %3Rs\u001b[0m" }
 
 [[step]]
 label = "intro"
-comment = "# The whole root filesystem: 230k files, 12 GiB. Nothing is sped up."
+comment = "# The whole root filesystem, page cache warm. Nothing is sped up."
 hold = 0.8
 
 [[step]]

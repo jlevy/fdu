@@ -28,7 +28,23 @@ for line in lines[1:]:
     t = t + dt if v3 else dt
     if code == "o":
         events.append(t)
-expected = sorted({math.ceil(e * a.fps - 1e-9) for e in events})
+
+
+def first_frame_at_or_after(event: float, fps: int) -> int:
+    """The frame render.mjs draws an event in: the first i with event <= i / fps.
+
+    This repeats the renderer's own float comparison. A tolerance here would disagree with
+    it for events that sum, through float noise, to just past a frame boundary.
+    """
+    i = math.ceil(event * fps)
+    while i > 0 and event <= (i - 1) / fps:
+        i -= 1
+    while event > i / fps:
+        i += 1
+    return i
+
+
+expected = sorted({first_frame_at_or_after(e, a.fps) for e in events})
 # Largest per-pixel luma change between consecutive frames, so a single typed glyph counts.
 # Run it on a lossless render (render.mjs --codec lossless): a lossy encode refreshes the
 # picture at each keyframe, which reads as a change. tblend's frame k is the pair (k, k+1).
