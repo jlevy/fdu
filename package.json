@@ -17,12 +17,16 @@
     "check:yaml": "node scripts/check-yaml.mjs"
   },
   "devDependencies": {
+    "fast-glob": "file:scripts/shims/fast-glob",
     "tryscript": "0.2.1",
     "yaml": "2.9.0"
   },
   "overrides": {
     "tsx": {
       "esbuild": "0.28.1"
+    },
+    "tryscript": {
+      "fast-glob": "$fast-glob"
     }
   }
 }
