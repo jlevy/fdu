@@ -1,0 +1,37 @@
+# One continuous take on a real machine: du and fdu over the whole root filesystem, then
+# fdu's code analysis on a real codebase, cold and then cached. Nothing is sped up.
+# Needs a shallow CPython clone under $FDU_DEMO_TREES:
+#   git clone --depth 1 https://github.com/python/cpython "$FDU_DEMO_TREES/cpython"
+title = "fdu: a real machine, real time"
+cols = 104
+rows = 30
+seed = 21
+cwd = "$FDU_DEMO_TREES"
+env = { COLUMNS = "104", TIMEFORMAT = "\u001b[2mreal %3Rs\u001b[0m" }
+
+[[step]]
+label = "intro"
+comment = "# The whole root filesystem: 230k files, 12 GiB. Nothing is sped up."
+hold = 0.8
+
+[[step]]
+label = "du"
+cmd = "time du -sxh /"
+hold = 1.4
+
+[[step]]
+label = "fdu"
+cmd = "time fdu / --one-filesystem --depth 1 --cache off -q"
+hold = 3.5
+
+[[step]]
+label = "code, cold"
+clear = true
+before = ["fdu cpython --cache-clear >/dev/null 2>&1 || true"]
+cmd = "fdu cpython --analyze code --view languages --limit 6"
+hold = 3.5
+
+[[step]]
+label = "code, cached"
+cmd = "time fdu cpython --analyze code --view languages --limit 6 -q"
+hold = 4.0
