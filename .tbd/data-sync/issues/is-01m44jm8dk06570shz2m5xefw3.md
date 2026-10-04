@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01m44jm8dk06570shz2m5xefw3
-title: Fetch Planetaire Mono at build time and use it in the web player and the video
+title: "cli-animate: pinned Planetaire Mono fonts (fonts command, stage readiness)"
 kind: task
 status: in_progress
 priority: 2
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
 delegate: claude-code@vm
 labels: []
@@ -16,7 +16,7 @@ parent_id: is-01m44jm7xwyb4m5vqpf3ethg4w
 hold: null
 hold_until: null
 created_at: 2026-10-04T23:05:18.515Z
-updated_at: 2026-10-04T23:22:47.430Z
+updated_at: 2026-10-04T23:23:08.067Z
 started_at: 2026-10-04T23:05:38.337Z
 ---
 Pinned v0.2.0 WOFF2 from raw.githubusercontent.com, sha256-verified, gitignored; Regular 400 plus ExtraBold 800 for terminal bold; one stage for both outputs.

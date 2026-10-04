@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01m44jm7xwyb4m5vqpf3ethg4w
-title: "Terminal demos: Planetaire fonts, window-fit video, human typing model"
+title: "cli-animate: terminal recordings for the web and video"
 kind: epic
 status: open
 priority: 2
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
 labels: []
 dependencies: []
@@ -28,6 +28,6 @@ child_order_hints:
   - is-01m44kmf6q61nttk724c84pqyx
   - is-01m44kmfn1pzmsqwtfabpv569k
 created_at: 2026-10-04T23:05:18.007Z
-updated_at: 2026-10-04T23:22:54.497Z
+updated_at: 2026-10-04T23:23:07.156Z
 ---
 Follow-up to fdu-1m0b (PR jlevy/fdu#171): render demos in Planetaire Mono fetched at build time, crop video to the terminal window, and type with a researched fast-human keystroke model.
