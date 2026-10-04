@@ -12,11 +12,12 @@
 //        [--hold-end 2] [--codec h264|vp9]
 
 import { createServer } from "node:http";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { spawn, execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { writeFileAtomicSync } from "../../scripts/atomic-write.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -101,5 +102,5 @@ const receipt = {
   cast_duration_seconds: duration, video_duration_seconds: total / fps,
   capture_seconds: elapsed, chromium: chromiumVersion, ffmpeg: ffv,
 };
-await writeFile(outArg.replace(/\.[^./]+$/, "") + ".video.json", JSON.stringify(receipt, null, 2) + "\n");
+writeFileAtomicSync(outArg.replace(/\.[^./]+$/, "") + ".video.json", JSON.stringify(receipt, null, 2) + "\n");
 console.log(JSON.stringify(receipt));
