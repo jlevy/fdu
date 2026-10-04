@@ -1,0 +1,28 @@
+# Real speed, real tree: du and fdu over the same 12 GiB root filesystem.
+title = "fdu vs du: the whole root filesystem, real time"
+cols = 104
+rows = 30
+seed = 7
+cwd = "/"
+env = { COLUMNS = "104", TIMEFORMAT = "\u001b[2mreal %3Rs\u001b[0m" }
+
+[[step]]
+label = "intro"
+comment = "# 231k files, 12 GiB. Both tools warm. Nothing is sped up."
+hold = 0.8
+
+[[step]]
+label = "du"
+cmd = "time du -sxh /"
+hold = 1.6
+
+[[step]]
+label = "fdu"
+cmd = "time fdu / --one-filesystem --depth 1 --cache off"
+hold = 3.5
+
+[[step]]
+label = "drill"
+clear = true
+cmd = "fdu /usr --depth 2 --limit 8"
+hold = 4.0

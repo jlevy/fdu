@@ -1,0 +1,19 @@
+# Live: fdu --watch reports changes as another process writes them.
+title = "fdu --watch: live changes"
+cols = 104
+rows = 30
+seed = 3
+cwd = "/tmp"
+env = { COLUMNS = "104", TIMEFORMAT = "\u001b[2mreal %3Rs\u001b[0m" }
+setup = ["rm -rf /tmp/demo && mkdir -p /tmp/demo/{logs,builds,cache} && head -c 50000000 /dev/urandom > /tmp/demo/cache/blob.bin"]
+
+[[step]]
+label = "watch"
+cmd = "fdu /tmp/demo --watch --interval 500ms"
+stop_after = 9.0
+hold = 1.5
+during = [
+  { at = 2.0, run = "head -c 120000000 /dev/urandom > /tmp/demo/builds/app.tar" },
+  { at = 4.0, run = "for i in $(seq 1 40); do head -c 400000 /dev/urandom > /tmp/demo/logs/run-$i.log; done" },
+  { at = 6.5, run = "rm /tmp/demo/cache/blob.bin" },
+]

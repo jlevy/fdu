@@ -1,0 +1,33 @@
+# One scan, several answers, over a real third-party codebase.
+# Needs a shallow CPython clone under $FDU_DEMO_TREES:
+#   git clone --depth 1 https://github.com/python/cpython "$FDU_DEMO_TREES/cpython"
+title = "fdu: views over the CPython source tree"
+cols = 104
+rows = 30
+seed = 11
+cwd = "$FDU_DEMO_TREES"
+env = { COLUMNS = "104", TIMEFORMAT = "\u001b[2mreal %3Rs\u001b[0m" }
+setup = ["fdu cpython --cache-clear >/dev/null 2>&1 || true"]
+
+[[step]]
+label = "tree"
+cmd = "fdu cpython --depth 2 --limit 12"
+hold = 3.5
+
+[[step]]
+label = "extensions"
+clear = true
+cmd = "fdu cpython --view extensions --limit 10"
+hold = 3.5
+
+[[step]]
+label = "code"
+clear = true
+cmd = "fdu cpython --analyze code --view languages --limit 10"
+hold = 4.5
+
+[[step]]
+label = "code, cached"
+clear = true
+cmd = "fdu cpython --analyze code --view languages --limit 6"
+hold = 4.5
