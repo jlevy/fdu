@@ -1084,8 +1084,8 @@ head as control
 | `default-tree` | 109.1 ms | 110.2 ms | +0.42% [−2.67%, +4.11%] |
 | The serial walk, `aggregate-summary --no-controls --threads 1` | 344.9 ms | 328.4 ms | −5.14% [−6.63%, −2.44%] |
 
-The reconciliation component gained 3.56%, the reader’s saving on a route that had taken
-the portable listing.
+The reconciliation component’s time fell 3.56% [−6.98%, +0.76%], an interval that
+crosses zero: the reader’s saving on a route that had taken the portable listing.
 Discovery’s own component moved +0.06%, so the +1.19% on its wall lies in the journal
 drain and validation the job times after the walk, and is worth a profile before it is
 called a cost. The serial walk, exp-185’s portable placebo, is now the reader.

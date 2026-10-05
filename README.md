@@ -16,10 +16,10 @@ without writing a filesystem walker.
   [pdu](https://github.com/KSXGitHub/parallel-disk-usage),
   [diskus](https://github.com/sharkdp/diskus), and
   [dust](https://github.com/bootandy/dust).
-  That is roughly 900,000 files (3 GB) a second on Linux and 140,000 files (0.5 GB) a
-  second on macOS. Counting source lines reads every file, at roughly 10,000 files (0.18
-  GB) a second on a first run and 160,000 files a second when a repeated run answers
-  from its cache. See [Speed](#speed).
+  On Linux that is roughly 900,000 files, and 3 GB of allocated space, a second.
+  Counting source lines reads every file, at roughly 11,000 files (0.18 GB) a second on
+  a first run and 160,000 files a second when a repeated run answers from its cache.
+  See [Speed](#speed).
 - **Text, file, and code analysis:** Rolls up content metrics, including lines, source
   code lines by language, and words, paragraphs, and pages for Markdown and text.
 - **Cached statistics:** Content metrics require reading files, so fdu caches them
@@ -426,12 +426,13 @@ Each turn of the [performance loop](docs/project/guides/performance-loop.md) is 
 hypothesis, one change, and a measurement against the previous build in interleaved
 pairs, and a change is kept only when it makes fdu at least 3% faster, with a 95%
 interval below zero.
-Of 200 recorded experiments so far, 111 were kept and 61 rejected.
-Kept changes include:
+Of 200 recorded experiments so far, 111 were accepted and 61 rejected; the accepted ones
+include checkpoints, profiles, and non-inferiority steps as well as speed changes.
+Speed changes the loop kept include:
 
 - **A parallel, bulk-reading walk.** Threads walk the tree at once, and on macOS
   `getattrlistbulk` returns a directory’s names and sizes in one call.
-  With the rest of the first campaign, this cut cold scans by 54.5% and warm
+  With the rest of the first campaign, this cut cold scans on macOS by 54.5% and warm
   revalidation by 52.0%
   ([exp-032](docs/project/experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)).
 - **A native directory reader on Linux.** `getdents64` into a reused buffer, and `statx`
@@ -440,27 +441,26 @@ Kept changes include:
   ([exp-185](docs/project/experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md),
   [exp-186](docs/project/experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)).
 - **Exact summaries without an index.** A summary is totalled as the walk runs, without
-  building an index: 14.6% less time and 95% less memory
+  building an index: up to 14.6% less time on macOS, and 95% less memory
   ([exp-040](docs/project/experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md)).
 - **Fast `.gitignore` classification.** On the Linux kernel source’s default report,
-  allocation-free matching took 47.0% off
+  allocation-free matching took 46.2% off
   ([exp-173](docs/project/experiments/exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md)),
-  per-listing rule chains 36.4%
+  per-listing rule chains 35.9%
   ([exp-174](docs/project/experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md)),
   and rules bucketed by literal name, extension, and suffix 29.6%
   ([exp-178](docs/project/experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md)).
 - **A default tree that keeps only what it can show.** Files too small to reach a row
-  fold into their directories’ totals: 13.5% less time on the kernel source
-  ([exp-180](docs/project/experiments/exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md)),
-  and on a million-entry tree, peak memory fell from 293 to 57 MiB
-  ([exp-202](docs/project/experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
+  fold into their directories’ totals: 13.5% less time on the kernel source, and 79%
+  less peak memory, 306 MB to 64 MB, on a generated million-entry tree
+  ([exp-180](docs/project/experiments/exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md)).
 - **Less work per row.** Each directory’s and symlink’s kind comes from its parent’s
   listing rather than a second stat, and a tree row is admitted before it is built: 3.6%
-  and 4.9% less time on a `node_modules` tree
+  and about 3–5% less time on a `node_modules` tree
   ([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md),
   [exp-199](docs/project/experiments/exp-199-linux-h186-admits-tree-rows-before-building-them-the-default.md)).
-- **No repeated work across runs and views.** A cold scan no longer rewrites an
-  identical snapshot (10.6% less time,
+- **No repeated work across runs and views.** On macOS, a cold scan no longer rewrites
+  an identical snapshot (10.6% less time,
   [exp-067](docs/project/experiments/exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md)),
   and unfiltered views share one walk (18.8%,
   [exp-137](docs/project/experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)).
@@ -468,8 +468,8 @@ Kept changes include:
 [The evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
 is the full record of every experiment, rejected ones included.
 
-Time to report on the same generated million-file tree, with warm filesystem caches, as
-a multiple of fdu’s time (lower is faster):
+Time to report on a generated million-entry tree, with warm filesystem caches, as a
+multiple of fdu’s time (lower is faster):
 
 | Tool | Linux | macOS |
 | --- | ---: | ---: |
@@ -487,13 +487,14 @@ a multiple of fdu’s time (lower is faster):
 
 Linux is a 4-vCPU virtual machine on ext4; macOS is an M1 Pro on APFS. On that tree’s
 875,000 files and 2.99 GB of allocated space, fdu’s default report covers about 920,000
-files and 3.1 GB a second on Linux, and 137,000 files and 0.47 GB a second on macOS.
+files and 3.1 GB a second on Linux, and 137,000 files and 0.47 GB a second on macOS,
+measured on a pre-0.2.0 build on a loaded host.
 Sizing a file reads its metadata, not its contents.
 
 Counting source lines reads every byte.
-On the Linux v6.12 source, 86,618 files and 1.48 GB, `fdu --analyze=code` took 8.2 s on
-a first run, about 10,600 files and 0.18 GB a second;
-[scc](https://github.com/boyter/scc) took 1.4 s and
+On the Linux v6.12 source, 86,618 files and 1.48 GB, `fdu --analyze=code`, with ignore
+rules and its cache off, took 8.2 s on a first run, about 10,600 files and 0.18 GB a
+second; [scc](https://github.com/boyter/scc) took 1.4 s and
 [tokei](https://github.com/XAMPPRocky/tokei) 2.2 s. Run again, fdu answered from its
 content cache in 0.55 s, about 158,000 files a second and 2.5 times as fast as scc.
 
@@ -580,6 +581,7 @@ fsearch keep a database; and dua writes snapshots.
 None revalidates a saved scan by modification time, tallies file types per directory, or
 caches content metrics between runs, and none is a native library with a live change
 feed that a Rust or Python program can hold.
+That combination is what a live file browser needs.
 [The file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md)
 has that survey, and
 [the pdu brief](docs/project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)

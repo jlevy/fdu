@@ -50,6 +50,9 @@ On 2026-09-30, on the Linux host below, the published 0.3.0 wheel
 (`fdu-0.3.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`) was installed
 with `uv tool install` and run through its `fdu` command, a Python launcher for the
 native extension, so each time includes Python’s startup.
+The wheel’s SHA-256 is
+`bdb979aac8907b09e1a74729b7f6b9cb81d8cc7c93aa41418f4eec54b2c954d8`, as the release’s
+`SHA256SUMS` lists it; the harness documents hash the launcher, not the wheel.
 The subject was a copy of the Linux v6.12 source without `.git`, 86,618 files and
 1,476,498,481 bytes, measured as the
 [SLOC tools survey](project/research/research-2026-09-29-sloc-tools-survey.md#methodology)’s
@@ -59,18 +62,20 @@ The subject was a copy of the Linux v6.12 source without `.git`, 86,618 files an
 | --- | ---: | ---: | ---: | ---: | ---: |
 | **fdu** `--analyze=code --cache=off`, first run | **8.20 s** | **10.6k** | **0.18** | 31.0 s | 110 MiB |
 | **fdu** `--analyze=code`, repeated with its cache | **0.55 s** | **158k** | — | 0.72 s | 138 MiB |
-| scc 4.1.0 | 1.37 s |  |  | 5.3 s | 233 MiB |
-| tokei 15.0.0 | 2.17 s |  |  | 8.4 s | 152 MiB |
+| scc 4.1.0 | 1.37 s | — | — | 5.3 s | 233 MiB |
+| tokei 15.0.0 | 2.17 s | — | — | 8.4 s | 152 MiB |
 
 Against the adjacent fdu run, scc took 83% less time [−84%, −83%] and tokei 73% less
 [−74%, −73%] than fdu’s first run, and 154% more [+148%, +158%] and 297% more
 [+285%, +311%] than its repeated run.
 A repeated run reads no contents when no file has changed: it revalidates each file’s
 metadata and serves the counts it cached, so it has no read rate.
-fdu counted 26,312,541 code lines in 61,451 files of the languages it recognizes, one
-file and six lines fewer than the survey’s engine, which took a Documentation config
-file for C. The survey measured that earlier engine at 7.92 s against scc’s 1.24 s, in
-another session. The harness documents are in the evidence directory:
+scc and tokei have no rates here because they read only the files of the languages they
+recognize, 81,820 and 81,894 of the 86,618. fdu counted 26,312,541 code lines in 61,451
+files of the languages it recognizes, one file and six lines fewer than the survey’s
+engine, which took a Documentation config file for C. The survey measured that earlier
+engine at 7.92 s against scc’s 1.24 s, in another session.
+The harness documents are in the evidence directory:
 [first run](project/research/evidence/sloc-tool-comparison-2026-09-30-0.3.0-no-ignore.json.gz)
 and
 [repeated](project/research/evidence/sloc-tool-comparison-2026-09-30-0.3.0-cached.json.gz).
