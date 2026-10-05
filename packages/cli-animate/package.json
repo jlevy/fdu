@@ -1,0 +1,38 @@
+{
+  "name": "cli-animate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Record real terminal sessions, replay them in a browser, and render them to video, with a frame-exact timing check",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "cli-animate": "dist/src/cli/main.js"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "files": [
+    "dist",
+    "stage/stage.html",
+    "skill"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test \"dist/tests/*.test.js\"",
+    "e2e": "npm run build && CLI_ANIMATE_E2E=1 node --test dist/tests/e2e.test.js"
+  },
+  "dependencies": {
+    "@xterm/xterm": "6.0.0",
+    "commander": "15.0.0",
+    "picocolors": "1.1.1",
+    "playwright-core": "1.63.0",
+    "yaml": "2.9.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3"
+  }
+}

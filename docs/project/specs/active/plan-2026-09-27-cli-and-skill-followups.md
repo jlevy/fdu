@@ -58,6 +58,10 @@ the committed skill, which is exactly the formatted output, reads as stale.
 The fix belongs in tbd: emit those notes wrapped, or normalize Markdown whitespace
 before comparing. Until then that `tbd doctor` warning is expected, and excluding the
 skills from the documentation check is not the remedy.
+tbd 0.10.0 extends the same warning to the files it adds or refreshes in the formatter’s
+path, the tier agents and `AGENTS.md`: flowmark rewraps their prose and makes their
+quotes typographic, and they regenerate byte for byte once whitespace and quotes are
+normalized.
 
 ## Skill Installation Follow-Ups
 

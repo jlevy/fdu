@@ -1,0 +1,25 @@
+# One scan, several answers, over a real third-party codebase. Needs this repository's
+# release build and a shallow CPython clone under $FDU_DEMO_TREES:
+#   git clone --depth 1 https://github.com/python/cpython "$FDU_DEMO_TREES/cpython"
+title: "fdu: views over the CPython source tree"
+terminal: { cols: 128, rows: 30 }
+typing: { seed: 11 }
+path: [../../../../target/release]
+cwd: $FDU_DEMO_TREES
+setup: [fdu cpython --cache-clear]
+steps:
+  - label: tree
+    run: fdu cpython --depth 2 --limit 12
+    hold: 3.5
+  - label: extensions
+    clear: true
+    run: fdu cpython --view extensions --limit 10
+    hold: 3.5
+  - label: code
+    clear: true
+    run: fdu cpython --analyze code --view languages --limit 10
+    hold: 4.5
+  - label: code, cached
+    clear: true
+    run: fdu cpython --analyze code --view languages --limit 6
+    hold: 4.5

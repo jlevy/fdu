@@ -43,10 +43,15 @@ export const HELPERS = new Map([
   ],
   ["scripts/atomic_write.py", "the shared Python helper for the repository's tooling"],
   ["scripts/atomic-write.mjs", "the shared Node helper for the repository's tooling"],
+  [
+    "packages/cli-animate/src/fsutil.ts",
+    "cli-animate's own whole-file writer: a sibling temporary, fsync, rename; the package " +
+      "is self-contained so it can be extracted",
+  ],
 ]);
 
 // Test code, recognised by name or place. Its writes are the inputs of the test.
-const TEST_FILE = /(?:^|\/)(?:test_[^/]*\.py|[^/]*_test\.py|conftest\.py|[^/]*\.test\.m?js)$/;
+const TEST_FILE = /(?:^|\/)(?:test_[^/]*\.py|[^/]*_test\.py|conftest\.py|[^/]*\.test\.m?[jt]s)$/;
 const TEST_DIRECTORIES = [
   // Rust integration tests, and the Python binding's tests and smoke scripts.
   /^crates\/[^/]+\/(?:tests|benches)\//,
@@ -892,7 +897,7 @@ function rustModuleFiles(path, name) {
 const AUDITORS = [
   [/\.rs$/, auditRust],
   [/\.py$/, auditPython],
-  [/\.(?:mjs|cjs|js)$/, auditNode],
+  [/\.(?:mjs|cjs|js|ts|mts)$/, auditNode],
 ];
 
 function testCode(path) {

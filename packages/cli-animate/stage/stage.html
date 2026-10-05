@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cli-animate stage</title>
+<!--
+  One page, two jobs. Opened in a browser (`cli-animate serve`) it plays a recording.
+  Driven by `cli-animate render` (?mode=capture) it is the video's frame source: it hides
+  the controls, shrinks to the terminal window plus a margin, and exposes window.stage,
+  which seeks on the recording's own clock. The web replay and the video are the same
+  pixels.
+
+  Query parameters: mode=play|capture, margin=<CSS px> (capture, default 32),
+  font=<CSS px> (default 22).
+-->
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="xterm/css/xterm.css">
+<style>
+  :root {
+    --bg-1: #0d1117; --bg-2: #161b2e; --win: #0f1420; --bar: #1a2030;
+    --edge: rgba(255, 255, 255, 0.08); --dim: #7d8799; --accent: #5fd08f;
+    --mono: "Planetaire Mono Text", ui-monospace, monospace;
+  }
+  html, body { margin: 0; background: var(--bg-1); color: #d7dce6; font-family: var(--mono); }
+  body.play { min-height: 100vh; display: grid; place-items: center; }
+  #stage {
+    box-sizing: border-box; display: inline-grid; place-items: center;
+    background: radial-gradient(120% 120% at 20% 0%, var(--bg-2) 0%, var(--bg-1) 60%);
+  }
+  body.play #stage { padding: 24px; max-width: 100vw; overflow-x: auto; }
+  .window {
+    background: var(--win); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--edge);
+  }
+  .bar { height: 40px; display: flex; align-items: center; gap: 9px; padding: 0 16px;
+         background: var(--bar); border-bottom: 1px solid var(--edge); position: relative; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; }
+  .title { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim);
+           font-size: 15px; pointer-events: none; }
+  .term { padding: 18px 22px 22px; }
+  .xterm-viewport { overflow: hidden !important; background: var(--win) !important; }
+  .controls { display: flex; gap: 10px; align-items: center; margin-top: 14px; font-size: 13px; color: var(--dim); }
+  .controls button, .chapters button { font: inherit; color: inherit; background: var(--bar); border: 1px solid var(--edge);
+                     border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .controls input { flex: 1; accent-color: var(--accent); }
+  .chapters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  body.capture .controls, body.capture .chapters { display: none; }
+</style>
+</head>
+<body>
+<div>
+  <div id="stage">
+    <div class="window">
+      <div class="bar">
+        <span class="dot" style="background:#ff5f57"></span>
+        <span class="dot" style="background:#febc2e"></span>
+        <span class="dot" style="background:#28c840"></span>
+        <span class="title" id="title"></span>
+      </div>
+      <div class="term"><div id="term"></div></div>
+    </div>
+  </div>
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Position">
+    <span id="clock">0.0 s</span>
+  </div>
+  <div class="chapters" id="chapters"></div>
+</div>
+<script src="xterm/lib/xterm.js"></script>
+<script type="module">
+const q = new URLSearchParams(location.search);
+const capture = q.get("mode") === "capture";
+const margin = Number(q.get("margin") ?? 32);
+const requestedFontSize = Number(q.get("font") ?? 22);
+const FAMILY = "Planetaire Mono Text";
+document.body.classList.add(capture ? "capture" : "play");
+const stage = document.getElementById("stage");
+if (capture) stage.style.padding = `${margin}px`;
+
+const palette = ["#1b2130", "#ff6b6b", "#7ee787", "#f2cc60", "#79c0ff", "#d2a8ff", "#56d4dd", "#c9d1d9",
+                 "#6e7681", "#ffa198", "#a5f3a0", "#f8e3a1", "#a5d6ff", "#e2c5ff", "#9ff0f5", "#ffffff"];
+const names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+const theme = { foreground: "#d7dce6", background: "#0f1420", cursor: "#d7dce6", cursorAccent: "#0f1420" };
+names.forEach((n, i) => { theme[n] = palette[i]; theme["bright" + n[0].toUpperCase() + n.slice(1)] = palette[i + 8]; });
+
+function parseCast(text) {
+  const lines = text.trim().split("\n");
+  const header = JSON.parse(lines[0]);
+  const v3 = header.version === 3;
+  let t = 0; const events = [], markers = [];
+  for (const line of lines.slice(1)) {
+    const [time, code, data] = JSON.parse(line);
+    t = v3 ? t + time : time;
+    if (code === "o") events.push([t, data]);
+    if (code === "m" && data !== "end") markers.push([t, data]);
+  }
+  return { header, cols: v3 ? header.term.cols : header.width, rows: v3 ? header.term.rows : header.height,
+           events, markers, duration: t };
+}
+
+try {
+  const cast = parseCast(await (await fetch("recording.cast")).text());
+  document.getElementById("title").textContent = cast.header.title || "";
+
+  // Every face the terminal can draw must be loaded before the first frame.
+  const faces = ["", "italic ", "800 ", "italic 800 "].map((f) => `${f}${requestedFontSize}px "${FAMILY}"`);
+  await Promise.all(faces.map((f) => document.fonts.load(f)));
+  const missing = faces.filter((f) => !document.fonts.check(f));
+  if (missing.length) throw new Error(`fonts not loaded: ${missing.join(", ")} (run \`cli-animate fonts\`)`);
+
+  // Snap the font size so a cell is a whole number of device pixels. Block glyphs span
+  // exactly one advance; at a fractional cell width their anti-aliased edges leave faint
+  // seams between cells, which shows in fdu's bars.
+  const probe = document.createElement("canvas").getContext("2d");
+  probe.font = `100px "${FAMILY}"`;
+  const advance = probe.measureText("M").width / 100;
+  const dpr = window.devicePixelRatio || 1;
+  const fontSize = Math.round(requestedFontSize * advance * dpr) / (advance * dpr);
+
+  const term = new Terminal({
+    cols: cast.cols, rows: cast.rows, fontFamily: `"${FAMILY}", monospace`, fontSize,
+    // A little line spacing keeps full-block glyphs (fdu's bars) from merging row into row.
+    fontWeight: 400, fontWeightBold: 800, lineHeight: 1.1, theme, scrollback: 0,
+    cursorBlink: false, cursorInactiveStyle: "block", disableStdin: true,
+  });
+  term.open(document.getElementById("term"));
+
+  // An unfocused xterm.js draws no cursor, so a typed space would not show.
+  term.focus();
+
+  let next = 0, fedTo = 0;
+  const write = (data) => new Promise((resolve) => term.write(data, resolve));
+  async function feed(t) {
+    if (t < fedTo) { term.reset(); next = 0; }
+    let chunk = "";
+    while (next < cast.events.length && cast.events[next][0] <= t) chunk += cast.events[next++][1];
+    if (chunk) await write(chunk);
+    fedTo = t;
+  }
+
+  if (capture) {
+    const box = stage.getBoundingClientRect();
+    const even = (n) => 2 * Math.ceil(n / 2);
+    window.stage = {
+      size: { width: even(box.width), height: even(box.height) },
+      duration: cast.duration,
+      eventTimes: cast.events.map((e) => e[0]),
+      seek: async (t) => {
+        // Wait for xterm.js to report a render after the write (it paints on an animation
+        // frame), then one more frame for the compositor. A write that draws nothing never
+        // reports, so the wait is bounded.
+        let rendered = false;
+        const listener = term.onRender(() => { rendered = true; });
+        const before = next;
+        await feed(t);
+        const frame = () => new Promise((r) => requestAnimationFrame(r));
+        for (let i = 0; i < 20 && !rendered && next !== before; i++) await frame();
+        listener.dispose();
+        await frame();
+      },
+    };
+  } else {
+    const playButton = document.getElementById("play"), scrub = document.getElementById("scrub");
+    const clock = document.getElementById("clock");
+    let playing = true, base = 0, wall = performance.now(), t = 0;
+    const show = () => { clock.textContent = `${t.toFixed(1)} / ${cast.duration.toFixed(1)} s`;
+                         scrub.value = String(Math.round((t / cast.duration) * 1000)); };
+    const seek = async (to) => { t = Math.min(Math.max(to, 0), cast.duration); base = t; wall = performance.now(); await feed(t); show(); };
+    const tick = async () => {
+      if (playing) {
+        t = Math.min(cast.duration, base + (performance.now() - wall) / 1000);
+        await feed(t); show();
+        if (t >= cast.duration) { playing = false; playButton.textContent = "Replay"; }
+      }
+      requestAnimationFrame(tick);
+    };
+    playButton.onclick = async () => {
+      if (!playing && t >= cast.duration) await seek(0);
+      playing = !playing; base = t; wall = performance.now();
+      playButton.textContent = playing ? "Pause" : "Play";
+    };
+    scrub.oninput = () => seek((Number(scrub.value) / 1000) * cast.duration);
+    const chapters = document.getElementById("chapters");
+    for (const [at, label] of cast.markers) {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+      b.onclick = () => seek(at); chapters.append(b);
+    }
+    requestAnimationFrame(tick);
+  }
+  window.stageReady = true;
+} catch (error) {
+  window.stageError = String(error?.message ?? error);
+  document.body.textContent = window.stageError;
+}
+</script>
+</body>
+</html>
