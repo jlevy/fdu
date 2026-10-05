@@ -137,7 +137,7 @@ commands), and `during` (`{ at, run }` background actions while the command runs
 Top-level fields also include `shell`, `setup`, `lead_in`, and `tail`. Set
 `terminal.font_size` (CSS pixels, default 22) with `cols` so the widest line fits: a
 terminal that wraps a report’s lines hides its columns.
-The fdu demos are in `examples/fdu/`, `build-tree.yaml` and `linux-tallies.yaml` being
+The fdu demos are in `examples/fdu/`, `build-tree.yaml` and `linux.yaml` being
 the simplest.
 
 As in a shell, the next prompt is printed the moment a command exits, so how long a
