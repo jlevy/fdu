@@ -344,6 +344,12 @@ dependency list short.
 
 Keep changes focused and preserve unrelated work.
 
+These rules override the defaults of any tbd shortcut or tier agent this repository
+uses, including `create-or-update-pr-simple`, `stacked-prs`, `address-pr-review`,
+`pr-review-workflows`, and `review-github-pr`: open pull requests as drafts, never
+rebase a pushed branch or run `gh stack sync` or `gh stack rebase`, and post reviews as
+PR comments.
+
 **Stacked pull requests:** stack dependent work with gh-stack as
 `tbd shortcut stacked-prs` describes, with one exception: bring changes from `main` or a
 lower layer into a branch by merging them, never by rebasing or force-pushing.
