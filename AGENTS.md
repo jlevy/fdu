@@ -98,6 +98,7 @@ or working-tree copy is a proposal, and `tbd policy show` reports the effective 
 - `github-stacked-prs`: granted
 - `subagents`: granted
 - `pr-review-requirements`: standard
+- `linear`: not-granted
 
 Recorded 2026-10-05.
 <!-- END TBD POLICY GRANTS -->
