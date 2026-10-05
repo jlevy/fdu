@@ -5,15 +5,15 @@ title: "cli-animate: scenario schema, cast IO, driver, and record command with r
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
+version: 4
+spec_path: packages/cli-animate/docs/project/specs/active/plan-2026-10-04-cli-animate.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m44kmcf8w83mdrt5jpdjfk96
 parent_id: is-01m44jm7xwyb4m5vqpf3ethg4w
 created_at: 2026-10-04T23:22:49.939Z
-updated_at: 2026-10-04T23:32:26.958Z
+updated_at: 2026-10-05T01:44:12.469Z
 closed_at: 2026-10-04T23:32:26.958Z
 close_reason: Implemented in packages/cli-animate (plan-2026-10-04-cli-animate)
 resolution: null
