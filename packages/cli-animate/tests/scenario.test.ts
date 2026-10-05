@@ -13,6 +13,7 @@ describe('scenario', () => {
     const s = parseScenario('steps:\n  - run: ls\npath: [../bin]\n', file, {});
     assert.equal(s.terminal.cols, 100);
     assert.equal(s.typing.wpm, DEFAULT_PROFILE.wpm);
+    assert.equal(s.terminal.font_size, 22);
     assert.deepEqual(s.resolvedPath, ['/demos/bin']);
     assert.equal(s.resolvedCwd, '/demos/fdu');
     assert.equal(s.steps[0]!.hold, 1.5);

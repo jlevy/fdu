@@ -274,13 +274,27 @@ Factors are relative to a letter pair typed on alternate hands.
 | Noise | log-normal σ 0.30 | σ 0.30 (p10–p95) | σ 0.30 |
 | Stroke-to-stroke correlation | ρ −0.15 | none after word effects | none |
 | Word-to-word variation | — | log-normal σ ≈ 0.12 | σ 0.12 per token |
-| Long tail | 3% hesitations | p99 is 2.96× the median; 8.4% of word starts hesitate | 1.5% in-word stalls at 2–4×; 5% word-start hesitations, median 170 ms |
+| Long tail | 3% hesitations | p99 is 2.96× the median; 8.4% of word starts hesitate | 1.5% in-word stalls at 2–4× |
+| Pause before a word | — | not separable in copy-typing | every word: log-normal, median 1.6 average intervals, σ 0.55; one word in twelve: think pause, median 5 intervals |
 
-The factors shape the rhythm; the speed is set separately.
-cli-animate defaults to 160 WPM on its reference text, above the fastest measured group,
-because a demo is watched rather than transcribed and slow typing reads as dead time.
-The relative costs are what keep it human at that speed.
-Enter follows the last key after a log-normal pause (median 250 ms), and the next prompt
+The factors shape the rhythm inside a word; the pauses between words are a separate
+choice. The first version spread its time almost evenly over the keys, with a rare
+word-start hesitation, and read as mechanical: a steady patter.
+People typing commands work in bursts.
+A word goes down in a quick run of keys, and the pauses fall between words, where the
+next word is chosen.
+Copy-typing data understates those pauses, because a copy typist reads the next word
+rather than choosing it, so cli-animate sets them by eye on recorded commands: every
+word after the first waits a log-normal gap (median 1.6 average intervals, σ 0.55), and
+one word in twelve waits a think pause instead (median 5 intervals, capped at 14). Both
+are set in multiples of the average interval, so the rhythm keeps its shape at any
+speed, and the key intervals take what remains.
+
+The default speed is 220 WPM on the reference text, well above the fastest measured
+group, because a demo is watched rather than transcribed and slow typing reads as dead
+time. At that speed keys inside a word come about 35 ms apart, word gaps run from about
+80 ms to 250 ms (10th to 90th percentile), and a 52-character command takes about 2.8 s.
+Enter follows the last key after a log-normal pause (median 200 ms), and the next prompt
 appears the moment the command exits, so the gap between a command’s last output and its
 prompt is the command’s own.
 

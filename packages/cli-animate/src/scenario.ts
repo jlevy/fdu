@@ -34,6 +34,8 @@ const ScenarioSchema = z.strictObject({
     .strictObject({
       cols: z.number().int().min(20).max(400).default(100),
       rows: z.number().int().min(5).max(200).default(30),
+      /** CSS pixels; smaller fits more columns into the same video width. */
+      font_size: z.number().min(8).max(48).default(22),
     })
     .prefault({}),
   typing: z
