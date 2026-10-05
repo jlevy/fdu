@@ -5,15 +5,15 @@ title: Re-record and re-render the showcase take, verify timing, deliver video
 kind: task
 status: closed
 priority: 2
-version: 5
-spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
+version: 6
+spec_path: packages/cli-animate/docs/project/specs/active/plan-2026-10-04-cli-animate.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m44jmaht5cbv70bycwe3xdb7
 parent_id: is-01m44jm7xwyb4m5vqpf3ethg4w
 created_at: 2026-10-04T23:05:20.263Z
-updated_at: 2026-10-05T00:59:49.622Z
+updated_at: 2026-10-05T01:44:12.469Z
 closed_at: 2026-10-05T00:59:49.622Z
 close_reason: Done in 7af8ab3f (jlevy/fdu#171)
 resolution: null
