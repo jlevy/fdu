@@ -18,8 +18,10 @@ from benchmarks.realtree.report_html import (
     figure_absolute,
     figure_effects,
     figure_end_to_end,
+    figure_iterations,
     figure_per_entry,
     fmt_primary,
+    iteration_kind,
     id_ranges,
     kept_improvements,
     phase_rows,
@@ -511,6 +513,25 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(rows[1]["counts"], {"accepted": 0, "rejected": 0, "other": 1})
         self.assertEqual(rows[-1]["name"], "Not yet assigned a phase")
         self.assertEqual(rows[-1]["ids"], "exp-250")
+
+    def test_the_iterations_figure_draws_every_experiment_once(self) -> None:
+        # The figure is the page's record of every iteration; one silently dropped is a
+        # rejected idea the reader never sees.
+        dataset = project(
+            [
+                experiment("exp-001"),
+                experiment("exp-002", decision="rejected"),
+                experiment("exp-067", decision="baseline"),
+                experiment("exp-250"),
+            ]
+        )
+        figure = figure_iterations(dataset)
+        for identifier in ("exp-001", "exp-002", "exp-067", "exp-250"):
+            self.assertEqual(figure.count(f"{identifier}: Experiment {identifier}"), 1)
+        kinds = {record["id"]: iteration_kind(record) for record in dataset["experiments"]}
+        self.assertEqual(kinds["exp-001"], "kept")
+        self.assertEqual(kinds["exp-002"], "rejected")
+        self.assertEqual(kinds["exp-067"], "measured")
 
     def test_id_ranges_skip_unused_ids_but_not_recorded_ones(self) -> None:
         # exp-113 was never used, so it does not split exp-112 from exp-114; exp-104 is a

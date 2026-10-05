@@ -1335,10 +1335,12 @@ Grouped by topic; the order to run them in is
 
 The page shows every number; this report says what they mean.
 
-**Phases.** Experiments per phase of the loop, by verdict, with each phase’s question on
-hover. The phases are those of
+**Every iteration.** All experiments in phase order, each as its paired change on its
+primary metric: green where a change was kept and at least 3% better, red where it was
+tried and not kept, grey for measurements, checkpoints and other verdicts.
+The phases are those of
 [the loop history](report-2026-08-14-performance-campaign-status.md#4-how-the-loop-has-been-run);
-a record in none of them is counted in a trailing row rather than dropped.
+a record in none of them is drawn after the last phase rather than dropped.
 
 **Absolute.** Wall time at five cumulative checkpoints on one 60k-entry macOS tree, each
 re-measuring the original binary against the code of the day in one interleaved run:

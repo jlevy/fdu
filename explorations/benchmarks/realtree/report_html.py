@@ -447,7 +447,7 @@ def figure_end_to_end(dataset: Mapping[str, Any], platform: str = "Linux") -> st
         out.append(
             hover_row(
                 left,
-                y,
+                y + (row_height - 10) / 2,
                 plot,
                 row_height - 10,
                 f"{record['id']}: {record['title']}\n"
@@ -600,71 +600,137 @@ def phase_rows(dataset: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def figure_phases(dataset: Mapping[str, Any]) -> str:
-    """One stacked bar per phase: accepted, rejected, and every other verdict."""
-    rows = phase_rows(dataset)
-    if not rows:
+def iteration_kind(record: Mapping[str, Any]) -> str:
+    """How the iterations figure colours one experiment.
+
+    `kept` is an accepted change whose primary metric improved by at least the accept
+    threshold; `rejected` is a change tried and not kept; everything else (baselines,
+    checkpoints, profiles, noninferiority steps, unfinished work) is `measured`.
+    """
+    change = record.get("change_pct")
+    if record["decision"] == "accepted" and change is not None and change <= -3:
+        return "kept"
+    if record["decision"] == "rejected":
+        return "rejected"
+    return "measured"
+
+
+#: The iterations figure's vertical range, as percent faster. An effect beyond it is
+#: drawn at the edge, and its tooltip carries the real figure.
+ITERATION_CLAMP = (-30.0, 60.0)
+
+
+def figure_iterations(dataset: Mapping[str, Any]) -> str:
+    """Every experiment as one bar, phase by phase: up is faster, down is slower."""
+    order = {}
+    for index, (_, numbers, _) in enumerate(PHASES):
+        for number in numbers:
+            order[number] = index
+    records = sorted(
+        dataset["experiments"],
+        key=lambda record: (order.get(record["number"], len(PHASES)), record["number"]),
+    )
+    if not records:
         return ""
-    biggest = max(row["total"] for row in rows)
-    left, right = 250, 110
-    row_height = 46
-    width = 900
+    low, high = ITERATION_CLAMP
+    left, right, top_pad, bottom_pad = 46, 12, 34, 30
+    width, plot_height = 900, 230
     plot = width - left - right
-    height = len(rows) * row_height + 20
-    scale = lambda count: (count / biggest) * plot
+    height = top_pad + plot_height + bottom_pad
+    step = plot / len(records)
+    bar = max(min(step * 0.7, 6.0), 1.2)
+    y_of = lambda faster: top_pad + (high - faster) / (high - low) * plot_height
+    zero = y_of(0.0)
 
     out = svg_open(
         width,
         height,
-        "Experiments per phase of the loop, by verdict",
-        "One row per phase. Green is accepted, red rejected, grey every other verdict.",
+        "Every experiment, phase by phase, as its paired change on its primary job",
+        "One bar per experiment. Bars above the line improved the job; green ones were "
+        "kept, red ones were tried and not kept, grey ones were measurements.",
     )
+    # Phase bands first, so bars draw over them.
+    rows = phase_rows(dataset)
+    start = 0
     for index, row in enumerate(rows):
-        y = 10 + index * row_height
-        span = row["ids"]
-        counts = row["counts"]
-        out.append(
-            hover_row(
-                left,
-                y,
-                plot,
-                row_height - 8,
-                f"{row['name']}: {span}\n"
-                f"{row['question']}\n"
-                f"{counts['accepted']} accepted, {counts['rejected']} rejected, "
-                f"{counts['other']} other, on {' and '.join(row['platforms'])}.",
+        x = left + start * step
+        span = row["total"] * step
+        if index % 2 == 0:
+            out.append(
+                f'<rect class="drift-band" x="{x:.1f}" y="{top_pad}" width="{span:.1f}" '
+                f'height="{plot_height}"/>'
             )
-        )
         out.append(
-            f'<text class="row-label" x="{left - 14}" y="{y + 14}" text-anchor="end">'
-            f"{index + 1}. {esc(row['name'])}</text>"
+            f'<text class="tick" x="{x + span / 2:.1f}" y="{top_pad - 10}" '
+            f'text-anchor="middle">{index + 1}</text>'
         )
+        start += row["total"]
+    for faster in (-30, 0, 30, 60):
+        y = y_of(faster)
+        out.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}"/>')
         out.append(
-            f'<text class="row-sub" x="{left - 14}" y="{y + 29}" text-anchor="end">'
-            f"{esc(span)}, {esc(' and '.join(row['platforms']))}</text>"
+            f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
+            f"{faster:+d}%</text>".replace("+0%", "0")
         )
-        x = left
-        for key, css in (("accepted", "dot-good"), ("rejected", "dot-bad"), ("other", "dot-flat")):
-            size = scale(counts[key])
-            if size > 0:
-                out.append(
-                    f'<rect class="{css}" x="{x:.1f}" y="{y + 6}" width="{size:.1f}" height="20"/>'
+    threshold = y_of(3.0)
+    out.append(
+        f'<line class="threshold" x1="{left}" y1="{threshold:.1f}" x2="{width - right}" '
+        f'y2="{threshold:.1f}"/>'
+    )
+    out.append(f'<line class="zero" x1="{left}" y1="{zero:.1f}" x2="{width - right}" y2="{zero:.1f}"/>')
+    out.append(
+        f'<text class="tick axis-name" x="{left}" y="{height - 8}">% better on its primary '
+        f"metric (wall time unless noted), paired &mdash; phases numbered above</text>"
+    )
+    css = {"kept": "dot-good", "rejected": "dot-bad", "measured": "dot-flat"}
+    for index, record in enumerate(records):
+        change = record.get("change_pct")
+        faster = -change if change is not None else 0.0
+        drawn = max(low, min(high, faster))
+        x = left + index * step + (step - bar) / 2
+        y1, y2 = sorted((zero, y_of(drawn)))
+        kind = iteration_kind(record)
+        out.append(
+            f'<rect class="{css[kind]}" x="{x:.1f}" y="{y1:.1f}" width="{bar:.1f}" '
+            f'height="{max(y2 - y1, 1.0):.1f}"/>'
+        )
+        label = {"kept": "kept, faster", "rejected": "tried, not kept", "measured": "measured"}[
+            kind
+        ]
+        out.append(
+            f'<rect class="hit" x="{left + index * step:.1f}" y="{top_pad}" '
+            f'width="{step:.1f}" height="{plot_height}" '
+            + tip(
+                f"{record['id']}: {record['title']}\n"
+                f"{decision_label(record)}, {label}: "
+                f"{fmt_pct(change) if change is not None else 'no paired change'} "
+                f"on {record.get('primary_job') or 'its job'}"
+                + (
+                    f" ({record['primary_metric']})"
+                    if record.get("primary_metric") not in (None, "wall_ns")
+                    else ""
                 )
-            x += size
-        out.append(
-            f'<text class="value-label" x="{x + 8:.1f}" y="{y + 20}">'
-            f"{counts['accepted']} / {counts['rejected']} / {counts['other']}</text>"
+            )
+            + "/>"
         )
     out.append("</svg>")
+    counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
     keys = legend(
-        ("key-good", "accepted"),
-        ("key-bad", "rejected"),
-        ("key-flat", "baseline, superseded, in progress, or blocked"),
+        ("key-good", f"kept, and at least 3% better ({counts['kept']})"),
+        ("key-bad", f"tried and not kept ({counts['rejected']})"),
+        ("key-flat", f"measurements, checkpoints, and other verdicts ({counts['measured']})"),
+    )
+    phases = "".join(
+        f"<li>{esc(row['name'])} <span class=\"muted\">&mdash; {row['counts']['accepted']} "
+        f"accepted, {row['counts']['rejected']} rejected, {row['counts']['other']} other"
+        f"</span></li>"
+        for row in rows
     )
     return (
         f'<figure class="fig">{"".join(out)}{keys}'
-        "<figcaption>Bar length is the number of experiments in the phase. Hover a row for "
-        "the question it asked.</figcaption></figure>"
+        "<figcaption>Effects beyond the axis are drawn at its edge; hover a bar for its "
+        "experiment and real figure. The dashed line is the 3% accept threshold. The "
+        f'phases, in order:<ol class="checkpoints">{phases}</ol></figcaption></figure>'
     )
 
 
@@ -964,7 +1030,7 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
         out.append(
             hover_row(
                 left,
-                y,
+                y + (row_height - 8) / 2,
                 plot,
                 row_height - 8,
                 f'{subject["labels"][0]} - {subject["platform"]}, {entries:,} entries\n'
@@ -1347,7 +1413,9 @@ def render(dataset: Mapping[str, Any]) -> str:
     body = "".join(
         [
             _header(dataset),
-            _section_phases(dataset),
+            _section_iterations(dataset),
+            _section_loop(dataset),
+            _section_details(dataset),
             _section_absolute(dataset),
             _section_relative(dataset),
             _section_scale(dataset),
@@ -1866,74 +1934,64 @@ def _standing_figure(dataset: Mapping[str, Any]) -> str:
 def _header(dataset: Mapping[str, Any]) -> str:
     totals = dataset["totals"]
     decisions = totals["decisions"]
-    platforms = totals.get("platforms") or {}
-    series = _flagship(dataset)
+    kept = sum(iteration_kind(record) == "kept" for record in dataset["experiments"])
     headlines = _standing_figure(dataset) + _headline_figure(
-        series, "cold-scan-index", "macOS cold scan, campaign 1"
-    )
-    platform_counts = " and ".join(
-        f"{count} on {esc(name)}" for name, count in sorted(platforms.items())
+        _flagship(dataset), "cold-scan-index", "macOS cold scan, campaign 1"
     )
     return f"""
 <h1>Making fdu faster, one measured experiment at a time</h1>
-<p class="lede"><a href="https://github.com/jlevy/fdu">fdu</a> is a file and directory
-roll-up engine. It walks a tree once and answers questions about it &mdash; folder sizes,
-file types, languages, prose metrics &mdash; from one reusable index, in text or JSON.
-It is written in Rust, with no C in its build.</p>
-<p class="lede">Its speed was earned by an iterative research loop rather than a sequence
-of hunches. Every experiment &mdash; including the {decisions.get('rejected', 0)} that
-failed &mdash; was recorded as a validated soft-schema artifact, and this page is generated
-from those {totals['experiments']} artifacts ({platform_counts}) rather than written
-alongside them.</p>
-<p>It shows two things: <strong>how the loop works</strong>, a method that transfers to any
-system worth optimising, and <strong>what it found</strong> in this one &mdash; which ideas
-paid, which did not, and how confidently either can be said. fdu's standing against other
-tools is in the installed-command comparisons
-<a href="../report-2026-09-26-fdu-live-tool-comparison.md">on macOS</a> and
-<a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>; how the loop
-was run, phase by phase, is in
-<a href="../report-2026-08-14-performance-campaign-status.md">the loop history</a>.</p>
+<p class="lede"><a href="https://github.com/jlevy/fdu">fdu</a> is a disk-usage and file
+roll-up tool written in Rust. Its speed was earned by a research loop: one change at a
+time, each measured against the code it came from, kept only if it paid. This page is
+generated from the record of all {totals['experiments']} of those experiments, including
+the {decisions.get('rejected', 0)} that did not pay.</p>
 <div class="headline">
   {headlines}
   <div><span class="n tnum">{totals['experiments']}</span>
     <span class="k">experiments</span></div>
-  <div><span class="n tnum">{decisions.get('accepted', 0)}</span>
-    <span class="k">accepted verdicts</span></div>
+  <div><span class="n tnum good">{kept}</span>
+    <span class="k">kept, and better</span></div>
   <div><span class="n tnum">{decisions.get('rejected', 0)}</span>
-    <span class="k">rejected</span></div>
+    <span class="k">tried, not kept</span></div>
 </div>
-<h2 id="loop">The loop</h2>
-<p>One experiment is one question with one answer. It names a hypothesis and a predicted
-effect, builds exactly one change, checks that the change leaves every answer identical,
-and measures it against the code it came from &mdash; both binaries interleaved in the
-same run on a tree pinned by content digest, at least twelve paired trials and twenty when
-the predicted effect is small. A sample taken while the host was busy is invalidated, and
-a cell with any invalid sample is inconclusive. A bootstrap interval decides whether the
-result is distinguishable from the host having a bad afternoon, and a written rule decides
-whether it is worth carrying: better than 3%, with the interval clear of zero.</p>
-<p>What makes the record usable afterwards is that the answer is stored rather than
-summarised. Each artifact is Markdown with validated YAML frontmatter: the frontmatter
-holds the measured numbers, the subject, the machine, the cost in lines and dependencies,
-and the verdict; the body holds the reasoning a schema cannot check. A contract validates
-every one of them, and each against its own measurements, so the ledger and this page can
-be regenerated from the evidence and neither can quietly drift from it.</p>
-<p class="note">The soft schema is what makes the difference between a campaign and a
-folder of notes. Because the numbers are typed and validated, a rejected experiment costs
-nothing to keep &mdash; and the rejections turned out to be the most reusable part of the
-record.</p>
+<p class="muted">How the loop was run, phase by phase, is in
+<a href="../report-2026-08-14-performance-campaign-status.md">the loop history</a>; fdu
+against other tools is in the comparisons
+<a href="../report-2026-09-26-fdu-live-tool-comparison.md">on macOS</a> and
+<a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>.</p>
 """
 
 
-def _section_phases(dataset: Mapping[str, Any]) -> str:
+def _section_iterations(dataset: Mapping[str, Any]) -> str:
     return f"""
-<h2 id="phases">Phases</h2>
-<h3>How the loop has been run</h3>
-<p>The experiments fall into phases, each with its own question. Most phases also changed
-the method, usually because the method had just produced a wrong answer: a harness that
-printed regressions as silence, a generated tree that inverted a ranking, a same-binary
-cell that passed the accept rule. <a href="../report-2026-08-14-performance-campaign-status.md">The
-loop history</a> tells each phase in full.</p>
-{figure_phases(dataset)}
+<h2 id="iterations">Every iteration</h2>
+<h3>What each experiment did, in the order the loop ran them</h3>
+<p>Each bar is one experiment&rsquo;s paired change on the job it was judged on. Most
+ideas moved the time by less than the 3% a change must clear, which is the ordinary shape
+of this work; the tall green bars are the changes that made fdu fast.</p>
+{figure_iterations(dataset)}
+"""
+
+
+def _section_loop(dataset: Mapping[str, Any]) -> str:
+    return """
+<h2 id="loop">The loop</h2>
+<p>One experiment is one question with one answer. It names a hypothesis and a predicted
+effect, builds exactly one change, checks that every answer is unchanged, and measures it
+against the code it came from &mdash; both binaries interleaved in one run on a tree pinned
+by content digest, at least twelve paired trials and twenty when the predicted effect is
+small, with any sample taken on a busy host thrown out. A change is kept when it is at
+least 3% faster with its 95% interval clear of zero. Each result, kept or not, is stored as
+a validated record, and this page is regenerated from those records.</p>
+"""
+
+
+def _section_details(dataset: Mapping[str, Any]) -> str:
+    return """
+<h2 id="details">The detail</h2>
+<p class="muted">Everything below is for checking the summary above: absolute timings,
+every effect with its interval, cost per entry across trees, per-platform results, and the
+full table.</p>
 """
 
 
