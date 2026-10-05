@@ -1,0 +1,23 @@
+# Real speed, real tree: du and fdu over the same root filesystem, both with a warm page
+# cache. Needs this repository's release build (cargo build --release -p fdu).
+title: "fdu vs du: the whole root filesystem, real time"
+terminal: { cols: 104, rows: 30 }
+typing: { seed: 7 }
+path: [../../../../target/release]
+cwd: /
+env:
+  TIMEFORMAT: "\e[2mreal %3Rs\e[0m"
+steps:
+  - label: intro
+    comment: "# The whole root filesystem. Both tools warm. Nothing is sped up."
+    hold: 0.8
+  - label: du
+    run: time du -sxh /
+    hold: 1.6
+  - label: fdu
+    run: time fdu / --one-filesystem --depth 1 --cache off
+    hold: 3.5
+  - label: drill
+    clear: true
+    run: fdu /usr --depth 2 --limit 8
+    hold: 4.0

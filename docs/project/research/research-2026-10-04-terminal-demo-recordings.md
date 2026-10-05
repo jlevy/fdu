@@ -1,10 +1,13 @@
 # Research: Automated Terminal Demo Recordings for the Web and Video
 
-**Date:** 2026-10-04
+**Date:** 2026-10-04 (last updated 2026-10-04)
 
 **Author:** Claude (agent), for the fdu maintainer
 
-**Status:** Complete; spike built and measured, recommendation proposed
+**Status:** Complete.
+The recommended pipeline is implemented as
+[cli-animate](../../../packages/cli-animate/README.md) under
+[its plan](../specs/active/plan-2026-10-04-cli-animate.md).
 
 ## Overview
 
@@ -17,10 +20,15 @@ Nothing is sped up or mocked, except the typing.
 
 This brief surveys the open-source options as of October 2026, then measures a spike of
 the recommended pipeline against VHS, agg, and asciinema-player on fdu’s own output.
-The spike is in
-[explorations/terminal-demos](../../../explorations/terminal-demos/README.md), and the
-measurements are in the
+A second research pass ([Further Research](#further-research)) read the source of the
+closest tools, measured keystroke timing on public typing data, and measured capture and
+encoding practice. The measurements are in the
 [evidence file](evidence/terminal-demo-recordings-2026-10-04.json).
+The spike was a set of Python and Node scripts; it has since been rebuilt as
+[cli-animate](../../../packages/cli-animate/README.md), a TypeScript CLI with an agent
+skill, and the file links below point at its equivalents.
+The spike’s measurements stand: the rebuild keeps its recording, stage, and
+frame-stepping design.
 
 The decision this informs is which toolchain fdu adopts for README, docs-site, and
 release-announcement demos, and whether those demos can serve as performance evidence.
@@ -87,7 +95,7 @@ VHS makes video but cannot write or read a cast.
 
 `asciinema rec --headless --window-size 104x30 --command <driver>` records whatever the
 driver does in a real PTY at a fixed size.
-The spike’s driver ([record.py](../../../explorations/terminal-demos/record.py)) prints
+The spike’s driver (now [driver.ts](../../../packages/cli-animate/src/driver.ts)) prints
 a prompt, types each command with seeded jitter, and runs it in the same PTY, so color
 detection, `COLUMNS`, and fdu’s progress line behave as they do for a person.
 At each step boundary it writes an OSC sequence that no terminal acts on, then rewrites
@@ -106,7 +114,7 @@ A viewer can check the playback against it.
 
 ### Video: Frame-Stepped Rendering Is Exact; Real-Time Capture Is Not
 
-The spike’s renderer ([render.mjs](../../../explorations/terminal-demos/render.mjs))
+The spike’s renderer (now [render.ts](../../../packages/cli-animate/src/render.ts))
 applies the `squares` pattern to a cast.
 It loads one stage page in headless Chromium and seeks it to frame `i / fps` on the
 cast’s own clock. It screenshots the stage and pipes PNG frames to ffmpeg.
@@ -123,8 +131,8 @@ Terminals are mostly static, so the 1,596-frame real-time video needed 158 scree
 | CPython views, 1080p60 | 2,112 | 192 | 46.9 s | 1.3 MB |
 | Live `--watch`, 1080p60 | 1,098 | 44 | 20.1 s | 795 KB |
 
-[verify_timing.py](../../../explorations/terminal-demos/verify_timing.py) checks a
-lossless render of the real-time recording frame by frame.
+[verify](../../../packages/cli-animate/src/verify.ts) checks a lossless render of the
+real-time recording frame by frame.
 The picture must change exactly on the first frame at or after each output event, and
 nowhere else. Both engines passed: 157 of 157 expected change frames, none missing, none
 extra. Two bugs surfaced first, and the check caught both.
@@ -133,7 +141,7 @@ frames). A lossy encode’s keyframe refresh reads as change, so the check runs 
 lossless render.
 
 VHS, on an equivalent
-[tape](../../../explorations/terminal-demos/comparisons/realtime.tape), did not preserve
+[tape](../../../packages/cli-animate/examples/fdu/vhs-realtime.tape), did not preserve
 the clock:
 
 - `Set Framerate 60` produced a 25 fps MP4.
@@ -235,6 +243,142 @@ What does not carry over is the cost.
 A terminal is static between events, so frame reuse makes capture take 1.2–1.5× the
 video’s length at 1080p.
 
+## Further Research
+
+A second pass, run as three parallel research agents, went deeper on the three parts
+cli-animate depends on: the closest existing tools, human keystroke timing, and headless
+capture and encoding.
+Two limits apply throughout.
+Academic hosts were unreachable from the research environment, so literature values come
+from search-result text and are marked as such.
+Where the typing pass needed numbers, it computed them from public keystroke data.
+
+### Typing: What Fast Typists Actually Do
+
+The first model came from search snippets.
+The second pass measured the fastest 21 typists (about 103–130 WPM, mean inter-key
+interval 120 ms or less) in the Behmer and Crump copy-typing data, about one million
+keystrokes from 346 typists
+([CrumpLab/EntropyTyping](https://github.com/CrumpLab/EntropyTyping)), plus the CMU
+strong-password data for a digit, Shift, and Enter.
+Factors are relative to a letter pair typed on alternate hands.
+
+| Pair or event | First model | Measured (fast group) | cli-animate uses |
+| --- | --- | --- | --- |
+| Same hand, different finger | 1.40 | 1.00–1.13 | 1.10, and 1.20 across top and bottom rows |
+| Same finger, different key | 1.80 | 1.64–1.80 | 1.70 |
+| Repeated key | 1.40 | 1.46–1.55 | 1.50 |
+| Frequent English digraph | 0.85 | 0.77–0.83 | 0.85 |
+| First key of a word | 1.20 | 1.10–1.30 | 1.20; 1.10 after `/`, `-`, `=`, `.` inside a token |
+| Digit | 1.40 | 1.76 (one CMU pair) | 1.70 |
+| Shifted key; key after Shift | 1.60; — | about 1.5; about 1.3 | 1.50; 1.25 |
+| Noise | log-normal σ 0.30 | σ 0.30 (p10–p95) | σ 0.30 |
+| Stroke-to-stroke correlation | ρ −0.15 | none after word effects | none |
+| Word-to-word variation | — | log-normal σ ≈ 0.12 | σ 0.12 per token |
+| Long tail | 3% hesitations | p99 is 2.96× the median; 8.4% of word starts hesitate | 1.5% in-word stalls at 2–4×; 5% word-start hesitations, median 170 ms |
+
+The factors shape the rhythm; the speed is set separately.
+cli-animate defaults to 160 WPM on its reference text, above the fastest measured group,
+because a demo is watched rather than transcribed and slow typing reads as dead time.
+The relative costs are what keep it human at that speed.
+Enter follows the last key after a log-normal pause (median 250 ms), and the next prompt
+appears the moment the command exits, so the gap between a command’s last output and its
+prompt is the command’s own.
+
+The largest correction is the same-hand cost: common same-hand rolls such as `in`, `ou`,
+and `io` are as fast as alternation for skilled typists.
+The apparent lag-1 correlation in raw data comes from whole words being typed faster or
+slower, so the model draws one factor per token and no stroke-to-stroke correlation.
+Space-bar timing could not be measured (neither dataset has letter-to-space pairs) and
+is left at 1.0. The Crump data is browser-timed copy-typing of prose; shell typing has
+more symbols, so the symbol values are extrapolated.
+A per-digraph table from the same data explains about twice the timing variance of the
+four class rules, but the dataset’s licence is listed as “TBD”, so cli-animate keeps the
+rules until that is settled.
+
+Existing human-typing simulators were read at pinned commits.
+None is fitted to data.
+towa0/humaninput has the most complete design (per-class log-normal delays, bursts, pace
+drift, typos, an asciicast writer) but treats repeated keys as fast, which is true of
+novices and the opposite for experts.
+VHS, demo-magic, autocast, and asciinema-automation use constant or Gaussian delays.
+
+### Pipelines: What the Closest Tools Do Better
+
+Source reading of microsoft/tui-test, joshka/betamax, VHS, HyperFrames,
+headless-terminal, and newer tools (castkit, cutaway, aidemo, terminaltor, shellwright,
+ghostty-automator) confirmed the design: tui-test also records a real PTY to a cast and
+renders by deterministic seek, while VHS samples a canvas on the wall clock and betamax
+samples while the session runs.
+It also found four gaps, now handled or filed:
+
+1. **Terminal queries go unanswered during headless recording.** asciinema’s headless
+   mode discards what the program writes to the terminal and answers nothing, so
+   programs that ask for the cursor position or colours (prompt_toolkit, crossterm, some
+   ratatui apps, fish 4) can hang, and colour-adaptive tools guess a background.
+   betamax and tui-test answer from their own terminal model.
+   Filed as a cli-animate follow-up; fdu itself does not query the terminal.
+2. **Colour handling in the encode.** RGB screenshots fed to x264 without an explicit
+   matrix and tags shift saturated ANSI colours and gamma in Safari and QuickTime.
+   cli-animate’s profiles now convert with a BT.709 matrix to limited range and tag the
+   stream.
+3. **Glyph coverage.** xterm.js draws box-drawing and block glyphs itself only in its
+   WebGL renderer; the DOM renderer takes them from the font.
+   Measured with Planetaire Mono: its full block stops just short of its advance, so
+   adjacent cells show faint anti-aliased seams even when the font size is snapped to
+   whole device pixels (which cli-animate now does).
+   A 1.1 line height keeps rows apart, so the bars read as bars.
+   The WebGL renderer would remove the seams, but under headless Chromium’s software GL
+   its canvas captured blank; both routes are a follow-up.
+4. **Paint timing and blink.** xterm.js paints on an animation frame after a write, and
+   its cursor blink runs on real timers.
+   cli-animate waits for the write callback and two frames before each screenshot and
+   turns blinking off.
+
+Features worth adopting, each filed as a follow-up bead under the cli-animate epic:
+captions and chapter titles drawn from cast markers, an optional keystroke overlay,
+dead-time compression of long still stretches (cutaway speeds them up rather than
+cutting them), output-driven waits instead of fixed holds,
+`HeadlessExperimental.beginFrame` capture where Chromium supports it (HyperFrames probes
+for it), and sending each distinct frame to the encoder once.
+B-frames are off in the `web` profile, since HyperFrames found they make some players
+freeze on the first frame.
+
+### Capture and Encoding: What the First Encode Got Wrong
+
+The third pass encoded a synthetic coloured-text clip with ffmpeg 6.1 and read the
+Chromium, xterm.js, and Playwright sources.
+Its findings changed cli-animate’s profiles:
+
+- **Colour.** ffmpeg converts RGB frames with the BT.601 matrix and writes no tags,
+  while Chromium reads untagged video of 720 lines or more as BT.709, so palette reds
+  and purples displayed up to 16/255 off (`#ff5555` as `#ff6553`). Tags alone do not fix
+  it; the conversion must be `scale=out_color_matrix=bt709:out_range=tv`, then tagged.
+- **Level.** `-tune animation` raises x264’s reference frames, which made the first
+  encodes tag level 5.0 at 1× and 6.0 at 2×, beyond what many phone and GPU decoders
+  accept. The legal minimum is 4.2 for 1080p60 and 5.2 for a 2× capture at 60 fps;
+  pinning the level makes x264 cap its references to match.
+- **Quality ceiling.** 4:2:0 chroma subsampling, not CRF, limits text quality: CRF 16 is
+  nearly transparent in luma, but the 4:2:0 conversion holds RGB PSNR near 42 dB. 2×
+  capture, or 4:4:4 where players allow it, is the remedy; lossless RGB H.264 was only
+  1.8× the size of CRF 16.
+- **Capture once.** A lossless master captured once can feed `verify` and every
+  delivery, which halves capture time and guarantees the verified frames are the
+  delivered ones.
+- **README format.** A 256-colour GIF without dithering came out smaller than expected
+  (about 100 kB for 12 s) and scored better than 4:2:0 H.264; GIF frame rates must
+  divide 100, since browsers stretch delays of 10 ms or less to 100 ms.
+- **Deterministic capture.** Awaiting xterm.js’s write callback is already a
+  deterministic clock; virtual-time tools mainly add control over CSS animations, which
+  the stage does not use.
+  `HeadlessExperimental.beginFrame` works only in chrome-headless-shell and would
+  deadlock a seek that waits for animation frames.
+- **Embedding.** On pages that can run script, embed the cast player (selectable text,
+  sharp at any zoom, a few kilobytes); use video where scripts cannot run.
+  For video, `autoplay muted loop playsinline` with a poster, and pause under
+  `prefers-reduced-motion`, since autoplay longer than five seconds needs a pause
+  control.
+
 ## Key Insights
 
 - **One capture, two renderings.** The cast is the source of truth.
@@ -264,7 +408,7 @@ video’s length at 1080p.
 | Video | GIF, MP4, WebM | GIF only | MP4, WebM, any fps, 4K | GIF, APNG, MP4 |
 | fdu bars legible | Partly (rows merge) | No (blob) | Yes | Not measured (backend-dependent) |
 | Fonts | System only | Web fonts (player); system (agg) | Web fonts, same in both outputs | Backend-dependent |
-| Maturity | Mature, active | Mature, active | Spike, about 550 lines | 0.1.0, one day old |
+| Maturity | Mature, active | Mature, active | cli-animate 0.1.0, tested in `make check` | 0.1.0, one day old |
 | Fits 14-day cool-off | 0.12.1 is 10 days old; older tags fit | Yes | Yes | Not yet |
 
 ## Options Considered
@@ -303,12 +447,12 @@ agg. Add a driver for scripting.
 
 ### Option C: asciinema Capture With an xterm.js Stage and Frame-Stepped Export (Recommended)
 
-**Description:** The spike.
-`record.py` drives scenarios inside `asciinema rec --headless` and writes casts with
-markers and a receipt.
-`web/stage.html` plays a cast with xterm.js.
-`render.mjs` seeks that same page per frame and encodes with ffmpeg.
-`verify_timing.py` proves frame alignment.
+**Description:** The spike, now [cli-animate](../../../packages/cli-animate/README.md).
+`cli-animate record` drives a YAML scenario inside `asciinema rec --headless` and writes
+a cast with markers and a receipt.
+The stage page plays a cast with xterm.js.
+`cli-animate render` seeks that same page per frame and encodes with ffmpeg.
+`cli-animate verify` proves frame alignment.
 
 **Pros:**
 
@@ -320,7 +464,8 @@ markers and a receipt.
 
 **Cons:**
 
-- About 550 lines to own, though nearly all of it is glue.
+- A package to own (about 2,000 lines of TypeScript, tests, and the stage page), though
+  most of it is glue around asciinema, Chromium, and ffmpeg.
 - The web player is minimal: play, pause, scrub, chapters.
   It is not a full player.
 - Needs Chromium and ffmpeg on the rendering machine.
@@ -359,8 +504,8 @@ add titles, captions, and transitions between scenes.
 
 ## Recommendations
 
-1. **Adopt Option C as fdu’s demo pipeline.** Promote `explorations/terminal-demos` into
-   a maintained tool once the follow-ups below land.
+1. **Adopt Option C as fdu’s demo pipeline.** Done: it is
+   [cli-animate](../../../packages/cli-animate/README.md).
    Keep casts as the committed source and render videos as release assets, never
    committed, as `squares` does.
 2. **Embed casts, not videos, on web pages that fdu controls.** Use the xterm.js player.
@@ -374,8 +519,9 @@ add titles, captions, and transitions between scenes.
 
 ## Next Steps
 
-- [ ] Adopt the `squares` delivery profiles: pinned H.264 level (4.2 for 1080p60), CRF
-  and preset per profile, and conformance refusal.
+- [x] Named encoding profiles (`master`, `web`, `gif`) with explicit BT.709 conversion,
+  tags, and a pinned H.264 level; a conformance check on the delivered file remains
+  open.
 - [ ] Extend the video receipt to the `squares` shape: commit, dirty flag, cast digest,
   stage digest, and tool versions.
 - [ ] Record the canonical demos on macOS bare metal and on a Linux workstation, cold

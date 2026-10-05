@@ -190,7 +190,7 @@
     }
   },
   "vhs_comparison": {
-    "tape": "explorations/terminal-demos/comparisons/realtime.tape",
+    "tape": "packages/cli-animate/examples/fdu/vhs-realtime.tape",
     "requested": {
       "framerate": 60,
       "script_seconds_typing_plus_sleeps": "about 14"

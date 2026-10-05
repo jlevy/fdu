@@ -1,0 +1,33 @@
+# One continuous take on a real machine: du and fdu over the whole root filesystem, then
+# fdu's code analysis on a real codebase, first with fdu's cache cleared, then cached.
+# Nothing is sped up; only the typing is scripted.
+#
+# Needs this repository's release build (cargo build --release -p fdu; with a
+# CARGO_TARGET_DIR elsewhere, put its release directory on PATH) and a shallow CPython
+# clone under $FDU_DEMO_TREES:
+#   git clone --depth 1 https://github.com/python/cpython "$FDU_DEMO_TREES/cpython"
+title: "fdu: a real machine, real time"
+terminal: { cols: 128, rows: 30 }
+typing: { seed: 21 }
+path: [../../../../target/release]
+cwd: $FDU_DEMO_TREES
+env:
+  TIMEFORMAT: "\e[2mreal %3Rs\e[0m"
+steps:
+  - label: intro
+    comment: "# The whole root filesystem, page cache warm. Nothing is sped up."
+    hold: 0.8
+  - label: du
+    run: time du -sxh /
+    hold: 1.4
+  - label: fdu
+    run: time fdu / --one-filesystem --depth 1 --cache off -q
+    hold: 3.5
+  - label: code, cold
+    clear: true
+    before: [fdu cpython --cache-clear]
+    run: fdu cpython --analyze code --view languages --limit 6
+    hold: 3.5
+  - label: code, cached
+    run: time fdu cpython --analyze code --view languages --limit 6 -q
+    hold: 4.0
