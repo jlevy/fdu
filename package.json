@@ -5,6 +5,9 @@
   "engines": {
     "node": ">=20"
   },
+  "workspaces": [
+    "packages/cli-animate"
+  ],
   "scripts": {
     "check:supply-chain": "node scripts/check-supply-chain.mjs",
     "check:admission-sites": "node --test scripts/check-admission-sites.test.mjs && node scripts/check-admission-sites.mjs",

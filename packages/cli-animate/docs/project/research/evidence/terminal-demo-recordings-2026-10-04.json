@@ -1,0 +1,217 @@
+{
+  "date": "2026-10-04",
+  "regime": {
+    "platform": "Linux container (x86_64, 4 vCPU, running as root)",
+    "host": "virtualized",
+    "cache": "warm page cache; fdu --cache off where stated"
+  },
+  "tools": {
+    "asciinema": "3.2.0 (crates.io)",
+    "asciinema-player": "3.17.0",
+    "@xterm/xterm": "6.0.0",
+    "playwright-core": "1.63.0",
+    "chromium": "141.0.7390.37",
+    "agg": "1.9.0 (git aae34b0)",
+    "vhs": "0.12.1",
+    "ttyd": "1.7.4",
+    "ffmpeg": "system build with libx264"
+  },
+  "recordings": {
+    "realtime": {
+      "cast": "realtime.cast",
+      "title": "fdu vs du: the whole root filesystem, real time",
+      "window": "104x30",
+      "duration_seconds": 24.591,
+      "typing": "synthetic, seeded cadence",
+      "command_output": "real execution in the recording PTY, real timing",
+      "steps": [
+        {
+          "label": "du",
+          "cmd": "time du -sxh /",
+          "wall_seconds": 0.6112,
+          "exit": 0,
+          "cast_seconds": 5.379
+        },
+        {
+          "label": "fdu",
+          "cmd": "time fdu / --one-filesystem --depth 1 --cache off",
+          "wall_seconds": 0.2086,
+          "exit": 0,
+          "cast_seconds": 8.993
+        },
+        {
+          "label": "drill",
+          "cmd": "fdu /usr --depth 2 --limit 8",
+          "wall_seconds": 0.0615,
+          "exit": 0,
+          "cast_seconds": 16.399
+        }
+      ],
+      "tools": {
+        "asciinema": "asciinema 3.2.0"
+      }
+    },
+    "views": {
+      "cast": "views.cast",
+      "title": "fdu: views over the CPython source tree",
+      "window": "104x30",
+      "duration_seconds": 33.193,
+      "typing": "synthetic, seeded cadence",
+      "command_output": "real execution in the recording PTY, real timing",
+      "steps": [
+        {
+          "label": "tree",
+          "cmd": "fdu cpython --depth 2 --limit 12",
+          "wall_seconds": 0.0213,
+          "exit": 0,
+          "cast_seconds": 0.649
+        },
+        {
+          "label": "extensions",
+          "cmd": "fdu cpython --view extensions --limit 10",
+          "wall_seconds": 0.0262,
+          "exit": 0,
+          "cast_seconds": 6.704
+        },
+        {
+          "label": "code",
+          "cmd": "fdu cpython --analyze code --view languages --limit 10",
+          "wall_seconds": 0.7666,
+          "exit": 0,
+          "cast_seconds": 13.295
+        },
+        {
+          "label": "code, cached",
+          "cmd": "fdu cpython --analyze code --view languages --limit 6",
+          "wall_seconds": 0.081,
+          "exit": 0,
+          "cast_seconds": 22.572
+        }
+      ],
+      "tools": {
+        "asciinema": "asciinema 3.2.0"
+      }
+    },
+    "watch": {
+      "cast": "watch.cast",
+      "title": "fdu --watch: live changes",
+      "window": "104x30",
+      "duration_seconds": 16.295,
+      "typing": "synthetic, seeded cadence",
+      "command_output": "real execution in the recording PTY, real timing",
+      "steps": [
+        {
+          "label": "watch",
+          "cmd": "fdu /tmp/demo --watch --interval 500ms",
+          "wall_seconds": 9.019,
+          "exit": -2,
+          "cast_seconds": 0.816
+        }
+      ],
+      "tools": {
+        "asciinema": "asciinema 3.2.0"
+      }
+    }
+  },
+  "renders": {
+    "fdu-realtime-1080p60.video": {
+      "video": "fdu-realtime-1080p60.mp4",
+      "cast": "realtime.cast",
+      "engine": "xterm",
+      "fps": 60,
+      "frames": 1596,
+      "screenshots": 158,
+      "size": "1920x1080",
+      "codec": "h264",
+      "cast_duration_seconds": 24.591,
+      "video_duration_seconds": 26.6,
+      "capture_seconds": 37.583,
+      "chromium": "141.0.7390.37",
+      "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+    },
+    "fdu-realtime-2160p60.video": {
+      "video": "fdu-realtime-2160p60.mp4",
+      "cast": "realtime.cast",
+      "engine": "xterm",
+      "fps": 60,
+      "frames": 1596,
+      "screenshots": 158,
+      "size": "3840x2160",
+      "codec": "h264",
+      "cast_duration_seconds": 24.591,
+      "video_duration_seconds": 26.6,
+      "capture_seconds": 123.074,
+      "chromium": "141.0.7390.37",
+      "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+    },
+    "fdu-views-1080p60.video": {
+      "video": "fdu-views-1080p60.mp4",
+      "cast": "views.cast",
+      "engine": "xterm",
+      "fps": 60,
+      "frames": 2112,
+      "screenshots": 192,
+      "size": "1920x1080",
+      "codec": "h264",
+      "cast_duration_seconds": 33.19299999999999,
+      "video_duration_seconds": 35.2,
+      "capture_seconds": 46.919,
+      "chromium": "141.0.7390.37",
+      "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+    },
+    "fdu-watch-1080p60.video": {
+      "video": "fdu-watch-1080p60.mp4",
+      "cast": "watch.cast",
+      "engine": "xterm",
+      "fps": 60,
+      "frames": 1098,
+      "screenshots": 44,
+      "size": "1920x1080",
+      "codec": "h264",
+      "cast_duration_seconds": 16.294999999999998,
+      "video_duration_seconds": 18.3,
+      "capture_seconds": 20.116,
+      "chromium": "141.0.7390.37",
+      "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+    }
+  },
+  "timing_verification": {
+    "xterm": {
+      "expected_change_frames": 157,
+      "observed_change_frames": 157,
+      "missing": [],
+      "unexpected": []
+    },
+    "asciinema": {
+      "expected_change_frames": 157,
+      "observed_change_frames": 157,
+      "missing": [],
+      "unexpected": []
+    }
+  },
+  "vhs_comparison": {
+    "tape": "packages/cli-animate/examples/fdu/vhs-realtime.tape",
+    "requested": {
+      "framerate": 60,
+      "script_seconds_typing_plus_sleeps": "about 14"
+    },
+    "observed": {
+      "framerate": 25,
+      "frames": 256,
+      "duration_seconds": 10.24,
+      "wall_seconds_to_render": 37,
+      "fdu_perf_line_ms": 278.0,
+      "du_real_seconds": 0.577
+    },
+    "baseline_without_capture": {
+      "fdu_perf_line_ms": 200.4,
+      "du_real_seconds": 0.606
+    }
+  },
+  "agg_comparison": {
+    "cast": "realtime.cast",
+    "gif_bytes": 102236,
+    "wall_seconds": 4.8,
+    "size": "1276x868"
+  }
+}

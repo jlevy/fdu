@@ -95,6 +95,10 @@ jobs:
         run: node scripts/check-golden-invocations.mjs
       - name: Check golden sessions expose complete product behavior
         run: npm run check:golden-observability
+      # cli-animate assumes a POSIX shell and asciinema, so it is checked where both exist.
+      - name: Typecheck and unit-test cli-animate
+        if: runner.os != 'Windows'
+        run: npm run test --workspace cli-animate
       - name: Check committed test data names no machine
         run: node scripts/check-portability.mjs
       # The watch tests exercise a different notify backend on each of these runners —
