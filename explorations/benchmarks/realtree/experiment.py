@@ -228,10 +228,12 @@ def kept_arm(verdict: Mapping[str, Any]) -> Optional[str]:
 
 
 def compares_two_builds(experiment: Mapping[str, Any]) -> bool:
-    """Whether a record's two arms are different builds, so its paired change is a change.
+    """Whether a record's two arms differ, in build or arguments, so its paired change is a
+    change.
 
-    One derivation for every reader, as :func:`kept_arm` is. Every decision but
-    ``baseline`` compares a candidate with its control. Most baselines measure one build
+    One derivation for every reader, as :func:`kept_arm` is. It splits only baselines:
+    every other decision is drawn as a comparison, as before, even where its two arms name
+    the same binary and arguments (exp-107, for one). Most baselines measure one build
     against itself to set the numbers later work is judged by (exp-000, and the A/A cells
     exp-175 to exp-177), and a view shows one value for them. Some compare two builds and
     decide nothing: the end-to-end cells (exp-194, exp-195, exp-201) and the release
@@ -240,9 +242,10 @@ def compares_two_builds(experiment: Mapping[str, Any]) -> bool:
     ledger printed exp-202's 0.2.1 control, 208.6 ms, as the whole record of a 48% gain,
     and the page left its change blank.
 
-    Read from the binaries the record names, not from its title: the arms are one build
-    when they are the same binary, by hash, with the same arguments. A baseline that
-    names no binary hash keeps the one-arm reading.
+    Read from the binaries the record names, not from its title: the arms are one
+    configuration when they are the same binary, by hash, with the same arguments, so a
+    baseline that runs one binary with two argument sets (exp-014) compares two. A
+    baseline that names no binary hash keeps the one-arm reading.
     """
     verdict = experiment.get("verdict") or {}
     if verdict.get("decision") != "baseline":

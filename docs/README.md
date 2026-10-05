@@ -10,8 +10,8 @@ live change feed, and the Rust and Python libraries.
 ## Use fdu
 
 - [Command-line usage](usage.md)
-- [Speed](speed.md): run times against pdu, diskus, dust, du, and others on Linux and
-  macOS
+- [Performance measurements](performance-measurements.md): run times and throughput
+  against pdu, diskus, dust, du, scc, and others on Linux and macOS
 - [Comparison to alternatives](../README.md#comparison-to-alternatives)
 - [Live updates](../README.md#live-updates)
 - [Rust library examples](../README.md#as-a-rust-library)

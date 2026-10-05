@@ -668,7 +668,7 @@ fdu — the fastest du replacement, with file tree analysis.
   on macOS and 2.6x as fast on Linux, ahead of pdu, diskus, and dust.
   Content metrics are cached between runs, and every capability is also a
   Rust and Python API.
-  Speed details: https://github.com/jlevy/fdu/blob/main/docs/speed.md
+  Performance measurements: https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md
 
 SET UP WITH ANY CODING AGENT
   Install fdu's self-contained skill for current and future agent sessions:

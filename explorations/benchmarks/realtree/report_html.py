@@ -819,7 +819,8 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
         )
         + f"<figcaption>{len(records)} experiments, sorted by effect"
         + (
-            f", {baselines} of them baselines that compare two builds and decide nothing"
+            f", {baselines} of them baselines that compare two builds or configurations"
+            " and decide nothing"
             if baselines
             else ""
         )
