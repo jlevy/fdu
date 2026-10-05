@@ -1,7 +1,8 @@
-# The Linux kernel end to end, in one take: the tree view of the source, then code and
-# document tallies together (lines, code, comments, and blanks per language; words and
-# pages per document format). fdu's cache is cleared first, so the analysis reads every
-# file, with fdu's progress line live. The page cache is warm.
+# The Linux kernel end to end, in one take: the tree view of the source (every entry of
+# 3% or more, at any depth), then code and document tallies together (lines, code,
+# comments, and blanks per language; words and pages per document format). fdu's cache
+# is cleared first, so the analysis reads every file, with fdu's progress line live. The
+# page cache is warm.
 #
 # Needs this repository's release build and a shallow Linux clone under $FDU_DEMO_TREES:
 #   git clone --depth 1 https://github.com/torvalds/linux "$FDU_DEMO_TREES/linux"
@@ -13,7 +14,7 @@ cwd: $FDU_DEMO_TREES
 setup: [fdu linux --cache-clear]
 steps:
   - label: tree
-    run: fdu linux --depth 1
+    run: fdu linux --min-share 3%
     hold: 3.5
   - label: code and documents
     run: fdu linux --analyze code,words --view languages,documents --limit 6
