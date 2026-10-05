@@ -55,12 +55,29 @@ describe('keyIntervals', () => {
   });
 
   it('types the reference text near the target speed', () => {
-    for (const wpm of [90, 120, 160, 200]) {
+    for (const wpm of [90, 160, 220, 260]) {
       const profile = { ...DEFAULT_PROFILE, wpm };
       const runs = Array.from({ length: 40 }, (_, seed) => mean(keyIntervals(REFERENCE_TEXT, new Rng(seed), profile)));
       const achieved = 60 / (mean(runs) * 5);
       assert.ok(Math.abs(achieved / wpm - 1) < 0.06, `target ${wpm} WPM, achieved ${achieved.toFixed(1)}`);
     }
+  });
+
+  it('types words in fast bursts with longer, irregular pauses between them', () => {
+    const text = 'fdu ~/src --analyze code --view languages --limit 6 --depth 2 --cache off';
+    const inWord: number[] = [];
+    const gaps: number[] = [];
+    for (let seed = 0; seed < 60; seed++) {
+      const intervals = keyIntervals(text, new Rng(seed));
+      [...text].forEach((ch, i) => {
+        if (i === 0) return;
+        (text[i - 1] === ' ' && ch !== ' ' ? gaps : inWord).push(intervals[i]!);
+      });
+    }
+    const sorted = [...gaps].sort((a, b) => a - b);
+    const quantile = (q: number): number => sorted[Math.floor(q * (sorted.length - 1))]!;
+    assert.ok(mean(gaps) > 3 * mean(inWord), 'pauses fall between words');
+    assert.ok(quantile(0.9) > 2 * quantile(0.1), 'word gaps vary');
   });
 
   it('scales the base inversely with speed', () => {
