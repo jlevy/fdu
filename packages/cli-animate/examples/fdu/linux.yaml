@@ -6,7 +6,7 @@
 # Needs this repository's release build and a shallow Linux clone under $FDU_DEMO_TREES:
 #   git clone --depth 1 https://github.com/torvalds/linux "$FDU_DEMO_TREES/linux"
 title: "fdu: the Linux kernel, real time"
-terminal: { cols: 196, rows: 26, font_size: 15 }
+terminal: { cols: 160, rows: 28, font_size: 18 }
 typing: { seed: 9 }
 path: [../../../../target/release]
 cwd: $FDU_DEMO_TREES
@@ -16,6 +16,5 @@ steps:
     run: fdu linux --depth 1
     hold: 3.5
   - label: code and documents
-    clear: true
     run: fdu linux --analyze code,words --view languages,documents --limit 6
     hold: 5
