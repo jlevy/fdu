@@ -487,6 +487,7 @@ def load_history(directory: Path) -> List[Dict[str, Any]]:
                 {
                     "label": item["label"],
                     "role": item.get("role") or "",
+                    "short": item.get("short") or item["label"],
                     "includes": item.get("includes") or "",
                     "after_experiment": item.get("after_experiment") or "",
                     "commit": (item.get("commit") or "")[:8],

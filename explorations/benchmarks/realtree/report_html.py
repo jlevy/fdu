@@ -742,9 +742,14 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 dx = 8 if index == 0 else -8
                 text = f"{item['wall_ms'] / 1000:.1f} s" + ("" if index == 0 else f", {ratio:.1f}x faster")
                 out.append(
-                    f'<text class="value-label" x="{x + dx:.1f}" y="{y - 8:.1f}" '
+                    f'<text class="value-label" x="{x + dx:.1f}" y="{y - 10:.1f}" '
                     f'text-anchor="{anchor}">{esc(text)}</text>'
                 )
+            short = item.get("short") or item["label"]
+            out.append(
+                f'<text class="point-label" x="{x:.1f}" y="{y + 16 + (index % 2) * 11:.1f}" '
+                f'text-anchor="middle">{esc(short)}</text>'
+            )
 
     # Bottom panel: every experiment, plus the running count of kept changes.
     low, high = ITERATION_CLAMP
@@ -765,13 +770,10 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     out.append(f'<line class="zero" x1="{left}" y1="{zero:.1f}" x2="{width - right}" y2="{zero:.1f}"/>')
     out.append(
         f'<text class="tick axis-name" x="{left}" y="{bottom_y0 - 14}">each experiment: % better '
-        f"on its own job, paired &mdash; line: kept changes so far</text>"
+        f"on its own job, paired</text>"
     )
     css = {"kept": "dot-good", "rejected": "dot-bad", "measured": "dot-flat"}
     bar = max(min(step * 0.7, 6.0), 1.2)
-    total_kept = sum(iteration_kind(record) == "kept" for record in records)
-    count_y = lambda count: bottom_y0 + bottom_h - (count / max(total_kept, 1)) * bottom_h
-    running, count_path = 0, [f"{left:.1f},{count_y(0):.1f}"]
     for index, record in enumerate(records):
         change = record.get("change_pct")
         faster = -change if change is not None else 0.0
@@ -783,10 +785,6 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
             f'<rect class="{css[kind]}" x="{x:.1f}" y="{y1:.1f}" width="{bar:.1f}" '
             f'height="{max(y2 - y1, 1.0):.1f}"/>'
         )
-        if kind == "kept":
-            running += 1
-            count_path.append(f"{left + index * step:.1f},{count_y(running - 1):.1f}")
-            count_path.append(f"{left + index * step:.1f},{count_y(running):.1f}")
         label = {"kept": "kept, better", "rejected": "tried, not kept", "measured": "measured"}[kind]
         metric = record.get("primary_metric")
         out.append(
@@ -801,21 +799,14 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
             )
             + "/>"
         )
-    count_path.append(f"{width - right:.1f},{count_y(running):.1f}")
-    out.append(f'<polyline class="count-line" points="{" ".join(count_path)}"/>')
-    for count in (0, total_kept):
-        out.append(
-            f'<text class="tick" x="{width - right + 6}" y="{count_y(count) + 4:.1f}">{count}</text>'
-        )
     out.append("</svg>")
 
     counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
     keys = legend(
-        ("key-after-dot", "measured total runtime of each milestone build"),
+        ("key-after-dot", "top: one timed build of fdu, labelled by milestone"),
         ("key-good", f"kept, at least 3% better ({counts['kept']})"),
         ("key-bad", f"tried, not kept ({counts['rejected']})"),
         ("key-flat", f"measurements and other verdicts ({counts['measured']})"),
-        ("key-count", "kept changes so far"),
     )
     caption = ""
     if cell:
@@ -1345,8 +1336,6 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .dot-before { fill: var(--before); }
 .dot-step { fill: var(--after); opacity: 0.55; }
 .dot-final { fill: var(--after); }
-.count-line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
-.key-count { background: var(--accent); height: 2px; vertical-align: 3px; }
 .value-label { font: 12px var(--mono); fill: var(--after); font-variant-numeric: tabular-nums; }
 .value-before { fill: var(--muted); }
 .value-arrow { fill: var(--border); }
@@ -2169,7 +2158,7 @@ def _section_iterations(dataset: Mapping[str, Any]) -> str:
 <p>The top panel is fdu&rsquo;s total runtime on one fixed benchmark, measured for each
 milestone build side by side in one session, so its steps are the real accumulated
 improvement. The bottom panel is every experiment in the order it ran: green bars were
-kept, red bars were tried and dropped, and the line counts the kept changes so far. Most
+kept, red bars were tried and dropped. Most
 ideas moved their job by less than the 3% a change must clear; the tall green bars are the
 changes that made fdu fast.</p>
 {figure_timeline(dataset)}

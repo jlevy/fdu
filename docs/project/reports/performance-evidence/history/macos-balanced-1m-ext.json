@@ -185,7 +185,8 @@
    },
    "vs_prework_derived": null,
    "includes": "the starting point",
-   "after_experiment": "exp-000"
+   "after_experiment": "exp-000",
+   "short": "start"
   },
   {
    "label": "exp032",
@@ -263,7 +264,8 @@
     }
    },
    "includes": "campaign 1: parallel walk, bulk metadata, parallel reconciliation",
-   "after_experiment": "exp-032"
+   "after_experiment": "exp-032",
+   "short": "campaign 1"
   },
   {
    "label": "v0.1.0",
@@ -342,7 +344,8 @@
     }
    },
    "includes": "streaming engine, the H86 consumer rewrite, content cache",
-   "after_experiment": "exp-157"
+   "after_experiment": "exp-157",
+   "short": "0.1.0"
   },
   {
    "label": "v0.2.0",
@@ -421,7 +424,8 @@
     }
    },
    "includes": "H153 shared views, H156 index release, H160 no one-shot snapshot",
-   "after_experiment": "exp-165"
+   "after_experiment": "exp-165",
+   "short": "0.2.0"
   },
   {
    "label": "v0.2.1",
@@ -500,7 +504,8 @@
     }
    },
    "includes": "H159 listing recycle, H161 ignore-aware summary, H162, H163",
-   "after_experiment": "exp-191"
+   "after_experiment": "exp-191",
+   "short": "0.2.1"
   },
   {
    "label": "ebc06c78",
@@ -579,7 +584,8 @@
     }
    },
    "includes": "overnight round: H171, H175, H172 tree tier, H180, H169 reader, H183",
-   "after_experiment": "exp-195"
+   "after_experiment": "exp-195",
+   "short": "overnight"
   },
   {
    "label": "exp201",
@@ -658,7 +664,8 @@
     }
    },
    "includes": "pdu track: H185, H186, H188, H189",
-   "after_experiment": "exp-201"
+   "after_experiment": "exp-201",
+   "short": "pdu track"
   },
   {
    "label": "v0.3.0",
@@ -726,7 +733,8 @@
     }
    },
    "includes": "the 0.3.0 release: automount fix and stability layer",
-   "after_experiment": "exp-202"
+   "after_experiment": "exp-202",
+   "short": "0.3.0"
   }
  ],
  "headline": {
