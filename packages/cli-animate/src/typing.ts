@@ -21,8 +21,8 @@
  *   too light, so 1.5% of keys inside a word stall at 2–4×, and 5% of words start after a
  *   hesitation (log-normal excess, median 170 ms, capped at 600 ms).
  *
- * The research brief (docs/project/research/research-2026-10-04-terminal-demo-recordings.md)
- * records the sources and which values are measured and which extrapolated.
+ * This package's research brief, in docs/project/research/, records the sources and
+ * which values are measured and which extrapolated.
  */
 
 /** A small, fast, seedable generator (sfc32, seeded through splitmix32). */

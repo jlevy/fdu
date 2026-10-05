@@ -5,8 +5,7 @@
 **Author:** Claude (agent), for the fdu maintainer
 
 **Status:** Complete.
-The recommended pipeline is implemented as
-[cli-animate](../../../packages/cli-animate/README.md) under
+The recommended pipeline is implemented as [cli-animate](../../../README.md) under
 [its plan](../specs/active/plan-2026-10-04-cli-animate.md).
 
 ## Overview
@@ -25,8 +24,8 @@ closest tools, measured keystroke timing on public typing data, and measured cap
 encoding practice. The measurements are in the
 [evidence file](evidence/terminal-demo-recordings-2026-10-04.json).
 The spike was a set of Python and Node scripts; it has since been rebuilt as
-[cli-animate](../../../packages/cli-animate/README.md), a TypeScript CLI with an agent
-skill, and the file links below point at its equivalents.
+[cli-animate](../../../README.md), a TypeScript CLI with an agent skill, and the file
+links below point at its equivalents.
 The spike’s measurements stand: the rebuild keeps its recording, stage, and
 frame-stepping design.
 
@@ -56,7 +55,8 @@ Out of scope: hosted services (asciinema.org, Screen Studio, Warp) beyond a ment
 voice-over and editing; and macOS capture.
 The spike ran in one Linux container (x86_64, 4 vCPU, virtualized, running as root), so
 its timings show the pipeline’s fidelity, not fdu’s performance on any user’s machine.
-[Platform tuning](../guides/platform-tuning.md) explains why the regime matters.
+[fdu’s platform tuning guide](https://github.com/jlevy/fdu/blob/main/docs/project/guides/platform-tuning.md)
+explains why the regime matters.
 
 Method: web and registry research, with an agent-assisted survey of about 45
 repositories (the [Appendix](#appendix-tool-survey) holds it), plus the spike.
@@ -95,9 +95,9 @@ VHS makes video but cannot write or read a cast.
 
 `asciinema rec --headless --window-size 104x30 --command <driver>` records whatever the
 driver does in a real PTY at a fixed size.
-The spike’s driver (now [driver.ts](../../../packages/cli-animate/src/driver.ts)) prints
-a prompt, types each command with seeded jitter, and runs it in the same PTY, so color
-detection, `COLUMNS`, and fdu’s progress line behave as they do for a person.
+The spike’s driver (now [driver.ts](../../../src/driver.ts)) prints a prompt, types each
+command with seeded jitter, and runs it in the same PTY, so color detection, `COLUMNS`,
+and fdu’s progress line behave as they do for a person.
 At each step boundary it writes an OSC sequence that no terminal acts on, then rewrites
 those into asciicast `m` (marker) events.
 Markers give the web player chapters and give the receipt exact step times.
@@ -114,10 +114,10 @@ A viewer can check the playback against it.
 
 ### Video: Frame-Stepped Rendering Is Exact; Real-Time Capture Is Not
 
-The spike’s renderer (now [render.ts](../../../packages/cli-animate/src/render.ts))
-applies the `squares` pattern to a cast.
-It loads one stage page in headless Chromium and seeks it to frame `i / fps` on the
-cast’s own clock. It screenshots the stage and pipes PNG frames to ffmpeg.
+The spike’s renderer (now [render.ts](../../../src/render.ts)) applies the `squares`
+pattern to a cast. It loads one stage page in headless Chromium and seeks it to frame
+`i / fps` on the cast’s own clock.
+It screenshots the stage and pipes PNG frames to ffmpeg.
 The video never depends on how fast the machine renders.
 A slow screenshot delays the encode, not the picture.
 
@@ -131,17 +131,16 @@ Terminals are mostly static, so the 1,596-frame real-time video needed 158 scree
 | CPython views, 1080p60 | 2,112 | 192 | 46.9 s | 1.3 MB |
 | Live `--watch`, 1080p60 | 1,098 | 44 | 20.1 s | 795 KB |
 
-[verify](../../../packages/cli-animate/src/verify.ts) checks a lossless render of the
-real-time recording frame by frame.
-The picture must change exactly on the first frame at or after each output event, and
-nowhere else. Both engines passed: 157 of 157 expected change frames, none missing, none
-extra. Two bugs surfaced first, and the check caught both.
+[verify](../../../src/verify.ts) checks a lossless render of the real-time recording
+frame by frame. The picture must change exactly on the first frame at or after each
+output event, and nowhere else.
+Both engines passed: 157 of 157 expected change frames, none missing, none extra.
+Two bugs surfaced first, and the check caught both.
 An unfocused xterm.js draws no cursor, so typed spaces were invisible (30 missing
 frames). A lossy encode’s keyframe refresh reads as change, so the check runs on a
 lossless render.
 
-VHS, on an equivalent
-[tape](../../../packages/cli-animate/examples/fdu/vhs-realtime.tape), did not preserve
+VHS, on an equivalent [tape](../../../examples/fdu/vhs-realtime.tape), did not preserve
 the clock:
 
 - `Set Framerate 60` produced a 25 fps MP4.
@@ -447,7 +446,7 @@ agg. Add a driver for scripting.
 
 ### Option C: asciinema Capture With an xterm.js Stage and Frame-Stepped Export (Recommended)
 
-**Description:** The spike, now [cli-animate](../../../packages/cli-animate/README.md).
+**Description:** The spike, now [cli-animate](../../../README.md).
 `cli-animate record` drives a YAML scenario inside `asciinema rec --headless` and writes
 a cast with markers and a receipt.
 The stage page plays a cast with xterm.js.
@@ -505,15 +504,17 @@ add titles, captions, and transitions between scenes.
 ## Recommendations
 
 1. **Adopt Option C as fdu’s demo pipeline.** Done: it is
-   [cli-animate](../../../packages/cli-animate/README.md).
+   [cli-animate](../../../README.md).
    Keep casts as the committed source and render videos as release assets, never
    committed, as `squares` does.
 2. **Embed casts, not videos, on web pages that fdu controls.** Use the xterm.js player.
    Use MP4 only where a page cannot run script (social posts, slides, release notes).
 3. **Treat a recording as performance evidence only with its receipt and regime.**
    Record on the platform and hardware being claimed, with the receipt’s measured times
-   beside the video, as the [performance loop](../guides/performance-loop.md) requires
-   of any number. This container’s timings are not fdu’s.
+   beside the video, as the
+   [fdu performance loop](https://github.com/jlevy/fdu/blob/main/docs/project/guides/performance-loop.md)
+   requires of any number.
+   This container’s timings are not fdu’s.
 4. **Use VHS only for decorative GIFs**, and never for anything whose timing is the
    point.
 
@@ -541,7 +542,8 @@ add titles, captions, and transitions between scenes.
 - When the only unlisted root branch is an empty directory, the tree prints
   `… and 0 more files` at 0 B (seen in the watch scenario before `logs/` filled).
   Is that row intended, or should the
-  [output design](../architecture/fdu-output-design.md) omission rules drop it?
+  [fdu output design](https://github.com/jlevy/fdu/blob/main/docs/project/architecture/fdu-output-design.md)
+  omission rules drop it?
 
 ## References
 

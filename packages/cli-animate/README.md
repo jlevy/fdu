@@ -3,22 +3,74 @@
 Record real terminal sessions, replay them in a browser, and render them to video, with
 a frame-exact timing check.
 
+## Why It Exists
+
+A demo of a command-line tool is usually asked to do two things at once: look clean and
+professional, and tell the truth about what the tool does and how fast it does it.
+The existing tools each do part of that, and the gaps between them are where demos go
+wrong:
+
+- **Recorders capture the truth but not a script.** asciinema records a real session
+  exactly, but someone has to type it live, take after take, and the recording keeps
+  every hesitation and typo.
+- **Scripted recorders distort time.** VHS scripts the typing, but it films a browser
+  terminal on the wall clock while the command runs.
+  Measured on fdu in a Linux container, it produced 25 fps when 60 was requested, turned
+  14 s of scripted typing and sleeps into a 10.2 s video, and slowed the program being
+  filmed from 200 ms to 278 ms.
+  A speed demo made that way is not evidence of speed.
+- **Renderers disagree.** asciinema-player and agg draw block and shade characters as
+  full-cell fills, so bar charts made of `█▓░` merge into one shape.
+  The browser replay and the GIF made from the same cast can also look different, since
+  they are different renderers with different fonts.
+- **Encoding defaults are wrong for terminal video.** A plain ffmpeg conversion from
+  screenshots uses BT.601 colour for high-definition video that players read as BT.709,
+  shifting saturated terminal colours.
+  The x264 tuning that suits terminal content (`-tune animation`) raises the reference
+  frames until the stream is tagged with a level many hardware decoders refuse.
+
+cli-animate composes asciinema, xterm.js, Chromium (through Playwright), and ffmpeg into
+one pipeline that closes those gaps:
+
+- **Scripted, but real.** A YAML scenario says what to type; the commands then run for
+  real in a recorded PTY, and a receipt records each one’s measured wall time.
+  Only the typing is simulated, by a keystroke model fitted to fast-typist data and
+  seeded so a re-recording reproduces.
+  The next prompt appears the instant a command exits, so its duration is visible.
+- **Rendered on the recording’s clock.** Video is made by seeking a page frame by frame
+  on the cast’s timeline, never by filming it, so nothing is dropped or compressed and
+  the recorded program is never slowed.
+- **Proved, not assumed.** `verify` checks that every picture change in the lossless
+  master lands on the frame of the event that caused it, and `make` refuses to deliver a
+  video that fails.
+- **One look everywhere.** The browser replay and every video come from the same stage
+  page, in the same font (Planetaire Mono, fetched at build time and pinned by hash), so
+  what you embed and what you publish are the same pixels.
+- **Correct deliveries.** Capture once into a lossless master, then derive a web MP4
+  (explicit BT.709, the lowest legal H.264 level, no B-frames) and a README GIF from it.
+- **Built for agents as well as people.** One command (`make`) runs the whole pipeline,
+  every command has `--json`, `doctor` checks the environment, and `skill` prints an
+  agent skill.
+
+If timing does not matter and a decorative GIF is all you need, VHS alone is simpler.
+
+## How It Works
+
 One recording feeds every output.
 `record` runs a scripted scenario for real inside `asciinema rec --headless`, typing
-each command with a fast-human keystroke model, and writes an asciicast with chapter
-markers plus a receipt of each command’s measured wall time.
-The stage page (`stage/stage.html`) replays the cast with xterm.js in Planetaire Mono.
-Rendering steps that same page frame by frame in headless Chromium on the recording’s
-own clock and captures it once, into a lossless master; every delivery (a web MP4, a
-README GIF) is derived from the master, so the web replay and the videos are the same
-pixels and keep the commands’ real timing.
-`verify` proves it on the master, frame by frame.
+each command with the keystroke model, and writes an asciicast with chapter markers plus
+a receipt. The stage page (`stage/stage.html`) replays the cast with xterm.js.
+Rendering steps that same page frame by frame in headless Chromium and captures it once,
+into a lossless master; every delivery is derived from the master, and `verify` checks
+the master frame by frame.
 
 The design, and why each piece is the way it is, is in
-[the plan](../../docs/project/specs/active/plan-2026-10-04-cli-animate.md) and
-[the research brief](../../docs/project/research/research-2026-10-04-terminal-demo-recordings.md).
-It is a workspace package of the fdu repository, written to be extracted later; nothing
-in it depends on fdu.
+[the plan](docs/project/specs/active/plan-2026-10-04-cli-animate.md); the survey of
+about 45 tools and the measurements behind each choice are in
+[the research brief](docs/project/research/research-2026-10-04-terminal-demo-recordings.md).
+It is developed as a workspace package of the fdu repository and laid out to be
+extracted as its own repository: nothing in it depends on fdu except the example
+scenarios in `examples/fdu/`.
 
 ## Requirements
 
@@ -107,6 +159,7 @@ terminal colours.
 ## Layout
 
 ```text
+docs/project/   the plan (specs/active/) and the research brief with its evidence (research/)
 src/            engine: scenario, typing, driver, record, cast, fonts, render, profiles, verify
 src/cli/        the command line: main.ts, one module per command in commands/, shared helpers in lib/
 stage/          the replay page (play and capture modes)

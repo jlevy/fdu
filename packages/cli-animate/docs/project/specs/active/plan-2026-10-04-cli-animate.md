@@ -82,6 +82,8 @@ libx264 (encoding), and a Chromium that playwright-core can launch (rendering).
 ```text
 packages/cli-animate/
   package.json          bin: cli-animate; workspace of the root
+  LICENSE               MIT, as the repository
+  docs/project/         this plan and the research brief, with the package
   src/
     cli/main.ts         the program: global options, command groups, exit codes
     cli/commands/       one module per command
@@ -222,6 +224,7 @@ players read untagged high-definition video as BT.709.
 - [x] Re-record the showcase, verify, and publish the video for review
 - [x] Update the research brief and the pull request
 - [x] Bump tryscript to 0.3.0 and remove the temporary fast-glob stand-in
+- [x] Move the plan and research brief into the package (`docs/project/`)
 - [x] Prompt on command exit; 160 WPM default; CLI split per `typescript-cli-tool-rules`
   (commands/, lib/, command groups, exit codes, JSON errors, stdout EPIPE)
 
@@ -235,9 +238,11 @@ players read untagged high-definition video as BT.709.
 
 ## Rollout Plan
 
-A private workspace package in this repository.
-Extraction to its own repository and npm package is a later decision; nothing here
-depends on fdu.
+A private workspace package in this repository, laid out as a standalone repository
+would be: its own README, licence, docs (`docs/project/`), tests, and skill.
+Extraction to its own repository and npm package is a later decision.
+Nothing here depends on fdu except the example scenarios in `examples/fdu/`; the
+research brief links to fdu’s own guides by URL so the links survive extraction.
 
 ## Follow-Ups
 
