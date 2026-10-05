@@ -13,11 +13,16 @@ from benchmarks.realtree.report_html import (
     STYLE,
     axis_ticks,
     decision_label,
+    STANDING_EXPERIMENT,
+    end_to_end_cells,
     figure_absolute,
     figure_effects,
+    figure_end_to_end,
     figure_per_entry,
     fmt_primary,
+    id_ranges,
     kept_improvements,
+    phase_rows,
     render,
 )
 from benchmarks.realtree.timeline import (
@@ -447,6 +452,72 @@ class RenderTests(unittest.TestCase):
         page = render(dataset)
         self.assertIn("-48.0%", page)
         self.assertNotIn("-1.1%", page)
+
+    def _end_to_end(self, identifier: str, *, system: str = "Linux 6.18.44-fc-v50") -> Dict[str, Any]:
+        record = experiment(
+            identifier,
+            decision="baseline",
+            kept="neither",
+            system=system,
+            wall=metric(208.6e6, 109.9e6, -48.0, -50.5, -44.8),
+        )
+        record["results"][0]["job"] = "default-tree"
+        record["verdict"]["primary_job"] = "default-tree"
+        record["method"]["control_binary"] = {"name": "old", "sha256": "c" * 64, "args": []}
+        record["method"]["candidate_binary"] = {"name": "new", "sha256": "d" * 64, "args": []}
+        return record
+
+    def test_the_end_to_end_figure_draws_only_two_build_default_tree_cells(self) -> None:
+        # An A/A cell and an accepted step are not end-to-end comparisons; drawing them
+        # beside the release cell would chain sessions the caption says not to chain.
+        same = self._end_to_end("exp-175")
+        same["method"]["candidate_binary"] = same["method"]["control_binary"]
+        dataset = project(
+            [
+                self._end_to_end(STANDING_EXPERIMENT),
+                self._end_to_end("exp-074", system="Darwin 25.5.0"),
+                same,
+                experiment("exp-178", system="Linux 6.18.44-fc-v49"),
+            ]
+        )
+        self.assertEqual(
+            [record["id"] for record in end_to_end_cells(dataset, "Linux")], [STANDING_EXPERIMENT]
+        )
+        figure = figure_end_to_end(dataset, "Linux")
+        self.assertIn("209 ms", figure)
+        self.assertIn("110 ms", figure)
+        self.assertNotIn("exp-175", figure)
+        self.assertEqual(figure_end_to_end(project([experiment("exp-001")]), "Linux"), "")
+
+    def test_the_header_states_the_release_standing_when_it_is_recorded(self) -> None:
+        with_release = render(project([self._end_to_end(STANDING_EXPERIMENT)]))
+        self.assertIn("0.2.1 to 0.3.0", with_release)
+        # A projection without the release record still renders, without the figure.
+        self.assertNotIn("0.2.1 to 0.3.0", render(project([experiment("exp-001")])))
+
+    def test_every_experiment_falls_in_a_phase_or_the_trailing_row(self) -> None:
+        # A record added after the phases were named must still be counted, not dropped.
+        dataset = project(
+            [
+                experiment("exp-001"),
+                experiment("exp-002", decision="rejected"),
+                experiment("exp-067", decision="baseline"),
+                experiment("exp-250"),
+            ]
+        )
+        rows = phase_rows(dataset)
+        self.assertEqual(sum(row["total"] for row in rows), 4)
+        self.assertEqual(rows[0]["counts"], {"accepted": 1, "rejected": 1, "other": 0})
+        self.assertEqual(rows[1]["counts"], {"accepted": 0, "rejected": 0, "other": 1})
+        self.assertEqual(rows[-1]["name"], "Not yet assigned a phase")
+        self.assertEqual(rows[-1]["ids"], "exp-250")
+
+    def test_id_ranges_skip_unused_ids_but_not_recorded_ones(self) -> None:
+        # exp-113 was never used, so it does not split exp-112 from exp-114; exp-104 is a
+        # record in another phase, so exp-103 and exp-105 stay separate ranges.
+        self.assertEqual(id_ranges([112, 114, 115], [112, 114, 115]), "exp-112\u2013115")
+        self.assertEqual(id_ranges([103, 105], [103, 104, 105]), "exp-103, exp-105")
+        self.assertEqual(id_ranges([66, 67, 68, 104]), "exp-066\u2013068, exp-104")
 
     def test_a_projection_without_the_field_reads_baselines_as_one_build(self) -> None:
         # A committed projection written before `compares` existed still renders.

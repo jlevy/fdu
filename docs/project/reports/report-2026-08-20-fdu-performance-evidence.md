@@ -1335,6 +1335,11 @@ Grouped by topic; the order to run them in is
 
 The page shows every number; this report says what they mean.
 
+**Phases.** Experiments per phase of the loop, by verdict, with each phase’s question on
+hover. The phases are those of
+[the loop history](report-2026-08-14-performance-campaign-status.md#4-how-the-loop-has-been-run);
+a record in none of them is counted in a trailing row rather than dropped.
+
 **Absolute.** Wall time at five cumulative checkpoints on one 60k-entry macOS tree, each
 re-measuring the original binary against the code of the day in one interleaved run:
 
@@ -1352,6 +1357,11 @@ The last column is the range the unchanged binary covered across those five runs
 scale any step between checkpoints has to be read against; on the producer job it is
 wider than several steps.
 The paired effects at the final checkpoint are in exp-032.
+
+Beside it, every Linux cell that measured one engine against a later one end to end on
+the default tree (exp-194, exp-195, exp-201, exp-202), each row with its own two arms.
+Rows are separate sessions on a host that drifted between them, so each row compares
+only its own bars.
 
 **Relative.** Every experiment’s paired effect on its primary job with its 95% interval,
 against the −3% accept threshold.

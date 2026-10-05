@@ -252,52 +252,74 @@ footer { margin-top: 72px; padding-top: 16px; border-top: 1px solid var(--border
 roll-up engine. It walks a tree once and answers questions about it &mdash; folder sizes,
 file types, languages, prose metrics &mdash; from one reusable index, in text or JSON.
 It is written in Rust, with no C in its build.</p>
-<p>The current installed-CLI comparisons against other tools are recorded separately,
+<p class="lede">Its speed was earned by an iterative research loop rather than a sequence
+of hunches. Every experiment &mdash; including the 61 that
+failed &mdash; was recorded as a validated soft-schema artifact, and this page is generated
+from those 200 artifacts (63 on Linux and 137 on macOS) rather than written
+alongside them.</p>
+<p>It shows two things: <strong>how the loop works</strong>, a method that transfers to any
+system worth optimising, and <strong>what it found</strong> in this one &mdash; which ideas
+paid, which did not, and how confidently either can be said. fdu's standing against other
+tools is in the installed-command comparisons
 <a href="../report-2026-09-26-fdu-live-tool-comparison.md">on macOS</a> and
-<a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>, each with its
-workload, host, and peer-tool qualifications. This page describes the research loop and
-its incremental experiments; it is not a current product leaderboard.</p>
-<p class="lede">This page is about how it got there. That work was done as an iterative
-research loop rather than
-a sequence of hunches. Every experiment &mdash; including the
-61 that failed &mdash; was recorded as a validated
-soft-schema artifact, and this page is generated from those 200
-artifacts rather than written alongside them.</p>
-<p>It is here to show two things: <strong>how the loop works</strong>, which is a method
-that transfers to any system worth optimising, and <strong>what it found</strong> in this
-particular one &mdash; which ideas paid, which did not, and how confidently either can be
-said.</p>
+<a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>; how the loop
+was run, phase by phase, is in
+<a href="../report-2026-08-14-performance-campaign-status.md">the loop history</a>.</p>
 <div class="headline">
-  <div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">cold scan and index</span></div><div><span class="n">795 ms <span class="muted">&rarr;</span> <span class="good">442 ms</span></span><span class="k">warm revalidate</span></div>
+  <div><span class="n">209 ms <span class="muted">&rarr;</span> <span class="good">110 ms</span></span><span class="k">Linux default tree, 0.2.1 to 0.3.0</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
+  <div><span class="n tnum">200</span>
+    <span class="k">experiments</span></div>
   <div><span class="n tnum">111</span>
     <span class="k">accepted verdicts</span></div>
   <div><span class="n tnum">61</span>
     <span class="k">rejected</span></div>
-  <div><span class="n tnum">29,127</span>
-    <span class="k">lines in accepted verdicts</span></div>
 </div>
 <h2 id="loop">The loop</h2>
-<p>One experiment is one question with one answer. It names a hypothesis, builds exactly
-one change, and measures that change against the code it came from &mdash; both binaries
-interleaved in the same run, twelve paired trials, on a tree pinned by content digest. A
-bootstrap interval decides whether the result is distinguishable from the host having a
-bad afternoon, and a written rule decides whether it is worth carrying: better than 3%,
-with the interval clear of zero.</p>
+<p>One experiment is one question with one answer. It names a hypothesis and a predicted
+effect, builds exactly one change, checks that the change leaves every answer identical,
+and measures it against the code it came from &mdash; both binaries interleaved in the
+same run on a tree pinned by content digest, at least twelve paired trials and twenty when
+the predicted effect is small. A sample taken while the host was busy is invalidated, and
+a cell with any invalid sample is inconclusive. A bootstrap interval decides whether the
+result is distinguishable from the host having a bad afternoon, and a written rule decides
+whether it is worth carrying: better than 3%, with the interval clear of zero.</p>
 <p>What makes the record usable afterwards is that the answer is stored rather than
 summarised. Each artifact is Markdown with validated YAML frontmatter: the frontmatter
 holds the measured numbers, the subject, the machine, the cost in lines and dependencies,
 and the verdict; the body holds the reasoning a schema cannot check. A contract validates
-every one of them, so the ledger and this page can be regenerated from the evidence and
-neither can quietly drift from it.</p>
+every one of them, and each against its own measurements, so the ledger and this page can
+be regenerated from the evidence and neither can quietly drift from it.</p>
 <p class="note">The soft schema is what makes the difference between a campaign and a
 folder of notes. Because the numbers are typed and validated, a rejected experiment costs
 nothing to keep &mdash; and the rejections turned out to be the most reusable part of the
 record.</p>
 
+<h2 id="phases">Phases</h2>
+<h3>How the loop has been run</h3>
+<p>The experiments fall into phases, each with its own question. Most phases also changed
+the method, usually because the method had just produced a wrong answer: a harness that
+printed regressions as silence, a generated tree that inverted a ranking, a same-binary
+cell that passed the accept rule. <a href="../report-2026-08-14-performance-campaign-status.md">The
+loop history</a> tells each phase in full.</p>
+<figure class="fig"><svg class="chart" viewBox="0 0 900 296" role="img" preserveAspectRatio="xMinYMin meet" aria-label="Experiments per phase of the loop, by verdict"><title>Experiments per phase of the loop, by verdict</title><desc>One row per phase. Green is accepted, red rejected, grey every other verdict.</desc><rect class="hit" x="250.0" y="-9.0" width="540.0" height="38.0" data-tip="Building the loop: exp-000&#8211;065
+Where does a cold scan and a warm open spend its time? The accept rule, paired measurement, the record, and the counters were built here.
+33 accepted, 28 rejected, 5 other, on Linux and macOS."/><text class="row-label" x="236" y="24" text-anchor="end">1. Building the loop</text><text class="row-sub" x="236" y="39" text-anchor="end">exp-000&#8211;065, Linux and macOS</text><rect class="dot-good" x="250.0" y="16" width="270.0" height="20"/><rect class="dot-bad" x="520.0" y="16" width="229.1" height="20"/><rect class="dot-flat" x="749.1" y="16" width="40.9" height="20"/><text class="value-label" x="798.0" y="30">33 / 28 / 5</text><rect class="hit" x="250.0" y="37.0" width="540.0" height="38.0" data-tip="A denominator and a strategy: exp-066&#8211;070, exp-104
+How much is left? The syscall floor gave every tier a denominator, and the default command was measured for the first time.
+4 accepted, 1 rejected, 1 other, on Linux and macOS."/><text class="row-label" x="236" y="70" text-anchor="end">2. A denominator and a strategy</text><text class="row-sub" x="236" y="85" text-anchor="end">exp-066&#8211;070, exp-104, Linux and macOS</text><rect class="dot-good" x="250.0" y="62" width="32.7" height="20"/><rect class="dot-bad" x="282.7" y="62" width="8.2" height="20"/><rect class="dot-flat" x="290.9" y="62" width="8.2" height="20"/><text class="value-label" x="307.1" y="76">4 / 1 / 1</text><rect class="hit" x="250.0" y="83.0" width="540.0" height="38.0" data-tip="Closing a rewrite&#x27;s regression: exp-071&#8211;103
+What closes the streaming engine&#x27;s gap without changing an answer? Then the H86 structural composite, judged as one experiment.
+14 accepted, 11 rejected, 8 other, on Linux and macOS."/><text class="row-label" x="236" y="116" text-anchor="end">3. Closing a rewrite&#x27;s regression</text><text class="row-sub" x="236" y="131" text-anchor="end">exp-071&#8211;103, Linux and macOS</text><rect class="dot-good" x="250.0" y="108" width="114.5" height="20"/><rect class="dot-bad" x="364.5" y="108" width="90.0" height="20"/><rect class="dot-flat" x="454.5" y="108" width="65.5" height="20"/><text class="value-label" x="528.0" y="122">14 / 11 / 8</text><rect class="hit" x="250.0" y="129.0" width="540.0" height="38.0" data-tip="Unattended rounds: exp-105&#8211;155
+On the 0.1.0 engine, what is left in the default command and a warm content open? Run overnight by an agent, first on macOS, then on Linux.
+38 accepted, 9 rejected, 3 other, on Linux and macOS."/><text class="row-label" x="236" y="162" text-anchor="end">4. Unattended rounds</text><text class="row-sub" x="236" y="177" text-anchor="end">exp-105&#8211;155, Linux and macOS</text><rect class="dot-good" x="250.0" y="154" width="310.9" height="20"/><rect class="dot-bad" x="560.9" y="154" width="73.6" height="20"/><rect class="dot-flat" x="634.5" y="154" width="24.5" height="20"/><text class="value-label" x="667.1" y="168">38 / 9 / 3</text><rect class="hit" x="250.0" y="175.0" width="540.0" height="38.0" data-tip="Release-driven questions: exp-156&#8211;174, exp-187&#8211;191
+Questions 0.2.0 raised, ending in the finding that .gitignore classification was most of the Linux default command.
+10 accepted, 8 rejected, 4 other, on Linux and macOS."/><text class="row-label" x="236" y="208" text-anchor="end">5. Release-driven questions</text><text class="row-sub" x="236" y="223" text-anchor="end">exp-156&#8211;174, exp-187&#8211;191, Linux and macOS</text><rect class="dot-good" x="250.0" y="200" width="81.8" height="20"/><rect class="dot-bad" x="331.8" y="200" width="65.5" height="20"/><rect class="dot-flat" x="397.3" y="200" width="32.7" height="20"/><text class="value-label" x="438.0" y="214">10 / 8 / 4</text><rect class="hit" x="250.0" y="221.0" width="540.0" height="38.0" data-tip="Linux against its peers: exp-175&#8211;186, exp-192&#8211;202
+Can the default command beat pdu on real trees with .gitignore on and no answer changed? One unattended night, the pdu track, and the 0.3.0 release cell.
+12 accepted, 4 rejected, 7 other, on Linux."/><text class="row-label" x="236" y="254" text-anchor="end">6. Linux against its peers</text><text class="row-sub" x="236" y="269" text-anchor="end">exp-175&#8211;186, exp-192&#8211;202, Linux</text><rect class="dot-good" x="250.0" y="246" width="98.2" height="20"/><rect class="dot-bad" x="348.2" y="246" width="32.7" height="20"/><rect class="dot-flat" x="380.9" y="246" width="57.3" height="20"/><text class="value-label" x="446.2" y="260">12 / 4 / 7</text></svg><p class="legend"><span class="legend-item"><span class="key key-good"></span>accepted</span><span class="legend-item"><span class="key key-bad"></span>rejected</span><span class="legend-item"><span class="key key-flat"></span>baseline, superseded, in progress, or blocked</span></p><figcaption>Bar length is the number of experiments in the phase. Hover a row for the question it asked.</figcaption></figure>
+
 <h2 id="absolute">Absolute</h2>
 <h3>Wall time, in milliseconds</h3>
 <p>The campaign's own summaries are all percentages, and a percentage cannot say whether
 a scan takes half a second or half a minute. These are the measured medians.</p>
+<h3>macOS, campaign 1</h3>
 <figure class="fig"><svg class="chart" viewBox="0 0 900 366" role="img" preserveAspectRatio="xMinYMin meet" aria-label="Wall time before and after, across five cumulative checkpoints"><title>Wall time before and after, across five cumulative checkpoints</title><desc>One row per job. Grey marks the pre-work binary; the blue track is the code of the day at each checkpoint.</desc><line class="grid" x1="176.0" y1="30" x2="176.0" y2="336"/><text class="tick" x="176.0" y="352" text-anchor="middle">0</text><line class="grid" x1="285.6" y1="30" x2="285.6" y2="336"/><text class="tick" x="285.6" y="352" text-anchor="middle">250</text><line class="grid" x1="395.2" y1="30" x2="395.2" y2="336"/><text class="tick" x="395.2" y="352" text-anchor="middle">500</text><line class="grid" x1="504.8" y1="30" x2="504.8" y2="336"/><text class="tick" x="504.8" y="352" text-anchor="middle">750</text><line class="grid" x1="614.4" y1="30" x2="614.4" y2="336"/><text class="tick" x="614.4" y="352" text-anchor="middle">1,000</text><line class="grid" x1="724.0" y1="30" x2="724.0" y2="336"/><text class="tick" x="724.0" y="352" text-anchor="middle">1,250</text><text class="tick axis-name" x="176" y="18">milliseconds &mdash; lower is faster</text><text class="row-label" x="162" y="48" text-anchor="end">Cold scan and index</text><rect class="hit" x="176.0" y="19.0" width="548.0" height="50.0" data-tip="Cold scan and index
 Grey: the pre-work binary, measured 5 times at 587 ms to 635 ms - the same code, so that range is the host&#x27;s noise, not progress.
 Band: that range drawn to scale.
@@ -319,6 +341,25 @@ Grey: the pre-work binary, measured 5 times at 315 ms to 384 ms - the same code,
 Band: that range drawn to scale.
 Blue: the code of the day at each checkpoint, ending at 207 ms.
 Each checkpoint measured both binaries in one interleaved run, so every pair is a within-run comparison."/><rect class="drift-band" x="314.2" y="279" width="30.0" height="26"><title>the same unchanged binary measured 315 ms to 384 ms across the five runs</title></rect><line class="connector" x1="318.2" y1="292" x2="266.7" y2="292"/><circle class="dot-before" cx="318.2" cy="292" r="5.5"><title>before: 324 ms (median of 5 re-measurements)</title></circle><polyline class="track" points="276.7,292 264.2,292 290.5,292 266.7,292"/><circle class="dot-step" cx="276.7" cy="292" r="3.5"><title>exp-006: 230 ms</title></circle><circle class="dot-step" cx="264.2" cy="292" r="3.5"><title>exp-023: 201 ms</title></circle><circle class="dot-step" cx="290.5" cy="292" r="3.5"><title>exp-027: 261 ms</title></circle><circle class="dot-final" cx="266.7" cy="292" r="5.5"><title>exp-032: 207 ms</title></circle><text class="value-label" x="892" y="296" text-anchor="end"><tspan class="value-before">324 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>207 ms</text></svg><p class="legend"><span class="legend-item"><span class="key key-before-dot"></span>the pre-work binary, median of five re-measurements</span><span class="legend-item"><span class="key key-after-dot"></span>each checkpoint, ending in what shipped</span><span class="legend-item"><span class="key key-drift"></span>range those five re-measurements covered</span></p><figcaption>One macOS tree of 59,654&#8211;60,067 entries, measured five times over three days. The checkpoints, in order:<ol class="checkpoints"><li><span class="mono">exp-000</span> Baseline on a real 60k-entry tree</li><li><span class="mono">exp-006</span> Cumulative effect of every accepted change</li><li><span class="mono">exp-023</span> Cumulative effect through adaptive scanning and macOS bulk metadata</li><li><span class="mono">exp-027</span> Cumulative effect through bulk reconciliation</li><li><span class="mono">exp-032</span> Cumulative effect through bounded parallel reconciliation</li></ol></figcaption></figure>
+
+<h3>Linux, end to end</h3>
+<p>The later Linux work was measured the same way at its milestones: one engine against a
+later one in a single interleaved cell. The release cell is the comparison to quote for
+0.3.0; the development cells before it each ran in their own session.</p>
+<figure class="fig"><svg class="chart" viewBox="0 0 900 282" role="img" preserveAspectRatio="xMinYMin meet" aria-label="Linux default tree, older engine against newer, one cell per row"><title>Linux default tree, older engine against newer, one cell per row</title><desc>Each row is one interleaved cell. Grey is the older engine and blue the newer one.</desc><line class="grid" x1="200.0" y1="24" x2="200.0" y2="252"/><text class="tick" x="200.0" y="268" text-anchor="middle">0</text><line class="grid" x1="376.7" y1="24" x2="376.7" y2="252"/><text class="tick" x="376.7" y="268" text-anchor="middle">100</text><line class="grid" x1="553.3" y1="24" x2="553.3" y2="252"/><text class="tick" x="553.3" y="268" text-anchor="middle">200</text><line class="grid" x1="730.0" y1="24" x2="730.0" y2="252"/><text class="tick" x="730.0" y="268" text-anchor="middle">300</text><text class="tick axis-name" x="200" y="14">milliseconds &mdash; lower is faster</text><rect class="hit" x="200.0" y="6.0" width="530.0" height="48.0" data-tip="exp-194: Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12
+Older: e5a71c8a probe (the Q0 engine), 200 ms
+Newer: ebc06c78 probe (the final head of the round), 120 ms
+Paired change -39.0%, on linux-v6.12."/><text class="row-label" x="186" y="46" text-anchor="end">exp-194</text><text class="row-sub" x="186" y="61" text-anchor="end">linux-v6.12</text><rect class="bar-before" x="200" y="36" width="353.9" height="14"/><rect class="bar-after" x="200" y="54" width="211.6" height="14"/><text class="value-label" x="892" y="56" text-anchor="end"><tspan class="value-before">200 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>120 ms<tspan class="value-before"> -39.0%</tspan></text><rect class="hit" x="200.0" y="64.0" width="530.0" height="48.0" data-tip="exp-195: Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense
+Older: e5a71c8a probe (the Q0 engine), 127 ms
+Newer: ebc06c78 probe (the final head of the round), 114 ms
+Paired change -9.8%, on node-modules-dense."/><text class="row-label" x="186" y="104" text-anchor="end">exp-195</text><text class="row-sub" x="186" y="119" text-anchor="end">node-modules-dense</text><rect class="bar-before" x="200" y="94" width="224.2" height="14"/><rect class="bar-after" x="200" y="112" width="201.8" height="14"/><text class="value-label" x="892" y="114" text-anchor="end"><tspan class="value-before">127 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>114 ms<tspan class="value-before"> -9.8%</tspan></text><rect class="hit" x="200.0" y="122.0" width="530.0" height="48.0" data-tip="exp-201: Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees
+Older: ebc06c78 probe (the final head of the round), 89 ms
+Newer: a356d456 probe (the H186 head, the pdu track&#x27;s shipped stack), 85 ms
+Paired change -3.1%, on linux-v6.12."/><text class="row-label" x="186" y="162" text-anchor="end">exp-201</text><text class="row-sub" x="186" y="177" text-anchor="end">linux-v6.12</text><rect class="bar-before" x="200" y="152" width="156.4" height="14"/><rect class="bar-after" x="200" y="170" width="150.6" height="14"/><text class="value-label" x="892" y="172" text-anchor="end"><tspan class="value-before">89 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>85 ms<tspan class="value-before"> -3.1%</tspan></text><rect class="hit" x="200.0" y="180.0" width="530.0" height="48.0" data-tip="exp-202: Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees
+Older: c1644575 probe (v0.2.1), 209 ms
+Newer: b82f26e1 probe (the 0.3.0 release head), 110 ms
+Paired change -48.0%, on linux-v6.12."/><text class="row-label" x="186" y="220" text-anchor="end">exp-202</text><text class="row-sub" x="186" y="235" text-anchor="end">linux-v6.12</text><rect class="bar-before" x="200" y="210" width="368.6" height="14"/><rect class="bar-after" x="200" y="228" width="194.1" height="14"/><text class="value-label" x="892" y="230" text-anchor="end"><tspan class="value-before">209 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>110 ms<tspan class="value-before"> -48.0%</tspan></text></svg><p class="legend"><span class="legend-item"><span class="key key-before"></span>the older engine, in the same cell</span><span class="legend-item"><span class="key key-after"></span>the newer engine</span></p><figcaption>Every Linux cell that measured one engine against a later one end to end on the default tree. The percentage is the paired change. Rows are separate sessions on a virtualized host whose absolute speed drifted between them, so each row compares only its own two bars.<ol class="checkpoints"><li><span class="mono">exp-194</span> Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12</li><li><span class="mono">exp-195</span> Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense</li><li><span class="mono">exp-201</span> Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees</li><li><span class="mono">exp-202</span> Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees</li></ol></figcaption></figure>
+
 
 <h2 id="relative">Relative</h2>
 <h3>What each experiment actually did</h3>
@@ -1229,10 +1270,11 @@ was claimed as one. What they bought was the ability to see inside the engine at
 the measurement could not detect, which is a different thing to want and was recorded as
 one.</p>
 <h3>What is not measured here</h3>
-<p>Every number comes from one Apple M1 Pro or a handful of virtualized Linux hosts. The
-page cache was warm throughout because dropping it needs root, so nothing here describes a
-genuinely cold disk. Tuning constants were fitted on the subjects shown and are inherited,
-not proven, elsewhere.</p>
+<p>Every number comes from one Apple M1 Pro or a handful of virtualized 4-vCPU Linux
+guests; nothing is from bare-metal Linux, and Windows has never been benchmarked. The page
+cache was warm throughout because dropping it needs root, so nothing here describes a
+genuinely cold disk. A change measured on one platform is inherited, not proven, on the
+other, and tuning constants were fitted on the subjects shown.</p>
 
 <h2 id="every">Every experiment</h2>
 <p>Open any row for what was compared, how it was built, what it cost to carry, and why it

@@ -361,6 +361,313 @@ def _flagship(dataset: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     return series[0] if series else None
 
 
+# ---------------------------------------------------------------- figure: end to end
+
+#: The record the header states as the current standing: the latest release measured
+#: end to end against the release before it, both builds in one interleaved cell. Move
+#: it when a later release cell is recorded; the header leaves the figure out while the
+#: record is absent, so a projection without it still renders.
+STANDING_EXPERIMENT = "exp-202"
+STANDING_LABEL = "Linux default tree, 0.2.1 to 0.3.0"
+
+
+def _record(dataset: Mapping[str, Any], experiment_id: str) -> Optional[Mapping[str, Any]]:
+    return next(
+        (record for record in dataset["experiments"] if record["id"] == experiment_id), None
+    )
+
+
+def _wall_arms(record: Mapping[str, Any]) -> Optional[tuple]:
+    """The control and candidate wall medians of a record's primary job, if measured."""
+    job = next((item for item in record["jobs"] if item["job"] == record.get("primary_job")), None)
+    wall = (job or {}).get("metrics", {}).get("wall_ns", {}).get("absolute") or {}
+    control, candidate = wall.get("control"), wall.get("candidate")
+    return (control, candidate) if control and candidate else None
+
+
+def _subject_label(dataset: Mapping[str, Any], key: Optional[str]) -> str:
+    subject = next((item for item in dataset["subjects"] if item["key"] == key), None)
+    labels = (subject or {}).get("labels") or []
+    return labels[0] if labels else "an unlabelled subject"
+
+
+def end_to_end_cells(dataset: Mapping[str, Any], platform: str) -> List[Mapping[str, Any]]:
+    """Baselines that compare two builds on the default tree: the end-to-end cells.
+
+    Each one measured an older engine against a newer one in a single interleaved cell,
+    which is what lets its two arms be drawn as absolute milliseconds. Cells from
+    different sessions are not drawn as one track: on one virtualized host an unchanged
+    binary drifted by up to 70% between cells over a night.
+    """
+    return [
+        record
+        for record in dataset["experiments"]
+        if record["platform"] == platform
+        and record["decision"] == "baseline"
+        and compares(record)
+        and record.get("primary_job") == "default-tree"
+        and _wall_arms(record)
+    ]
+
+
+def figure_end_to_end(dataset: Mapping[str, Any], platform: str = "Linux") -> str:
+    """One row per end-to-end cell: the older engine's bar above the newer one's."""
+    cells = end_to_end_cells(dataset, platform)
+    if not cells:
+        return ""
+    maximum = max(value for record in cells for value in _wall_arms(record))
+    ticks = axis_ticks(ms(maximum) or 0, count=4)
+    top = ticks[-1]
+    left, right = 200, 170
+    row_height = 58
+    width = 900
+    plot = width - left - right
+    height = len(cells) * row_height + 50
+    scale = lambda value: (ms(value) / top) * plot
+
+    out = svg_open(
+        width,
+        height,
+        f"{platform} default tree, older engine against newer, one cell per row",
+        "Each row is one interleaved cell. Grey is the older engine and blue the newer one.",
+    )
+    for tick in ticks:
+        x = left + (tick / top) * plot
+        out.append(f'<line class="grid" x1="{x:.1f}" y1="24" x2="{x:.1f}" y2="{height - 30}"/>')
+        out.append(
+            f'<text class="tick" x="{x:.1f}" y="{height - 14}" text-anchor="middle">{tick:,.0f}</text>'
+        )
+    out.append(
+        f'<text class="tick axis-name" x="{left}" y="14">milliseconds &mdash; lower is faster</text>'
+    )
+    for index, record in enumerate(cells):
+        control, candidate = _wall_arms(record)
+        y = 30 + index * row_height
+        subject = _subject_label(dataset, record.get("subject"))
+        out.append(
+            hover_row(
+                left,
+                y,
+                plot,
+                row_height - 10,
+                f"{record['id']}: {record['title']}\n"
+                f"Older: {record.get('control') or 'control'}, {fmt_ms(control)}\n"
+                f"Newer: {record.get('candidate') or 'candidate'}, {fmt_ms(candidate)}\n"
+                f"Paired change {fmt_pct(record.get('change_pct'))}, on {subject}.",
+            )
+        )
+        out.append(
+            f'<text class="row-label" x="{left - 14}" y="{y + 16}" text-anchor="end">'
+            f"{esc(record['id'])}</text>"
+        )
+        out.append(
+            f'<text class="row-sub" x="{left - 14}" y="{y + 31}" text-anchor="end">'
+            f"{esc(subject)}</text>"
+        )
+        out.append(
+            f'<rect class="bar-before" x="{left}" y="{y + 6}" '
+            f'width="{max(scale(control), 1.5):.1f}" height="14"/>'
+        )
+        out.append(
+            f'<rect class="bar-after" x="{left}" y="{y + 24}" '
+            f'width="{max(scale(candidate), 1.5):.1f}" height="14"/>'
+        )
+        out.append(
+            f'<text class="value-label" x="{width - 8}" y="{y + 26}" text-anchor="end">'
+            f'<tspan class="value-before">{fmt_ms(control)}</tspan>'
+            f'<tspan class="value-arrow"> &#8594; </tspan>{fmt_ms(candidate)}'
+            f'<tspan class="value-before"> {esc(fmt_pct(record.get("change_pct")))}</tspan>'
+            f"</text>"
+        )
+    out.append("</svg>")
+    keys = legend(
+        ("key-before", "the older engine, in the same cell"),
+        ("key-after", "the newer engine"),
+    )
+    listed = "".join(
+        f'<li><span class="mono">{esc(record["id"])}</span> {esc(record["title"])}</li>'
+        for record in cells
+    )
+    return (
+        f'<figure class="fig">{"".join(out)}{keys}'
+        f"<figcaption>Every {esc(platform)} cell that measured one engine against a later "
+        f"one end to end on the default tree. The percentage is the paired change. Rows "
+        f"are separate sessions on a virtualized host whose absolute speed drifted between "
+        f"them, so each row compares only its own two bars."
+        f'<ol class="checkpoints">{listed}</ol></figcaption></figure>'
+    )
+
+
+# ---------------------------------------------------------------- figure: phases
+
+#: The phases the loop has run in, by experiment number, each with the question it
+#: asked. The loop history report tells each one in full. A record in no phase is
+#: counted in a trailing row rather than dropped, so a new experiment can never vanish
+#: from the page before someone gives it a phase.
+PHASES = (
+    (
+        "Building the loop",
+        frozenset(range(0, 66)),
+        "Where does a cold scan and a warm open spend its time? The accept rule, paired "
+        "measurement, the record, and the counters were built here.",
+    ),
+    (
+        "A denominator and a strategy",
+        frozenset([*range(66, 71), 104]),
+        "How much is left? The syscall floor gave every tier a denominator, and the "
+        "default command was measured for the first time.",
+    ),
+    (
+        "Closing a rewrite's regression",
+        frozenset(range(71, 104)),
+        "What closes the streaming engine's gap without changing an answer? Then the H86 "
+        "structural composite, judged as one experiment.",
+    ),
+    (
+        "Unattended rounds",
+        frozenset(range(105, 156)),
+        "On the 0.1.0 engine, what is left in the default command and a warm content "
+        "open? Run overnight by an agent, first on macOS, then on Linux.",
+    ),
+    (
+        "Release-driven questions",
+        frozenset([*range(156, 175), *range(187, 192)]),
+        "Questions 0.2.0 raised, ending in the finding that .gitignore classification "
+        "was most of the Linux default command.",
+    ),
+    (
+        "Linux against its peers",
+        frozenset([*range(175, 187), *range(192, 203)]),
+        "Can the default command beat pdu on real trees with .gitignore on and no answer "
+        "changed? One unattended night, the pdu track, and the 0.3.0 release cell.",
+    ),
+)
+
+
+def id_ranges(numbers: Sequence[int], recorded: Optional[Sequence[int]] = None) -> str:
+    """Experiment numbers as id ranges: exp-066–070, exp-104.
+
+    A gap holding only unused ids (numbers no record carries) does not split a range, so
+    exp-113's absence leaves exp-105–155 whole. Without `recorded`, every gap splits.
+    """
+    spans: List[List[int]] = []
+    for number in sorted(numbers):
+        gap = range(spans[-1][1] + 1, number) if spans else range(0)
+        unused = recorded is not None and not any(item in recorded for item in gap)
+        if spans and (number == spans[-1][1] + 1 or unused):
+            spans[-1][1] = number
+        else:
+            spans.append([number, number])
+    return ", ".join(
+        f"exp-{low:03d}" if low == high else f"exp-{low:03d}\u2013{high:03d}"
+        for low, high in spans
+    )
+
+
+def phase_rows(dataset: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Each phase's verdict counts, id span, and platforms, read from the records."""
+    groups: List[tuple] = [(name, numbers, question) for name, numbers, question in PHASES]
+    assigned = set().union(*(numbers for _, numbers, _ in PHASES))
+    later = frozenset(
+        record["number"] for record in dataset["experiments"] if record["number"] not in assigned
+    )
+    if later:
+        groups.append(("Not yet assigned a phase", later, "Recorded after the phases above."))
+    rows = []
+    for name, numbers, question in groups:
+        records = [record for record in dataset["experiments"] if record["number"] in numbers]
+        if not records:
+            continue
+        counts = {
+            "accepted": sum(record["decision"] == "accepted" for record in records),
+            "rejected": sum(record["decision"] == "rejected" for record in records),
+        }
+        counts["other"] = len(records) - counts["accepted"] - counts["rejected"]
+        platforms = sorted({record["platform"] for record in records})
+        rows.append(
+            {
+                "name": name,
+                "question": question,
+                "total": len(records),
+                "counts": counts,
+                "platforms": platforms,
+                "ids": id_ranges(
+                    [record["number"] for record in records],
+                    [record["number"] for record in dataset["experiments"]],
+                ),
+            }
+        )
+    return rows
+
+
+def figure_phases(dataset: Mapping[str, Any]) -> str:
+    """One stacked bar per phase: accepted, rejected, and every other verdict."""
+    rows = phase_rows(dataset)
+    if not rows:
+        return ""
+    biggest = max(row["total"] for row in rows)
+    left, right = 250, 110
+    row_height = 46
+    width = 900
+    plot = width - left - right
+    height = len(rows) * row_height + 20
+    scale = lambda count: (count / biggest) * plot
+
+    out = svg_open(
+        width,
+        height,
+        "Experiments per phase of the loop, by verdict",
+        "One row per phase. Green is accepted, red rejected, grey every other verdict.",
+    )
+    for index, row in enumerate(rows):
+        y = 10 + index * row_height
+        span = row["ids"]
+        counts = row["counts"]
+        out.append(
+            hover_row(
+                left,
+                y,
+                plot,
+                row_height - 8,
+                f"{row['name']}: {span}\n"
+                f"{row['question']}\n"
+                f"{counts['accepted']} accepted, {counts['rejected']} rejected, "
+                f"{counts['other']} other, on {' and '.join(row['platforms'])}.",
+            )
+        )
+        out.append(
+            f'<text class="row-label" x="{left - 14}" y="{y + 14}" text-anchor="end">'
+            f"{index + 1}. {esc(row['name'])}</text>"
+        )
+        out.append(
+            f'<text class="row-sub" x="{left - 14}" y="{y + 29}" text-anchor="end">'
+            f"{esc(span)}, {esc(' and '.join(row['platforms']))}</text>"
+        )
+        x = left
+        for key, css in (("accepted", "dot-good"), ("rejected", "dot-bad"), ("other", "dot-flat")):
+            size = scale(counts[key])
+            if size > 0:
+                out.append(
+                    f'<rect class="{css}" x="{x:.1f}" y="{y + 6}" width="{size:.1f}" height="20"/>'
+                )
+            x += size
+        out.append(
+            f'<text class="value-label" x="{x + 8:.1f}" y="{y + 20}">'
+            f"{counts['accepted']} / {counts['rejected']} / {counts['other']}</text>"
+        )
+    out.append("</svg>")
+    keys = legend(
+        ("key-good", "accepted"),
+        ("key-bad", "rejected"),
+        ("key-flat", "baseline, superseded, in progress, or blocked"),
+    )
+    return (
+        f'<figure class="fig">{"".join(out)}{keys}'
+        "<figcaption>Bar length is the number of experiments in the phase. Hover a row for "
+        "the question it asked.</figcaption></figure>"
+    )
+
+
 # ---------------------------------------------------------------- figure: effects
 
 
@@ -1039,6 +1346,7 @@ def render(dataset: Mapping[str, Any]) -> str:
     body = "".join(
         [
             _header(dataset),
+            _section_phases(dataset),
             _section_absolute(dataset),
             _section_relative(dataset),
             _section_scale(dataset),
@@ -1377,10 +1685,11 @@ was claimed as one. What they bought was the ability to see inside the engine at
 the measurement could not detect, which is a different thing to want and was recorded as
 one.</p>
 <h3>What is not measured here</h3>
-<p>Every number comes from one Apple M1 Pro or a handful of virtualized Linux hosts. The
-page cache was warm throughout because dropping it needs root, so nothing here describes a
-genuinely cold disk. Tuning constants were fitted on the subjects shown and are inherited,
-not proven, elsewhere.</p>
+<p>Every number comes from one Apple M1 Pro or a handful of virtualized 4-vCPU Linux
+guests; nothing is from bare-metal Linux, and Windows has never been benchmarked. The page
+cache was warm throughout because dropping it needs root, so nothing here describes a
+genuinely cold disk. A change measured on one platform is inherited, not proven, on the
+other, and tuning constants were fitted on the subjects shown.</p>
 """
 
 
@@ -1539,15 +1848,30 @@ def _headline_figure(series: Optional[Mapping[str, Any]], job_id: str, label: st
     )
 
 
+def _standing_figure(dataset: Mapping[str, Any]) -> str:
+    """The release standing's two arms, or nothing if that record is absent."""
+    record = _record(dataset, STANDING_EXPERIMENT)
+    arms = _wall_arms(record) if record else None
+    if not arms:
+        return ""
+    control, candidate = arms
+    return (
+        f'<div><span class="n">{fmt_ms(control)} <span class="muted">&rarr;</span> '
+        f'<span class="good">{fmt_ms(candidate)}</span></span>'
+        f'<span class="k">{esc(STANDING_LABEL)}</span></div>'
+    )
+
+
 def _header(dataset: Mapping[str, Any]) -> str:
     totals = dataset["totals"]
+    decisions = totals["decisions"]
+    platforms = totals.get("platforms") or {}
     series = _flagship(dataset)
-    headlines = "".join(
-        _headline_figure(series, job_id, label)
-        for job_id, label in (
-            ("cold-scan-index", "cold scan and index"),
-            ("warm-revalidate", "warm revalidate"),
-        )
+    headlines = _standing_figure(dataset) + _headline_figure(
+        series, "cold-scan-index", "macOS cold scan, campaign 1"
+    )
+    platform_counts = " and ".join(
+        f"{count} on {esc(name)}" for name, count in sorted(platforms.items())
     )
     return f"""
 <h1>Making fdu faster, one measured experiment at a time</h1>
@@ -1555,43 +1879,43 @@ def _header(dataset: Mapping[str, Any]) -> str:
 roll-up engine. It walks a tree once and answers questions about it &mdash; folder sizes,
 file types, languages, prose metrics &mdash; from one reusable index, in text or JSON.
 It is written in Rust, with no C in its build.</p>
-<p>The current installed-CLI comparisons against other tools are recorded separately,
+<p class="lede">Its speed was earned by an iterative research loop rather than a sequence
+of hunches. Every experiment &mdash; including the {decisions.get('rejected', 0)} that
+failed &mdash; was recorded as a validated soft-schema artifact, and this page is generated
+from those {totals['experiments']} artifacts ({platform_counts}) rather than written
+alongside them.</p>
+<p>It shows two things: <strong>how the loop works</strong>, a method that transfers to any
+system worth optimising, and <strong>what it found</strong> in this one &mdash; which ideas
+paid, which did not, and how confidently either can be said. fdu's standing against other
+tools is in the installed-command comparisons
 <a href="../report-2026-09-26-fdu-live-tool-comparison.md">on macOS</a> and
-<a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>, each with its
-workload, host, and peer-tool qualifications. This page describes the research loop and
-its incremental experiments; it is not a current product leaderboard.</p>
-<p class="lede">This page is about how it got there. That work was done as an iterative
-research loop rather than
-a sequence of hunches. Every experiment &mdash; including the
-{totals['decisions'].get('rejected', 0)} that failed &mdash; was recorded as a validated
-soft-schema artifact, and this page is generated from those {totals['experiments']}
-artifacts rather than written alongside them.</p>
-<p>It is here to show two things: <strong>how the loop works</strong>, which is a method
-that transfers to any system worth optimising, and <strong>what it found</strong> in this
-particular one &mdash; which ideas paid, which did not, and how confidently either can be
-said.</p>
+<a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>; how the loop
+was run, phase by phase, is in
+<a href="../report-2026-08-14-performance-campaign-status.md">the loop history</a>.</p>
 <div class="headline">
   {headlines}
-  <div><span class="n tnum">{totals['decisions'].get('accepted', 0)}</span>
+  <div><span class="n tnum">{totals['experiments']}</span>
+    <span class="k">experiments</span></div>
+  <div><span class="n tnum">{decisions.get('accepted', 0)}</span>
     <span class="k">accepted verdicts</span></div>
-  <div><span class="n tnum">{totals['decisions'].get('rejected', 0)}</span>
+  <div><span class="n tnum">{decisions.get('rejected', 0)}</span>
     <span class="k">rejected</span></div>
-  <div><span class="n tnum">{totals['accepted_lines_changed']:,}</span>
-    <span class="k">lines in accepted verdicts</span></div>
 </div>
 <h2 id="loop">The loop</h2>
-<p>One experiment is one question with one answer. It names a hypothesis, builds exactly
-one change, and measures that change against the code it came from &mdash; both binaries
-interleaved in the same run, twelve paired trials, on a tree pinned by content digest. A
-bootstrap interval decides whether the result is distinguishable from the host having a
-bad afternoon, and a written rule decides whether it is worth carrying: better than 3%,
-with the interval clear of zero.</p>
+<p>One experiment is one question with one answer. It names a hypothesis and a predicted
+effect, builds exactly one change, checks that the change leaves every answer identical,
+and measures it against the code it came from &mdash; both binaries interleaved in the
+same run on a tree pinned by content digest, at least twelve paired trials and twenty when
+the predicted effect is small. A sample taken while the host was busy is invalidated, and
+a cell with any invalid sample is inconclusive. A bootstrap interval decides whether the
+result is distinguishable from the host having a bad afternoon, and a written rule decides
+whether it is worth carrying: better than 3%, with the interval clear of zero.</p>
 <p>What makes the record usable afterwards is that the answer is stored rather than
 summarised. Each artifact is Markdown with validated YAML frontmatter: the frontmatter
 holds the measured numbers, the subject, the machine, the cost in lines and dependencies,
 and the verdict; the body holds the reasoning a schema cannot check. A contract validates
-every one of them, so the ledger and this page can be regenerated from the evidence and
-neither can quietly drift from it.</p>
+every one of them, and each against its own measurements, so the ledger and this page can
+be regenerated from the evidence and neither can quietly drift from it.</p>
 <p class="note">The soft schema is what makes the difference between a campaign and a
 folder of notes. Because the numbers are typed and validated, a rejected experiment costs
 nothing to keep &mdash; and the rejections turned out to be the most reusable part of the
@@ -1599,13 +1923,38 @@ record.</p>
 """
 
 
+def _section_phases(dataset: Mapping[str, Any]) -> str:
+    return f"""
+<h2 id="phases">Phases</h2>
+<h3>How the loop has been run</h3>
+<p>The experiments fall into phases, each with its own question. Most phases also changed
+the method, usually because the method had just produced a wrong answer: a harness that
+printed regressions as silence, a generated tree that inverted a ranking, a same-binary
+cell that passed the accept rule. <a href="../report-2026-08-14-performance-campaign-status.md">The
+loop history</a> tells each phase in full.</p>
+{figure_phases(dataset)}
+"""
+
+
 def _section_absolute(dataset: Mapping[str, Any]) -> str:
+    end_to_end = figure_end_to_end(dataset, "Linux")
+    linux = ""
+    if end_to_end:
+        linux = f"""
+<h3>Linux, end to end</h3>
+<p>The later Linux work was measured the same way at its milestones: one engine against a
+later one in a single interleaved cell. The release cell is the comparison to quote for
+0.3.0; the development cells before it each ran in their own session.</p>
+{end_to_end}
+"""
     return f"""
 <h2 id="absolute">Absolute</h2>
 <h3>Wall time, in milliseconds</h3>
 <p>The campaign's own summaries are all percentages, and a percentage cannot say whether
 a scan takes half a second or half a minute. These are the measured medians.</p>
+<h3>macOS, campaign 1</h3>
 {figure_absolute(dataset)}
+{linux}
 """
 
 
