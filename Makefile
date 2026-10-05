@@ -50,7 +50,7 @@ TARGET_OWNER_TARGETS := build release rust-test reference-model opened-root-gold
 
 $(TARGET_OWNER_TARGETS): target-owner
 
-.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-stability release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
+.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability cli-animate-check cli-animate-e2e portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-stability release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -71,6 +71,8 @@ help:
 	@echo "make test-performance  Test the performance harness and every fdu probe job"
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
+	@echo "make cli-animate-check  Typecheck and unit-test the terminal-recording tool"
+	@echo "make cli-animate-e2e    End-to-end cli-animate test (needs asciinema, Chromium, ffmpeg)"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
 	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
 	@echo "make admission-sites  Check every filesystem producer routes through admission"
@@ -196,7 +198,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version wheel-python supply-chain rust-module-names admission-sites atomic-writes golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test test-terminal
+check: uv-version wheel-python supply-chain rust-module-names admission-sites atomic-writes golden-invocations golden-observability cli-animate-check opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test test-terminal
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -287,6 +289,15 @@ golden-invocations:
 golden-observability:
 	$(NODE) --test scripts/check-golden-observability.test.mjs
 	$(NODE) scripts/check-golden-observability.mjs
+
+# cli-animate (packages/cli-animate), the terminal-recording tool: typecheck and unit tests,
+# which need no external programs. Its end-to-end test drives asciinema, Chromium, and
+# ffmpeg, so it is opt-in: `make cli-animate-e2e`.
+cli-animate-check: $(NODE_INSTALL_STAMP)
+	$(NPM) run test --workspace cli-animate
+
+cli-animate-e2e: $(NODE_INSTALL_STAMP)
+	$(NPM) run e2e --workspace cli-animate
 
 # Committed test data must not name the machine that recorded it. `tryscript run --update`
 # writes what it saw, so it expands named patterns into literals -- which passes forever

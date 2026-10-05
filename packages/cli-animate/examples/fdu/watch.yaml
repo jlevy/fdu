@@ -1,0 +1,19 @@
+# Live: fdu --watch reports changes while another process writes them. Needs this
+# repository's release build. Works in a scratch directory under /tmp.
+title: "fdu --watch: live changes"
+terminal: { cols: 104, rows: 30 }
+typing: { seed: 3 }
+path: [../../../../target/release]
+cwd: /tmp
+setup:
+  - rm -rf /tmp/cli-animate-watch && mkdir -p /tmp/cli-animate-watch/logs /tmp/cli-animate-watch/builds /tmp/cli-animate-watch/cache
+  - head -c 50000000 /dev/urandom > /tmp/cli-animate-watch/cache/blob.bin
+steps:
+  - label: watch
+    run: fdu /tmp/cli-animate-watch --watch --interval 500ms
+    stop_after: 9
+    hold: 1.5
+    during:
+      - { at: 2.0, run: "head -c 120000000 /dev/urandom > /tmp/cli-animate-watch/builds/app.tar" }
+      - { at: 4.0, run: "for i in $(seq 1 40); do head -c 400000 /dev/urandom > /tmp/cli-animate-watch/logs/run-$i.log; done" }
+      - { at: 6.5, run: "rm /tmp/cli-animate-watch/cache/blob.bin" }
