@@ -7,7 +7,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { parseCast } from './cast.js';
 import { CliError } from './errors.js';
 import { findProgram } from './tools.js';
@@ -52,8 +52,10 @@ export function parseChangedFrames(metadata: string): Set<number> {
 }
 
 export function verify(castPath: string, videoPath: string, fps = 60): VerifyResult {
-  const ffmpeg = findProgram('ffmpeg');
+  // Inputs first, so a wrong path is reported as one whatever the host has installed.
   const cast = parseCast(readFileSync(castPath, 'utf8'));
+  if (!existsSync(videoPath)) throw new CliError(`video not found: ${videoPath}`);
+  const ffmpeg = findProgram('ffmpeg');
   const expected = expectedChangeFrames(
     cast.events.filter((e) => e.code === 'o').map((e) => e.time),
     fps,

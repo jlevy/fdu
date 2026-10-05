@@ -10,7 +10,9 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { CLI_MAIN, PACKAGE_ROOT, SKILL_FILE } from '../src/paths.js';
 
-const run = (...args: string[]) => spawnSync(process.execPath, [CLI_MAIN, ...args], { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } });
+// An empty PATH: these contracts must hold on a host without asciinema, ffmpeg, or Chromium.
+const run = (...args: string[]) =>
+  spawnSync(process.execPath, [CLI_MAIN, ...args], { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1', PATH: '' } });
 
 describe('command line', () => {
   it('groups the commands in help and hides the driver', () => {
@@ -32,7 +34,7 @@ describe('command line', () => {
     assert.match(bad.stderr, /expected a positive integer/);
   });
 
-  it('puts errors on stderr, as JSON with --json, and keeps stdout empty', () => {
+  it('puts errors on stderr, as JSON with --json, and keeps stdout empty, with no external programs', () => {
     const { status, stdout, stderr } = run('--json', 'verify', 'missing.cast', 'missing.mp4');
     assert.equal(status, 2);
     assert.equal(stdout, '');
