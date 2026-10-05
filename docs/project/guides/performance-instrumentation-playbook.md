@@ -10,7 +10,7 @@ because the failure is the part that transfers.
 
 The companion documents are
 [the campaign status report](../reports/report-2026-08-14-performance-campaign-status.md),
-the zero-context orientation to what has been achieved and what remains;
+the zero-context history of how the loop has been run, what it found, and what remains;
 [the performance loop](performance-loop.md), which is fdu’s specific protocol and
 hypothesis registry; and
 [the design principles](../architecture/fdu-design-principles.md), which decide what a

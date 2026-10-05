@@ -50,7 +50,7 @@ live change feed, and the Rust and Python libraries.
 
 ## Performance Evidence
 
-- [Current performance status](project/reports/report-2026-08-14-performance-campaign-status.md)
+- [Performance loop history](project/reports/report-2026-08-14-performance-campaign-status.md)
 - [Performance evidence report](project/reports/report-2026-08-20-fdu-performance-evidence.md)
 - [Experiment ledger](project/reports/report-2026-08-10-fdu-performance-experiments.md)
 - [Performance loop](project/guides/performance-loop.md)
