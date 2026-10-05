@@ -5,7 +5,7 @@ title: "cli-animate: terminal recordings for the web and video"
 kind: epic
 status: open
 priority: 2
-version: 23
+version: 24
 spec_path: docs/project/specs/active/plan-2026-10-04-cli-animate.md
 labels: []
 dependencies: []
@@ -30,7 +30,8 @@ child_order_hints:
   - is-01m44m68m86skn3km51ev1jvwb
   - is-01m44py3xgfe4rbzp85g0cr06w
   - is-01m44qfrb18bh4qs1qp34ywzmj
+  - is-01m44rgfm868fk5wrtc7212p38
 created_at: 2026-10-04T23:05:18.007Z
-updated_at: 2026-10-05T00:30:13.857Z
+updated_at: 2026-10-05T00:48:06.280Z
 ---
 Follow-up to fdu-1m0b (PR jlevy/fdu#171): render demos in Planetaire Mono fetched at build time, crop video to the terminal window, and type with a researched fast-human keystroke model.
