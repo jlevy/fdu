@@ -51,6 +51,10 @@ from benchmarks.realtree.summary import (
     load_experiments,
 )
 
+#: Where history cells live: one summary per cell, each timing a series of fdu releases
+#: interleaved in one session on one fixed tree. The raw harness run sits beside it.
+HISTORY_DIR = EXPERIMENTS_DIR.parent / "reports" / "performance-evidence" / "history"
+
 #: Emitted alongside the data so a consumer can tell which projection it holds.
 DATASET_VERSION = "fdu.performance.timeline/1"
 
@@ -465,10 +469,63 @@ def _totals(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def load_history(directory: Path) -> List[Dict[str, Any]]:
+    """Project each history cell's summary to what the page draws.
+
+    A history cell times every milestone build in one interleaved session on one tree, so
+    its milestones compare with each other directly, which no chain of experiments can.
+    """
+    cells = []
+    for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        subject = summary.get("subject") or {}
+        host = summary.get("host") or {}
+        milestones = []
+        for item in summary.get("milestones") or []:
+            paired = item.get("vs_v0_3_0_paired_harness") or {}
+            milestones.append(
+                {
+                    "label": item["label"],
+                    "role": item.get("role") or "",
+                    "includes": item.get("includes") or "",
+                    "after_experiment": item.get("after_experiment") or "",
+                    "commit": (item.get("commit") or "")[:8],
+                    "date": (item.get("commit_date") or "")[:10],
+                    "version": item.get("version") or "",
+                    "wall_ms": (item.get("wall_ms") or {}).get("median"),
+                    "peak_rss_mib": (item.get("peak_rss_mib") or {}).get("median"),
+                    "user_s": (item.get("cpu_s_median") or {}).get("user"),
+                    "system_s": (item.get("cpu_s_median") or {}).get("system"),
+                    "vs_latest_pct": paired.get("median_change_pct"),
+                    "vs_latest_ci95_pct": paired.get("ci95_change_pct"),
+                }
+            )
+        headline = summary.get("headline") or {}
+        cells.append(
+            {
+                "id": path.stem,
+                "subject": subject.get("label") or path.stem,
+                "title": subject.get("title") or subject.get("label") or path.stem,
+                "entries": (subject.get("counts") or {}).get("total"),
+                "storage": subject.get("storage") or "",
+                "platform": host.get("system") or "",
+                "cpu": host.get("cpu_model") or "",
+                "regime": (summary.get("regime") or {}).get("host_regime") or "",
+                "trials": (summary.get("rounds") or {}).get("trials"),
+                "invalid_samples": summary.get("invalid_samples"),
+                "speedup_x": headline.get("paired_speedup_x"),
+                "speedup_x_ci95": headline.get("paired_speedup_x_ci95"),
+                "milestones": milestones,
+            }
+        )
+    return cells
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="benchmarks.realtree.timeline", description=__doc__)
     parser.add_argument("--experiments", type=Path, default=EXPERIMENTS_DIR)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--history", type=Path, default=HISTORY_DIR)
     parser.add_argument(
         "--prepared",
         default="",
@@ -490,6 +547,7 @@ def main(argv: Sequence[str]) -> int:
         print("no experiment artifacts found", file=sys.stderr)
         return 1
     dataset = project(experiments)
+    dataset["history"] = load_history(arguments.history)
     # Carried in the dataset rather than stamped at render time, so the drift check
     # compares evidence against evidence and does not fail every midnight.
     dataset["prepared"] = arguments.prepared or _preserved_prepared(arguments.out)

@@ -1335,12 +1335,16 @@ Grouped by topic; the order to run them in is
 
 The page shows every number; this report says what they mean.
 
-**Every iteration.** All experiments in phase order, each as its paired change on its
-primary metric: green where a change was kept and at least 3% better, red where it was
-tried and not kept, grey for measurements, checkpoints and other verdicts.
-The phases are those of
-[the loop history](report-2026-08-14-performance-campaign-status.md#4-how-the-loop-has-been-run);
-a record in none of them is drawn after the last phase rather than dropped.
+**Over time.** Two stacked panels on one axis of experiments in the order they ran.
+The top panel is total runtime on one fixed benchmark, measured for each milestone build
+side by side in one session (`history/`, a history cell), so its steps are the measured
+accumulated improvement: 152.8 s for the pre-work binary and 30.4 s for 0.3.0 on the
+generated 1M-entry tree, on this Mac’s external SSD, where the kernel and USB path set
+the wall time after campaign 1. The bottom panel is every experiment’s paired change on
+its own primary metric (green kept and at least 3% better, red tried and not kept, grey
+measurements) with the running count of kept changes.
+Its effects are not multiplied into a runtime: each was measured on its own job and
+tree, and compounding the 55 kept speed-ups would claim over 20,000×.
 
 **Absolute.** Wall time at five cumulative checkpoints on one 60k-entry macOS tree, each
 re-measuring the original binary against the code of the day in one interleaved run:

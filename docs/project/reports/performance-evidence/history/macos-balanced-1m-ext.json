@@ -1,0 +1,763 @@
+{
+ "schema": "fdu-history-summary-v1",
+ "run_artifact": "run-macos-balanced-1m-ext-fdu-history.json(.gz)",
+ "harness": {
+  "module": "benchmarks.realtree.compare_tools (unmodified, via drive_history.py registering two argv contracts)",
+  "harness_revision": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",
+  "harness_identical_to_origin_main": "116b266079c80a2ce84b065c503ded3d125e0de7",
+  "artifact_schema": "fdu-tool-comparison-v3",
+  "schedule": "competitor-adjacent-fdu-anchor-v1",
+  "stopping_rule": "fixed-N-no-optional-stopping-v1",
+  "confidence_interval": "paired-bootstrap-median-95-v1"
+ },
+ "subject": {
+  "label": "macos-balanced-1m-ext",
+  "recipe": "balanced, seed fdu-balanced-v1, 1,000,000-entry scale point",
+  "generator_command": "PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate create --recipe balanced --entries 1000000 --work-dir <scratch>",
+  "generator_revision": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",
+  "generator_blobs": {
+   "explorations/benchmarks/corpus.py": "1ce37cfc177a3b6d8fde159ec144f74491ccc877",
+   "explorations/benchmarks/generate.py": "3e0c50a2ba6f9435d6a6358634a47af3dfa5b521",
+   "explorations/benchmarks/corpora.json": "9c1dc910f7f5d3d9c358cc9d372c7b210ab54514"
+  },
+  "generator_semantic_digest": "4bbd97c0d3d4e2add1fb5b8cbecdd8c28064da8507b3f53e94392c975876102a",
+  "generator_manifest_hash": "acdf77468c40344ca3d85014b671bcf01eb4ebeab5e55968331f494e4f64c0dc",
+  "fingerprint_schema": "fdu-reference-tree-v3",
+  "root_id": "560cac8919a90c7063ea77f52f127afda8e06f9dab8af23890cc6e9d3791a1d8",
+  "engine_digest": "cb56897be1b5dae79bc3634838ae80cfbc32a952fbe452aa431ace3a68d0419b",
+  "engine_digest_after": "cb56897be1b5dae79bc3634838ae80cfbc32a952fbe452aa431ace3a68d0419b",
+  "counts": {
+   "directories": 125001,
+   "files": 875000,
+   "other": 0,
+   "symlinks": 0,
+   "total": 1000001
+  },
+  "sizes": {
+   "allocated_bytes": 2986741760,
+   "apparent_bytes": 793658448,
+   "directory_allocated_bytes": 0
+  },
+  "max_depth": 7,
+  "newest_file_mtime_ns": 1700019998000000000,
+  "hardlinks": {
+   "duplicate_allocated_bytes": 0,
+   "duplicate_apparent_bytes": 0,
+   "duplicate_file_entries": 0,
+   "groups": 0,
+   "linked_file_entries": 0
+  },
+  "baseline_drift": [],
+  "mutated_during_run": [],
+  "storage": "external USB APFS SSD, Spotlight-excluded directory",
+  "title": "the generated 1M-entry tree"
+ },
+ "host": {
+  "arch": "arm64",
+  "cpu_count": 10,
+  "cpu_model": "Apple M1 Pro",
+  "efficiency_cores": 2,
+  "filesystem": "apfs",
+  "max_vnodes": 263168,
+  "memory_bytes": 34359738368,
+  "performance_cores": 8,
+  "python": "3.14.7",
+  "release": "25.5.0",
+  "system": "Darwin",
+  "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "virtualization": "bare-metal"
+ },
+ "regime": {
+  "campaign_stage": "exploratory",
+  "host_regime": "uncontrolled",
+  "os_cache": "warm-steady",
+  "quiet_gate_cpu_busy_pct": 25.0,
+  "initial": {
+   "controlled_load_alive": null,
+   "cpu_busy_pct": 37.7,
+   "cpu_busy_unavailable_reason": null,
+   "load_15m": 8.55,
+   "load_1m": 8.147,
+   "load_1m_per_cpu": 0.8147,
+   "load_5m": 9.61,
+   "logical_cpu_count": 10,
+   "power_source": "AC",
+   "system": "Darwin",
+   "thermal_pressure": "normal",
+   "unavailable_reason": null
+  },
+  "final": {
+   "controlled_load_alive": null,
+   "cpu_busy_pct": 24.78,
+   "cpu_busy_unavailable_reason": null,
+   "load_15m": 10.206,
+   "load_1m": 11.516,
+   "load_1m_per_cpu": 1.1516,
+   "load_5m": 10.365,
+   "logical_cpu_count": 10,
+   "power_source": "AC",
+   "system": "Darwin",
+   "thermal_pressure": "normal",
+   "unavailable_reason": null
+  },
+  "cpu_busy_pct_at_sample_boundaries": {
+   "n": 420,
+   "min": 22.06,
+   "median": 38.599999999999994,
+   "max": 96.0,
+   "share_above_quiet_gate": 0.96
+  },
+  "load_1m_at_sample_boundaries": {
+   "min": 5.983,
+   "median": 10.803,
+   "max": 19.398
+  },
+  "thermal_pressure_seen": [
+   "normal"
+  ],
+  "power_source_seen": [
+   "AC"
+  ]
+ },
+ "rounds": {
+  "trials": 12,
+  "warmups": 3,
+  "processes": 210,
+  "started_utc": "2026-10-05T06:07:17Z",
+  "duration_seconds": 9528.808
+ },
+ "invalid_samples": 0,
+ "semantic_mismatches": 0,
+ "milestones": [
+  {
+   "label": "prework",
+   "role": "pre-work binary, campaign 1 baseline (exp-032 control)",
+   "ref": "b565882b",
+   "commit": "b565882bd9f2a877934bd96415d3a8eab6504f92",
+   "author_date": "2026-08-10T15:22:26-07:00",
+   "commit_date": "2026-08-10T15:22:26-07:00",
+   "version": "fdu 0.0.1",
+   "binary_sha256": "338c77153d74452a32c21e4ac6541c670f3d6888b7d32a9c6c08135ca70059bc",
+   "binary_size_bytes": 833088,
+   "contract": "fdu-history-no-cache",
+   "command": [
+    "{binary}",
+    "--no-cache",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 12,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples",
+    "median": 152772.4,
+    "min": 144428.0,
+    "max": 178526.3,
+    "iqr_derived": [
+     148648.1,
+     169241.3
+    ],
+    "median_bootstrap95_derived": [
+     148535.2,
+     169417.3
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 450.3,
+    "max": 452.1
+   },
+   "cpu_s_median": {
+    "user": 2.77,
+    "system": 37.44
+   },
+   "vs_v0_3_0_paired_harness": {
+    "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0, median of adjacent pairs; positive = this binary slower",
+    "pairs": 12,
+    "median_change_pct": 457.765,
+    "ci95_change_pct": [
+     400.507,
+     472.123
+    ],
+    "direction": "regressed",
+    "anchor_median_ms_in_these_pairs": 28972.7,
+    "speed_ratio_this_over_v0_3_0": 5.578
+   },
+   "vs_prework_derived": null,
+   "includes": "the starting point",
+   "after_experiment": "exp-000"
+  },
+  {
+   "label": "exp032",
+   "role": "campaign 1 checkpoint: exp-032 final Rust-1.85-compatible candidate",
+   "ref": "c9c91d95",
+   "commit": "c9c91d9518ef1324531ecd79a3a43b9e96e95eef",
+   "author_date": "2026-08-12T06:32:42-07:00",
+   "commit_date": "2026-08-12T06:32:42-07:00",
+   "version": "fdu 0.0.1",
+   "binary_sha256": "ebac215b326a06d0c68ab8555d4b0af0649b664c39abc8ab268671286ec0330d",
+   "binary_size_bytes": 983056,
+   "contract": "fdu-history-no-cache",
+   "command": [
+    "{binary}",
+    "--no-cache",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 12,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples",
+    "median": 29761.9,
+    "min": 26519.5,
+    "max": 33824.4,
+    "iqr_derived": [
+     27436.8,
+     31412.9
+    ],
+    "median_bootstrap95_derived": [
+     27310.3,
+     31550.9
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 421.5,
+    "max": 422.8
+   },
+   "cpu_s_median": {
+    "user": 1.8,
+    "system": 42.59
+   },
+   "vs_v0_3_0_paired_harness": {
+    "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0, median of adjacent pairs; positive = this binary slower",
+    "pairs": 12,
+    "median_change_pct": 1.556,
+    "ci95_change_pct": [
+     -4.835,
+     2.666
+    ],
+    "direction": "unclear",
+    "anchor_median_ms_in_these_pairs": 29610.4,
+    "speed_ratio_this_over_v0_3_0": 1.016
+   },
+   "vs_prework_derived": {
+    "round_matched": {
+     "method": "same-round, not adjacent: this binary's sample and the pre-work sample of the same schedule round",
+     "pairs": 12,
+     "median_change_pct": -81.26,
+     "ci95_change_pct": [
+      -82.08,
+      -80.32
+     ],
+     "median_speedup_x": 5.336
+    },
+    "anchor_normalized": {
+     "method": "per round, (this / its adjacent v0.3.0) / (pre-work / its adjacent v0.3.0) - 1",
+     "pairs": 12,
+     "median_change_pct": -82.04,
+     "ci95_change_pct": [
+      -82.56,
+      -80.87
+     ]
+    }
+   },
+   "includes": "campaign 1: parallel walk, bulk metadata, parallel reconciliation",
+   "after_experiment": "exp-032"
+  },
+  {
+   "label": "v0.1.0",
+   "role": "release v0.1.0",
+   "ref": "v0.1.0",
+   "commit": "7cf7f1b4b39930ebcf54df7ebd2645d995e4e458",
+   "author_date": "2026-09-25T16:58:16-07:00",
+   "commit_date": "2026-09-25T16:58:16-07:00",
+   "version": "fdu 0.1.0",
+   "binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
+   "binary_size_bytes": 3780080,
+   "contract": "fdu-history-cache-off",
+   "command": [
+    "{binary}",
+    "--cache",
+    "off",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 12,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples",
+    "median": 31150.2,
+    "min": 26952.6,
+    "max": 36115.7,
+    "iqr_derived": [
+     29344.8,
+     33588.4
+    ],
+    "median_bootstrap95_derived": [
+     28936.4,
+     33779.4
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 284.9,
+    "max": 285.7
+   },
+   "cpu_s_median": {
+    "user": 1.44,
+    "system": 43.33
+   },
+   "vs_v0_3_0_paired_harness": {
+    "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0, median of adjacent pairs; positive = this binary slower",
+    "pairs": 12,
+    "median_change_pct": 0.664,
+    "ci95_change_pct": [
+     -0.806,
+     3.172
+    ],
+    "direction": "unclear",
+    "anchor_median_ms_in_these_pairs": 30558.3,
+    "speed_ratio_this_over_v0_3_0": 1.007
+   },
+   "vs_prework_derived": {
+    "round_matched": {
+     "method": "same-round, not adjacent: this binary's sample and the pre-work sample of the same schedule round",
+     "pairs": 12,
+     "median_change_pct": -80.46,
+     "ci95_change_pct": [
+      -81.62,
+      -78.77
+     ],
+     "median_speedup_x": 5.119
+    },
+    "anchor_normalized": {
+     "method": "per round, (this / its adjacent v0.3.0) / (pre-work / its adjacent v0.3.0) - 1",
+     "pairs": 12,
+     "median_change_pct": -81.91,
+     "ci95_change_pct": [
+      -82.65,
+      -79.82
+     ]
+    }
+   },
+   "includes": "streaming engine, the H86 consumer rewrite, content cache",
+   "after_experiment": "exp-157"
+  },
+  {
+   "label": "v0.2.0",
+   "role": "release v0.2.0",
+   "ref": "v0.2.0",
+   "commit": "6ec77163a8a1b5a33276bfb6dcaed7dff833d618",
+   "author_date": "2026-09-28T06:19:42-07:00",
+   "commit_date": "2026-09-28T06:19:42-07:00",
+   "version": "fdu 0.2.0",
+   "binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
+   "binary_size_bytes": 4160144,
+   "contract": "fdu-history-cache-off",
+   "command": [
+    "{binary}",
+    "--cache",
+    "off",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 12,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples",
+    "median": 31411.7,
+    "min": 27591.9,
+    "max": 109057.0,
+    "iqr_derived": [
+     29277.8,
+     33263.7
+    ],
+    "median_bootstrap95_derived": [
+     29231.6,
+     33519.9
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 284.7,
+    "max": 286.3
+   },
+   "cpu_s_median": {
+    "user": 1.37,
+    "system": 43.61
+   },
+   "vs_v0_3_0_paired_harness": {
+    "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0, median of adjacent pairs; positive = this binary slower",
+    "pairs": 12,
+    "median_change_pct": -0.272,
+    "ci95_change_pct": [
+     -1.756,
+     2.562
+    ],
+    "direction": "unclear",
+    "anchor_median_ms_in_these_pairs": 31715.9,
+    "speed_ratio_this_over_v0_3_0": 0.997
+   },
+   "vs_prework_derived": {
+    "round_matched": {
+     "method": "same-round, not adjacent: this binary's sample and the pre-work sample of the same schedule round",
+     "pairs": 12,
+     "median_change_pct": -80.26,
+     "ci95_change_pct": [
+      -81.03,
+      -78.33
+     ],
+     "median_speedup_x": 5.067
+    },
+    "anchor_normalized": {
+     "method": "per round, (this / its adjacent v0.3.0) / (pre-work / its adjacent v0.3.0) - 1",
+     "pairs": 12,
+     "median_change_pct": -81.12,
+     "ci95_change_pct": [
+      -82.3,
+      -79.99
+     ]
+    }
+   },
+   "includes": "H153 shared views, H156 index release, H160 no one-shot snapshot",
+   "after_experiment": "exp-165"
+  },
+  {
+   "label": "v0.2.1",
+   "role": "release v0.2.1",
+   "ref": "c1644575",
+   "commit": "c16445757ce82501a2d4eea1ff59b638eef42bd1",
+   "author_date": "2026-09-28T21:40:06-07:00",
+   "commit_date": "2026-09-28T21:40:06-07:00",
+   "version": "fdu 0.2.1",
+   "binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
+   "binary_size_bytes": 4209760,
+   "contract": "fdu-history-cache-off",
+   "command": [
+    "{binary}",
+    "--cache",
+    "off",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 12,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples",
+    "median": 30633.8,
+    "min": 27975.5,
+    "max": 35236.6,
+    "iqr_derived": [
+     28870.6,
+     33283.4
+    ],
+    "median_bootstrap95_derived": [
+     28674.5,
+     33437.5
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 285.7,
+    "max": 286.2
+   },
+   "cpu_s_median": {
+    "user": 1.39,
+    "system": 43.07
+   },
+   "vs_v0_3_0_paired_harness": {
+    "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0, median of adjacent pairs; positive = this binary slower",
+    "pairs": 12,
+    "median_change_pct": 0.591,
+    "ci95_change_pct": [
+     -0.986,
+     2.409
+    ],
+    "direction": "unclear",
+    "anchor_median_ms_in_these_pairs": 30672.7,
+    "speed_ratio_this_over_v0_3_0": 1.006
+   },
+   "vs_prework_derived": {
+    "round_matched": {
+     "method": "same-round, not adjacent: this binary's sample and the pre-work sample of the same schedule round",
+     "pairs": 12,
+     "median_change_pct": -80.45,
+     "ci95_change_pct": [
+      -81.38,
+      -78.66
+     ],
+     "median_speedup_x": 5.116
+    },
+    "anchor_normalized": {
+     "method": "per round, (this / its adjacent v0.3.0) / (pre-work / its adjacent v0.3.0) - 1",
+     "pairs": 12,
+     "median_change_pct": -81.27,
+     "ci95_change_pct": [
+      -82.3,
+      -80.15
+     ]
+    }
+   },
+   "includes": "H159 listing recycle, H161 ignore-aware summary, H162, H163",
+   "after_experiment": "exp-191"
+  },
+  {
+   "label": "ebc06c78",
+   "role": "Linux overnight round final head (exp-201 control)",
+   "ref": "ebc06c78",
+   "commit": "ebc06c784378639b7c950c2adc37ab48b60abf60",
+   "author_date": "2026-09-29T15:38:28Z",
+   "commit_date": "2026-09-29T15:38:28Z",
+   "version": "fdu 0.2.1-dev+gebc06c784",
+   "binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
+   "binary_size_bytes": 4308944,
+   "contract": "fdu-history-cache-off",
+   "command": [
+    "{binary}",
+    "--cache",
+    "off",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 12,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples",
+    "median": 30750.7,
+    "min": 28213.9,
+    "max": 94881.6,
+    "iqr_derived": [
+     29861.3,
+     33311.7
+    ],
+    "median_bootstrap95_derived": [
+     29664.6,
+     34002.2
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 61.4,
+    "max": 66.2
+   },
+   "cpu_s_median": {
+    "user": 1.14,
+    "system": 42.2
+   },
+   "vs_v0_3_0_paired_harness": {
+    "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0, median of adjacent pairs; positive = this binary slower",
+    "pairs": 12,
+    "median_change_pct": -0.097,
+    "ci95_change_pct": [
+     -1.005,
+     1.251
+    ],
+    "direction": "unclear",
+    "anchor_median_ms_in_these_pairs": 31144.7,
+    "speed_ratio_this_over_v0_3_0": 0.999
+   },
+   "vs_prework_derived": {
+    "round_matched": {
+     "method": "same-round, not adjacent: this binary's sample and the pre-work sample of the same schedule round",
+     "pairs": 12,
+     "median_change_pct": -80.37,
+     "ci95_change_pct": [
+      -81.45,
+      -78.16
+     ],
+     "median_speedup_x": 5.096
+    },
+    "anchor_normalized": {
+     "method": "per round, (this / its adjacent v0.3.0) / (pre-work / its adjacent v0.3.0) - 1",
+     "pairs": 12,
+     "median_change_pct": -82.29,
+     "ci95_change_pct": [
+      -82.88,
+      -80.12
+     ]
+    }
+   },
+   "includes": "overnight round: H171, H175, H172 tree tier, H180, H169 reader, H183",
+   "after_experiment": "exp-195"
+  },
+  {
+   "label": "exp201",
+   "role": "pdu-track head, exp-201 candidate (H186)",
+   "ref": "a356d456",
+   "commit": "a356d4565b2787864ca029d263ad05091036aeb5",
+   "author_date": "2026-09-29T22:47:02Z",
+   "commit_date": "2026-09-29T22:47:02Z",
+   "version": "fdu 0.2.1-dev+ga356d4565",
+   "binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
+   "binary_size_bytes": 4308944,
+   "contract": "fdu-history-cache-off",
+   "command": [
+    "{binary}",
+    "--cache",
+    "off",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 12,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples",
+    "median": 30097.4,
+    "min": 26908.6,
+    "max": 33860.3,
+    "iqr_derived": [
+     29179.7,
+     31021.9
+    ],
+    "median_bootstrap95_derived": [
+     29169.5,
+     31183.7
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 59.2,
+    "max": 66.6
+   },
+   "cpu_s_median": {
+    "user": 1.12,
+    "system": 42.24
+   },
+   "vs_v0_3_0_paired_harness": {
+    "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0, median of adjacent pairs; positive = this binary slower",
+    "pairs": 12,
+    "median_change_pct": 0.189,
+    "ci95_change_pct": [
+     -0.906,
+     1.779
+    ],
+    "direction": "unclear",
+    "anchor_median_ms_in_these_pairs": 30101.2,
+    "speed_ratio_this_over_v0_3_0": 1.002
+   },
+   "vs_prework_derived": {
+    "round_matched": {
+     "method": "same-round, not adjacent: this binary's sample and the pre-work sample of the same schedule round",
+     "pairs": 12,
+     "median_change_pct": -80.42,
+     "ci95_change_pct": [
+      -82.12,
+      -79.88
+     ],
+     "median_speedup_x": 5.107
+    },
+    "anchor_normalized": {
+     "method": "per round, (this / its adjacent v0.3.0) / (pre-work / its adjacent v0.3.0) - 1",
+     "pairs": 12,
+     "median_change_pct": -82.03,
+     "ci95_change_pct": [
+      -82.38,
+      -80.52
+     ]
+    }
+   },
+   "includes": "pdu track: H185, H186, H188, H189",
+   "after_experiment": "exp-201"
+  },
+  {
+   "label": "v0.3.0",
+   "role": "release v0.3.0",
+   "ref": "v0.3.0",
+   "commit": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",
+   "author_date": "2026-09-30T10:03:43-07:00",
+   "commit_date": "2026-09-30T10:03:43-07:00",
+   "version": "fdu 0.3.0",
+   "binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
+   "binary_size_bytes": 4358592,
+   "contract": "fdu-history-cache-off",
+   "command": [
+    "{binary}",
+    "--cache",
+    "off",
+    "--color",
+    "never",
+    "{root}"
+   ],
+   "timed_samples": 84,
+   "wall_ms": {
+    "source": "harness median of this binary's valid timed samples; the anchor's 84 samples beside all seven competitors",
+    "median": 30379.5,
+    "min": 25724.5,
+    "max": 107586.1,
+    "iqr_derived": [
+     28773.7,
+     32358.7
+    ],
+    "median_bootstrap95_derived": [
+     29595.2,
+     31197.5
+    ]
+   },
+   "peak_rss_mib": {
+    "source": "harness rusage max RSS of the child, median of timed samples",
+    "median": 59.8,
+    "max": 71.1
+   },
+   "cpu_s_median": {
+    "user": 1.17,
+    "system": 43.07
+   },
+   "vs_v0_3_0_paired_harness": null,
+   "vs_prework_derived": {
+    "round_matched": {
+     "method": "adjacent pairs with the pre-work binary (the harness's own pairs, normalized to pre-work)",
+     "pairs": 12,
+     "median_change_pct": -82.07,
+     "ci95_change_pct": [
+      -82.52,
+      -80.02
+     ],
+     "median_speedup_x": 5.577
+    },
+    "anchor_normalized": {
+     "method": "per round, (this / its adjacent v0.3.0) / (pre-work / its adjacent v0.3.0) - 1",
+     "pairs": 12,
+     "median_change_pct": -82.07,
+     "ci95_change_pct": [
+      -82.52,
+      -80.02
+     ]
+    }
+   },
+   "includes": "the 0.3.0 release: automount fix and stability layer",
+   "after_experiment": "exp-202"
+  }
+ ],
+ "headline": {
+  "median_ratio_prework_over_v0_3_0": 5.029,
+  "median_ratio_using_anchor_samples_in_prework_pairs": 5.273,
+  "paired_harness_prework_vs_v0_3_0_change_pct": 457.765,
+  "paired_harness_prework_vs_v0_3_0_ci95_pct": [
+   400.507,
+   472.123
+  ],
+  "paired_speedup_x": 5.578,
+  "paired_speedup_x_ci95": [
+   5.005,
+   5.721
+  ],
+  "paired_harness_v0_3_0_vs_prework_change_pct": -82.071,
+  "paired_harness_v0_3_0_vs_prework_ci95_pct": [
+   -82.521,
+   -80.017
+  ]
+ },
+ "notes": {
+  "dropped_milestones": "none; all eight built unmodified with their pinned rustc 1.97.1",
+  "exp032_commit_inference": "exp-032 frontmatter has commit: null; its candidate is described as the final Rust-1.85-compatible code through exp-030. The only code commit between the first measurement (49629545) and the re-anchored record (0f9b946c, docs only) is c9c91d95, so c9c91d95 is used. The recorded exp-032 binary was a perf_probe, not the CLI.",
+  "build_command": "cd wt-<label> && CARGO_TARGET_DIR=<scratch>/targets/<label> cargo build --locked --release -p fdu --bin fdu (rustc 1.97.1 from each commit's rust-toolchain.toml); binary copied to bin/fdu-<label>",
+  "invocation": "prework and exp032 have no --cache flag and no .gitignore support: fdu --no-cache --color never ROOT (their default reads and writes a snapshot). v0.1.0 onward: fdu --cache off --color never ROOT (default tree view; .gitignore read by default; the tree has no ignore files). Cache-off was used for every version so no run could start from a snapshot written by an earlier one; v0.1.0 help lists its default --cache auto beside refresh/read-only/only, and v0.2.0+ describe auto as where it pays for this run. The harness also gave each process an isolated empty XDG_CACHE_HOME.",
+  "answer_check": "Before timing, every version run once under the harness environment: exit 0, root line 875,000 files, and exact JSON totals 875,000 files / 125,000 descendant dirs / 793,658,448 apparent / 2,986,741,760 allocated bytes / complete=true for all eight; nothing written to the isolated cache dir. See answer-check.tsv.",
+  "harness_extension": "benchmarks.realtree.compare_tools was run unmodified through drive_history.py, which registers two contracts (fdu-history-cache-off, fdu-history-no-cache) because no shipped contract is the default tree with the cache off. These contracts carry no per-sample semantic check; only exit status is checked per sample, hence the separate pre-timing answer check.",
+  "storage_regime": "Corpus on the external USB APFS SSD as briefed, not the internal SSD the 2026-09-26/28 report used. Every version from exp032 on spends about 42-44 s system CPU in about 30 s wall; the internal-SSD report measured about 37 s system CPU in 6.4 s wall. Inference: on this volume the wall is set by the kernel/USB I/O path, so post-campaign-1 engine work shows in user CPU and peak RSS, not wall. Absolute seconds are not comparable with the report.",
+  "host": "Uncontrolled: CPU busy 22-96% (median 38.6%) at sample boundaries, 96% above the 25% quiet gate; load 6-19. Declared host_regime uncontrolled and stage exploratory (the Makefile defaults); the gate was not altered. Four non-pre-work samples above 45 s (54-109 s) coincide with 79-94% CPU busy; they are valid under the regime and remain in the medians.",
+  "release_qualification_table": "The rendered report's release-qualification column is the harness's resource-limit classification for held-out release claims; it does not apply to this exploratory cell.",
+  "v0_1_0_stdout": "v0.1.0 prints a Performance line with the elapsed time on stdout, so its 12 stdout hashes differ; every other version printed one stable stdout."
+ }
+}

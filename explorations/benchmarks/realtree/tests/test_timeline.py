@@ -18,7 +18,7 @@ from benchmarks.realtree.report_html import (
     figure_absolute,
     figure_effects,
     figure_end_to_end,
-    figure_iterations,
+    figure_timeline,
     figure_per_entry,
     fmt_primary,
     iteration_kind,
@@ -525,13 +525,41 @@ class RenderTests(unittest.TestCase):
                 experiment("exp-250"),
             ]
         )
-        figure = figure_iterations(dataset)
+        figure = figure_timeline(dataset)
         for identifier in ("exp-001", "exp-002", "exp-067", "exp-250"):
             self.assertEqual(figure.count(f"{identifier}: Experiment {identifier}"), 1)
         kinds = {record["id"]: iteration_kind(record) for record in dataset["experiments"]}
         self.assertEqual(kinds["exp-001"], "kept")
         self.assertEqual(kinds["exp-002"], "rejected")
         self.assertEqual(kinds["exp-067"], "measured")
+
+    def test_the_runtime_panel_draws_only_milestones_it_can_place(self) -> None:
+        # The top panel steps through the history cell's builds at the experiment each
+        # follows. A milestone naming an experiment the record lacks is left out rather
+        # than drawn at an invented position.
+        dataset = project([experiment("exp-000"), experiment("exp-032")])
+        dataset["history"] = [
+            {
+                "subject": "balanced-1m",
+                "entries": 1000001,
+                "cpu": "M1",
+                "storage": "ssd",
+                "trials": 12,
+                "regime": "uncontrolled",
+                "milestones": [
+                    {"label": "a", "version": "fdu 0.0.1", "commit": "aaaa", "date": "2026-08-10",
+                     "includes": "start", "after_experiment": "exp-000", "wall_ms": 150000.0},
+                    {"label": "b", "version": "fdu 0.3.0", "commit": "bbbb", "date": "2026-09-30",
+                     "includes": "end", "after_experiment": "exp-032", "wall_ms": 30000.0},
+                    {"label": "c", "version": "lost", "commit": "cccc", "date": "2026-10-01",
+                     "includes": "none", "after_experiment": "exp-999", "wall_ms": 1000.0},
+                ],
+            }
+        ]
+        figure = figure_timeline(dataset)
+        self.assertIn("5.0x faster", figure)
+        self.assertNotIn("lost", figure)
+        self.assertIn("150.0 s", figure)
 
     def test_id_ranges_skip_unused_ids_but_not_recorded_ones(self) -> None:
         # exp-113 was never used, so it does not split exp-112 from exp-114; exp-104 is a

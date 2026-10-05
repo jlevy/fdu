@@ -49286,6 +49286,168 @@
    "trials": 20
   }
  ],
+ "history": [
+  {
+   "cpu": "Apple M1 Pro",
+   "entries": 1000001,
+   "id": "macos-balanced-1m-ext",
+   "invalid_samples": 0,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "the starting point",
+     "label": "prework",
+     "peak_rss_mib": 450.3,
+     "role": "pre-work binary, campaign 1 baseline (exp-032 control)",
+     "system_s": 37.44,
+     "user_s": 2.77,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      400.507,
+      472.123
+     ],
+     "vs_latest_pct": 457.765,
+     "wall_ms": 152772.4
+    },
+    {
+     "after_experiment": "exp-032",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "campaign 1: parallel walk, bulk metadata, parallel reconciliation",
+     "label": "exp032",
+     "peak_rss_mib": 421.5,
+     "role": "campaign 1 checkpoint: exp-032 final Rust-1.85-compatible candidate",
+     "system_s": 42.59,
+     "user_s": 1.8,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      -4.835,
+      2.666
+     ],
+     "vs_latest_pct": 1.556,
+     "wall_ms": 29761.9
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "streaming engine, the H86 consumer rewrite, content cache",
+     "label": "v0.1.0",
+     "peak_rss_mib": 284.9,
+     "role": "release v0.1.0",
+     "system_s": 43.33,
+     "user_s": 1.44,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      -0.806,
+      3.172
+     ],
+     "vs_latest_pct": 0.664,
+     "wall_ms": 31150.2
+    },
+    {
+     "after_experiment": "exp-165",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H153 shared views, H156 index release, H160 no one-shot snapshot",
+     "label": "v0.2.0",
+     "peak_rss_mib": 284.7,
+     "role": "release v0.2.0",
+     "system_s": 43.61,
+     "user_s": 1.37,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      -1.756,
+      2.562
+     ],
+     "vs_latest_pct": -0.272,
+     "wall_ms": 31411.7
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159 listing recycle, H161 ignore-aware summary, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 285.7,
+     "role": "release v0.2.1",
+     "system_s": 43.07,
+     "user_s": 1.39,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      -0.986,
+      2.409
+     ],
+     "vs_latest_pct": 0.591,
+     "wall_ms": 30633.8
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight round: H171, H175, H172 tree tier, H180, H169 reader, H183",
+     "label": "ebc06c78",
+     "peak_rss_mib": 61.4,
+     "role": "Linux overnight round final head (exp-201 control)",
+     "system_s": 42.2,
+     "user_s": 1.14,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -1.005,
+      1.251
+     ],
+     "vs_latest_pct": -0.097,
+     "wall_ms": 30750.7
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 59.2,
+     "role": "pdu-track head, exp-201 candidate (H186)",
+     "system_s": 42.24,
+     "user_s": 1.12,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -0.906,
+      1.779
+     ],
+     "vs_latest_pct": 0.189,
+     "wall_ms": 30097.4
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "the 0.3.0 release: automount fix and stability layer",
+     "label": "v0.3.0",
+     "peak_rss_mib": 59.8,
+     "role": "release v0.3.0",
+     "system_s": 43.07,
+     "user_s": 1.17,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 30379.5
+    }
+   ],
+   "platform": "Darwin",
+   "regime": "uncontrolled",
+   "speedup_x": 5.578,
+   "speedup_x_ci95": [
+    5.005,
+    5.721
+   ],
+   "storage": "external USB APFS SSD, Spotlight-excluded directory",
+   "subject": "macos-balanced-1m-ext",
+   "title": "the generated 1M-entry tree",
+   "trials": 12
+  }
+ ],
  "prepared": "2026-09-30",
  "subjects": [
   {

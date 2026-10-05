@@ -620,122 +620,216 @@ def iteration_kind(record: Mapping[str, Any]) -> str:
 ITERATION_CLAMP = (-30.0, 60.0)
 
 
-def figure_iterations(dataset: Mapping[str, Any]) -> str:
-    """Every experiment as one bar, phase by phase: up is faster, down is slower."""
-    order = {}
-    for index, (_, numbers, _) in enumerate(PHASES):
-        for number in numbers:
-            order[number] = index
-    records = sorted(
-        dataset["experiments"],
-        key=lambda record: (order.get(record["number"], len(PHASES)), record["number"]),
-    )
+def _chronological(dataset: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+    return sorted(dataset["experiments"], key=lambda record: (record.get("date") or "", record["number"]))
+
+
+def history_cell(dataset: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    """The history cell the timeline draws: the first one recorded, if any."""
+    cells = dataset.get("history") or []
+    return cells[0] if cells else None
+
+
+def figure_timeline(dataset: Mapping[str, Any]) -> str:
+    """Two stacked panels on one experiment axis, in the order the experiments ran.
+
+    The top panel is total runtime on one fixed benchmark, measured for every milestone
+    build in one interleaved session, so its steps compare directly. The bottom panel is
+    every experiment's paired change on its own primary job, green where a change was
+    kept, red where it was tried and dropped, with the running count of kept changes.
+    The bottom panel's effects are not multiplied into a runtime: each was measured on
+    its own job and tree, and compounding them would claim a speed-up no build shows.
+    """
+    records = _chronological(dataset)
     if not records:
         return ""
-    low, high = ITERATION_CLAMP
-    left, right, top_pad, bottom_pad = 46, 12, 34, 30
-    width, plot_height = 900, 230
-    plot = width - left - right
-    height = top_pad + plot_height + bottom_pad
-    step = plot / len(records)
-    bar = max(min(step * 0.7, 6.0), 1.2)
-    y_of = lambda faster: top_pad + (high - faster) / (high - low) * plot_height
-    zero = y_of(0.0)
+    position = {record["id"]: index for index, record in enumerate(records)}
+    cell = history_cell(dataset)
+    milestones = [
+        item
+        for item in (cell or {}).get("milestones", [])
+        if item.get("wall_ms") and item.get("after_experiment") in position
+    ]
 
+    left, right = 64, 56
+    width = 900
+    plot = width - left - right
+    step = plot / len(records)
+    x_of = lambda index: left + (index + 0.5) * step
+    top_y0, top_h = 40, 190 if milestones else 0
+    gap = 64 if milestones else 0
+    bottom_y0 = top_y0 + top_h + gap
+    bottom_h = 220
+    height = bottom_y0 + bottom_h + 44
     out = svg_open(
         width,
         height,
-        "Every experiment, phase by phase, as its paired change on its primary job",
-        "One bar per experiment. Bars above the line improved the job; green ones were "
-        "kept, red ones were tried and not kept, grey ones were measurements.",
+        "Total runtime on a fixed benchmark above, every experiment's effect below",
+        "Top: measured runtime of each milestone build on one tree. Bottom: one bar per "
+        "experiment, green kept, red not kept, with the running count of kept changes.",
     )
-    # Phase bands first, so bars draw over them.
-    rows = phase_rows(dataset)
-    start = 0
-    for index, row in enumerate(rows):
-        x = left + start * step
-        span = row["total"] * step
-        if index % 2 == 0:
+
+    # Shared date ticks along the experiment axis: the first experiment of each date,
+    # labelled only where the label has room.
+    months = {"07": "Jul", "08": "Aug", "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dec"}
+    last_label_x = -1e9
+    previous_date = None
+    for index, record in enumerate(records):
+        date = record.get("date") or ""
+        if not date or date == previous_date:
+            continue
+        previous_date = date
+        x = left + index * step
+        if x - last_label_x >= 64:
+            last_label_x = x
+            label = f"{months.get(date[5:7], date[5:7])} {int(date[8:10])}"
             out.append(
-                f'<rect class="drift-band" x="{x:.1f}" y="{top_pad}" width="{span:.1f}" '
-                f'height="{plot_height}"/>'
+                f'<line class="grid" x1="{x:.1f}" y1="{top_y0}" x2="{x:.1f}" '
+                f'y2="{bottom_y0 + bottom_h}"/>'
+            )
+            out.append(
+                f'<text class="tick" x="{x + 3:.1f}" y="{bottom_y0 + bottom_h + 16}">'
+                f"{label}</text>"
+            )
+    out.append(
+        f'<text class="tick axis-name" x="{left}" y="{height - 6}">experiments in the '
+        f"order they ran</text>"
+    )
+
+    if milestones:
+        peak = max(item["wall_ms"] for item in milestones)
+        ticks = axis_ticks(peak / 1000, count=3)
+        ceiling = ticks[-1]
+        y_of = lambda ms_value: top_y0 + top_h - (ms_value / 1000) / ceiling * top_h
+        for tick in ticks:
+            y = top_y0 + top_h - tick / ceiling * top_h
+            out.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}"/>')
+            out.append(
+                f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
+                f"{tick:,.0f} s</text>"
             )
         out.append(
-            f'<text class="tick" x="{x + span / 2:.1f}" y="{top_pad - 10}" '
-            f'text-anchor="middle">{index + 1}</text>'
+            f'<text class="tick axis-name" x="{left}" y="{top_y0 - 22}">total runtime, '
+            f"{esc(cell.get('title') or cell['subject'])}, seconds &mdash; lower is faster</text>"
         )
-        start += row["total"]
+        points = [(x_of(position[item["after_experiment"]]), y_of(item["wall_ms"]), item) for item in milestones]
+        path = []
+        for index, (x, y, _) in enumerate(points):
+            if index:
+                path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
+            path.append(f"{x:.1f},{y:.1f}")
+        path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
+        out.append(f'<polyline class="track" points="{" ".join(path)}"/>')
+        first = milestones[0]["wall_ms"]
+        for index, (x, y, item) in enumerate(points):
+            final = index == len(points) - 1
+            ratio = first / item["wall_ms"]
+            out.append(
+                f'<circle class="{"dot-final" if final else "dot-step"}" cx="{x:.1f}" cy="{y:.1f}" r="4.5"/>'
+            )
+            out.append(
+                f'<rect class="hit" x="{x - 9:.1f}" y="{top_y0}" width="18" height="{top_h}" '
+                + tip(
+                    f"{item['version'] or item['label']} ({item['commit']}, {item['date']})\n"
+                    f"{item['includes']}\n"
+                    f"{fmt_ms(item['wall_ms'])} total, {ratio:.1f}x faster than the first build"
+                    + (f", peak {item['peak_rss_mib']:.0f} MiB" if item.get("peak_rss_mib") else "")
+                )
+                + "/>"
+            )
+            if index == 0 or final:
+                anchor = "start" if index == 0 else "end"
+                dx = 8 if index == 0 else -8
+                text = f"{item['wall_ms'] / 1000:.1f} s" + ("" if index == 0 else f", {ratio:.1f}x faster")
+                out.append(
+                    f'<text class="value-label" x="{x + dx:.1f}" y="{y - 8:.1f}" '
+                    f'text-anchor="{anchor}">{esc(text)}</text>'
+                )
+
+    # Bottom panel: every experiment, plus the running count of kept changes.
+    low, high = ITERATION_CLAMP
+    y_of_change = lambda faster: bottom_y0 + (high - faster) / (high - low) * bottom_h
+    zero = y_of_change(0.0)
     for faster in (-30, 0, 30, 60):
-        y = y_of(faster)
+        y = y_of_change(faster)
         out.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}"/>')
         out.append(
             f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
-            f"{faster:+d}%</text>".replace("+0%", "0")
+            + ("0" if faster == 0 else f"{faster:+d}%")
+            + "</text>"
         )
-    threshold = y_of(3.0)
+    threshold = y_of_change(3.0)
     out.append(
-        f'<line class="threshold" x1="{left}" y1="{threshold:.1f}" x2="{width - right}" '
-        f'y2="{threshold:.1f}"/>'
+        f'<line class="threshold" x1="{left}" y1="{threshold:.1f}" x2="{width - right}" y2="{threshold:.1f}"/>'
     )
     out.append(f'<line class="zero" x1="{left}" y1="{zero:.1f}" x2="{width - right}" y2="{zero:.1f}"/>')
     out.append(
-        f'<text class="tick axis-name" x="{left}" y="{height - 8}">% better on its primary '
-        f"metric (wall time unless noted), paired &mdash; phases numbered above</text>"
+        f'<text class="tick axis-name" x="{left}" y="{bottom_y0 - 14}">each experiment: % better '
+        f"on its own job, paired &mdash; line: kept changes so far</text>"
     )
     css = {"kept": "dot-good", "rejected": "dot-bad", "measured": "dot-flat"}
+    bar = max(min(step * 0.7, 6.0), 1.2)
+    total_kept = sum(iteration_kind(record) == "kept" for record in records)
+    count_y = lambda count: bottom_y0 + bottom_h - (count / max(total_kept, 1)) * bottom_h
+    running, count_path = 0, [f"{left:.1f},{count_y(0):.1f}"]
     for index, record in enumerate(records):
         change = record.get("change_pct")
         faster = -change if change is not None else 0.0
         drawn = max(low, min(high, faster))
         x = left + index * step + (step - bar) / 2
-        y1, y2 = sorted((zero, y_of(drawn)))
+        y1, y2 = sorted((zero, y_of_change(drawn)))
         kind = iteration_kind(record)
         out.append(
             f'<rect class="{css[kind]}" x="{x:.1f}" y="{y1:.1f}" width="{bar:.1f}" '
             f'height="{max(y2 - y1, 1.0):.1f}"/>'
         )
-        label = {"kept": "kept, faster", "rejected": "tried, not kept", "measured": "measured"}[
-            kind
-        ]
+        if kind == "kept":
+            running += 1
+            count_path.append(f"{left + index * step:.1f},{count_y(running - 1):.1f}")
+            count_path.append(f"{left + index * step:.1f},{count_y(running):.1f}")
+        label = {"kept": "kept, better", "rejected": "tried, not kept", "measured": "measured"}[kind]
+        metric = record.get("primary_metric")
         out.append(
-            f'<rect class="hit" x="{left + index * step:.1f}" y="{top_pad}" '
-            f'width="{step:.1f}" height="{plot_height}" '
+            f'<rect class="hit" x="{left + index * step:.1f}" y="{bottom_y0}" '
+            f'width="{step:.1f}" height="{bottom_h}" '
             + tip(
                 f"{record['id']}: {record['title']}\n"
                 f"{decision_label(record)}, {label}: "
                 f"{fmt_pct(change) if change is not None else 'no paired change'} "
                 f"on {record.get('primary_job') or 'its job'}"
-                + (
-                    f" ({record['primary_metric']})"
-                    if record.get("primary_metric") not in (None, "wall_ns")
-                    else ""
-                )
+                + (f" ({metric})" if metric not in (None, "wall_ns") else "")
             )
             + "/>"
         )
+    count_path.append(f"{width - right:.1f},{count_y(running):.1f}")
+    out.append(f'<polyline class="count-line" points="{" ".join(count_path)}"/>')
+    for count in (0, total_kept):
+        out.append(
+            f'<text class="tick" x="{width - right + 6}" y="{count_y(count) + 4:.1f}">{count}</text>'
+        )
     out.append("</svg>")
+
     counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
     keys = legend(
-        ("key-good", f"kept, and at least 3% better ({counts['kept']})"),
-        ("key-bad", f"tried and not kept ({counts['rejected']})"),
-        ("key-flat", f"measurements, checkpoints, and other verdicts ({counts['measured']})"),
+        ("key-after-dot", "measured total runtime of each milestone build"),
+        ("key-good", f"kept, at least 3% better ({counts['kept']})"),
+        ("key-bad", f"tried, not kept ({counts['rejected']})"),
+        ("key-flat", f"measurements and other verdicts ({counts['measured']})"),
+        ("key-count", "kept changes so far"),
     )
-    phases = "".join(
-        f"<li>{esc(row['name'])} <span class=\"muted\">&mdash; {row['counts']['accepted']} "
-        f"accepted, {row['counts']['rejected']} rejected, {row['counts']['other']} other"
-        f"</span></li>"
-        for row in rows
-    )
+    caption = ""
+    if cell:
+        caption = (
+            f"Top: every milestone build timed in one interleaved session on "
+            f"{esc(cell.get('title') or cell['subject'])} ({cell['entries']:,} entries), {esc(cell['cpu'])}, "
+            f"{esc(cell['storage'])}, {cell['trials']} paired rounds, "
+            f"{esc(cell['regime'])} host. Hover a point for what each build added. "
+        )
     return (
-        f'<figure class="fig">{"".join(out)}{keys}'
-        "<figcaption>Effects beyond the axis are drawn at its edge; hover a bar for its "
-        "experiment and real figure. The dashed line is the 3% accept threshold. The "
-        f'phases, in order:<ol class="checkpoints">{phases}</ol></figcaption></figure>'
+        f'<figure class="fig">{"".join(out)}{keys}<figcaption>{caption}Bottom: bars beyond '
+        "the axis are drawn at its edge; hover one for its experiment and real figure. The "
+        "dashed line is the 3% accept threshold.</figcaption></figure>"
     )
-
-
-# ---------------------------------------------------------------- figure: effects
-
 
 def figure_effects(dataset: Mapping[str, Any]) -> str:
     """Every experiment's paired effect on its own primary job, with its interval.
@@ -1251,6 +1345,8 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .dot-before { fill: var(--before); }
 .dot-step { fill: var(--after); opacity: 0.55; }
 .dot-final { fill: var(--after); }
+.count-line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.key-count { background: var(--accent); height: 2px; vertical-align: 3px; }
 .value-label { font: 12px var(--mono); fill: var(--after); font-variant-numeric: tabular-nums; }
 .value-before { fill: var(--muted); }
 .value-arrow { fill: var(--border); }
@@ -2018,11 +2114,28 @@ def _standing_figure(dataset: Mapping[str, Any]) -> str:
     )
 
 
+def _history_figure(dataset: Mapping[str, Any]) -> str:
+    """The measured first-to-last speedup on the history cell's benchmark."""
+    cell = history_cell(dataset)
+    milestones = [item for item in (cell or {}).get("milestones", []) if item.get("wall_ms")]
+    if len(milestones) < 2:
+        return ""
+    first, last = milestones[0], milestones[-1]
+    # The ratio of the medians the chart draws, so the headline and the chart agree. The
+    # paired figure in the cell is higher and stays in the record.
+    speedup = first["wall_ms"] / last["wall_ms"]
+    return (
+        f'<div><span class="n good">{speedup:.1f}&times; faster</span>'
+        f'<span class="k">{esc(cell.get("title") or cell["subject"])}, first build to '
+        f'{esc(last["version"] or last["label"])}</span></div>'
+    )
+
+
 def _header(dataset: Mapping[str, Any]) -> str:
     totals = dataset["totals"]
     decisions = totals["decisions"]
     kept = sum(iteration_kind(record) == "kept" for record in dataset["experiments"])
-    headlines = _standing_figure(dataset) + _headline_figure(
+    headlines = _history_figure(dataset) + _standing_figure(dataset) + _headline_figure(
         _flagship(dataset), "cold-scan-index", "macOS cold scan, campaign 1"
     )
     return f"""
@@ -2051,12 +2164,15 @@ against other tools is in the comparisons
 
 def _section_iterations(dataset: Mapping[str, Any]) -> str:
     return f"""
-<h2 id="iterations">Every iteration</h2>
-<h3>What each experiment did, in the order the loop ran them</h3>
-<p>Each bar is one experiment&rsquo;s paired change on the job it was judged on. Most
-ideas moved the time by less than the 3% a change must clear, which is the ordinary shape
-of this work; the tall green bars are the changes that made fdu fast.</p>
-{figure_iterations(dataset)}
+<h2 id="iterations">Over time</h2>
+<h3>Total runtime, and every experiment that changed it</h3>
+<p>The top panel is fdu&rsquo;s total runtime on one fixed benchmark, measured for each
+milestone build side by side in one session, so its steps are the real accumulated
+improvement. The bottom panel is every experiment in the order it ran: green bars were
+kept, red bars were tried and dropped, and the line counts the kept changes so far. Most
+ideas moved their job by less than the 3% a change must clear; the tall green bars are the
+changes that made fdu fast.</p>
+{figure_timeline(dataset)}
 """
 
 
