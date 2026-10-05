@@ -1408,6 +1408,92 @@ SCRIPT = """
 """
 
 
+#: The theme chooser, borrowed from tbd's web view: a gear opening a segmented
+#: System / Light / Dark group. "system" follows the reader's OS; the other two force a
+#: theme through `data-theme`, which the style blocks above already honour. The choice is
+#: stored per browser, and the page renders correctly without storage.
+THEME_PREPAINT = """
+try {
+  var mode = localStorage.getItem('fdu.report.themeMode') || 'system';
+  if (mode !== 'light' && mode !== 'dark') mode = 'system';
+  document.documentElement.setAttribute('data-theme-mode', mode);
+  if (mode !== 'system') document.documentElement.setAttribute('data-theme', mode);
+} catch (_error) {
+  // Private mode or blocked storage: the system theme remains active.
+}
+"""
+
+SETTINGS = """
+<div class="topbar"><span id="settings">
+<button type="button" id="gear" aria-label="Settings" aria-expanded="false" aria-controls="menu">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
+</button>
+<div id="menu" role="menu" hidden>
+<div class="menu-label">Theme</div>
+<div class="chooser" role="group" aria-label="Theme">
+<button type="button" class="seg" role="menuitemradio" data-theme-choice="system" aria-checked="false" title="System theme" aria-label="System theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></button>
+<button type="button" class="seg" role="menuitemradio" data-theme-choice="light" aria-checked="false" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+<button type="button" class="seg" role="menuitemradio" data-theme-choice="dark" aria-checked="false" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg></button>
+</div>
+</div>
+</span></div>
+"""
+
+THEME_STYLE = """
+.topbar { position: relative; height: 0; }
+#settings { position: absolute; right: 0; top: 14px; }
+#gear { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+  padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: var(--muted); cursor: pointer; }
+#gear:hover, #gear[aria-expanded='true'] { color: var(--text); background: var(--panel); border-color: var(--border); }
+#gear svg { width: 18px; height: 18px; }
+#menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px; z-index: 10; min-width: 150px; }
+#menu[hidden] { display: none; }
+.menu-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 5px; }
+.chooser { display: flex; gap: 2px; }
+.seg { flex: 1; display: inline-flex; align-items: center; justify-content: center; height: 30px;
+  padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.seg:hover, .seg:focus-visible { color: var(--text); background: var(--panel); }
+.seg svg { width: 16px; height: 16px; }
+.seg[aria-checked='true'] { color: var(--accent); background: var(--panel); }
+"""
+
+THEME_SCRIPT = """
+(function () {
+  var root = document.documentElement;
+  var gear = document.getElementById('gear');
+  var menu = document.getElementById('menu');
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('[data-theme-choice]'));
+  function mode(value) { return value === 'light' || value === 'dark' ? value : 'system'; }
+  function apply(choice, persist) {
+    root.setAttribute('data-theme-mode', choice);
+    if (choice === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', choice);
+    buttons.forEach(function (button) {
+      button.setAttribute('aria-checked', String(button.getAttribute('data-theme-choice') === choice));
+    });
+    if (persist) {
+      try { localStorage.setItem('fdu.report.themeMode', choice); } catch (_error) {}
+    }
+  }
+  function close() { menu.hidden = true; gear.setAttribute('aria-expanded', 'false'); }
+  gear.addEventListener('click', function (event) {
+    event.stopPropagation();
+    menu.hidden = !menu.hidden;
+    gear.setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  menu.addEventListener('click', function (event) { event.stopPropagation(); });
+  document.addEventListener('click', close);
+  document.addEventListener('keydown', function (event) { if (event.key === 'Escape') close(); });
+  buttons.forEach(function (button) {
+    button.addEventListener('click', function () { apply(mode(button.getAttribute('data-theme-choice')), true); });
+  });
+  apply(mode(root.getAttribute('data-theme-mode')), false);
+})();
+"""
+
+
 def render(dataset: Mapping[str, Any]) -> str:
     """The whole page."""
     body = "".join(
@@ -1433,12 +1519,13 @@ def render(dataset: Mapping[str, Any]) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fdu Performance Evidence</title>
 <meta name="description" content="Absolute milliseconds and paired effects across every fdu performance experiment, including the ones that were rejected.">
-<style>{STYLE}</style>
+<script>{THEME_PREPAINT}</script>
+<style>{STYLE}{THEME_STYLE}</style>
 </head>
 <body>
-<div class="wrap">{body}</div>
+<div class="wrap">{SETTINGS}{body}</div>
 <div id="tip" role="tooltip"></div>
-<script>{SCRIPT}</script>
+<script>{SCRIPT}{THEME_SCRIPT}</script>
 </body>
 </html>
 """
