@@ -267,8 +267,8 @@ paired steps; the paired figures are the claims.
 Each row is one line of inquiry, and together they hold every artifact from exp-000 to
 exp-202; [Every Round in Full](#every-round-in-full) expands each row.
 The ledger has every verdict and
-[the campaign status report](report-2026-08-14-performance-campaign-status.md) the
-history through 2026-08-23.
+[the loop history](report-2026-08-14-performance-campaign-status.md) how the method
+changed from phase to phase.
 
 | Loop | Experiments | Platform | What it found |
 | --- | --- | --- | --- |
@@ -1213,7 +1213,8 @@ These do not overturn a verdict; they say what a verdict rests on.
   consumer, which the reader does not touch.
 - **The release cell does not separate the release’s later changes from its session.**
   exp-202 carries no exp-201 engine and ran in a session 29–38% slower for every tool on
-  the real trees; H184, the R163-1 latch, and the #164 changes were never timed alone.
+  the real trees. H184 was screened alone on the #161 head (exp-196) but not on exp-201’s
+  engine; the R163-1 latch and the #164 changes were never timed alone.
 - **The generated tree screens only.** `linux-balanced-1m` decided nothing on
   2026-09-29. H172’s −3.20% wall and −79% peak RSS on it are a screen, and its base
   moved from 1,359 to 1,748 ms between two cells of the same night.

@@ -197,6 +197,15 @@ export const EXCEPTIONS = new Map([
     [{ site: 'open("/proc/sys/vm/drop_caches", "w")', reason: DROP_CACHES }],
   ],
   [
+    "scripts/qa/pty_probe.py",
+    [
+      {
+        site: "os.dup2(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC), fd)",
+        reason: CHILD_CAPTURE,
+      },
+    ],
+  ],
+  [
     "scripts/qa_peer_agreement.py",
     [{ site: "(probe / ", reason: "builds the self-test's scan tree" }],
   ],

@@ -1,45 +1,75 @@
-# fdu Performance Campaign: Status, Method, and What Remains
+# fdu Performance Loop: Method, History, and What Remains
 
-**Date:** 2026-08-14 (updated 2026-08-23)
+**Date:** 2026-08-14 (revised 2026-10-04, covering exp-000 through exp-202)
 
 **Author:** fdu project, with Claude Code assistance
 
-**Status:** Orientation through 2026-08-23. Current work starts at
-[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30). The
-full record of every round, from exp-000 through the 0.3.0 release standing (exp-202),
-is
-[the performance evidence report](report-2026-08-20-fdu-performance-evidence.md#every-round-in-full),
-with [the charted page](performance-evidence/index.html) and
-[the ledger](report-2026-08-10-fdu-performance-experiments.md) generated from the
-records.
+**Status:** The history of fdu’s performance loop from its first experiment to the 0.3.0
+release standing. The per-round verdicts and figures are in
+[the performance evidence report](report-2026-08-20-fdu-performance-evidence.md#every-round-in-full);
+the next action is in
+[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 
-The [current work map](../../../TODO.md#performance-and-evidence) records remaining
-owners after the 2026-09-27 tracking review.
-The merged #132 benchmark refresh is qualified exploratory evidence; `fdu-ow8y` still
-owns the unresolved quiet native/wheel release cell, and `fdu-s234` owns the
-claim-policy reconciliation.
-
-## Who this is for
+## Who This Is For
 
 You need no prior context.
-This report explains what fdu is, how its performance work is organized, every
-improvement made so far and in what order, what is still open, and where the evidence is
-weak. It is written to be handed to someone — or some agent — arriving cold.
+This report explains what fdu is, how its performance work is organized, how that method
+has been run and changed over seven weeks, what it found, what it taught about itself,
+and where the evidence is weak.
+It is written to be handed to someone, or some agent, arriving cold.
 
-If you want the condensed method rather than the history, read
+For the condensed, domain-neutral method, read
 [the instrumentation playbook](../guides/performance-instrumentation-playbook.md).
-If you want the protocol and the live hypothesis list, read
+For the protocol and the live hypothesis registry, read
 [the performance loop](../guides/performance-loop.md).
-This report is the orientation that sits above both.
+For every verdict and where each platform stands, read
+[the evidence report](report-2026-08-20-fdu-performance-evidence.md).
 
-## 1. What fdu is, and what makes it hard to optimize
+## The Record in Brief
+
+From 2026-08-10 to 2026-09-30 the loop produced **200 experiment records**, exp-000
+through exp-202 (exp-113, exp-168 and exp-169 are unused ids), over 21 measurement days
+and 136 hypothesis ids named in the records:
+
+| Verdict | macOS | Linux | Total |
+| --- | ---: | ---: | ---: |
+| Accepted | 70 | 41 | 111 |
+| Rejected | 46 | 15 | 61 |
+| Baseline | 10 | 7 | 17 |
+| Superseded | 5 | 0 | 5 |
+| In progress | 4 | 0 | 4 |
+| Blocked | 2 | 0 | 2 |
+| **Total** | **137** | **63** | **200** |
+
+An accepted verdict is not always a speed-up.
+The 111 include cumulative checkpoints and transfer validations of earlier changes,
+noninferiority claims, instrumentation, profiles, and leftover determinations, which are
+accepted when they settle a question; 38 record no changed lines.
+
+Where that leaves the product, each on its own host and in its own regime:
+
+- **Linux, 4-vCPU virtualized guest, ext4, warm cache, quiet.** The 0.3.0 engine’s
+  default `fdu PATH` takes 48.00% [−50.45%, −44.79%] less time than 0.2.1’s on the Linux
+  v6.12 source tree, and 14% to 15% less on a directory-dense `node_modules` tree and a
+  generated million-entry tree.
+  On all three it leads pdu’s default, `pdu --max-depth 2` and diskus; the narrowest
+  lead is +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree
+  ([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
+- **macOS, one M1 Pro, APFS, warm cache, uncontrolled.** A pre-0.2.0 build built its
+  reusable index and a ten-row tree on the generated million-entry tree in 6.4 s, ahead
+  of every peer; dumac, which returns only a total, took 9% longer
+  ([macOS comparison](report-2026-09-26-fdu-live-tool-comparison.md)). No macOS cell has
+  measured anything since exp-172 (2026-09-28), so the 0.3.0 engine’s effect there is
+  unknown.
+
+## 1. What fdu Is, and What Makes It Hard to Optimize
 
 `fdu` reports disk usage.
 It walks a directory tree, collects size and metadata for every entry, and renders
 views: a tree, a file list, extension tallies, a summary.
-It competes with `du`, `dust`, `dut`, `pdu`, and `diskus`.
+It competes with `du`, `dust`, `dut`, `pdu`, `diskus`, and `dumac`.
 
-Three properties make its performance work harder than a typical benchmark exercise.
+Four properties make its performance work harder than a typical benchmark exercise.
 
 **It has three tiers of retained state, and they behave differently.** An *aggregate*
 run keeps only running totals and discards paths.
@@ -56,64 +86,89 @@ deserialization-bound.
 **It is parallel on one side and serialized on the other.** Worker threads read
 directories concurrently and hand observations to a single consumer that applies them
 under a delta contract, so snapshots, queries, and change feeds cannot diverge.
-That serialization is a correctness feature and the dominant cost on Linux.
+That serialization is a correctness feature, and on Linux, where each entry’s walk is
+cheap, whatever the consumer does per entry can become the critical path.
 
-Finally, correctness is not negotiable: every optimization must leave output
-byte-identical. A faster wrong answer is not a result.
+**It reads `.gitignore` by default.** The default command classifies every entry against
+the ignore rules that govern it.
+A generated tree has no ignore rules, so a benchmark on one never exercises that work;
+on a real repository it was, until the 2026-09-29 overnight round, most of the Linux
+default command’s time (Section 4, Phase 5).
 
-## 2. The method
+Correctness is not negotiable: every optimization must leave output byte-identical.
+A faster wrong answer is not a result.
 
-The campaign runs a loop.
-Its value is not any single step but that each pass leaves the next one cheaper.
+## 2. The Method
+
+The loop’s value is not any single step but that each pass leaves the next one cheaper.
 
 1. **Instrument**, so a run says what it *did*, not only how long it took.
 2. **Profile** before forming a hypothesis.
    Read a caller tree, not a flat profile.
-3. **Write the hypothesis down**, naming the metric it moves and the tier and platform
-   it applies to.
+3. **Write the hypothesis down** in the registry, naming the metric it moves, the tier
+   and platform it applies to, and a predicted range.
 4. **Change one thing.**
-5. **Verify identical output**, then measure paired and interleaved against a control.
-6. **Apply the accept rule** without negotiation: median at least 3% better, the whole
-   95% interval on the right side of zero, and the complexity worth it.
-7. **Record the result** in a schema-validated experiment — the rejections especially.
+5. **Verify identical output**, then measure paired and interleaved against the code it
+   came from.
+6. **Apply the accept rule** without negotiation: the median paired change at least 3%
+   faster, the whole 95% bootstrap interval below zero, no invalidated sample, and the
+   complexity worth it.
+7. **Record the result** as a schema-validated artifact, rejections especially.
 8. **Re-screen the queue**, because the change just landed may have eaten the next
    hypothesis’s headroom.
 
-### Why the accept rule is strict
+[The performance loop](../guides/performance-loop.md#the-loop) has the full protocol,
+including the pre-registered-metric exception and the two tracks (single-variable tuning
+and a structural composite judged as one experiment).
 
-Of 66 recorded experiments, **28 were rejected** — close to the 33 accepted.
-Several were rejected despite a real, working mechanism, because the measured effect did
-not clear 3%. That is the rule doing its job: a real mechanism is exactly what makes a
-small number feel worth keeping, and a codebase that accumulates 1% wins for 50 lines
-each becomes unmaintainable without becoming fast.
+### Why the Accept Rule Is Strict
 
-### Why rejections are recorded as carefully as wins
+61 of the 200 records are rejections.
+Many had a real, working mechanism: counts fell, instructions fell, allocations fell,
+and wall time did not move by 3%. That is the rule doing its job.
+A real mechanism is exactly what makes a small number feel worth keeping, and a codebase
+that accumulates 1% wins for 50 lines each becomes unmaintainable without becoming fast.
 
-The negative results are the most reusable part of the ledger.
-They stop the next person re-running a dead end.
-Two examples that have already paid for themselves:
+### Why Rejections Are Recorded as Carefully as Wins
+
+The negative results are the most reusable part of the record.
+They stop the next person re-running a dead end, and several have been reused already:
 
 - **H13** proposed accumulating roll-up contributions per parent instead of merging to
-  the root per entry. Obvious, and refuted at −2.5% — because H18’s interning had already
+  the root per entry. Obvious, and refuted at −2.5%, because H18’s interning had already
   taken the expensive part.
-  Anyone who re-derives H13 from first principles will find the refutation before
-  spending a day on it.
-- **H11** was resolved *against* the change on the grounds that its target function has
-  no production caller at all.
+- **H158, H181 and H187** cut futex calls by 83%, condvar wakes from 1,426 to 3–10 per
+  run, and consumer instructions by 20–38%. None moved wall time.
+  One mechanism explains all three: work removed from a thread the clock is not waiting
+  on does not shorten the run.
+- **The walker count** was screened four times on Linux (exp-146, exp-148, exp-149,
+  exp-182) and never kept: more walkers help only when nothing else is the bottleneck.
 
-### The measurement harness
+[Dead Ends Worth Knowing](report-2026-08-20-fdu-performance-evidence.md#dead-ends-worth-knowing)
+lists the closed families with the mechanism behind each.
 
-Two binaries are built — a control and a candidate — and run **paired and interleaved**
-(A, B, A, B) against a real tree, so drift in machine state hits both arms.
-Output equivalence is verified across every mode and view before any timing.
-Surprising results are re-run in both orderings; if A:B and B:A disagree on the sign,
-the effect is position bias or noise.
+### The Measurement Harness
+
+Two release probes are built, a control and a candidate, and run **paired and
+interleaved** (A, B, A, B) against a real tree, so drift in machine state hits both
+arms. The verdict uses the median of the paired differences, never a ratio of the two
+arms’ medians: when the host drifts mid-run the two disagree, and only the paired figure
+controls for it.
+
+Before timing, output equivalence is verified; in the Linux rounds since 2026-09-29 the
+product command’s text, JSON, and JSONL output was byte-compared between arms on every
+subject before each cell.
+During timing, a **quiet gate** invalidates any sample taken while the host was busy: at
+most 25% CPU busy over one second, on both platforms since 2026-09-27. A cell with any
+invalid sample reads **INCONCLUSIVE** and cannot be recorded as an accept.
 
 Performance gates are deliberately **not** in CI, because a timing gate on a shared
 runner measures the runner.
-Section 8 revisits whether that is still the whole truth.
+What CI does run is everything that decides what a measurement means: the record schema,
+each record’s consistency with its own measurements, and drift between the records and
+every generated view.
 
-## 3. Instrumentation: the three tiers
+## 3. Instrumentation: the Three Tiers
 
 Instrumentation lives at three levels, and using one alone is the most common route to a
 confident wrong conclusion.
@@ -125,45 +180,39 @@ confident wrong conclusion.
 | External | `strace -c`, `perf`, callgrind | 2×–50× | ground truth, and call sites |
 
 The application tier attributes cost to a layer, which is what tells you where to change
-code — but it counts what the code *believes* it did.
+code, but it counts what the code *believes* it did.
 The process tier is real kernel data that cannot be fooled and cannot attribute.
 The external tier is authoritative and far too slow to leave on.
 
-The mechanism lives in the [`fdu::counters`](../../../crates/fdu-core/src/counters.rs)
-subsystem: thread-local non-atomic storage folded into process globals, a runtime enable
-flag, a certified counting global allocator, and capability-specific Linux and macOS
-process collectors.
+The mechanism lives in the
+[`fdu_core::counters`](../../../crates/fdu-core/src/counters.rs) subsystem: thread-local
+non-atomic storage folded into process globals, a runtime enable flag, a certified
+counting global allocator, and capability-specific Linux and macOS process collectors.
+Recording is off by default and enabled per run with `FDU_COUNTERS=1`, so visibility
+costs an environment variable instead of a rebuild.
+Its cost is measured, not asserted: compiled in and off measured −1.26% [−2.96%, +1.40%]
+against no instrumentation
+([exp-053](../experiments/exp-053-move-instrumentation-to-a-runtime-toggle-and-measure-all-thr.md)),
+and recording on against off measured +0.64% [−0.68%, +2.13%], bounding its cost below
+about 2.1% (same record).
 
-Recording is off by default and enabled per run with `FDU_COUNTERS=1` — a runtime toggle
-rather than a build flag, so visibility costs an environment variable instead of a
-rebuild.
+### What the Tiers Catch That Each Other Cannot
 
-**The overhead is measured, not asserted.** With ~13 million counter increments per run
-plus a counting allocator on every allocation:
+Application counters reported 2,559 directory opens over a 17,128-entry tree.
+`strace -c` on the same run reported 2,565 `openat` and 17,131 `statx`, so those
+counters are sound, and **5,118 `getdents64`, exactly 2.00 per directory read**. Half of
+every pair carries no data: the second call returns zero to say the directory is
+exhausted. No application counter could show that, because at the call site there is one
+call.
 
-| Question | Comparison | Result |
-| --- | --- | --- |
-| Idle cost | no instrumentation vs. compiled-in but off | −1.26% [−2.96%, +1.40%] |
-| Recording cost | off vs. on, same binary | +0.64% [−0.68%, +2.13%] |
+Two Linux findings came from outside the counters.
+A `.gitignore`-off arm, a placebo rather than a profile, showed that the default command
+spent 590 ms with ignore rules and 82 ms without (exp-173). Then a per-thread callgrind
+of the H169 head attributed the remaining consumer instructions to `memcmp` and the
+residual rules’ pre-checks; H183 removed most of them (436M to 238M consumer
+instructions, exp-193).
 
-Both intervals span zero.
-Precisely: recording is bounded below about 2.1%; it is not shown to be zero.
-
-### What the tiers catch that each other cannot
-
-A worked example.
-Application counters reported 2,559 directory opens over a 17,128-entry
-tree. `strace -c` on the same run reported 2,565 `openat` and 17,131 `statx` — both
-matching, so those counters are sound — and **5,118 `getdents64`, exactly 2.00 per
-directory read**.
-
-Half of every directory-read pair carries no data: the second call returns zero to say
-the directory is exhausted.
-No application counter could show that, because at the call site there is exactly one
-call. The counter was accurate about what the code did and wrong about what the kernel
-did.
-
-### A counter that reads zero is worse than no counter
+### A Counter That Reads Zero Is Worse Than No Counter
 
 A page of zeroes invites the conclusion that the work did not happen.
 This failed three times while the instrumentation was being built: a counter added to
@@ -171,281 +220,425 @@ the serial walker while the parallel walker went untouched; a lint fix that hois
 call out of a `match` scrutinee and took the counter with it; and an entire platform
 backend (`getattrlistbulk` on macOS) that replaces both `read_dir` and `stat` and
 reported neither. All three compiled, passed every other test, and reported zero.
-
 The guard is a test asserting against the system’s own totals, covering every path the
 work can take, and verified by deleting a counter and watching it fail.
 
-## 4. What has been achieved
+## 4. How the Loop Has Been Run
 
-### End-to-end, this campaign’s most recent branch
+The loop ran in six phases.
+Each changed what was being optimized, and most changed the method too, usually because
+the method had just produced a wrong answer.
 
-Measured on Linux, 450,463-entry tree, 18 interleaved trials per variant, control is the
-branch point and candidate is its tip:
+| Phase | Dates | Records | Platform | Accepted / rejected / other |
+| --- | --- | --- | --- | --- |
+| 1. Building the loop | 2026-08-10 to 08-23 | exp-000–065 | macOS, then Linux | 33 / 28 / 5 |
+| 2. A denominator and a strategy | 08-23 to 08-24, 09-14 | exp-066–070, exp-104 | macOS, Linux | 4 / 1 / 1 |
+| 3. Closing a rewrite’s regression | 09-01 to 09-07 | exp-071–103 | macOS, one Linux stage | 14 / 11 / 8 |
+| 4. Unattended rounds | 09-19 to 09-21 | exp-105–155 | macOS, then Linux | 38 / 9 / 3 |
+| 5. Release-driven questions | 09-24 to 09-28 | exp-156–174, exp-187–191 | both | 10 / 8 / 4 |
+| 6. Linux against its peers | 09-29 to 09-30 | exp-175–186, exp-192–202 | Linux | 12 / 4 / 7 |
 
-| Job | Control | Candidate | Change | 95% interval |
-| --- | ---: | ---: | ---: | --- |
-| `warm-snapshot-load` | 1897.2 ms | 1303.8 ms | **−31.4%** | [−32.0%, −30.8%] |
-| `warm-revalidate` | 2317.6 ms | 1726.6 ms | **−25.3%** | [−26.4%, −23.8%] |
-| `cold-scan-index` | 2107.8 ms | 1909.2 ms | **−9.1%** | [−13.2%, −7.6%] |
-| `cold-scan-producer` | 2381.3 ms | 2200.2 ms | −7.3% | [−8.9%, −6.1%] |
+[The Loops in Order](report-2026-08-20-fdu-performance-evidence.md#the-loops-in-order)
+divides the same records into 21 rounds by line of inquiry, with every verdict.
 
-Component times isolate where the work actually moved: the snapshot loader’s component
-fell from 939.7 ms to 390.0 ms (**−58.5%**), and the index-build component from 979.3 ms
-to 797.3 ms (**−18.6%**).
+### Phase 1: Building the Loop (2026-08-10 to 2026-08-23)
 
-**One caveat, stated rather than buried.** `cold-scan-producer`’s *component* is
-unchanged (345.3 ms against 346.8 ms) while its wall time improved 7.3%. Nothing in this
-branch targeted the producer, so that wall difference is most likely outside the
-measured component — process-level effects or environment drift — and should not be read
-as a producer improvement.
+**What it asked.** Where does a cold scan and a warm open spend its time on a real tree?
+Campaign 1 on macOS (exp-000 to exp-039) answered with a bounded parallel producer (H1,
+−50.03% `cold-scan-index`), macOS bulk metadata through `getattrlistbulk` (H3 with H26,
+−30.13%), and bounded parallel reconciliation (H12 with H9, −59.53% `warm-revalidate`),
+among 20 accepts. At its exp-032 checkpoint, measured against the original binary, the
+cold index was 54.53% faster and warm revalidation 51.99%. An exact summary without an
+index (H59) cut that job 14.56% and its peak RSS 95.28% (exp-040). The Linux campaign
+(exp-051 to exp-053 and exp-060 to exp-065) then took the consumer and snapshot paths: a
+one-slot parent memo (−7.35%), CRC-32C slicing-by-8 (−12.20% on its pre-registered
+component), the index shared with the snapshot writer (−10.50%, RSS −35.26%), and hashed
+content roll-ups (−30.31% on a generated subject, −25.78% on a dense real one).
 
-### The largest individual wins
+**What it changed in the method.** The loop itself was built here: the accept rule,
+paired interleaved measurement, the soft-schema record, the counters, and per-platform
+tuning as a table with provenance.
+Its first correction came on day two.
+The harness had computed one flag, `significant`, from the accept rule and printed its
+negation as “not significant”, so a metric whose interval sat entirely *above* zero read
+as silence. Regenerating the ledger exposed regressions across the history that had been
+reading as noise, including exp-001’s +58% CPU, and corrected a record that had called a
+change “free” when its own artifact measured peak RSS up 1.5% (`22dd6543`). Evidence
+direction has been reported separately from the accept rule ever since.
 
-**Load a snapshot beneath the parent you already hold (−51.9%).** The loader had the
-parent’s `EntryId` in a local variable, then spent a `PathBuf` join, a `normalize`
-vector, and a descent from the root through one `BTreeMap` lookup per level to
-rediscover it. A callgrind profile put the allocator at ~27.5% of the work and
-path-component iteration at ~15%. Removing the re-derivation took snapshot load down
-51.9% and warm open down 41.9%.
+**What it found about direction.** mimalloc won 23% on the aggregate tier and was not
+adopted: a C-building dependency for a one-tier win, with peak RSS up 139%. Its value
+was diagnostic. Because changes that cut allocation *counts* were refuted while an
+allocator that changes no counts won, the cost was located in glibc’s cross-thread free
+path, which became H85. An adaptive-worker campaign on APFS (exp-057 to exp-059) found
+every alternative controller 36–61% slower and kept the shipped one;
+[the gap-closure report](report-2026-08-15-adaptive-worker-gap-closure.md) has the
+policy analysis.
 
-**Resolve an upsert’s parent once per directory, not once per entry (exp-051).** The
-cold scan carried the same defect.
-A walker reports a directory’s children consecutively, so remembering the previous
-upsert’s parent answers almost every entry with one path comparison.
-Wall −7.35% [−10.42%, −6.12%]; the index-build component −16.6%. The parent-memo hit
-rate is 93.6%, and `normalize` instructions fell 89%.
+### Phase 2: A Denominator and a Strategy (2026-08-23 to 2026-09-14)
 
-**Look up content-cache candidates by hash, not by path order** (−3.0% / −3.5%).
+**What it asked.** How much is left?
+The accept rule compares a candidate against yesterday’s binary, which can say a change
+paid and never how much remains.
+[The floor report](report-2026-08-23-metadata-walk-floor.md) measured the parallel
+syscall floor per tier and subject, and
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md)
+anchored every priority to it, with termination criteria: a tier closes at a ×floor
+threshold, or after two re-screens that name nothing worth 3%. The default command,
+`fdu PATH`, was measured for the first time (exp-066), and found rewriting a 13.9 MB
+snapshot it never read on every repeated run; skipping that rewrite cut it 10.61%
+(exp-067).
 
-**Per-platform tuning as data, not conditionals.** Tuning constants became a table
-checked at compile time, with a parity test sweeping every table’s settings on every CI
-platform, verified by deliberate breakage.
+**What it changed in the method.** Three corrections, each from a wrong answer:
 
-### The inversion that closed
+- **A generated tree had inverted a ranking.** The floor report first claimed fdu beat
+  ripgrep’s walker by 22% on the primary generated subject; a paired sweep across six
+  trees put fdu 12–26% ahead on every generated tree, level once real filenames appear,
+  and 11.8% behind on `/usr`. Accept evidence has needed a nominated real tree ever
+  since, with generated trees as screens.
+- **A subject’s shape had been invisible.** exp-064’s cold content win collapsed from
+  −13.40% to −2.38% on a dense real tree because the sparse generated subject put the
+  saving on the critical path: 0.95 of the saved CPU became wall there, against 0.29 on
+  the dense tree. Each record now says how its tree was obtained and whether it can be
+  rebuilt (`ef255a2a`).
+- **The evidence gates had not bound.** The ledger chose its headline by searching
+  titles for “cumulative” and picked a validation run, reporting the campaign as +1.4%
+  against the pre-work baseline instead of exp-032’s −54.5%; and no performance-evidence
+  check ran in CI. Both were fixed, and the evidence checks joined `make check`
+  (`4b80fab2`).
 
-The README long carried the claim that a warm run was *slower* than a cold one on a warm
-laptop — measured, not assumed, and the stated current work.
-**That has closed on Linux:** warm open now runs 22.6% faster than a cold scan, where
-the campaign began with it 69% slower.
+A runbook made one round executable start to finish by an unattended agent, with
+autonomy rules: no merge, no verdict from a screening subject or fewer than 12 pairs.
 
-### Findings that changed direction rather than code
+### Phase 3: Closing a Rewrite’s Regression (2026-09-01 to 2026-09-07)
 
-**mimalloc wins one tier and was not adopted.** Confirmed at −23.0% on the aggregate
-tier — and rejected: a C-building dependency for a one-tier win, +139% RSS on the tier
-whose pitch is low memory, unmeasured on macOS. Its real value was diagnostic.
-Since H51 and H62 both cut allocation *counts* and were refuted, while mimalloc changes
-no counts and wins, the cost is glibc’s cross-thread free path — one thread allocating,
-another freeing. That became H85, with a dependency-free design.
+**What it asked.** [PR #51](https://github.com/jlevy/fdu/pull/51)’s streaming engine
+halved its base’s cost and was still 144% slower than the pre-rewrite `main` (exp-071,
+exp-073); what closes the gap without changing an answer?
+Five accepts closed it (exp-077 to exp-090), and with exp-079 the stack matched or beat
+the pre-rewrite control.
+The H86 structural composite (exp-091 to exp-103) then replaced the consumer
+representation as one experiment under a differential oracle: fixed controls applied
+once per directory cut `cold-scan-index` 33.55% with controls on, and compact child
+topology cut the default tree 7.70% and RSS 37.79%.
 
-**Allocation is producer-side, not index-side.** The campaign assumed for weeks that
-allocation was concentrated in the index consumer.
-Two counters inverted it: `scan-producer`, which walks without building an index,
-allocates *more* than `scan-index` does — 8.8M against 6.9M. The jobs differ in what
-they retain, so this is a direction rather than a clean subtraction, but it points away
-from the consumer.
+**What it changed in the method.** The structural track ran for the first time: five
+non-inferior steps judged as a composite, because per-piece 3% gates would have measured
+conversion costs the end state deletes.
+Its Linux evidence stage (exp-103) passed the relative gates and failed the floor gates,
+2.60× the floor against 1.4×, the first time the denominator said no to a set of
+accepts. And two harness fixes made the measured job match the shipped one: each
+artifact’s source is verified in cross-revision comparisons, and probes measure with the
+shipped control semantics enabled (`0bfb2cf8`, `1a39be9f`).
 
-**Every `read_dir` costs two `getdents64` calls.** Half carry no data.
-The cost scales with directory count rather than entry count, so it lands hardest on
-wide shallow trees.
+### Phase 4: Unattended Rounds (2026-09-19 to 2026-09-21)
 
-### Correctness and tooling improvements that came out of the work
+**What it asked.** On the 0.1.0 engine, what is left in the default command and in a
+warm content open, first on macOS and then on Linux?
+The Darwin revisit ran 32 experiments dated 2026-09-19, most of one overnight session
+(exp-105 to exp-137). Five restore cuts took `content-cache-hit` on a 146k-entry
+checkout from 1,218.0 to 778.0 ms (five separate pairs, not one comparison), a sixth cut
+its peak RSS 10%, and one shared walk for unfiltered views cut `content-query` 18.76%.
+The Linux validation (exp-138 to exp-155) found the Darwin wins transferring (−22.48% on
+the cache hit) and the floor gates still failing: the index tier 1.78× the floor against
+1.4× (exp-141).
 
-- **Four Windows-gated defects**, two of them real bugs: `usize::is_multiple_of` is
-  stable since Rust 1.87 while the project declares MSRV 1.85, so a Windows user on the
-  declared minimum could not build the crate.
-  The MSRV job runs on ubuntu, where those code paths do not exist.
-- **`make cross-lint`**, which runs clippy against macOS and Windows targets locally.
-  It checks rather than builds, so no cross-linker is needed.
-  Before it existed, the module holding the repository’s only `unsafe` block had never
-  been linted anywhere.
-- **An ecosystem survey** establishing that hot-path counters in an optimization loop
-  are a use case no mainstream Rust crate targets, and that on Linux there is no
-  unprivileged, in-process, per-type syscall count at all.
-- **A fail-closed adaptive-worker campaign** that separated completion-order sensitivity
-  from performance harm.
-  Repeated and staged controllers corrected a late-window sensitivity but regressed
-  mixed-phase APFS wall time by about 59–61%, so the shipped controller stayed
-  unchanged. The bounded trace, phase-checked corpora, provenance, installed-command
-  attestation, and pinned dust adapter remain as reusable evidence infrastructure.
+**What it changed in the method.** The **leftover determination** became a verdict type:
+a profile or check that changes no code and is accepted when it names what remains.
+23 of this phase’s 38 accepts are determinations.
+The cost of that productivity showed up two days later: two records carried headline
+figures that were cross-job ratios rather than their own paired results (exp-116 read
+−99.9% where its paired figure was −2.16%), and a hand-maintained list decided which arm
+the page drew as the product’s cost, and had mislabelled seven records.
+A person reading caught the two headlines; no gate did.
+Since `36048330` every record is validated against its own measurements, so a wrong
+headline fails the build instead of regenerating cleanly into every view.
 
-## 5. Platform status: Linux and macOS
+**What it got wrong, found later.** Two Linux determinations (exp-139, exp-147) read the
+default command as the `getdents64` and `statx` walk and concluded the rest was the
+floor.
+The phase timer spanned `.gitignore` classification running on the consumer during
+the walk, and no `.gitignore`-off arm was measured.
+That reading stood for eight days, until Phase 5 measured the arm it lacked.
 
-This is the most important section for anyone reading a number and deciding what it
-means.
+### Phase 5: Release-Driven Questions (2026-09-24 to 2026-09-28)
 
-**The evidence is still overwhelmingly macOS.** Of 66 recorded experiments, **57 were
-measured on Darwin and 9 on Linux.** The macOS work is mature — a bulk-attribute reader
-using `getattrlistbulk`, tuning constants measured across three APFS regimes, a
-scheduler tuned against a real device.
-The Linux work is younger but no longer trivial: the consumer campaign landed there
-(H87, H88, H90), H89 was refuted there, and the floor measurement that now anchors the
-strategy is Linux evidence.
-What Linux still lacks is not experiments but *bare metal* — every one of those seven
-ran virtualized, which is a limit on the class of claim rather than on the count.
+**What it asked.** Questions the 0.2.0 release raised: the progress indicator’s cost
+(none without a handle, exp-156); multi-view report construction (H153, −47.01%,
+provisional, exp-159); why fdu’s indexed tree trailed pdu and diskus on the generated
+tree (H156 and H160, exp-160 and exp-163); and then why the default command took about
+eight times pdu’s time on a real repository.
 
-**A constant measured on one platform is inherited, not proven, on the other.** Which
-shipped constants were measured where is recorded in
-[the platform tuning guide](../guides/platform-tuning.md), and the distinction is
-enforced in code: tuning is a table with a per-entry provenance marker, and a parity
-test sweeps every platform’s table on every CI platform.
+**The finding of the record.** On Linux v6.12, the default tree took 590 ms with
+`.gitignore` and 82 ms without, in the same quiet run (exp-173). One consumer thread did
+all the matching, at 78 allocations per entry.
+On macOS, where the walk costs several µs per entry, the same matching stayed off the
+critical path (exp-106 measured +1.6%, an interval across zero), and the generated trees
+have no ignore rules.
+Allocation-free matching (H162) cut the default tree 46.19%, and control chains resolved
+once per listing (H163) another 35.86%: 590 to 211 ms in two changes.
+The default summary also stopped building an index to classify ignore rules (H161): peak
+RSS −69% on macOS, wall −6.93% on Linux.
+
+**What it changed in the method.** A phase share cannot attribute work that runs
+concurrently inside the phase, and a placebo with the suspected work turned off is the
+cheap check; new determinations need a `--no-controls` arm.
+The Linux quiet gate was rebuilt: it had read load average, which on Linux counts the
+benchmark’s own previous samples, so every sample of the first Linux tool comparison was
+invalidated.
+Linux now uses the same one-second CPU-occupancy gate as macOS (`fabc850d`).
+
+### Phase 6: Linux Against Its Peers (2026-09-29 to 2026-09-30)
+
+**What it asked.** Can fdu’s default `fdu PATH` beat pdu’s default on two real trees,
+with `.gitignore` on and no answer changed, and then every pdu mode?
+One unattended night ran
+[the overnight plan](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md):
+bucketed `.gitignore` matching (H171, −29.62%), derived control chains (H175, −3.31%),
+an exact transient tree tier (H172, −13.48%), summary walker trims (H180), a
+Linux-native directory reader (H169 phase 1), and cheap matcher pre-checks (H183,
+−7.62%). End to end the round cut the kernel tree’s default tree 39.00% (exp-194) and
+took fdu from 2.4 times pdu’s default to level.
+The pdu track the next day (exp-197 to exp-201) added H185, H186 and H188 with H189 and
+put fdu ahead of both pdu modes and diskus on both real trees.
+The release cell (exp-202) measured the shipped engine against 0.2.1 directly: −48.00%
+on the kernel tree.
+
+**What it changed in the method.** The night’s baselines were four-arm A/A cells, each
+with two copies of the same binary.
+One read −3.74% [−12.33%, −0.59%], an accept by the rule’s arithmetic with both arms
+identical. From then on a candidate predicted below 10% was measured at 20 pairs or
+recorded as a screen, and a placebo that excluded zero by more than 3% blocked its
+verdict. A plan review found that the harness could print ACCEPT for a cell the quiet
+gate had partly invalidated; it now prints INCONCLUSIVE and the recorder refuses the
+accept (`fdu-c2c6`). Two more fixes closed ways a cell could measure the wrong thing: a
+target directory shared across worktrees could hand a probe built from another
+checkout’s sources (`fdu-8whh`), and every harness artifact is now written whole.
+Finally, a baseline that compares two builds, such as an end-to-end or release cell, is
+drawn with both arms; every view had read a baseline as one build against itself, so the
+ledger printed exp-202’s 0.2.1 control as the whole record of a 48% gain.
+
+**What review added.** The pull requests carrying the round were reviewed before
+merging, and two findings changed measured code on correctness grounds.
+H169 had put `AT_NO_AUTOMOUNT` on the parallel walk’s stats alone, so the same request
+could answer differently by route on a tree holding an unmounted autofs trigger; every
+route now lists through the native reader (H184, exp-196, screened for non-regression).
+And H185’s identical answers held on three subjects, none of which has a directory that
+lists but refuses search; the shipped form proves a directory searchable first and keeps
+83% and 89% of its `statx` saving.
+The per-cell answer comparison could not have found either, because neither case exists
+in the subjects.
+
+## 5. What the Loop Has Achieved
+
+[Where Each Platform Stands](report-2026-08-20-fdu-performance-evidence.md#where-each-platform-stands)
+has every standing figure with its regime.
+The largest individual changes, each on its own primary job and subject:
+
+| Change | Paired change | Job | Platform | Record |
+| --- | ---: | --- | --- | --- |
+| H12 with H9, bounded parallel reconciliation | −59.53% | `warm-revalidate`, 720k tree | macOS | [exp-030](../experiments/exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md) |
+| H1, bounded parallel producer | −50.03% | `cold-scan-index`, 60k | macOS | [exp-001](../experiments/exp-001-bounded-parallel-directory-producer.md) |
+| Point lookup for public mutation preflight | −49.78% | `delta-apply-large`, 98k | macOS | [exp-102](../experiments/exp-102-point-lookup-for-public-mutation-preflight.md) |
+| H162, allocation-free `.gitignore` matching | −47.02% | default summary, `linux-v6.12` | Linux | [exp-173](../experiments/exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md) |
+| H163, control chains once per listing | −36.43% | default summary, `linux-v6.12` | Linux | [exp-174](../experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md) |
+| H53, bulk metadata during reconciliation | −34.39% | `warm-revalidate`, 720k | macOS | [exp-026](../experiments/exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md) |
+| H86, fixed controls once per directory | −33.55% | `cold-scan-index`, controls on | macOS | [exp-096](../experiments/exp-096-apply-fixed-controls-once-per-detached-directory.md) |
+| H102, byte-ordered content file map | −31.00% | `content-cache-hit` | macOS | [exp-069](../experiments/exp-069-order-the-content-file-map-by-path-bytes-instead-of-componen.md) |
+| H94 with H95, hashed content roll-ups | −30.31%, −25.78% real | `content-cache-hit` | Linux | [exp-064](../experiments/exp-064-content-roll-up-lookup-and-indexed-type-rule-tiers.md), [exp-065](../experiments/exp-065-validate-the-content-roll-up-change-on-a-dense-real-tree.md) |
+| H3 with H26, `getattrlistbulk` | −30.13% | `cold-scan-index`, 720k | macOS | [exp-022](../experiments/exp-022-batch-macos-scan-metadata-with-getattrlistbulk.md) |
+| H171, bucketed `.gitignore` matching | −29.62% | default tree, `linux-v6.12` | Linux | [exp-178](../experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md) |
+| H59, exact summary without an index | −14.56%, RSS −95.28% | summary, 978k | macOS | [exp-040](../experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md) |
+| H161, ignore-aware summary | RSS −69.12% | default summary, 137k | macOS | [exp-170](../experiments/exp-170-macos-ignore-aware-transient-summary-cuts-default-summary-pe.md) |
+
+The end-to-end cells are the comparisons to quote, because each step above was measured
+against the head before it, in its own session:
+
+| Cell | What it compares | Headline change |
+| --- | --- | --- |
+| exp-032, macOS | campaign 1’s code against the original binary | `cold-scan-index` −54.53%, 635 to 290 ms on the 60k checkout |
+| exp-194, Linux | the overnight round’s head against 0.2.1 | default tree −39.00%, 200.3 to 119.8 ms on `linux-v6.12` |
+| exp-201, Linux | the pdu track against the overnight head | default tree −3.05% and −8.94% on the two real trees |
+| exp-202, Linux | the 0.3.0 release against 0.2.1 | default tree −48.00%, −14.09% and −14.57% on the kernel, dense and generated trees |
+
+No later cell repeats exp-032’s comparison with the original binary, so it describes
+campaign 1, not the current engine.
+
+## 6. What the Loop Taught About Itself
+
+Each of these was learned by the loop producing a wrong or misleading answer first.
+
+**The instrument needs as much scrutiny as the engine.** Regressions printed as silence
+(Phase 1); a headline selected from the wrong artifact (Phase 2); records whose headline
+was not their own measurement (Phase 4); a tool-comparison quiet gate that invalidated
+every Linux sample (Phase 5); an A/A cell that passed the accept rule, and a verdict
+that could print ACCEPT for an invalidated cell (Phase 6); and probes built from another
+checkout’s sources (`fdu-8whh`, found 2026-09-13, fixed 2026-09-30). Each passed its
+tests at the time, and most were found by a person or reviewer reading output rather
+than by a gate. Each now has a gate, and the record schema, self-consistency, and
+view-drift checks run in CI.
+
+**The measured job has to be the shipped command.** The default command went unmeasured
+for the first 66 records; `aggregate-summary` measured the full-index plan under a
+transient label from [#65](https://github.com/jlevy/fdu/pull/65) until a re-measurement
+caught it and the guide was corrected on 2026-09-16 (`fdu-hkyh`); and no Linux benchmark
+measured a `.gitignore`-off arm on a real repository until 2026-09-28 (exp-173), which
+hid the largest Linux cost in the record.
+
+**Generated trees screen; real trees decide.** A generated tree inverted a walker
+ranking (Phase 2), flattered a cold content win more than fivefold (exp-064 against
+exp-065), and holds no ignore rules.
+The charted page counts 7 of 28 Linux improvements as decided on generated trees, none
+of them since 2026-09-29.
+
+**Cutting work only pays where the clock waits for it.** With `.gitignore` on, the Linux
+default tree kept two of four vCPUs busy and wall followed the consumer; with it off,
+wall followed total CPU divided by about 3.4. That one observation ordered the overnight
+queue, and it explains why H157, H158, H181, H182 and H187 cut real work and moved
+nothing. Instruction counts are evidence about a thread, not about wall time.
+
+**Only within-cell ratios are evidence across sessions.** Over one night on one
+virtualized host, an unchanged binary’s absolute time drifted 50–70% between cells.
+Every standing figure is therefore a paired change inside one cell, and the report says
+so when a figure chains cells.
+
+**A result is evidence about its platform.** The `.gitignore` cost was invisible on
+macOS because the macOS walk is slower per entry; H159 saves per directory, so it
+appeared on a dense tree and vanished on a sparse one; H156 and H160, clear on Linux,
+moved macOS wall by less than the host could resolve.
+[The platform tuning guide](../guides/platform-tuning.md) records which regime each
+shipped constant was measured in.
+
+**Unattended rounds work when the rules are mechanical.** An agent ran 32 experiments in
+one day on macOS, most of them overnight, and 16 in one night on Linux, recorded
+rejections as carefully as accepts, and stopped where the runbook said to.
+What it could not do was notice a defect in the instrument it was measuring with; those
+were found afterwards by people and reviewers, which is why the pull requests that carry
+a round are reviewed before they merge.
+
+## 7. Platform Status
 
 |  | macOS | Linux | Windows |
 | --- | --- | --- | --- |
-| Experiments recorded | 57 | 9 | 0 |
-| Profiler available | bespoke script | callgrind | none |
-| Bulk directory read | `getattrlistbulk` | `read_dir` (2 syscalls/dir) | `read_dir` |
-| Process counter tier | total syscalls, faults | read/write syscalls, faults | none yet |
-| Cross-lint coverage | yes | yes (host) | yes |
+| Records | 137 (last: exp-172, 2026-09-28) | 63 (last: exp-202, 2026-09-30) | 0 |
+| Host | one M1 Pro, bare metal, APFS | 4-vCPU KVM and Firecracker guests, ext4 | none |
+| Regime | uncontrolled since 0.1.0 | mostly quiet since 2026-09-20 | none |
+| Directory read | `getattrlistbulk` | native `getdents64` reader with `statx` (H169) | `read_dir` |
+| Profiler | `/usr/bin/sample`, driven by the harness | callgrind, `strace` | none |
 | Instruction-count gating | unavailable (no Valgrind on Apple Silicon) | possible | unavailable |
+| Floor denominator | none | stale since exp-141 | none |
 
-The macOS-specific engine work — the bulk reader and its scheduler — has no Linux
-equivalent and needs none; `getdents64` plus `statx` is a different cost structure.
-The open question is the reverse: which Linux findings transfer back.
-The doubled `getdents64` calls are Linux-specific by construction.
-The allocator diagnosis is not, and mimalloc’s −23% on the aggregate tier is explicitly
-untested on macOS.
+**macOS has the larger record and the older one.** Its 137 records built the walker, the
+bulk reader, the snapshot path, and the content cache; none since 0.1.0 held the quiet
+gate for a whole cell, and none measures the 2026-09-29 round, the pdu track, or the
+release.
+Those changes are portable code except H169’s reader, which is Linux glibc only,
+and H185, which is a no-op on macOS.
 
-## 6. What remains
+**Linux has the recent record.** Every Linux cell since 2026-09-20 ran on a 4-vCPU
+virtualized guest, most of them quiet; every 0.3.0 speed claim is Linux evidence.
 
-The current action order is in
-[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
-[The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
-preserves the earlier Darwin queue, not the live next-up.
-H86’s remaining gap is still the Linux floor after H111 failed on
-[#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized); leftover is H143.
-That is not a restart of the Darwin composite.
+**A constant measured on one platform is inherited, not proven, on the other.** Tuning
+is a table with a per-entry provenance marker, and a parity test sweeps every platform’s
+table on every CI platform.
 
-The 2026-08-23 strategy — priorities, phases, targets, and how that campaign ends — is
-owned by
-[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md),
-which consolidated three earlier queue orderings (this section’s original table, the
-structural review’s S1–S7 sequence, and the headroom review’s re-ordering) after
-[the floor report](report-2026-08-23-metadata-walk-floor.md) gave every tier a measured
-denominator. The queue below is that plan’s 2026-08-23 summary, not the live pickup.
+## 8. Where the Evidence Is Weak
 
-| Phase | Work | Why it is where it is |
-| --- | --- | --- |
-| 0 — instruments | `fdu-tyjx` aggregate probe, `fdu-lk9u` real-tree subject set, `fdu-33ri` `make perf-floor`, `fdu-5yjk` FullIndex diagnostics, `fdu-9ydj` un-contaminated attribution, `fdu-c65j` samply | Multipliers: each unblocks or de-biases every later verdict |
-| A — confirmed-mechanism constants | `fdu-tk1b` Linux cold thread policy (~22% cold scalar), `fdu-pdne` PGO screen, `fdu-6kyn` hardware CRC32C | Mechanisms already observed; cheap; tuning track |
-| B — the structural experiment | `fdu-xde5` (H86) as **one** experiment over `fdu-2ubt`, `fdu-prph`, `fdu-weey`, `fdu-fnfc`, `fdu-uv0s` | `arena_spike` measures 1.06× the floor where the index tier runs 2.68×; the ~15-point real-tree tax lands in the code it deletes; the largest prize on any tier and the last one on the aggregate tier |
-| C — content tier | `fdu-926e` classification by `ExtId` (~34% of a warm content open), `fdu-78q6` sidecar restore (25 µs/file) | Independent of B; the tier where the cache genuinely pays |
-| D — warm end-state | `fdu-yr23` + `fdu-pdra` adoption-shaped snapshot, then the fsevents journal rung | After B, because the representation decides the format; the stat floor is a theorem, and journal scoping is the only thing under it |
-| E — cold truth and release | `fdu-lf3v` bare metal (H73/H28, queue depth, io_uring-cold), `fdu-9716` `searchfs` spike, `fdu-druf` opener pool, `fdu-ow8y` quiet peer cell, record-spec Phases B–D | Evidence class: turns scouting signs into claims |
+[Qualifications on Current Results](report-2026-08-20-fdu-performance-evidence.md#qualifications-on-current-results)
+lists the qualification on each standing verdict.
+The structural gaps are these:
 
-Post-B re-screens are part of the plan rather than afterthoughts: `fdu-h7sw` (H85,
-expected consumed by the arena), `fdu-sk7v` (H66, possibly moot at 1.06×), and the
-snapshot economics. Settled and demoted since this report’s first queue: `fdu-zgxd`
-closed as an oracle artifact, `fdu-jnuo` priced under 1% of aggregate wall, warm-Linux
-syscall batching bounded at 9% and measured 6–8× slower, and H87/H88/H90 landed while
-H89 was refuted.
+- **Cold cache.** Every run is warm-steady; dropping the page cache needs root, and
+  nothing in the record describes a first read from disk.
+- **Bare-metal Linux.** Every Linux host is virtualized, and a hypervisor’s page cache
+  sits under the guest’s, so device-latency and I/O-ordering hypotheses (H28, H73)
+  remain untestable.
+- **One host per platform.** macOS is one M1 Pro; Linux is 4-vCPU Xeon guests.
+  The walker-count screens are evidence about four vCPUs, not wider hosts.
+- **macOS since 2026-09-28**, and **Windows** at all.
+- **The release cell cannot be chained to the development cells.** exp-202 ran in a
+  session 29–38% slower than exp-201’s and carries no exp-201 engine.
+  H184 was screened alone on the #161 head (exp-196) but not on exp-201’s engine, the
+  R163-1 latch and the stability layer were never timed alone, and part of the release’s
+  lead on the generated tree is the session’s.
+- **Provisional and in-progress verdicts.** H153’s −47.01% awaits a quiet confirmation;
+  H70, H151 and the exp-097 lifecycle audit are in progress.
+- **The floor scoreboard is stale.** It was last derived on 2026-09-20 (exp-141), before
+  eighteen accepted hypotheses.
+- **Two hypotheses can compete for one cost.** H13 lost to H18, H74 to the snapshot
+  loader fix, H89 to H86; any queued estimate is an upper bound until re-screened.
 
-## 7. Where the evidence is weak
+## 9. What Remains
 
-Stated plainly, because these are the places a confident number could mislead.
+[Open Work](report-2026-08-20-fdu-performance-evidence.md#open-work) has the full list
+and [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30)
+the order. In brief:
 
-**A generated corpus can invert a comparison, not merely understate a cost.** Measured
-against a syscall floor, a real tree’s filenames and directory widths cost fdu about 15
-percentage points that a uniform corpus of matched size and shape does not, and cost the
-peer walker nothing.
-That is large enough to reverse a ranking, and it did:
-[the metadata-walk floor report](report-2026-08-23-metadata-walk-floor.md) first claimed
-fdu beat ripgrep’s walker by 22% on the strength of the primary generated subject, and a
-paired sweep across six trees then put fdu 12–26% ahead on every generated one, level
-once real filenames appear, and 11.8% behind on `/usr`. Any figure taken against
-`gen_tree.py` is a lower bound on real-tree cost, and no ranking established on one is
-evidence of a ranking at all.
+- **On Linux**, walker-side cuts come first, because exp-200 showed the tree route’s
+  consumer has slack: H169 phase 3 (directories opened relative to the parent’s
+  descriptor) and H177 (a per-listing name arena), then H178, then the full
+  generated-tree peer table on the shipped engine.
+- **On macOS**, measure H162 and H163 (`fdu-dv07`), the 2026-09-29 round, the pdu track,
+  and the release engine (the platform review’s cells, exp-203 onward).
+- **For the record**, re-derive the Linux ×floor scoreboard (`fdu-z2h6`), confirm H153
+  on a quiet host (`fdu-9e9d`), and close the regime gaps: bare metal (`fdu-lf3v`), a
+  quiet-host peer cell (`fdu-ow8y`), and a macOS floor (`fdu-9hdc`).
 
-**Platform asymmetry.** 57 experiments on macOS, 9 on Linux.
-Every Linux constant not explicitly measured is inherited.
+[Campaign 2](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) defined how
+a tier closes, and no tier has been recorded as closed:
+[Campaign 2 Termination](report-2026-08-20-fdu-performance-evidence.md#campaign-2-termination)
+has each tier’s status.
+The `.gitignore`-on default command, which held the largest gap, was never a campaign-2
+tier; after the overnight round the kernel tree’s default tree was 1.6% above its
+`.gitignore`-off arm in exp-194’s cell and 8.6% in exp-193’s, both ratios of medians.
 
-**No bare metal.** All Linux measurement here is virtualized.
-A hypervisor’s page cache sits under the guest’s, so writing to `drop_caches` inside the
-guest does not reach the disk.
-That makes one class of claim untestable: anything whose mechanism is device latency or
-I/O ordering.
-H73 and the queue-depth hypotheses are marked accordingly, and the io_uring
-results were not treated as settling the cold question.
+## 10. Open Questions About the Method
 
-**The aggregate tier cannot be measured under the accept rule.** There is no probe job
-for it, so the tier where fdu competes with `diskus` has no gate.
+**Can a regression gate exist at all?** A timing gate on a shared runner measures the
+runner. Instruction counts are deterministic, and `iai-callgrind` could gate them, but
+Valgrind does not instrument kernel code, which is most of the Linux walk’s time, and
+Phase 6 showed instruction cuts that moved no wall (H182, H187). A partial gate honestly
+labelled may still be worth having (`fdu-slgp`).
 
-**Windows has no performance evidence at all.** It builds and passes tests; nothing more
-is claimed.
+**How should an unattended round find defects in its own instrument?** Every harness
+defect in Section 6 passed its tests and was found by reading.
+The overnight round’s same-binary A/A cells caught one class, and review caught others;
+whether something cheaper and routine would catch the rest is open.
 
-**Two hypotheses can compete for one cost.** This has happened twice — H13 lost to H18,
-and H74 lost to the loader fix on a path a profile had put it at 27.5% of.
-Any queued estimate is an upper bound until re-screened after the preceding change
-lands.
+**When does a campaign end?** The termination rule exists and has never fired, partly
+because the floor it reads has not been re-derived since exp-141.
 
-**Some overhead bounds are bounds, not values.** Instrumentation recording cost is
-bounded below ~2.1%; it is not zero, and the interval is wide because tightening it
-costs more trials than the answer is worth.
+**Can the loop be reused elsewhere?** Extracting it as a framework is `fdu-7yx4`;
+[the instrumentation playbook](../guides/performance-instrumentation-playbook.md) is the
+domain-neutral half already written.
 
-**One cited figure is soft.** The `tracing` enabled-span cost used in the ecosystem
-comparison is derived from a third party’s comparative benchmarks rather than
-`tracing`’s own, which are not published for the enabled case.
-The order of magnitude is not in doubt; the specific number is.
+## 11. How to Reproduce Any of This
 
-## 8. Open questions about the method itself
+[Running It](../guides/performance-loop.md#running-it) has the commands to record a
+subject (`make perf-baseline`), profile (`make perf-profile`), and measure
+(`make perf-compare CONTROL=... JOBS=... TRIALS=...`);
+[Publishing the Evidence](../guides/performance-loop.md#publishing-the-evidence) has
+`make perf-record`, `make perf-ledger`, and `make perf-report`.
+[The runbook](../guides/performance-loop-runbook.md) is one round of that, start to
+finish, with the rules an unattended agent follows.
 
-**Can a regression gate exist at all?** The standing position — a timing gate on a
-shared runner measures the runner — is true of wall clock and false of instruction
-counts. `iai-callgrind` counts user-space instructions deterministically.
-It would be a *partial* gate: Valgrind does not instrument kernel code, and 29–62% of
-this workload’s time is system CPU, so it would have missed the `getdents64` finding
-entirely. A partial gate honestly labelled is worth having; one trusted for what it
-cannot see is not. Tracked as `fdu-slgp`.
-
-**Does an instruction-count regression predict a wall-time regression** in a parallel
-program, given Valgrind serializes threads?
-Unsettled, and it should be settled before adopting the gate.
-
-**How much does the harness cost?** A probe’s own verification digest measured 38.8% of
-one profile. Harness cost must be subtracted before any percentage is quoted.
-
-## 9. How to reproduce any of this
-
-```shell
-# Build a control and a candidate probe.
-cargo build --release -p fdu --example perf_probe --no-default-features
-
-# Paired, interleaved measurement against a real tree.
-uv run --project benchmarks --frozen python -m benchmarks.realtree measure \
-  --root TREE --label NAME \
-  --variant "control=PATH_A" --variant "candidate=PATH_B" \
-  --job cold-scan-index --job warm-revalidate --trials 20
-
-# Per-layer counters on any run.
-FDU_COUNTERS=1 ./target/release/examples/perf_probe scan-index --root TREE 2>&1 >/dev/null
-
-# Ground-truth syscall counts.
-strace -f -c -e trace=getdents64,statx,openat ./target/release/fdu --cache off TREE
-
-# Record the verdict, including rejections.
-make perf-record ARGS="--run RESULTS.json --id exp-NNN --decision rejected ..."
-```
-
-The full protocol, including the accept rule and the hypothesis registry, is in
-[the performance loop](../guides/performance-loop.md).
-
-## 10. Document map
+## 12. Document Map
 
 | Document | What it is |
 | --- | --- |
-| This report | Orientation through 2026-08-23: method, history, what remained then |
-| [Performance-loop runbook](../guides/performance-loop-runbook.md) | One iteration, current pickup, and standing host context |
-| [Performance evidence](report-2026-08-20-fdu-performance-evidence.md) | The full record, every round from exp-000 to exp-202, and where each platform stands |
+| This report | How the loop works, how it has been run, and what it taught |
+| [Performance evidence](report-2026-08-20-fdu-performance-evidence.md) | The full record: every round from exp-000 to exp-202, and where each platform stands |
 | [Charted page](performance-evidence/index.html) | Absolute timings and paired effects across every experiment, generated by `make perf-report` |
-| [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | The reusable method, domain-neutral |
+| [Experiment ledger](report-2026-08-10-fdu-performance-experiments.md) | Every experiment in full, generated by `make perf-ledger` |
 | [Performance loop](../guides/performance-loop.md) | Protocol and live hypothesis registry |
+| [Performance-loop runbook](../guides/performance-loop-runbook.md) | One round, the current pickup, and standing host context |
+| [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | The reusable method, domain-neutral |
 | [Platform tuning](../guides/platform-tuning.md) | Which constants were measured where |
-| [Experiment ledger](report-2026-08-10-fdu-performance-experiments.md) | Every experiment, accepted and rejected |
-| [Performance architecture](report-2026-08-12-fdu-performance-architecture.md) | Cost model and architectural conclusions |
-| [Systems optimization research](../research/research-2026-08-14-systems-performance-optimization-rust.md) | The general problem, Rust-specific |
-| [Ecosystem survey](../research/research-2026-08-14-instrumentation-ecosystem-survey.md) | What the ecosystem already solves |
-| [Structural review](../research/research-2026-08-14-structural-performance-review.md) | What 30 hypotheses had in common, and missed |
 | [Metadata-walk floor](report-2026-08-23-metadata-walk-floor.md) | The measured floor for this workload, and every tier and peer read against it |
-| [Campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | The current strategy: priorities, phases, floor-anchored targets, termination |
+| [Campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored priorities and termination |
+| [macOS](report-2026-09-26-fdu-live-tool-comparison.md) and [Linux](report-2026-09-27-fdu-linux-tool-comparison.md) tool comparisons | fdu against its peers |
+| [Performance architecture](report-2026-08-12-fdu-performance-architecture.md) | Cost model and architectural conclusions |
+| [Structural review](../research/research-2026-08-14-structural-performance-review.md) | What 30 hypotheses had in common, and missed |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

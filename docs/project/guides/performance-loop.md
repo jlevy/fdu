@@ -10,7 +10,8 @@ re-run it, and get numbers comparable to the ones already recorded.
 New here? To run the next iteration, start at
 [the runbook’s Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30).
 [The campaign status report](../reports/report-2026-08-14-performance-campaign-status.md)
-is the history through 2026-08-23. This document is the protocol.
+is the history of how the loop has been run, through exp-202. This document is the
+protocol.
 
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
