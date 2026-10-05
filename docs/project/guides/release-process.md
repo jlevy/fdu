@@ -50,13 +50,22 @@ If the release commit changes, start again with a new directory.
    [Prepare the Release Commit](#prepare-the-release-commit) lists.
    Its merge commit is `COMMIT`; later merges to `main` do not change it.
 
-2. **Stability pass.** On `COMMIT`, run `make check`, `make cross-lint`,
-   `make semver-check`, and `make release-rehearse`; install the candidate and run the
+2. **Stability pass.** With the QA playbook’s trees named, one command runs the four
+   gates on `COMMIT`, installs the candidate, runs the
    [installed-CLI QA playbook](../../../tests/qa/cli-installed-e2e.qa.md), peer
-   agreement included, and the [correctness runbook](correctness-runbook.md); record
-   both results beside those procedures.
-   This may run alongside steps 3 to 5, and must pass before step 6. See
-   [Stability Pass](#stability-pass).
+   agreement included, and the [correctness runbook](correctness-runbook.md), and writes
+   the report and tables to record beside those procedures:
+
+   ```shell
+   make release-stability
+   ```
+
+   This may run alongside steps 3 to 5, and must pass before step 6: the command
+   succeeds only once every step of the pass has passed.
+   When none has failed but one was skipped or has not run, it exits 3 (`make` reports
+   `Error 3`). That blocks the tag as a failure does, until the step runs or the record
+   explains why it could not.
+   See [Stability Pass](#stability-pass).
 
 3. **Preflight.** Every line must print `ok`:
 
@@ -374,11 +383,102 @@ One pull request prepares the release, and its merge commit is the release commi
 
 ### Stability Pass
 
+`make release-stability` runs the whole pass on the release commit and writes its
+record. It reads `COMMIT` and `RELEASE` as the other steps do, works in
+`$RELEASE/stability`, which like `RELEASE` must be outside any checkout, and takes its
+trees from the QA playbook’s
+[Local Fixtures](../../../tests/qa/cli-installed-e2e.qa.md#local-fixtures) variables:
+
+```shell
+export FDU_QA_SMALL=<a checkout of this repository> FDU_QA_MEDIUM=<a larger tree>
+export FDU_QA_LARGE=<a hostile wide tree> FDU_QA_PEER_TREES=<real trees, separated like PATH>
+make release-stability
+```
+
+In order, it:
+
+1. Creates a clean worktree of the commit with its own Cargo target directory, as
+   [AGENTS.md](../../../AGENTS.md#build-and-test) requires, and runs the four gates
+   there, each with its own log: `make check`, `make cross-lint`, `make semver-check`,
+   and `make release-rehearse`.
+2. Builds the release wheel from that worktree, after the Makefile’s `target-owner`
+   guard, installs it into a uv tool directory of its own, and requires `fdu --version`
+   to name the commit.
+3. Runs the QA playbook’s harness, peer agreement (the self-test, then the real trees),
+   the Phase 6 pty probe, and the terminal tests against that candidate.
+4. Builds the correctness runbook’s two trees and runs its three passes, then both
+   deliberate breaks. Each break must make its script exit 1 and catch every case the
+   script holds to serving, not only the first.
+5. Writes a dated report, in the shape of
+   [the 0.3.0 record](../reports/report-2026-09-30-release-0.3.0-stability-pass.md), and
+   the QA playbook’s and correctness runbook’s summary tables, with private paths
+   replaced by labels. Unless a step has failed, it then removes the worktree and the
+   target directory it made.
+
+The statuses below are the script’s own.
+Through `make` each shows as `Error N`, and `make` itself exits 2 for all of them.
+
+**Prerequisites.** Before anything runs it names each missing prerequisite and exits 2:
+
+- `/usr/bin/time`, which on Linux must be GNU time, and uv at the Makefile’s floor;
+- the reviewed `cargo-semver-checks`, with the one install command to use;
+- every rustup target `make cross-lint` checks, with the `rustup target add` command for
+  those missing, since that gate skips a target that is not installed;
+- `FDU_QA_SMALL`, and a directory behind every tree variable that is set;
+- free space for the builds;
+- as root, `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1`, without which `make check` stops at
+  its preflight.
+
+**Skips.** What the pass could not do is recorded as skipped, never passed, and a pass
+with a skip exits 3:
+
+- peer agreement without GNU du or one of the peers, and the real-tree run without
+  `FDU_QA_PEER_TREES`;
+- the pty probe without its trees;
+- as root, the refusal pass and its break without `setpriv` or a `nobody` account;
+- the harness when it exits 0 having left something out: Phase 4 or 5 without
+  `FDU_QA_MEDIUM` or `FDU_QA_LARGE`, which the command says before it starts, or the
+  checks after a stop at its memory limit;
+- `make cross-lint` when its log shows a skipped target.
+
+As root the refusal pass runs as `nobody`, so the work directory and this checkout must
+be where every user can reach them.
+A command still running after six hours is stopped and its step fails
+(`--timeout-minutes`).
+
+**Reruns.** Each stage can run on its own, so a rerun after a host failure repeats
+nothing else: `ARGS="--only gates"`, `candidate`, `qa`, or `correctness`, one step such
+as `--only peer-trees`, or `--only report` to write the report again.
+`state.json` in the work directory records every result, and the report and the exit
+status always describe the whole pass: after `--only`, the command still exits 1 while
+any recorded step has failed, and 3 while one is skipped or has not run.
+A failed step keeps the worktree and target for inspection until a rerun of it passes.
+
+**Options.** `python3 scripts/release/stability_pass.py --help` lists them all.
+
+- `ARGS="--wheels $RELEASE/rehearsal/files"` installs the rehearsal’s own wheel instead
+  of building one, which is closer to what users receive.
+  That wheel is stamped as the release, so `fdu --version` names no commit.
+  The pass instead requires `$RELEASE/state.json` to record the commit and the
+  rehearsal’s `SHA256SUMS` to list the installed wheel, whether or not the commit is
+  tagged yet, and the report names the wheel.
+- `--wrap` prefixes the gates and the build with a command such as a lock.
+- `--target-dir` builds in a directory of the caller’s, which the pass never removes.
+- `--label PATH=LABEL` chooses how the report names a path.
+  Without it, a tree under the home directory is written relative to it
+  (`~/work/<name>`), a system path such as `/usr` as it is, and any other tree by its
+  last component. Read the report’s Trees line and its Reproduce block before committing
+  it, and relabel any name that should not be published.
+
+No command can watch a real window, so Phase 6 stays pending until a person does, and
+the report leaves the host’s regime to confirm: whether it was bare metal and quiet.
+
+**By hand.** When the command cannot run a step, the procedures behind it are these.
 The gates run on the release commit itself, in a clean worktree with its own Cargo
-target directory, as [AGENTS.md](../../../AGENTS.md#build-and-test) requires:
-`make check`, `make cross-lint`, `make semver-check`, and `make release-rehearse`.
-`make semver-check` reads crates.io and needs the reviewed `cargo-semver-checks`; when
-that is missing or another version, it prints the one install command to use.
+target directory: `make check`, `make cross-lint`, `make semver-check`, and
+`make release-rehearse`. `make semver-check` reads crates.io and needs the reviewed
+`cargo-semver-checks`; when that is missing or another version, it prints the one
+install command to use.
 
 Then install the candidate as a user would, and run the two manual procedures on it:
 
@@ -386,7 +486,7 @@ Then install the candidate as a user would, and run the two manual procedures on
   [Install the Candidate](../../../tests/qa/cli-installed-e2e.qa.md#11-install-the-candidate)
   describes, or, after step 4, install the rehearsal’s own wheel for this platform,
   which is closer to what users receive:
-  `uv tool install --force --python 3.12 --no-index --find-links "$RELEASE/rehearsal/files" fdu`.
+  `uv tool install --force --python 3.12 --no-index --no-build --find-links "$RELEASE/rehearsal/files" fdu`.
   Run the whole [installed-CLI QA playbook](../../../tests/qa/cli-installed-e2e.qa.md),
   including its
   [peer-agreement phase](../../../tests/qa/cli-installed-e2e.qa.md#phase-7-peer-agreement-on-real-trees):
@@ -399,13 +499,16 @@ Then install the candidate as a user would, and run the two manual procedures on
 Record the results beside the procedures that produced them, in one pull request: the
 [QA playbook](../../../tests/qa/cli-installed-e2e.qa.md)’s Current Status table, and the
 [correctness runbook](correctness-runbook.md)’s Last Recorded Run section.
-Name the commit and the artifact installed, the host regime (platform, bare metal or
-virtualized, filesystem), each correctness pass with its verdict, and every bead filed.
-A longer narrative can also go in a dated report under `docs/project/reports/`, as
-[report-2026-09-25-release-candidate-qa.md](../reports/report-2026-09-25-release-candidate-qa.md)
-did for `0.1.0`. The records describe the release commit, so they need not be part of
-it. A failure, or a peer-agreement row marked `UNEXPLAINED`, blocks the tag until a new
+`make release-stability` writes both tables to `summary-tables.md` in its work
+directory. Name the commit and the artifact installed, the host regime (platform, bare
+metal or virtualized, filesystem), each correctness pass with its verdict, and every
+bead filed. The full tables go in a dated report under `docs/project/reports/`: the
+command writes one to its work directory, to copy there once its regime is confirmed.
+The records describe the release commit, so they need not be part of it.
+A failure, or a peer-agreement row marked `UNEXPLAINED`, blocks the tag until a new
 commit fixes it or the records explain it.
+So does a skipped step, until it runs or the records say why it could not and what
+covers it instead.
 
 The 0.2.0 pass filed four beads against these procedures; check them before relying on
 the phases they name.

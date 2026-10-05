@@ -16,7 +16,10 @@ which, and `--self-test` checks every model exactly on a tree built with each ca
 
 GNU du with `--count-links` is the reference: it counts as fdu does apart from links'
 and directories' own sizes, so on a quiet tree its allocated total equals fdu's to the
-byte on APFS. It is required.
+byte on APFS. It is required. Its top-level rows are checked as well: each is fdu's row
+plus the subtree's own directory and symbolic-link blocks, which the walk measures per
+top-level directory, so on a filesystem where those occupy blocks, such as ext4, a row
+agrees when it differs by exactly that and by nothing else.
 
 A real tree may change while it is measured, so fdu runs just before each tool and once
 at the end, and each tool is judged against the two fdu readings around it. On a quiet
@@ -75,9 +78,9 @@ class Model:
     dirs: str  # also counts each directory's own size: "none", "all", or "all_but_root"
 
 
-# Checked by `--self-test` on APFS. There directories and symbolic links occupy no
-# blocks, so the allocated rows cannot tell whether a tool counts them; only the
-# apparent rows test those terms.
+# Checked by `--self-test` on APFS and on ext4. On APFS directories and symbolic links
+# occupy no blocks, so the allocated rows cannot tell whether a tool counts them and only
+# the apparent rows test those terms; on ext4 they occupy blocks, and both rows test them.
 MODELS: dict[tuple[str, str], Model] = {
     ("GNU du -l", "allocated"): Model(per_path=True, symlinks="all", dirs="all"),
     ("GNU du -l", "apparent"): Model(per_path=True, symlinks="all", dirs="none"),
@@ -339,18 +342,23 @@ def listing(directory: str) -> tuple[list[os.DirEntry[str]] | None, str | None]:
 
 def tree_facts(root: Path) -> dict[str, object]:
     """What the tools count differently from fdu, measured in one walk of `root`, and the
-    directories no tool can list."""
+    directories no tool can list.
+
+    `top_level` holds the same directory and symbolic-link terms for each top-level
+    directory's subtree, its own directory included: what GNU du adds to that row."""
     links: Counter[str] = Counter()
     dirs: Counter[str] = Counter()
     unlisted: Counter[str] = Counter()
     unlisted_paths: list[str] = []
     unstatted_paths: list[str] = []
     shared: dict[tuple[int, int], list[int]] = {}
+    top_level: dict[str, dict[str, Counter[str]]] = {}
     root_info = root.lstat()
     dirs.update(count=1, apparent=root_info.st_size, allocated=root_info.st_blocks * 512)
-    stack = [(str(root), True)]
+    # Each directory still to list, with the top-level directory whose subtree holds it.
+    stack: list[tuple[str, str | None]] = [(str(root), None)]
     while stack:
-        directory, at_root = stack.pop()
+        directory, subtree = stack.pop()
         entries, failure = listing(directory)
         if entries is None:
             unlisted[failure or "other"] += 1
@@ -362,13 +370,20 @@ def tree_facts(root: Path) -> dict[str, object]:
             except OSError:
                 unstatted_paths.append(os.path.normpath(entry.path))
                 continue
+            own = {"count": 1, "apparent": info.st_size, "allocated": info.st_blocks * 512}
             if stat.S_ISLNK(info.st_mode):
-                links.update(count=1, apparent=info.st_size, allocated=info.st_blocks * 512)
-                if at_root:
+                links.update(own)
+                if subtree is None:
                     links.update(root_apparent=info.st_size, root_allocated=info.st_blocks * 512)
+                else:
+                    top_level[subtree]["symlinks"].update(own)
             elif stat.S_ISDIR(info.st_mode):
-                dirs.update(count=1, apparent=info.st_size, allocated=info.st_blocks * 512)
-                stack.append((entry.path, False))
+                dirs.update(own)
+                name = entry.name if subtree is None else subtree
+                if subtree is None:
+                    top_level[name] = {"dirs": Counter(), "symlinks": Counter()}
+                top_level[name]["dirs"].update(own)
+                stack.append((entry.path, name))
             elif stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
                 size = [info.st_size, info.st_blocks * 512, 0]
                 shared.setdefault((info.st_dev, info.st_ino), size)[2] += 1
@@ -387,6 +402,10 @@ def tree_facts(root: Path) -> dict[str, object]:
         "unlisted_paths": unlisted_paths,
         "unstatted": {"entries": len(unstatted_paths)},
         "unstatted_paths": unstatted_paths,
+        "top_level": {
+            name: {kind: dict(counts) for kind, counts in parts.items()}
+            for name, parts in top_level.items()
+        },
     }
 
 
@@ -630,7 +649,7 @@ def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int
                 f"{', not all measurable' if reading.unmeasured else ''}: "
                 f"{places(reading.gave_up, str(record['root']), full_paths)}"
             )
-    failures += top_level(readings, quiet["allocated"], steps, lines)
+    failures += top_level(readings, facts, quiet["allocated"], steps, lines)
     return "\n".join(lines), failures, unverified
 
 
@@ -659,13 +678,30 @@ def verdict_for(reading: Reading, low: int, high: int, slack: int, unnamed: int 
     return "UNEXPLAINED"
 
 
+def own_blocks(facts: dict[str, dict[str, int]], name: str) -> int:
+    """What GNU du -l adds to a top-level row over fdu's: the subtree's own directory and
+    symbolic-link blocks, from the walk. A record saved before the walk measured them has
+    nothing to add, and is judged as it was then."""
+    subtree = facts.get("top_level", {}).get(name)
+    if subtree is None:
+        return 0
+    model = MODELS[("GNU du -l", "allocated")]
+    terms = {"hard_links": {}, "symlinks": {}, "dirs": {}, **subtree}
+    return sum(amount for _, amount in expected_delta(model, "allocated", terms))
+
+
 def top_level(
     readings: list[Reading],
+    facts: dict[str, dict[str, int]],
     quiet: bool,
     steps: dict[str, list[int]],
     lines: list[str],
 ) -> int:
-    """Top-level directories against the reference, between the fdu readings around it."""
+    """Top-level directories against the reference, between the fdu readings around it.
+
+    Each GNU du -l row also counts the subtree's own directory and symbolic-link blocks,
+    which fdu does not; on APFS they occupy none, and on ext4 each directory takes at
+    least a block. A row agrees when it differs from fdu's by exactly that."""
     fdu_before: Reading | None = None
     tool_index = -1
     for index, reading in enumerate(readings):
@@ -683,35 +719,50 @@ def top_level(
     else:
         return 0
     assert fdu_before is not None
-    own = steps["allocated"]
+    moved = steps["allocated"]
     churn = (
         0
         if quiet
         else max(
-            (own[j] for j in (tool_index - 1, tool_index, tool_index + 1) if 0 <= j < len(own)),
+            (moved[j] for j in (tool_index - 1, tool_index, tool_index + 1) if 0 <= j < len(moved)),
             default=0,
         )
     )
     rows = []
+    added = compared = 0
     names = set(fdu_before.children) | set(fdu_after.children) | set(reference.children)
     for name in sorted(names):
         before, after = fdu_before.children.get(name), fdu_after.children.get(name)
         theirs = reference.children.get(name)
         if before is None or after is None or theirs is None:
-            rows.append(f"| `{name}` | {size(before)} to {size(after)} | {size(theirs)} | — |")
+            rows.append(
+                f"| `{name}` | {size(before)} to {size(after)} | {size(theirs)} | — | — | — |"
+            )
             continue
-        low, high = sorted((before, after))
+        own = own_blocks(facts, name)
+        added += own
+        compared += 1
+        low, high = sorted((before + own, after + own))
         if not low - churn <= theirs <= high + churn:
+            # Rounded sizes can hide a block, so the part left unexplained is exact.
             rows.append(f"| `{name}` | {size(before)} to {size(after)} | {size(theirs)} | "
-                        f"{signed(theirs - before)} |")  # fmt: skip
+                        f"{signed(theirs - before)} | {signed(own)} | "
+                        f"{theirs - before - own:+,} B |")  # fmt: skip
     bound = "exactly" if quiet else f"within fdu's readings around it, ± {human(churn)}"
-    lines += [
-        "",
+    lines.append("")
+    if added:
+        lines.append(
+            "GNU du -l also counts each subtree's own directory and symbolic-link blocks, "
+            f"which fdu does not: the walk measured {human(added)} of them across these "
+            f"{compared:,} directories, and each row must differ from fdu's by its own."
+        )
+    lines.append(
         f"Top-level directories whose allocated size does not agree with GNU du -l {bound}: "
-        f"{len(rows)} of {len(names):,}.",
-    ]
+        f"{len(rows)} of {len(names):,}."
+    )
     if rows:
-        lines += ["", "| Directory | fdu | GNU du -l | Δ |", "| --- | ---: | ---: | ---: |", *rows]
+        header = "| Directory | fdu | GNU du -l | Δ | Expected Δ | Unexplained |"
+        lines += ["", header, "| --- | ---: | ---: | ---: | ---: | ---: |", *rows]
     return len(rows)
 
 
@@ -752,6 +803,12 @@ def signed(n: int) -> str:
     return "0 B" if n == 0 else ("+" if n > 0 else "") + human(n)
 
 
+def required_readings(platform: str) -> list[tuple[str, str]]:
+    """The readings the self-test requires: every model but BSD du, which is macOS's own
+    du and is run only there."""
+    return [key for key in MODELS if key[0] != "BSD du" or platform == "darwin"]
+
+
 def self_test(fdu: str, du: str, timeout: int, scratch: Path | None) -> int:
     """Build a tree with each case the models name, and require exact agreement."""
     base = Path(tempfile.mkdtemp(prefix="fdu-peer-agreement-", dir=scratch))
@@ -777,7 +834,7 @@ def self_test(fdu: str, du: str, timeout: int, scratch: Path | None) -> int:
         text, failures, _ = judge(record)
         print(text + "\n")
         present = {(r["tool"], r["metric"]) for r in record["readings"]}  # type: ignore[index, union-attr]
-        missing = sorted(set(MODELS) - present)
+        missing = sorted(set(required_readings(sys.platform)) - present)
         exact = text.count("| agrees exactly |")
         print(f"Self-test: {exact} readings agree exactly; {failures} failed.")
         if missing:

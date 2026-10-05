@@ -143,7 +143,9 @@ make cross-lint
 ```
 
 It skips targets that are not installed rather than failing, so it stays usable
-anywhere.
+anywhere. The release stability pass does not accept that: `make release-stability`
+requires every target in the Makefile’s `CROSS_TARGETS`, and names the
+`rustup target add` command for any that are missing.
 
 ### Toolchain Versions
 
