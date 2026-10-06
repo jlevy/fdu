@@ -289,7 +289,8 @@ atomic-writes:
 golden-invocations:
 	$(NODE) scripts/check-golden-invocations.mjs
 
-golden-observability:
+# The restore-patterns test imports `yaml`, so this target needs the locked node_modules.
+golden-observability: $(NODE_INSTALL_STAMP)
 	$(NODE) --test scripts/check-golden-observability.test.mjs scripts/golden-restore-patterns.test.mjs
 	$(NODE) scripts/check-golden-observability.mjs
 
