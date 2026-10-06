@@ -44,7 +44,14 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree.experiment import compares_two_builds, kept_arm
-from benchmarks.realtree.perf_index import SUITE_PATH, load_suite, project_index, unmapped_jobs
+from benchmarks.realtree.history import check_cells
+from benchmarks.realtree.perf_index import (
+    SUITE_PATH,
+    load_suite,
+    project_index,
+    reference_key,
+    unmapped_jobs,
+)
 from benchmarks.realtree.summary import (
     BASELINE_COMMIT,
     EXPERIMENTS_DIR,
@@ -485,9 +492,14 @@ def load_history(directory: Path) -> List[Dict[str, Any]]:
     for path, summary in summaries:
         subject = summary.get("subject") or {}
         host = summary.get("host") or {}
+        regime = summary.get("regime") or {}
+        # The paired figure is keyed by the build the cell is anchored on; a cell that
+        # names no anchor has no paired figures to read.
+        reference = summary.get("reference_build")
+        paired_key = reference_key(reference) if reference else None
         milestones = []
         for item in summary.get("milestones") or []:
-            paired = item.get("vs_v0_3_0_paired_harness") or {}
+            paired = (item.get(paired_key) if paired_key else None) or {}
             milestones.append(
                 {
                     "label": item["label"],
@@ -516,12 +528,17 @@ def load_history(directory: Path) -> List[Dict[str, Any]]:
                 "component_digest": summary.get("component_digest"),
                 "manifest_version": summary.get("manifest_version"),
                 "platform": summary.get("platform") or host.get("system") or "",
+                "reference_build": reference,
                 "subject": subject.get("label") or path.stem,
                 "title": subject.get("title") or subject.get("label") or path.stem,
                 "entries": (subject.get("counts") or {}).get("total"),
                 "storage": subject.get("storage") or "",
                 "cpu": host.get("cpu_model") or "",
-                "regime": (summary.get("regime") or {}).get("host_regime") or "",
+                "regime": regime.get("host_regime") or "",
+                "stage": regime.get("campaign_stage") or "",
+                "above_quiet_gate": (regime.get("cpu_busy_pct_at_sample_boundaries") or {}).get(
+                    "share_above_quiet_gate"
+                ),
                 "trials": (summary.get("rounds") or {}).get("trials"),
                 "invalid_samples": summary.get("invalid_samples"),
                 "speedup_x": headline.get("paired_speedup_x"),
@@ -559,6 +576,14 @@ def main(argv: Sequence[str]) -> int:
         print("no experiment artifacts found", file=sys.stderr)
         return 1
     dataset = project(experiments)
+    # A committed cell must still say what its own stored run says: its figures are
+    # derived again from the run artifact, and the projection refuses a cell that drifted
+    # (a hand edit, or a summarizer change that was not re-run).
+    drift = check_cells(arguments.history)
+    if drift:
+        for problem in drift:
+            print(f"error: history cell drift: {problem}", file=sys.stderr)
+        return 1
     dataset["history"] = load_history(arguments.history)
     # Every job the loop has measured must count toward the score, or a kept change
     # could improve something the score cannot see. Refuse to project until it does.

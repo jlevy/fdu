@@ -948,6 +948,23 @@ class LineCountContractTests(unittest.TestCase):
                     totals, {"files": files, "code": code, "comment": comment, "blank": blank}
                 )
 
+    def test_fdus_own_performance_line_is_not_a_warning(self) -> None:
+        # A build run as it ships, without --quiet, prints its performance line on stderr
+        # after every report; anything else there still invalidates the count.
+        for line in (
+            "perf: took 8.56 s to walk 86,630 files; analysis 86,630 fresh, 0 cached; cold scan",
+            "Performance: walked 86,630 files / 1.6 GiB; cold scan; total 8.21 s",
+        ):
+            totals, error = compare_tools._code_table_totals("fdu", FDU_CODE_TABLE, line + "\n")
+            self.assertIsNone(error, line)
+            self.assertEqual(totals["files"], 61_452)
+        _totals, error = compare_tools._code_table_totals(
+            "fdu", FDU_CODE_TABLE, "perf: took 1 s\nwarn: could not read a file\n"
+        )
+        self.assertIn("warnings or errors", error or "")
+        _totals, error = compare_tools._code_table_totals("scc", SCC_TABLE, "perf: took 1 s\n")
+        self.assertIn("warnings or errors", error or "")
+
     def test_the_total_row_parser_fails_closed(self) -> None:
         unmeasured = FDU_CODE_TABLE.replace(b"26,312,547  100.0%", "—  —".encode())
         cases = (

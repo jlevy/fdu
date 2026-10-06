@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
@@ -87,7 +88,14 @@ def _component_ratio(item: Mapping[str, Any], reference: str) -> Optional[Dict[s
     change = item.get("vs_latest_pct")
     if change is None:
         return None
-    interval = item.get("vs_latest_ci95_pct") or [change, change]
+    interval = item.get("vs_latest_ci95_pct")
+    if not interval or len(interval) != 2:
+        # A ratio with no interval is not a ratio known to zero width; reading it as one
+        # would drop its component from the combined error without a word.
+        raise ValueError(
+            f"build {item['label']} has a paired change of {change}% but no interval; "
+            "the cell cannot be scored"
+        )
     return {
         "ratio": 1 + change / 100,
         "low": 1 + interval[0] / 100,
@@ -109,6 +117,11 @@ def component_digest(component: Mapping[str, Any]) -> str:
 def component_jobs(component: Mapping[str, Any]) -> List[str]:
     """The jobs a component times: its `jobs` list, or the component itself."""
     return list(component.get("jobs") or [component["id"]])
+
+
+def reference_key(reference: str) -> str:
+    """A cell's paired-figure key for its anchor: ``vs_v0_3_0_paired_harness`` for v0.3.0."""
+    return "vs_" + re.sub(r"[^A-Za-z0-9]", "_", reference) + "_paired_harness"
 
 
 def _geometric(ratios: Sequence[Mapping[str, float]]) -> Dict[str, float]:
@@ -207,8 +220,15 @@ def memory_ratios(
 def cells_by_job(
     cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any], platform: str
 ) -> Dict[tuple, Mapping[str, Any]]:
-    """One platform's cells keyed by (component, job), each checked against its digest."""
+    """One platform's cells keyed by (component, job), each checked before it is used.
+
+    A cell is refused when its definition digest is not the manifest's, when it is
+    anchored on a build other than the suite's reference (its ratios would be to another
+    build), when it times a job its component does not list, or when a second cell
+    claims the same component and job (which one counted would depend on file order).
+    """
     definitions = {component["id"]: component for component in suite["components"]}
+    reference = suite["reference_build"]
     by_job: Dict[tuple, Mapping[str, Any]] = {}
     for cell in cells:
         if not cell.get("component") or cell.get("platform") != platform:
@@ -223,7 +243,24 @@ def cells_by_job(
                 f"{cell['component']!r} (digest {cell.get('component_digest')}, manifest {expected}); "
                 "re-measure it or version the manifest"
             )
-        by_job[(cell["component"], cell.get("job") or cell["component"])] = cell
+        if cell.get("reference_build") != reference:
+            raise ValueError(
+                f"history cell {cell.get('id')} is anchored on {cell.get('reference_build')!r}, "
+                f"not the suite's reference build {reference!r}"
+            )
+        job = cell.get("job") or cell["component"]
+        if job not in component_jobs(definition):
+            raise ValueError(
+                f"history cell {cell.get('id')} times job {job!r}, which component "
+                f"{cell['component']!r} does not list"
+            )
+        key = (cell["component"], job)
+        if key in by_job:
+            raise ValueError(
+                f"history cells {by_job[key].get('id')} and {cell.get('id')} both time "
+                f"{cell['component']}/{job} on {platform}; keep one"
+            )
+        by_job[key] = cell
     return by_job
 
 
@@ -330,6 +367,40 @@ def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) 
                 "common_weight": round(sum(weights[name] for name in common), 6),
                 "titles": {name: titles[name] for name in ratios},
                 "builds": rows,
+                # The combined index weights every platform; one measured alone is its own
+                # platform's score, and the page names what the combination still lacks.
+                "unmeasured_platforms": {
+                    name: weight
+                    for name, weight in sorted((suite.get("platform_weights") or {}).items())
+                    if name not in platforms
+                },
+                **evidence_regime(cells_by_job(cells, suite, platform).values()),
             }
         )
     return projected
+
+
+#: Host regimes whose cells may stand behind a quoted score (the loop's regime table:
+#: `uncontrolled` supports exploration and discovery only).
+CONTROLLED_REGIMES = frozenset({"quiet", "controlled-interactive"})
+
+
+def evidence_regime(cells: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
+    """The regime a platform's score was measured in, from the cells behind it.
+
+    A score is exploratory when any cell behind it ran on a host regime other than
+    `quiet` or `controlled-interactive`, or at the exploratory stage; the page says so
+    beside the number, with the range of each cell's share of sample boundaries above
+    the quiet gate.
+    """
+    cells = list(cells)
+    regimes = sorted({str(cell.get("regime") or "unrecorded") for cell in cells})
+    stages = sorted({str(cell.get("stage") or "unrecorded") for cell in cells})
+    shares = [cell["above_quiet_gate"] for cell in cells if cell.get("above_quiet_gate") is not None]
+    controlled = bool(cells) and all(regime in CONTROLLED_REGIMES for regime in regimes)
+    return {
+        "host_regimes": regimes,
+        "stages": stages,
+        "exploratory": not controlled or "exploratory" in stages,
+        "above_quiet_gate_range": [min(shares), max(shares)] if shares else None,
+    }

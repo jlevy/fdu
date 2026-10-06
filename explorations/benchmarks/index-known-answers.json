@@ -1,0 +1,23 @@
+{
+  "schema": "fdu-index-known-answers/1",
+  "about": "Answer differences between builds in one history cell that are known and explained. benchmarks.realtree.history compares each capability group's content answers (code-table totals, documents' totals) and refuses a cell where builds differ, except through an entry here: the build, the answer field, the exact value that build reports, the reason, and the commit. A declared difference that is not observed exactly also refuses the cell, so an entry cannot outlive its cause.",
+  "differences": [
+    {
+      "cells": [
+        "macos-code-internal",
+        "macos-multi-view-internal",
+        "macos-warm-content-code-internal"
+      ],
+      "label": "v0.3.0",
+      "field": "code_totals",
+      "value": {
+        "files": 61452,
+        "code": 26312091,
+        "comment": 4290689,
+        "blank": 4342976
+      },
+      "commit": "2ed3af9f6fa474b7873c51634ba934b8682d8ca1",
+      "reason": "0.3.0 is the first build in the cells with 2ed3af9f (fdu-0lo2, fdu-d0gc), which reads a modeline value as a whole token. Before it, Linux v6.12's Documentation/docutils.conf, whose first line is `# -*- coding: utf-8 mode: conf-colon -*-`, matched the `c` alias as a prefix of `conf-colon` and was counted as C: 6 code lines and 1 blank line. 0.3.0 leaves it unclassified, so it reports one code file, 6 code lines, and 1 blank line fewer than v0.2.0 through exp201 (61,453 files, 26,312,097 code, 4,290,689 comment, 4,342,977 blank). The same commit moves 161 headers from C++ to C, which changes per-language rows but not the totals. Found by diffing the per-file classification of `fdu --cache off --analyze code --view files --format jsonl` from v0.2.0 and v0.3.0 on the tree."
+    }
+  ]
+}

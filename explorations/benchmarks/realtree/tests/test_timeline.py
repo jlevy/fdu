@@ -6,11 +6,17 @@ is wrong, which is the failure mode a report of measurements can least afford.
 
 from __future__ import annotations
 
+import json
+import math
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Any, Dict, List
 
 from benchmarks.realtree.report_html import (
     _numbered_builds,
+    metric_series,
+    trend_label,
     STYLE,
     axis_ticks,
     decision_label,
@@ -27,6 +33,8 @@ from benchmarks.realtree.report_html import (
     render,
 )
 from benchmarks.realtree.perf_index import (
+    Z95,
+    cells_by_job,
     combine,
     component_digest,
     component_ratios,
@@ -41,6 +49,7 @@ from benchmarks.realtree.timeline import (
     SYNTHETIC_SUBJECTS,
     is_synthetic,
     kept_variant,
+    load_history,
     project,
     subject_family,
     subject_key,
@@ -75,7 +84,7 @@ def _index_cell(
         milestones.append(
             {"label": "lost", "short": "unplaced-build", "commit": "cccc", "date": "2026-10-01",
              "includes": "none", "after_experiment": extra_after, "wall_ms": 1000.0,
-             "vs_latest_pct": -96.7, "supported": True}
+             "vs_latest_pct": -96.7, "vs_latest_ci95_pct": [-97.0, -96.4], "supported": True}
         )
     return {
         "id": f"{component}-{job or component}",
@@ -83,6 +92,7 @@ def _index_cell(
         "job": job or component,
         "component_digest": digest or component_digest(definition),
         "platform": "macOS",
+        "reference_build": "v0.3.0",
         "subject": "linux-v6.12",
         "title": "the Linux v6.12 source tree",
         "entries": 92460,
@@ -691,6 +701,152 @@ class RenderTests(unittest.TestCase):
             list(_numbered_builds(points, position).values()), ["first", "middle", "late"]
         )
 
+    def _chart_dataset(self, cells: List[Dict[str, Any]]) -> Dict[str, Any]:
+        dataset = project([experiment("exp-000"), experiment("exp-032")])
+        dataset["history"] = cells
+        suite = load_suite()
+        dataset["index"] = project_index(cells, suite)
+        dataset["index_jobs"] = dict(suite["job_components"])
+        return dataset
+
+    def test_the_score_is_named_by_platform_coverage_and_regime(self) -> None:
+        # E7, E1: a macOS-only score is the macOS score, never the full index; and a score
+        # measured on an uncontrolled host is labelled exploratory wherever it is stated.
+        # One cold-cache cell: cold cache and memory, 2 of the 12 components.
+        dataset = self._chart_dataset([_index_cell("cold-cache", 150.0, 30.0)])
+        page = render(dataset)
+        self.assertIn("macOS score, 2 of 12 components", page)
+        self.assertIn("exploratory, uncontrolled host", page)
+        self.assertIn("Linux not yet measured (50% of the combined index)", page)
+        self.assertNotIn("full score", page)
+        self.assertNotIn("unified score,", page)
+        figure = figure_timeline(dataset)
+        self.assertIn("macOS score, 2 of 12 components", figure)
+        # A score whose every cell ran quiet or controlled at a held-out stage is not.
+        quiet = dict(_index_cell("cold-cache", 150.0, 30.0), regime="quiet", stage="held-out")
+        quiet_page = render(self._chart_dataset([quiet]))
+        self.assertIn("macOS score, 2 of 12 components", quiet_page)
+        self.assertNotIn("exploratory, ", quiet_page)
+
+    def test_the_chooser_defaults_to_the_score_and_bars_carry_their_component(self) -> None:
+        # E13: the default the spec asks for, and the attributes the fading reads.
+        figure = figure_timeline(self._chart_dataset([_index_cell("cold-cache", 150.0, 30.0)]))
+        self.assertIn('<option value="score" selected>', figure)
+        self.assertIn('<g class="metric on" data-metric="score">', figure)
+        self.assertIn('<g class="metric" data-metric="cold-cache">', figure)
+        self.assertIn('data-component="cold-cache" data-platform="macOS"', figure)
+        self.assertIn('id="metric" data-platform="macOS"', figure)
+
+    def test_a_line_that_ends_worse_says_so(self) -> None:
+        # E10: a line that rose read "0.8x faster".
+        self.assertEqual(trend_label(5.0, 1.0, "faster", "slower"), "5.0x faster")
+        self.assertEqual(trend_label(0.8, 1.0, "faster", "slower"), "1.2x slower")
+        self.assertEqual(trend_label(0.5, 1.0, "less memory", "more memory"), "2.0x more memory")
+        dataset = self._chart_dataset([_index_cell("cold-cache", 80.0, 100.0)])
+        figure = figure_timeline(dataset)
+        self.assertIn("1.2x slower since start", figure)
+        self.assertNotIn("0.8x faster", figure)
+        # Each tooltip names what its metric is: an index, a peak, or a time.
+        self.assertIn("x v0.3.0&#x27;s time", figure)
+        self.assertIn("x v0.3.0&#x27;s index", figure)
+        self.assertIn("x v0.3.0&#x27;s peak memory", figure)
+
+    def test_the_chart_draws_its_platform_by_name_and_the_headline_every_platform(self) -> None:
+        # E11: the projection sorts platforms by name, so Linux's first cell would have
+        # replaced macOS's chart had the page taken the first.
+        mac = _index_cell("cold-cache", 150.0, 30.0)
+        linux = dict(_index_cell("cold-cache", 300.0, 100.0), platform="Linux", id="linux")
+        dataset = self._chart_dataset([mac, linux])
+        self.assertEqual([item["platform"] for item in dataset["index"]], ["Linux", "macOS"])
+        position = {"exp-000": 0, "exp-032": 1}
+        self.assertTrue(metric_series(dataset, position)[0]["title"].startswith("macOS score"))
+        self.assertTrue(
+            metric_series(dataset, position, "Linux")[0]["title"].startswith("Linux score")
+        )
+        page = render(dataset)
+        self.assertIn("macOS score, 2 of 12 components", page)
+        self.assertIn("Linux score, 2 of 12 components", page)
+        self.assertNotIn("not yet measured", page)
+
+    def test_a_cell_the_projection_cannot_trust_is_refused(self) -> None:
+        suite = load_suite()
+        cold = _index_cell("cold-cache", 150.0, 30.0)
+        # F6: two cells for one component and job; which counted would depend on order.
+        with self.assertRaisesRegex(ValueError, "both time cold-cache/cold-cache"):
+            cells_by_job([cold, dict(cold, id="again")], suite, "macOS")
+        # F6: a job the component does not list.
+        with self.assertRaisesRegex(ValueError, "does not list"):
+            cells_by_job([_index_cell("cold-cache", 150.0, 30.0, job="other")], suite, "macOS")
+        # F3: a cell anchored on another build.
+        with self.assertRaisesRegex(ValueError, "not the suite's reference build"):
+            cells_by_job([dict(cold, reference_build="v0.2.0")], suite, "macOS")
+        # F7: a paired change with no interval is not a zero-width one.
+        bare = _index_cell("cold-cache", 150.0, 30.0)
+        bare["milestones"][0]["vs_latest_ci95_pct"] = None
+        with self.assertRaisesRegex(ValueError, "no interval"):
+            component_ratios([bare], suite, "macOS")
+
+    def test_the_interval_arithmetic_is_exact(self) -> None:
+        # F11. Two components of equal weight whose intervals have the same log spread
+        # L = ln(1.5625): the index is 1, and its interval is 1.5625 ** (+-1 / (2 sqrt 2)).
+        spread = 1.5625
+        result = combine(
+            {
+                "a": {"ratio": 2.0, "low": 1.6, "high": 2.5},
+                "b": {"ratio": 0.5, "low": 0.4, "high": 0.625},
+            },
+            {"a": 0.25, "b": 0.25},
+        )
+        self.assertAlmostEqual(result["index"], 1.0, places=12)
+        self.assertAlmostEqual(result["low"], spread ** (-1 / (2 * math.sqrt(2))), places=12)
+        self.assertAlmostEqual(result["high"], spread ** (1 / (2 * math.sqrt(2))), places=12)
+        # Unequal weights: the heavier component's error counts three times as much.
+        weighted = combine(
+            {
+                "a": {"ratio": 2.0, "low": 1.6, "high": 2.5},
+                "b": {"ratio": 1.0, "low": 1.0, "high": 1.0},
+            },
+            {"a": 0.3, "b": 0.1},
+        )
+        self.assertAlmostEqual(weighted["index"], 2.0**0.75, places=12)
+        self.assertAlmostEqual(
+            weighted["low"], 2.0**0.75 * spread ** (-0.75 / 2), places=12
+        )
+        # Two jobs, 4x [3.7, 4.3] and 1x [1, 1] (the fixture's 90% and 110% of the change):
+        # their geometric mean is 2x, with half the first job's log spread on each side.
+        cells = [
+            _index_cell("warm-metadata", 400.0, 100.0, job="cold-open-save"),
+            _index_cell("warm-metadata", 100.0, 100.0, job="warm-revalidate"),
+        ]
+        ratio = component_ratios(cells, load_suite(), "macOS")["warm-metadata"]["prework"]
+        self.assertAlmostEqual(ratio["ratio"], 2.0, places=12)
+        self.assertAlmostEqual(ratio["low"], 2.0 * (4.3 / 3.7) ** -0.25, places=12)
+        self.assertAlmostEqual(ratio["high"], 2.0 * (4.3 / 3.7) ** 0.25, places=12)
+        self.assertGreater(Z95, 1.959)
+
+    def test_history_cells_are_read_by_their_own_anchor(self) -> None:
+        # F3: the paired key follows the cell's anchor instead of a literal.
+        with tempfile.TemporaryDirectory() as directory:
+            cell = {
+                "component": "cold-cache",
+                "reference_build": "v0.2.0",
+                "milestones": [
+                    {
+                        "label": "old",
+                        "wall_ms": {"median": 2.0},
+                        "vs_v0_2_0_paired_harness": {
+                            "median_change_pct": 100.0,
+                            "ci95_change_pct": [90.0, 110.0],
+                        },
+                        "vs_v0_3_0_paired_harness": {"median_change_pct": 5.0},
+                    }
+                ],
+            }
+            (Path(directory) / "cell.json").write_text(json.dumps(cell))
+            loaded = load_history(Path(directory))
+        self.assertEqual(loaded[0]["reference_build"], "v0.2.0")
+        self.assertEqual(loaded[0]["milestones"][0]["vs_latest_pct"], 100.0)
+
     def test_the_score_is_a_weighted_sum_of_log_ratios(self) -> None:
         # A 2x gain on one component and a 2x loss on another of equal weight cancel
         # exactly; a sum of raw times or raw ratios would not.
@@ -770,6 +926,7 @@ class RenderTests(unittest.TestCase):
         definitions = {item["id"]: item for item in suite["components"]}
         cold = {
             "id": "cold", "component": "cold-cache", "job": "cold-cache", "platform": "macOS",
+            "reference_build": "v0.3.0",
             "component_digest": component_digest(definitions["cold-cache"]),
             "milestones": [
                 milestone("prework", 400.0, 400.0, 300.0),
@@ -779,6 +936,7 @@ class RenderTests(unittest.TestCase):
         }
         code = {
             "id": "code", "component": "code", "job": "code", "platform": "macOS",
+            "reference_build": "v0.3.0",
             "component_digest": component_digest(definitions["code"]),
             "milestones": [milestone("mid", 100.0, 50.0, 0.0), milestone("v0.3.0", 100.0, 100.0, None)],
         }

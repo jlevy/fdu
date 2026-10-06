@@ -950,14 +950,22 @@ _CODE_TOTAL_ROWS = {
 }
 
 
+_FDU_PERFORMANCE_LINE = re.compile(r"^(?:perf:|Performance:) .*$")
+
+
 def _code_table_totals(
     layout: str, stdout: bytes, stderr: str
 ) -> Tuple[Optional[Dict[str, int]], Optional[str]]:
     """Parse the one total row of a line counter's text table.
 
-    Any stderr invalidates the sample: fdu runs with `--quiet`, and scc and tokei write
-    there only when a file could not be read, which would make the count incomplete.
+    Any stderr invalidates the sample: fdu's comparison contracts run with `--quiet`,
+    and scc and tokei write there only when a file could not be read, which would make
+    the count incomplete. The one exception is fdu's own performance line (`perf:`, or
+    `Performance:` before 0.2.0), which a build run as it ships, without `--quiet`,
+    prints after every report; it is a timing summary, not a warning.
     """
+    if layout == "fdu":
+        stderr = "\n".join(_FDU_PERFORMANCE_LINE.sub("", line) for line in stderr.splitlines())
     if stderr.strip():
         return None, f"{layout} reported warnings or errors"
     try:

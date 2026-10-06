@@ -68,6 +68,7 @@ See ``docs/project/specs/active/plan-2026-10-05-fdu-performance-index.md``.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -85,6 +86,8 @@ from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import compare_tools, ledger, measure, perf_index, tree
 
 MANIFEST = Path(__file__).resolve().parents[1] / "index-suite.json"
+#: The documented answer differences a cell may carry (`known_differences`).
+KNOWN_ANSWERS = Path(__file__).resolve().parents[1] / "index-known-answers.json"
 SUMMARY_SCHEMA = "fdu-history-summary-v1"
 MANIFEST_SCHEMA = "fdu-performance-index-suite/1"
 DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-history" / "results"
@@ -93,6 +96,10 @@ DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-history" / "results"
 #: manifest is a new index version and needs code here: an unknown one fails closed.
 CACHE_STATES = {
     "fdu's caches empty for every sample": "empty",
+    # The cold content views (F4 on #176): the command spells the cache off, so nothing
+    # is written; the content cache write happens, untimed, in the warm-content setups.
+    "fdu's caches empty for every sample, with the cache off: the content cache write "
+    "is untimed": "empty",
     "default cache policy, steady state after the warm-ups": "steady",
     "content cache filled by an untimed run of the same build just before": "filled",
     "snapshot written by an untimed run of the same build just before": "filled",
@@ -397,6 +404,9 @@ class Shape:
     totals_argv: Tuple[str, ...] = ()
     #: The harness job a probe shape runs.
     job: Optional[str] = None
+    #: The content answers the command prints, which the answer check compares:
+    #: ``code`` (the code table's totals) and ``documents`` (the documents' totals).
+    content: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -451,9 +461,12 @@ def shape_for(
     """Map one manifest component onto one build, or say why the build cannot run it.
 
     ``probe_check`` answers, for a harness job, why this build's perf_probe cannot run
-    it, or None; it is absent when no probe was supplied for the build. ``job`` picks
-    one job of a probe component that has several. A component with a ``jobs`` list is
-    those harness jobs, whatever its ``command`` says in prose.
+    it, or None. A probe component refuses a build with no ``probe_check``: a forgotten
+    ``--probe`` would otherwise record the build as unable to run the job and quietly
+    lower its coverage, so a build without a probe is declared (``--without-probe``),
+    whose check answers why. ``job`` picks one job of a probe component that has several.
+    A component with a ``jobs`` list is those harness jobs, whatever its ``command``
+    says in prose.
     """
     request = component_request(entry)
     state = "job" if request.probe_jobs else CACHE_STATES[entry["cache_state"]]
@@ -464,7 +477,10 @@ def shape_for(
         # untimed snapshot written into it first when the job reads one.
         argv, setup = probe_job_argv(job_id)
         if probe_check is None:
-            return Unsupported("no perf_probe build was supplied for this milestone")
+            raise HistoryError(
+                f"component {entry['id']} runs perf_probe jobs, and a build was given no "
+                "--probe; pass --probe LABEL=PATH, or declare it with --without-probe LABEL"
+            )
         reason = probe_check(job_id)
         if reason is not None:
             return Unsupported(reason)
@@ -548,6 +564,7 @@ def shape_for(
         state=state,
         variant=variant,
         totals_argv=_totals_argv(caps, cache_off),
+        content=tuple(view for view in ("code", "documents") if view in views),
     )
 
 
@@ -565,6 +582,8 @@ class Build:
     #: The command-line binary's hash, taken when the build is asked what it accepts; a
     #: probe cell's timed binary is the probe, so the build itself is identified here.
     cli_sha256: Optional[str] = None
+    #: The operator declared that this build has no perf_probe (``--without-probe``).
+    without_probe: bool = False
 
     @property
     def supported(self) -> bool:
@@ -579,7 +598,9 @@ class Build:
         return self.binary
 
 
-def parse_builds(specifications: Sequence[str], probes: Sequence[str]) -> List[Build]:
+def parse_builds(
+    specifications: Sequence[str], probes: Sequence[str], without_probe: Sequence[str] = ()
+) -> List[Build]:
     builds: List[Build] = []
     for specification in specifications:
         label, separator, path = specification.partition("=")
@@ -601,7 +622,23 @@ def parse_builds(specifications: Sequence[str], probes: Sequence[str]) -> List[B
         if not probe.is_file():
             raise HistoryError(f"probe for {label} does not exist: {probe.name}")
         by_label[label].probe = probe
+    for label in without_probe:
+        if label not in by_label:
+            raise HistoryError(f"--without-probe {label!r} names no --build")
+        if by_label[label].probe is not None:
+            raise HistoryError(f"build {label} has a --probe and is declared without one")
+        by_label[label].without_probe = True
     return builds
+
+
+def _probe_check(build: Build) -> Optional[Callable[[str], Optional[str]]]:
+    """How to ask this build's probe about a job, or why a declared build cannot run one."""
+    if build.probe is not None:
+        probe = build.probe
+        return lambda job_id: probe_support(probe, job_id)
+    if build.without_probe:
+        return lambda job_id: "declared without a perf_probe build (--without-probe)"
+    return None
 
 
 def map_builds(
@@ -611,12 +648,11 @@ def map_builds(
     for build in builds:
         build.caps = probe_build(build.binary)
         build.cli_sha256 = _sha256(build.binary)
-        probe = build.probe
-        check = (lambda job_id, probe=probe: probe_support(probe, job_id)) if probe else None
-        build.shape = shape_for(entry, build.caps, probe_check=check, job=job)
+        build.shape = shape_for(entry, build.caps, probe_check=_probe_check(build), job=job)
 
 
-Ran = Dict[str, Optional[Tuple[List[str], List[str]]]]
+#: Per build: the timed command, the untimed setup, and the cache scope it ran with.
+Ran = Dict[str, Optional[Tuple[List[str], List[str], str]]]
 
 
 def definition_shapes(
@@ -630,43 +666,54 @@ def definition_shapes(
     shapes: Dict[str, Union[Shape, Unsupported]] = {}
     for build in builds:
         assert build.caps is not None
-        probe = build.probe
-        check = (lambda job_id, probe=probe: probe_support(probe, job_id)) if probe else None
-        shapes[build.label] = shape_for(defined, build.caps, probe_check=check, job=job)
+        shapes[build.label] = shape_for(
+            defined, build.caps, probe_check=_probe_check(build), job=job
+        )
     return shapes
 
 
+def _ran(shape: Union[Shape, Unsupported, None]) -> Optional[Tuple[List[str], List[str], str]]:
+    if not isinstance(shape, Shape):
+        return None
+    return (list(shape.argv), list(shape.setup_argv), shape.cache_scope)
+
+
 def planned_commands(builds: Sequence[Build]) -> Ran:
-    """The timed and setup command each build is about to run, or None if it runs none."""
-    return {
-        build.label: (list(build.shape.argv), list(build.shape.setup_argv))
-        if isinstance(build.shape, Shape)
-        else None
-        for build in builds
-    }
+    """What each build is about to run (command, setup, cache scope), or None."""
+    return {build.label: _ran(build.shape) for build in builds}
 
 
 def ran_commands(document: Mapping[str, Any], builds: Sequence[Build]) -> Ran:
-    """The timed and setup command each build ran, as the run artifact records them."""
+    """What each build ran (command, setup, cache scope), as the run artifact records it.
+
+    compare_tools records a contract's cache scope only where it is not the shared
+    ``comparison`` directory, so a missing one is that.
+    """
     ran: Ran = {}
     for build in builds:
         tool = document["tools"].get(build.label)
         ran[build.label] = (
-            None if tool is None else (list(tool["command"]), list(tool.get("setup_command") or []))
+            None
+            if tool is None
+            else (
+                list(tool["command"]),
+                list(tool.get("setup_command") or []),
+                tool.get("cache_scope") or "comparison",
+            )
         )
     return ran
 
 
 def definition_problems(ran: Ran, expected: Mapping[str, Union[Shape, Unsupported]]) -> List[str]:
-    """Where the commands the builds ran are not what the definition asks of them.
+    """Where what the builds ran is not what the definition asks of them.
 
     A cell is stamped with its component's definition digest only when every build ran
-    exactly the definition's request (timed command and untimed setup) and every build
-    the definition cannot run ran nothing.
+    exactly the definition's request (timed command, untimed setup, and cache scope)
+    and every build the definition cannot run ran nothing.
     """
     problems = []
     for label, shape in expected.items():
-        wanted = (list(shape.argv), list(shape.setup_argv)) if isinstance(shape, Shape) else None
+        wanted = _ran(shape)
         if ran.get(label) != wanted:
             problems.append(
                 f"{label} ran {ran.get(label)}, where the manifest's definition asks for {wanted}"
@@ -755,6 +802,9 @@ def contract_for(
         fdu_anchor=True,
         stdout_metrics=probe_output_reader(shape.job) if shape.job else None,
         primary_metric=TIMINGS[timing],
+        # A code table is read from every timed sample, so each build is held to one
+        # code answer across the whole cell, not only in the answer check.
+        code_table="fdu" if "code" in shape.content else None,
     )
 
 
@@ -867,6 +917,49 @@ def root_totals(document: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+_DOCUMENT_ROW = re.compile(
+    r"^\s*[0-9.]+ [KMGTP]?i?B\s+\S+\s+(?P<format>\S+)\s+(?P<files>[0-9][0-9,]*) files?, "
+    r"(?P<lines>[0-9][0-9,]*) lines \([^)]*\), (?P<words>[0-9][0-9,]*) words\b"
+)
+_SECTION_HEADER = re.compile(r"^[A-Z][A-Z ]*[A-Z]$")
+
+
+def document_totals(stdout: bytes) -> Optional[Dict[str, int]]:
+    """The documents view's totals: formats, files, lines, and words, or None.
+
+    The view prints one row per document format and no total row, so the rows are
+    summed. In a multi-view report only the DOCUMENTS section counts: the LANGUAGES
+    section prints rows of the same shape for code.
+    """
+    lines = stdout.decode("utf-8", errors="replace").splitlines()
+    if "DOCUMENTS" in (line.strip() for line in lines):
+        start = [line.strip() for line in lines].index("DOCUMENTS") + 1
+        section = []
+        for line in lines[start:]:
+            if _SECTION_HEADER.match(line.strip()):
+                break
+            section.append(line)
+    else:
+        section = lines
+    rows = [matched for matched in map(_DOCUMENT_ROW.match, section) if matched]
+    if not rows:
+        return None
+
+    def total(field: str) -> int:
+        return sum(int(row.group(field).replace(",", "")) for row in rows)
+
+    return {
+        "formats": len(rows),
+        "files": total("files"),
+        "lines": total("lines"),
+        "words": total("words"),
+    }
+
+
+#: The content answers a command prints, by the record field that holds each.
+CONTENT_FIELDS = {"code": "code_totals", "documents": "document_totals"}
+
+
 def fingerprint_totals(fingerprint: Mapping[str, Any]) -> Dict[str, Any]:
     """The four tallies an fdu root report must agree with the independent walk on."""
     counts, sizes = fingerprint["counts"], fingerprint["sizes"]
@@ -910,6 +1003,10 @@ def check_build(
     record: Dict[str, Any] = {
         "label": build.label,
         "reads_gitignore": build.caps.reads_gitignore,
+        # The start state the component declares for this build, which its own
+        # performance line must not contradict (`state_problem`).
+        "expected_state": shape.state,
+        "content": list(shape.content),
     }
     with tempfile.TemporaryDirectory(prefix="fdu-history-check-") as cache:
         overrides = {"XDG_CACHE_HOME": cache}
@@ -932,6 +1029,8 @@ def check_build(
     record["analysis"] = analysis_counts(line)
     totals, _error = compare_tools._code_table_totals("fdu", stdout, "")
     record["code_totals"] = totals
+    if "documents" in shape.content:
+        record["document_totals"] = document_totals(stdout)
 
     if shape.uses_probe:
         # The timed probe command runs the job's oracle itself, as every sample will.
@@ -956,14 +1055,50 @@ def check_build(
     return record
 
 
+def state_problem(record: Mapping[str, Any]) -> Optional[str]:
+    """Why a build's own performance line contradicts its declared start state, if it does.
+
+    A filled cache must be found warm, with cached analysis above zero where the line
+    counts it; empty caches must be found cold, with nothing cached. A build that prints
+    no performance line (before 0.1.0, or a probe) cannot contradict anything.
+    """
+    state = record.get("expected_state")
+    evidence = record.get("cache_evidence") or "unknown"
+    analysis = record.get("analysis")
+    if state not in ("filled", "empty") or (evidence == "unknown" and not analysis):
+        return None
+    cached = (analysis or {}).get("cached")
+    if state == "filled" and (evidence != "warm" or cached == 0):
+        return f"{record['label']}: declared a filled cache but reported {evidence}" + (
+            f" with {cached} cached" if cached is not None else ""
+        )
+    if state == "empty" and (evidence == "warm" or (cached or 0) > 0):
+        return f"{record['label']}: declared empty caches but reported {evidence}" + (
+            f" with {cached} cached" if cached is not None else ""
+        )
+    return None
+
+
 def answer_groups(
-    records: Sequence[Mapping[str, Any]], fingerprint: Mapping[str, Any]
+    records: Sequence[Mapping[str, Any]],
+    fingerprint: Mapping[str, Any],
+    known_differences: Sequence[Mapping[str, Any]] = (),
 ) -> Dict[str, Any]:
-    """Group the checked builds by whether they read .gitignore, as before."""
+    """Group the checked builds by whether they read .gitignore, and compare answers.
+
+    Within a group every build must give the same root totals and, where the command
+    prints them, the same content answers: the code table's totals and the documents'
+    totals. A build may differ only through an explicit known difference (its label,
+    field, exact value, reason and commit, recorded in the cell); a declared difference
+    that is not observed exactly is itself a problem, so a stale entry cannot linger.
+    """
     expected = fingerprint_totals(fingerprint)
+    known = {(entry["label"], entry["field"]): entry for entry in known_differences}
     groups: Dict[str, Dict[str, Any]] = {}
+    members: Dict[str, List[Mapping[str, Any]]] = {}
     for record in records:
         key = "with_gitignore" if record["reads_gitignore"] else "without_gitignore"
+        members.setdefault(key, []).append(record)
         totals = record.get("totals")
         group = groups.setdefault(
             key,
@@ -974,6 +1109,10 @@ def answer_groups(
                 "exit_codes_zero": True,
                 "matches_fingerprint": True,
                 "oracle_errors": [],
+                "content": {},
+                "content_problems": [],
+                "known_differences_applied": [],
+                "state_problems": [],
             },
         )
         group["labels"].append(record["label"])
@@ -989,6 +1128,39 @@ def answer_groups(
             group["matches_fingerprint"] &= all(totals.get(k) == v for k, v in expected.items())
         if record.get("oracle_error"):
             group["oracle_errors"].append(f"{record['label']}: {record['oracle_error']}")
+        problem = state_problem(record)
+        if problem:
+            group["state_problems"].append(problem)
+    for key, group in groups.items():
+        for content, field in CONTENT_FIELDS.items():
+            expecting = [
+                record for record in members[key] if content in (record.get("content") or [])
+            ]
+            if not expecting:
+                continue
+            values: Dict[str, List[str]] = {}
+            for record in expecting:
+                value = record.get(field)
+                entry = known.get((record["label"], field))
+                if value is None:
+                    group["content_problems"].append(f"{record['label']}: no {field} to compare")
+                elif entry is not None:
+                    if value == entry["value"]:
+                        group["known_differences_applied"].append(f"{record['label']}: {field}")
+                    else:
+                        group["content_problems"].append(
+                            f"{record['label']}: declared {field} {entry['value']} but reported {value}"
+                        )
+                else:
+                    values.setdefault(json.dumps(value, sort_keys=True), []).append(record["label"])
+            if len(values) > 1:
+                group["content_problems"].append(
+                    f"builds disagree on {field}: "
+                    + "; ".join(
+                        f"{', '.join(labels)} report {value}" for value, labels in values.items()
+                    )
+                )
+            group["content"][field] = json.loads(next(iter(values))) if len(values) == 1 else None
     for group in groups.values():
         if group["totals"] is None:
             group["matches_fingerprint"] = None
@@ -997,14 +1169,24 @@ def answer_groups(
 
 
 def answer_problems(groups: Mapping[str, Mapping[str, Any]]) -> List[str]:
-    """Why the cell must not be timed: a failed run or two answers in one group."""
+    """Why the cell must not be timed or stamped.
+
+    A failed run; two root answers or two content answers in one group, other than a
+    declared known difference; a group whose root totals disagree with the independent
+    walk; a probe whose oracle disagrees; or a build whose reported start state
+    contradicts the component's.
+    """
     problems: List[str] = []
     for key, group in groups.items():
         if not group["exit_codes_zero"]:
             problems.append(f"{key}: a build exited non-zero or its totals did not parse")
         if not group["all_identical"]:
             problems.append(f"{key}: builds disagree on the root totals")
+        if group.get("matches_fingerprint") is False:
+            problems.append(f"{key}: the root totals disagree with the independent walk")
         problems.extend(f"{key}: {error}" for error in group.get("oracle_errors") or [])
+        problems.extend(f"{key}: {problem}" for problem in group.get("content_problems") or [])
+        problems.extend(f"{key}: {problem}" for problem in group.get("state_problems") or [])
     return problems
 
 
@@ -1035,7 +1217,7 @@ def _pct_interval(ratios: Sequence[float]) -> Optional[List[float]]:
 
 def reference_key(reference: str) -> str:
     """``vs_v0_3_0_paired_harness`` for reference build ``v0.3.0``."""
-    return "vs_" + re.sub(r"[^A-Za-z0-9]", "_", reference) + "_paired_harness"
+    return perf_index.reference_key(reference)
 
 
 METADATA_FIELDS = (
@@ -1074,6 +1256,113 @@ def _platform(host: Mapping[str, Any]) -> str:
     return {"Darwin": "macOS", "Linux": "Linux"}.get(str(system), str(system))
 
 
+def _paired_versus_reference(
+    document: Mapping[str, Any], label: str, reference: str, measured: str
+) -> Optional[Dict[str, Any]]:
+    statistics_entry = document["statistics"][label]
+    paired = statistics_entry["competitor_vs_fdu"].get(measured)
+    anchor_in_pair = statistics_entry["tools"][reference]["metrics"].get(measured)
+    if paired is None:
+        return None
+    return {
+        "meaning": f"(this - adjacent {reference}) / adjacent {reference} in {measured}, "
+        "median of adjacent pairs; positive = this binary slower",
+        "pairs": paired["pairs"],
+        "median_change_pct": paired["median_change_pct"],
+        "ci95_change_pct": paired["ci95_change_pct"],
+        "direction": paired["direction"],
+        "anchor_median_ms_in_these_pairs": _ms(anchor_in_pair["median"])
+        if anchor_in_pair
+        else None,
+        "speed_ratio_this_over_reference": round(1 + paired["median_change_pct"] / 100, 4),
+    }
+
+
+def measured_fields(document: Mapping[str, Any], label: str, reference: str) -> Dict[str, Any]:
+    """Every figure a cell states about one supported build, from its run artifact alone.
+
+    The cell and the drift check (`check_cells`) both take these from here, so a
+    committed cell can be held to its stored run: the medians, quartiles, bootstrap
+    intervals, peak memory, CPU, and the paired comparison with the anchor.
+    """
+    metric = document["tools"][reference].get("primary_metric", "wall_ns")
+    vs_reference = reference_key(reference)
+    own = [
+        s
+        for s in document["samples"]
+        if not s["warmup"]
+        and s["valid"]
+        and s["tool"] == label
+        and s["metrics"].get(metric) is not None
+    ]
+    walls = [s["metrics"]["wall_ns"] for s in own]
+    rss = [
+        s["metrics"]["peak_rss_bytes"]
+        for s in own
+        if s["metrics"].get("peak_rss_bytes") is not None
+    ]
+    overall = document["overall"][label]["metrics"]
+    wall = overall.get("wall_ns") or {}
+    rss_overall = overall.get("peak_rss_bytes")
+    fields: Dict[str, Any] = {
+        "timed_samples": len(walls),
+        "wall_ms": {
+            "source": "harness median of this binary's valid timed samples"
+            + (
+                f"; the anchor's {len(walls)} samples beside every competitor"
+                if label == reference
+                else ""
+            ),
+            "median": _ms(wall.get("median")),
+            "min": _ms(wall.get("min")),
+            "max": _ms(wall.get("max")),
+            "iqr_derived": _quartiles(walls),
+            "median_bootstrap95_derived": _boot_ms(walls),
+        },
+        "peak_rss_mib": {
+            "source": "harness rusage max RSS of the child, median of timed samples",
+            "median": round(rss_overall["median"] / 2**20, 1) if rss_overall else None,
+            "max": round(max(rss) / 2**20, 1) if rss else None,
+        },
+        "cpu_s_median": {
+            "user": round(overall["user_cpu_ns"]["median"] / 1e9, 3)
+            if overall.get("user_cpu_ns")
+            else None,
+            "system": round(overall["system_cpu_ns"]["median"] / 1e9, 3)
+            if overall.get("system_cpu_ns")
+            else None,
+        },
+    }
+    if overall.get("component_ns"):
+        component = overall["component_ns"]
+        values = [
+            s["metrics"]["component_ns"]
+            for s in own
+            if s["metrics"].get("component_ns") is not None
+        ]
+        fields["component_ms"] = {
+            "source": "probe-reported component_ns, harness median of valid timed samples",
+            "median": _ms(component.get("median")),
+            "min": _ms(component.get("min")),
+            "max": _ms(component.get("max")),
+            "iqr_derived": _quartiles(values),
+            "median_bootstrap95_derived": _boot_ms(values),
+        }
+    fields[vs_reference] = (
+        None if label == reference else _paired_versus_reference(document, label, reference, metric)
+    )
+    # The metric the cell does not time, compared the same way, where it was recorded.
+    other = "wall_ns" if metric == "component_ns" else "component_ns"
+    if overall.get(other):
+        suffix = "_wall" if other == "wall_ns" else "_component"
+        fields[vs_reference + suffix] = (
+            None
+            if label == reference
+            else _paired_versus_reference(document, label, reference, other)
+        )
+    return fields
+
+
 def build_cell(
     document: Mapping[str, Any],
     *,
@@ -1089,6 +1378,8 @@ def build_cell(
     manifest_entry: Optional[Mapping[str, Any]] = None,
     override_note: Optional[str] = None,
     component_digest: Optional[str] = None,
+    timed_under: Optional[Mapping[str, Any]] = None,
+    stamped_by: str = "timed under this definition",
 ) -> Dict[str, Any]:
     """Summarize one compare_tools run as a history cell.
 
@@ -1096,7 +1387,9 @@ def build_cell(
     probe's ``component_ns`` for a component-timed probe job. ``wall_ms`` is always the
     process's wall time; a component-timed cell adds ``component_ms`` and keeps the wall
     comparison beside the timed one. ``component_digest`` is the definition digest
-    ``stamp_digest`` allowed, which the projection matches against the manifest.
+    ``stamp_digest`` allowed, which the projection matches against the manifest;
+    ``stamped_by`` says how (a run timed under the definition, or argv equivalence for a
+    run timed under earlier text), and ``timed_under`` keeps the text the run used.
     """
     samples = [s for s in document["samples"] if not s["warmup"] and s["valid"]]
     supported = [build.label for build in builds if build.supported]
@@ -1118,25 +1411,6 @@ def build_cell(
         sample adjacent to ``partner`` in that round."""
         pair = partner if name == reference else name
         return {o: s["metrics"][metric] for (p, o), s in own(name).items() if p == pair}
-
-    def paired_versus_reference(label: str, measured: str) -> Optional[Dict[str, Any]]:
-        statistics_entry = document["statistics"][label]
-        paired = statistics_entry["competitor_vs_fdu"].get(measured)
-        anchor_in_pair = statistics_entry["tools"][reference]["metrics"].get(measured)
-        if paired is None:
-            return None
-        return {
-            "meaning": f"(this - adjacent {reference}) / adjacent {reference} in {measured}, "
-            "median of adjacent pairs; positive = this binary slower",
-            "pairs": paired["pairs"],
-            "median_change_pct": paired["median_change_pct"],
-            "ci95_change_pct": paired["ci95_change_pct"],
-            "direction": paired["direction"],
-            "anchor_median_ms_in_these_pairs": _ms(anchor_in_pair["median"])
-            if anchor_in_pair
-            else None,
-            "speed_ratio_this_over_reference": round(1 + paired["median_change_pct"] / 100, 4),
-        }
 
     def anchor_normalized(name: str) -> Dict[int, float]:
         if name == reference:
@@ -1224,15 +1498,6 @@ def build_cell(
             continue
         label = build.label
         tool = document["tools"][label]
-        walls = [s["metrics"]["wall_ns"] for s in own(label).values()]
-        rss = [
-            s["metrics"]["peak_rss_bytes"]
-            for s in own(label).values()
-            if s["metrics"].get("peak_rss_bytes") is not None
-        ]
-        overall = document["overall"][label]["metrics"]
-        wall = overall.get("wall_ns") or {}
-        rss_overall = overall.get("peak_rss_bytes")
         item.update(
             {
                 "supported": True,
@@ -1243,61 +1508,12 @@ def build_cell(
                 "setup_command": tool.get("setup_command"),
                 "cache_scope": tool.get("cache_scope"),
                 "cache_evidence": (checked.get(label) or {}).get("cache_evidence"),
-                "timed_samples": len(walls),
-                "wall_ms": {
-                    "source": "harness median of this binary's valid timed samples"
-                    + (
-                        f"; the anchor's {len(walls)} samples beside every competitor"
-                        if label == reference
-                        else ""
-                    ),
-                    "median": _ms(wall.get("median")),
-                    "min": _ms(wall.get("min")),
-                    "max": _ms(wall.get("max")),
-                    "iqr_derived": _quartiles(walls),
-                    "median_bootstrap95_derived": _boot_ms(walls),
-                },
-                "peak_rss_mib": {
-                    "source": "harness rusage max RSS of the child, median of timed samples",
-                    "median": round(rss_overall["median"] / 2**20, 1) if rss_overall else None,
-                    "max": round(max(rss) / 2**20, 1) if rss else None,
-                },
-                "cpu_s_median": {
-                    "user": round(overall["user_cpu_ns"]["median"] / 1e9, 3)
-                    if overall.get("user_cpu_ns")
-                    else None,
-                    "system": round(overall["system_cpu_ns"]["median"] / 1e9, 3)
-                    if overall.get("system_cpu_ns")
-                    else None,
-                },
             }
         )
+        item.update(measured_fields(document, label, reference))
         if build.shape.uses_probe:
             item["cli_binary_sha256"] = build.cli_sha256
             item["job"] = build.shape.job
-        if overall.get("component_ns"):
-            component = overall["component_ns"]
-            values = [
-                s["metrics"]["component_ns"]
-                for s in own(label).values()
-                if s["metrics"].get("component_ns") is not None
-            ]
-            item["component_ms"] = {
-                "source": "probe-reported component_ns, harness median of valid timed samples",
-                "median": _ms(component.get("median")),
-                "min": _ms(component.get("min")),
-                "max": _ms(component.get("max")),
-                "iqr_derived": _quartiles(values),
-                "median_bootstrap95_derived": _boot_ms(values),
-            }
-        item[vs_reference] = None if label == reference else paired_versus_reference(label, metric)
-        # The metric the cell does not time, compared the same way, where it was recorded.
-        other = "wall_ns" if metric == "component_ns" else "component_ns"
-        if overall.get(other):
-            suffix = "_wall" if other == "wall_ns" else "_component"
-            item[vs_reference + suffix] = (
-                None if label == reference else paired_versus_reference(label, other)
-            )
         derived = versus_first(label)
         if derived is not None:
             derived = {"first": first, **derived}
@@ -1406,11 +1622,14 @@ def build_cell(
         }
         if overridden
         else None,
+        "timed_under": dict(timed_under) if timed_under is not None else None,
         "timed_metric": metric,
         # The job a cell times: the harness job for a probe component, the component
         # itself for a single command-line job, as the projection keys cells.
         "job": jobs[0] if jobs else entry["id"],
         "component_digest": component_digest,
+        "stamped_by": stamped_by if component_digest else None,
+        "known_answer_differences": list(answer_check.get("known_answer_differences") or []),
         "tree_key": entry["tree"],
         "platform": _platform(document["host"]),
         "reference_build": reference,
@@ -1468,6 +1687,7 @@ def build_cell(
         "answer_check": {
             "builds": answer_check["builds"],
             "problems": answer_check["problems"],
+            **({"rechecked": answer_check["rechecked"]} if answer_check.get("rechecked") else {}),
         },
         "milestones": milestones,
         "headline": headline,
@@ -1491,20 +1711,33 @@ def rebuild_cell(
     manifest_entry: Optional[Mapping[str, Any]] = None,
     override_note: Optional[str] = None,
     expected: Optional[Mapping[str, Union[Shape, Unsupported]]] = None,
+    known_differences: Sequence[Mapping[str, Any]] = (),
 ) -> Path:
     """Summarize a stored run again, so a cell gains new fields without new timing.
 
     The run artifact, the answer check, and the earlier cell (for the storage check and
-    the timing harness's revision) are read from ``output_dir``. Every build must map to
-    exactly the command the run timed, or the summary would describe another cell; and
-    the cell is stamped with the definition digest only if those commands are what the
-    manifest's definition (``expected``, each build's shape under it) asks for.
+    the timing harness's revision) are read from ``output_dir``. The cell is refused
+    unless:
+
+    - the run is anchored on the suite's reference build;
+    - every build maps to exactly what the run timed (command, setup, cache scope);
+    - the answer check passes under today's rules (content answers and known
+      differences, start states, the independent walk), recomputed from its records;
+    - for the definition digest, what the run timed is what the manifest's definition
+      (``expected``, each build's shape under it) asks for. Such a cell is stamped by
+      argv equivalence, and keeps the text it was timed under in ``timed_under``; its
+      ``override`` stays null only where that text is the manifest's own.
     """
     document = json.loads((output_dir / f"run-{name}.json").read_text(encoding="utf-8"))
-    answer_check = json.loads(
-        (output_dir / f"answer-check-{name}.json").read_text(encoding="utf-8")
+    answer_check = dict(
+        json.loads((output_dir / f"answer-check-{name}.json").read_text(encoding="utf-8"))
     )
     earlier = json.loads((output_dir / f"{name}.json").read_text(encoding="utf-8"))
+    if document.get("anchor") != manifest["reference_build"]:
+        raise HistoryError(
+            f"the run is anchored on {document.get('anchor')!r}, not the suite's reference "
+            f"build {manifest['reference_build']!r}"
+        )
     ran = ran_commands(document, builds)
     mapped = {build.label: build.shape for build in builds if build.shape is not None}
     mismatched = definition_problems(ran, mapped)
@@ -1512,14 +1745,47 @@ def rebuild_cell(
         raise HistoryError(
             "the builds no longer map to what the run timed: " + "; ".join(mismatched)
         )
-    digest = stamp_digest(
-        manifest_entry or entry, ran, expected if expected is not None else mapped
+    defined = manifest_entry or entry
+    digest = stamp_digest(defined, ran, expected if expected is not None else mapped)
+
+    # Hold the recorded answers to today's rules, with each build's declared start state
+    # and content from its shape where an older check did not record them.
+    shapes = {build.label: build.shape for build in builds if isinstance(build.shape, Shape)}
+    records = []
+    for record in answer_check["builds"]:
+        record = dict(record)
+        shape = shapes[record["label"]]
+        record.setdefault("expected_state", shape.state)
+        record.setdefault("content", list(shape.content))
+        records.append(record)
+    groups = answer_groups(records, document["tree"], known_differences)
+    problems = answer_problems(groups)
+    if problems:
+        raise HistoryError("refusing to stamp: the answer check fails: " + "; ".join(problems))
+    answer_check.update(
+        builds=records,
+        groups=groups,
+        problems=problems,
+        known_answer_differences=list(known_differences),
     )
+
+    timed = timed_definition(document)
+    same_text = (timed["command"], timed["cache_state"]) == (
+        defined["command"],
+        defined["cache_state"],
+    )
+    timed_entry = {**defined, "command": timed["command"], "cache_state": timed["cache_state"]}
+    note = override_note or timed.get("override_note")
+    if not same_text and not note:
+        note = (
+            "timed under earlier manifest text; stamped by argv equivalence: every build ran "
+            "exactly what this definition asks"
+        )
     locations = (earlier.get("subject") or {}).get("storage_check") or {}
     cell = build_cell(
         document,
         builds=builds,
-        entry=entry,
+        entry=timed_entry,
         manifest=manifest,
         reference=reference,
         metadata_source=metadata_source,
@@ -1527,14 +1793,167 @@ def rebuild_cell(
         storage={"locations": locations, "allowed_external": "external" in locations.values()},
         harness_revision=(earlier.get("harness") or {}).get("harness_revision"),
         run_artifact=f"{name}.run.json.gz",
-        manifest_entry=manifest_entry,
-        override_note=override_note,
+        manifest_entry=defined,
+        override_note=None if same_text else note,
         component_digest=digest,
+        timed_under=timed,
+        stamped_by="argv equivalence",
     )
     cell["harness"]["summary_revision"] = summary_revision
     cell_path = output_dir / f"{name}.json"
     write_text_atomic(cell_path, json.dumps(cell, indent=2) + "\n")
     return cell_path
+
+
+def known_differences(path: Path, name: str) -> List[Dict[str, Any]]:
+    """The documented answer differences the cell called ``name`` may carry.
+
+    Each names a build, the answer field, the exact value that build reports, why it
+    differs, and the commit that made it differ. Nothing else may differ.
+    """
+    if not path.is_file():
+        return []
+    document = json.loads(path.read_text(encoding="utf-8"))
+    selected = []
+    for entry in document.get("differences") or []:
+        if name in entry.get("cells", []):
+            missing = [
+                key for key in ("label", "field", "value", "reason", "commit") if key not in entry
+            ]
+            if missing:
+                raise HistoryError(f"known answer difference lacks {', '.join(missing)}")
+            selected.append({key: value for key, value in entry.items() if key != "cells"})
+    return selected
+
+
+def recheck_answers(
+    output_dir: Path,
+    name: str,
+    *,
+    builds: Sequence[Build],
+    root: Path,
+    label: str,
+    revision: Optional[str],
+) -> Path:
+    """Run a stored cell's answer check again, untimed, keeping the original beside it.
+
+    It records answers an earlier check did not (content totals, declared start states)
+    on the same builds and a tree whose tallies must equal the timed tree's, so the
+    cell's numbers are untouched. The original check is kept as ``*.as-timed.json``.
+    """
+    document = json.loads((output_dir / f"run-{name}.json").read_text(encoding="utf-8"))
+    fingerprint = tree.fingerprint(root, label=label)
+    timed_tree = document["tree"]
+    if (fingerprint["counts"], fingerprint_totals(fingerprint)) != (
+        timed_tree["counts"],
+        fingerprint_totals(timed_tree),
+    ):
+        raise HistoryError("the tree to recheck on does not have the timed tree's tallies")
+    path = output_dir / f"answer-check-{name}.json"
+    kept = output_dir / f"answer-check-{name}.as-timed.json"
+    if path.is_file() and not kept.is_file():
+        kept.write_bytes(path.read_bytes())
+    records = [check_build(build, root, fingerprint) for build in builds if build.supported]
+    answer_check = {
+        "builds": records,
+        "rechecked": {
+            "revision": revision,
+            "note": "the answer check run again, untimed, after timing, to record the "
+            "content answers and start states it now compares; the same builds on a tree "
+            "with the timed tree's tallies",
+        },
+    }
+    write_text_atomic(path, json.dumps(answer_check, indent=2, sort_keys=True))
+    return path
+
+
+_DESCRIPTION = re.compile(
+    r"^(?P<title>.*?): `(?P<command>[^`]*)` as this build spells it, (?P<cache_state>.*)$"
+)
+
+
+def timed_definition(document: Mapping[str, Any]) -> Dict[str, Any]:
+    """The component text a run was timed under, from the run artifact alone.
+
+    Runs from ``3bfa3ba2`` on record it in ``index_component``; earlier ones carry it in
+    each history contract's description (``contract_for``), which is read instead.
+    """
+    recorded = document.get("index_component") or {}
+    timed: Dict[str, Any] = {
+        "harness": "benchmarks.realtree.history",
+        "override_note": recorded.get("override_note"),
+        "timed_metric": recorded.get("timed_metric")
+        or document["tools"][document["anchor"]].get("primary_metric", "wall_ns"),
+    }
+    if recorded.get("command"):
+        timed.update(
+            command=recorded["command"],
+            cache_state=recorded["cache_state"],
+            source="the run artifact's index_component",
+        )
+        return timed
+    matched = _DESCRIPTION.match(document["tools"][document["anchor"]].get("description") or "")
+    if matched is None:
+        raise HistoryError("the run artifact does not say what component text it was timed under")
+    timed.update(
+        command=matched.group("command"),
+        cache_state=matched.group("cache_state"),
+        source="the run artifact's contract description",
+    )
+    return timed
+
+
+def _numbers(value: Any) -> Any:
+    """A figure with its prose and its derived ratio dropped, for the drift check."""
+    if isinstance(value, dict):
+        return {
+            key: _numbers(item)
+            for key, item in value.items()
+            if key not in ("source", "meaning") and not key.startswith("speed_ratio_this_over_")
+        }
+    return value
+
+
+def check_cells(directory: Path) -> List[str]:
+    """Where a committed history cell no longer matches its own stored run.
+
+    Each cell's run artifact is read, its statistics recomputed from the raw samples,
+    and every supported build's figures derived again (``measured_fields``); a cell that
+    states anything else, or whose artifact is missing, is reported. Prose and keys a
+    cell does not carry are not compared.
+    """
+    problems: List[str] = []
+    for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+        cell = json.loads(path.read_text(encoding="utf-8"))
+        artifact = directory / str(cell.get("run_artifact") or "")
+        if not cell.get("run_artifact") or not artifact.is_file():
+            problems.append(
+                f"{path.name}: its run artifact {cell.get('run_artifact')!r} is missing"
+            )
+            continue
+        with gzip.open(artifact, "rt", encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["statistics"] = compare_tools._statistics(document)
+        document["overall"] = compare_tools._overall(document)
+        reference = cell.get("reference_build") or document["anchor"]
+        if reference != document["anchor"]:
+            problems.append(
+                f"{path.name}: names {reference} as its anchor; the run used {document['anchor']}"
+            )
+            continue
+        for item in cell.get("milestones") or []:
+            if item.get("supported") is False:
+                continue
+            derived = measured_fields(document, item["label"], reference)
+            for key, value in derived.items():
+                if key not in item:
+                    continue
+                if _numbers(item[key]) != _numbers(value):
+                    problems.append(
+                        f"{path.name}: {item['label']} {key} is {_numbers(item[key])}, "
+                        f"its run gives {_numbers(value)}"
+                    )
+    return problems
 
 
 # --------------------------------------------------------------------------------------
@@ -1636,6 +2055,26 @@ def main(argv: Sequence[str]) -> int:
         help="re-summarize the cell from this name's stored run, answer check, and earlier "
         "cell in --output-dir, without timing anything",
     )
+    parser.add_argument(
+        "--recheck-answers",
+        action="store_true",
+        help="with --from-run: run the answer check again, untimed, on --root first, and "
+        "keep the stored one beside it",
+    )
+    parser.add_argument(
+        "--without-probe",
+        action="append",
+        default=[],
+        metavar="LABEL",
+        help="declare that a build has no perf_probe, so a probe component records it as "
+        "unsupported rather than refusing the cell",
+    )
+    parser.add_argument(
+        "--known-answers",
+        type=Path,
+        default=KNOWN_ANSWERS,
+        help="the documented answer differences a cell may carry, by cell name",
+    )
     arguments = parser.parse_args(list(argv))
 
     try:
@@ -1648,11 +2087,21 @@ def main(argv: Sequence[str]) -> int:
             entry["cache_state"] = arguments.cache_state
         if entry != defined and not arguments.override_note:
             raise HistoryError("a cell that overrides the manifest needs --override-note")
+        if arguments.recheck_answers and not arguments.from_run:
+            raise HistoryError("--recheck-answers re-summarizes a stored run; add --from-run")
         timing = arguments.timing or (
             "component" if defined.get("measures") in ("component", "component_ns") else "wall"
         )
         reference = arguments.reference or manifest["reference_build"]
-        builds = parse_builds(arguments.build, arguments.probe)
+        if reference != manifest["reference_build"]:
+            # A cell's ratios are to its anchor; the index reads them as ratios to the
+            # suite's reference build, so a cell anchored elsewhere cannot be stamped.
+            raise HistoryError(
+                f"--reference {reference} is not the suite's reference build "
+                f"{manifest['reference_build']}; a history cell is anchored on it"
+            )
+        known = known_differences(arguments.known_answers, arguments.name)
+        builds = parse_builds(arguments.build, arguments.probe, arguments.without_probe)
         map_builds(builds, entry, job=arguments.job)
         labels = [build.label for build in builds]
         if reference not in labels:
@@ -1672,6 +2121,15 @@ def main(argv: Sequence[str]) -> int:
             else definition_shapes(builds, defined, job=arguments.job)
         )
         if arguments.from_run:
+            if arguments.recheck_answers:
+                recheck_answers(
+                    arguments.output_dir,
+                    arguments.name,
+                    builds=builds,
+                    root=arguments.root,
+                    label=arguments.label,
+                    revision=arguments.harness_revision or _harness_revision(),
+                )
             cell_path = rebuild_cell(
                 arguments.output_dir,
                 arguments.name,
@@ -1686,6 +2144,7 @@ def main(argv: Sequence[str]) -> int:
                 manifest_entry=defined,
                 override_note=arguments.override_note,
                 expected=expected,
+                known_differences=known,
             )
             print(f"wrote {cell_path}", file=sys.stderr)
             return 0
@@ -1712,9 +2171,14 @@ def main(argv: Sequence[str]) -> int:
         records = [
             check_build(build, arguments.root, fingerprint) for build in builds if build.supported
         ]
-        groups = answer_groups(records, fingerprint)
+        groups = answer_groups(records, fingerprint, known)
         problems = answer_problems(groups)
-        answer_check = {"builds": records, "groups": groups, "problems": problems}
+        answer_check = {
+            "builds": records,
+            "groups": groups,
+            "problems": problems,
+            "known_answer_differences": known,
+        }
         arguments.output_dir.mkdir(parents=True, exist_ok=True)
         check_path = arguments.output_dir / f"answer-check-{arguments.name}.json"
         write_text_atomic(check_path, json.dumps(answer_check, indent=2, sort_keys=True))
@@ -1809,6 +2273,8 @@ def main(argv: Sequence[str]) -> int:
         manifest_entry=defined,
         override_note=arguments.override_note,
         component_digest=digest,
+        timed_under=timed_definition(document),
+        stamped_by="timed under this definition" if entry == defined else "argv equivalence",
     )
     cell_path = arguments.output_dir / f"{arguments.name}.json"
     write_text_atomic(cell_path, json.dumps(cell, indent=2) + "\n")

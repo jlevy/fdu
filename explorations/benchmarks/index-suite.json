@@ -69,8 +69,8 @@
       "title": "Code view",
       "weight": 0.075,
       "tree": "K",
-      "command": "fdu --view code --analyze code PATH",
-      "cache_state": "fdu's caches empty for every sample",
+      "command": "fdu --cache off --view code --analyze code PATH",
+      "cache_state": "fdu's caches empty for every sample, with the cache off: the content cache write is untimed",
       "measures": "wall"
     },
     {
@@ -78,8 +78,8 @@
       "title": "Documents view",
       "weight": 0.075,
       "tree": "K",
-      "command": "fdu --view documents --analyze words PATH",
-      "cache_state": "fdu's caches empty for every sample",
+      "command": "fdu --cache off --view documents --analyze words PATH",
+      "cache_state": "fdu's caches empty for every sample, with the cache off: the content cache write is untimed",
       "measures": "wall"
     },
     {
@@ -97,8 +97,8 @@
       "title": "Multi-view content report",
       "weight": 0.05,
       "tree": "K",
-      "command": "fdu --view code,documents,languages --analyze code,words PATH",
-      "cache_state": "fdu's caches empty for every sample",
+      "command": "fdu --cache off --view code,documents,languages --analyze code,words PATH",
+      "cache_state": "fdu's caches empty for every sample, with the cache off: the content cache write is untimed",
       "measures": "wall"
     },
     {
@@ -125,10 +125,10 @@
       "title": "Memory",
       "weight": 0.05,
       "tree": "K,G",
-      "command": "peak RSS of the components whose cells record it for every build",
+      "command": "peak RSS of each score line's own components, each component counted once (its jobs averaged first)",
       "cache_state": "as those components",
       "measures": "peak_rss",
-      "from_components": "every-build"
+      "from_components": "each-score-lines-own-components"
     }
   ]
 }

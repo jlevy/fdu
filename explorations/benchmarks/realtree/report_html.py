@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
-from benchmarks.realtree.perf_index import score_ratio
+from benchmarks.realtree.perf_index import CONTROLLED_REGIMES, score_ratio
 from benchmarks.realtree.timeline import METRICS
 
 #: Jobs shown in the absolute figure, in the order the work happens: build the index
@@ -566,19 +566,74 @@ def _chronological(dataset: Mapping[str, Any]) -> List[Mapping[str, Any]]:
 
 
 
-def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> List[Dict[str, Any]]:
-    """The chooser's metrics: the unified score first, then every measured component.
+#: The platform the runtime panel draws, chosen by name: the projection sorts platforms
+#: by name, so taking the first would let Linux's cells silently replace macOS's chart.
+#: The headline states every platform's score.
+CHART_PLATFORM = "macOS"
+
+
+def projected_platform(
+    dataset: Mapping[str, Any], platform: Optional[str] = None
+) -> Optional[Mapping[str, Any]]:
+    """One platform's projected index: the named one, else the chart's, else the only one."""
+    platforms = dataset.get("index") or []
+    wanted = platform or CHART_PLATFORM
+    for projected in platforms:
+        if projected["platform"] == wanted:
+            return projected
+    if platform is None and len(platforms) == 1:
+        return platforms[0]
+    return None
+
+
+def score_label(projected: Mapping[str, Any], components: int) -> str:
+    """A platform's score with its coverage: "macOS score, 12 of 12 components".
+
+    A platform's score is never the full index, which weights every platform; the
+    coverage counts the platform's own components.
+    """
+    total = len(projected["measured"]) + len(projected["missing"])
+    return f"{projected['platform']} score, {components} of {total} components"
+
+
+def regime_note(projected: Mapping[str, Any]) -> str:
+    """"exploratory, uncontrolled host" when any cell behind the score was not controlled.
+
+    The loop's regime table limits an uncontrolled host to exploration and discovery, so a
+    score measured on one is labelled as such wherever it is stated.
+    """
+    if not projected.get("exploratory"):
+        return ""
+    regimes = projected.get("host_regimes") or []
+    loose = [regime for regime in regimes if regime not in CONTROLLED_REGIMES]
+    host = "uncontrolled host" if "uncontrolled" in loose or not loose else f"{'/'.join(loose)} host"
+    return f"exploratory, {host}"
+
+
+def gate_note(projected: Mapping[str, Any]) -> str:
+    """The range of the score's cells' shares of sample boundaries above the quiet gate."""
+    shares = projected.get("above_quiet_gate_range")
+    if not shares:
+        return ""
+    low, high = (round(value * 100) for value in shares)
+    span = f"{low}%" if low == high else f"{low}% to {high}%"
+    return f"{span} of each cell's sample boundaries above the quiet gate"
+
+
+def metric_series(
+    dataset: Mapping[str, Any], position: Mapping[str, int], platform: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """The chooser's metrics: the platform's score first, then every measured component.
 
     Every value is relative to the reference build, so every line ends at 1.0 and lines
     that start at different builds still compare: the score, a millisecond benchmark,
-    and peak memory read on one axis. The unified score has two lines: the full index,
-    solid, from the first build that has every measured component, and a partial score,
-    dashed, over the components every build has, labelled with its coverage.
+    and peak memory read on one axis. The score has two lines: solid, from the first
+    build that has every measured component, and a partial score, dashed, over the
+    components every build has, each labelled with its coverage.
     """
-    platforms = dataset.get("index") or []
-    if not platforms:
+    projected = projected_platform(dataset, platform)
+    if projected is None:
         return []
-    projected = platforms[0]
     builds = [build for build in projected["builds"] if build.get("after_experiment") in position]
     reference = projected["reference_build"]
 
@@ -634,7 +689,7 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
             {
                 "points": full_line,
                 "dashed": False,
-                "label": f"full score, {measured} of {total} components",
+                "label": score_label(projected, measured),
             }
         )
     if partial_line and len(projected["common"]) < measured:
@@ -642,7 +697,7 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
             {
                 "points": partial_line,
                 "dashed": True,
-                "label": f"partial, {len(projected['common'])} of {total} components "
+                "label": f"partial: {score_label(projected, len(projected['common']))} "
                 f"({projected['common_weight'] * 100:.0f}% of the weight)",
             }
         )
@@ -651,11 +706,16 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
         coverage = (
             "" if measured == total else f", {measured_weight * 100:.0f}% of the suite measured"
         )
+        regime = regime_note(projected)
         series.append(
             {
                 "id": "score",
-                "title": f"Unified score ({projected['platform']}{coverage})",
+                "title": score_label(projected, measured)
+                + coverage
+                + (f"; {regime}" if regime else ""),
                 "verb": "better",
+                "worse": "worse",
+                "unit": "index",
                 "lines": lines,
             }
         )
@@ -681,15 +741,29 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
         )
         if values:
             title = projected["titles"].get(component, component)
+            memory = component == "memory"
             series.append(
                 {
                     "id": component,
                     "title": title,
-                    "verb": "less memory" if component == "memory" else "faster",
+                    "verb": "less memory" if memory else "faster",
+                    "worse": "more memory" if memory else "slower",
+                    "unit": "peak memory" if memory else "time",
                     "lines": [{"points": values, "dashed": False, "label": title.lower()}],
                 }
             )
     return series
+
+
+def trend_label(first: float, last: float, verb: str, worse: str) -> str:
+    """How a line moved from its first build to its last, in the direction it moved.
+
+    A line that ends above where it started would otherwise read "0.8x faster".
+    """
+    ratio = first / last
+    if ratio >= 1:
+        return f"{ratio:.1f}x {verb}"
+    return f"{1 / ratio:.1f}x {worse}"
 
 
 def _numbered_builds(
@@ -765,6 +839,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         ]
         if len(placed) >= 2:
             cells.append((cell, placed))
+    chart = projected_platform(dataset)
     series = metric_series(dataset, position)
     milestones = [point for item in series for line in item["lines"] for point in line["points"]]
 
@@ -830,7 +905,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                     f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
                     f"{tick:g}&times;</text>"
                 )
-        reference = (dataset.get("index") or [{}])[0].get("reference_build", "the reference build")
+        reference = (chart or {}).get("reference_build", "the reference build")
         out.append(
             f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">the chosen metric as a '
             f"multiple of {esc(reference)}&rsquo;s, log scale &mdash; lower is better; "
@@ -877,7 +952,8 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                             f"{item['title']}, {line['label']}: {point['short']} "
                             f"({point['commit']}, {point['date']})\n"
                             f"{point['includes']}\n"
-                            f"{point['share']:.2f}x the reference build's time"
+                            # The score is an index, memory a peak, a component a time.
+                            f"{point['share']:.2f}x {reference}'s {item['unit']}"
                             + (f"; {point['detail']}" if point.get("detail") else "")
                         )
                         + "/>"
@@ -886,7 +962,8 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 x0, y0 = points[0][0], points[0][1]
                 group.append(
                     f'<text class="value-label {css}" x="{x0 + 8:.1f}" y="{y0 - 8:.1f}" '
-                    f'stroke="none">{first["share"] / last["share"]:.1f}x {esc(item["verb"])} '
+                    f'stroke="none">'
+                    f'{esc(trend_label(first["share"], last["share"], item["verb"], item["worse"]))} '
                     f"since {esc(first['short'])}</text>"
                 )
                 group.append(
@@ -961,7 +1038,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
 
     counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
     keys = legend(
-        ("key-cell-a", "the unified score"),
+        ("key-cell-a", f"the {(chart or {}).get('platform', '')} score".replace("the  ", "the ")),
         ("key-cell-b", "a single component, when chosen"),
         ("key-good", f"kept, at least 3% better ({counts['kept']})"),
         ("key-bad", f"tried, not kept ({counts['rejected']})"),
@@ -990,7 +1067,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         )
         chooser = (
             '<p class="metric-chooser"><label>Metric <select id="metric" '
-            f'data-platform="{esc((dataset.get("index") or [{}])[0].get("platform", ""))}">'
+            f'data-platform="{esc((chart or {}).get("platform", ""))}">'
             f"{options}</select></label> <span class=\"muted\">Bars that do not count "
             "toward the chosen metric are faded.</span></p>"
         )
@@ -1481,6 +1558,7 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.06em; color: var(--muted); margin-top: 2px;
 }
 .headline .good { color: var(--good); }
+.headline .bad { color: var(--bad); }
 
 figure.fig { margin: 24px 0 8px; }
 .chart { width: 100%; height: auto; display: block; overflow: visible; }
@@ -2326,42 +2404,61 @@ def _standing_figure(dataset: Mapping[str, Any]) -> str:
 
 
 def _score_figure(dataset: Mapping[str, Any]) -> str:
-    """The unified score from the first build to the last, with its interval.
+    """Each platform's score from its first build to its last, with its interval.
 
     The interval is the combined interval of the two index values, both relative to the
-    reference build, so it is the honest width of the ratio between them.
+    reference build, so it is the honest width of the ratio between them. Each figure
+    names its platform and coverage (a platform's score is never the full index), says
+    how the cells behind it were measured, and names any platform not yet measured.
     """
-    platforms = dataset.get("index") or []
-    if not platforms:
-        return ""
-    projected = platforms[0]
-    total = len(projected["measured"]) + len(projected["missing"])
     figures = []
-    for key, components, what in (
-        ("measured_full", projected["measured"], "unified score"),
-        ("common", projected["common"], "partial score"),
-    ):
-        if key == "common" and len(projected["common"]) == len(projected["measured"]):
-            continue
-        # Only builds the chart can place, so the headline and the chart agree.
-        recorded = {record["id"] for record in dataset["experiments"]}
-        builds = [
-            build
-            for build in projected["builds"]
-            if build.get(key) and build.get("after_experiment") in recorded
-        ]
-        if len(builds) < 2:
-            continue
-        first, last = builds[0][key], builds[-1][key]
-        speedup, low, high = score_ratio(first, last)
-        figures.append(
-            f'<div><span class="n good">{speedup:.2f}&times; better</span>'
-            f'<span class="k">{what}, {esc(projected["platform"])}, '
-            f'{esc(builds[0].get("short") or builds[0]["label"])} to '
-            f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
-            f"[{low:.2f}&times;, {high:.2f}&times;]; "
-            f"{len(components)} of {total} components</span></div>"
+    recorded = {record["id"] for record in dataset["experiments"]}
+    for projected in dataset.get("index") or []:
+        regime = regime_note(projected)
+        gate = gate_note(projected)
+        context = "; ".join(
+            part
+            for part in (
+                f"{regime} ({gate})" if regime and gate else regime,
+                "; ".join(
+                    f"{esc(name)} not yet measured ({weight * 100:.0f}% of the combined index)"
+                    for name, weight in sorted((projected.get("unmeasured_platforms") or {}).items())
+                ),
+            )
+            if part
         )
+        for key, components, partial in (
+            ("measured_full", projected["measured"], False),
+            ("common", projected["common"], True),
+        ):
+            if partial and len(projected["common"]) == len(projected["measured"]):
+                continue
+            # Only builds the chart can place, so the headline and the chart agree.
+            builds = [
+                build
+                for build in projected["builds"]
+                if build.get(key) and build.get("after_experiment") in recorded
+            ]
+            if len(builds) < 2:
+                continue
+            first, last = builds[0][key], builds[-1][key]
+            speedup, low, high = score_ratio(first, last)
+            better = speedup >= 1
+            shown = speedup if better else 1 / speedup
+            bounds = (low, high) if better else (1 / high, 1 / low)
+            label = score_label(projected, len(components))
+            if partial:
+                label = f"partial: {label} ({projected['common_weight'] * 100:.0f}% of the weight)"
+            figures.append(
+                f'<div><span class="n {"good" if better else "bad"}">{shown:.2f}&times; '
+                f'{"better" if better else "worse"}</span>'
+                f'<span class="k">{esc(label)}, '
+                f'{esc(builds[0].get("short") or builds[0]["label"])} to '
+                f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
+                f"[{bounds[0]:.2f}&times;, {bounds[1]:.2f}&times;]"
+                + (f"; {context}" if context else "")
+                + "</span></div>"
+            )
     return "".join(figures)
 
 
@@ -2439,8 +2536,10 @@ analysis, an opened root, a million-entry tree, and peak memory
 spec</a>). Each milestone build was timed side by side with 0.3.0 in one session per
 component, on a busy desktop, so the steps are measured accumulated improvement, and
 differences of about 10% between adjacent builds are within the noise. The solid line is
-the full score, from the first build that has every component; the dashed line is the
-partial score over the components the first build already had. The chooser shows any
+the platform&rsquo;s score over every component, from the first build that has them all;
+the dashed line is the partial score over the components the first build already had. A
+platform&rsquo;s score is not the combined index, which also weights the platforms not yet
+measured, and the headline says how the cells behind it were measured. The chooser shows any
 single component. The bottom panel is every experiment in the order it
 ran, each on its own primary metric: green bars are changes that were kept, red bars were
 tried and dropped, and grey bars are checkpoints, validations, and other measurements of

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import gzip
 import io
 import json
 import stat
@@ -335,10 +336,16 @@ class ShapeTests(unittest.TestCase):
 
     def test_the_opened_root_needs_a_probe_with_the_job(self) -> None:
         job = "opened-second-report"
+        # A forgotten --probe is an error, not a build that cannot run the job (F9).
+        with self.assertRaisesRegex(history.HistoryError, "was given no --probe"):
+            shape("opened-root", V030, job=job)
+        declared = history.Build(label="old", binary=Path("/bin/fdu"), without_probe=True)
         self.assertEqual(
-            shape("opened-root", V030, job=job),
-            history.Unsupported("no perf_probe build was supplied for this milestone"),
+            shape("opened-root", V030, probe_check=history._probe_check(declared), job=job),
+            history.Unsupported("declared without a perf_probe build (--without-probe)"),
         )
+        with self.assertRaisesRegex(history.HistoryError, "has a --probe and is declared"):
+            history.parse_builds(["a=/bin/sh"], ["a=/bin/sh"], ["a"])
         self.assertEqual(
             shape("opened-root", V030, probe_check=lambda job: f"no {job} mode", job=job),
             history.Unsupported("no opened-second-report mode"),
@@ -707,11 +714,118 @@ class AnswerCheckTests(unittest.TestCase):
         # A lone build whose totals did not parse has nothing to agree with, and fails.
         unparsed = history.answer_groups([{**record("a", False), "totals": None}], self.FINGERPRINT)
         self.assertIn("did not parse", " ".join(history.answer_problems(unparsed)))
-        # Agreement with the independent walk is recorded; a group can agree and miss it.
+        # A group that agrees with itself and not with the independent walk fails (F8).
         off = history.answer_groups(
             [record("a", False, files=9), record("b", False, files=9)], self.FINGERPRINT
         )
         self.assertFalse(off["without_gitignore"]["matches_fingerprint"])
+        self.assertIn("independent walk", " ".join(history.answer_problems(off)))
+
+    CODE = {"files": 61453, "code": 26312097, "comment": 4290689, "blank": 4342977}
+    CODE_030 = {"files": 61452, "code": 26312091, "comment": 4290689, "blank": 4342976}
+
+    def content_record(self, label: str, code: Dict[str, int] | None) -> Dict[str, Any]:
+        return {
+            "label": label,
+            "reads_gitignore": True,
+            "exit_ok": True,
+            "totals_exit_code": 0,
+            "totals": {
+                "files": 10,
+                "dirs": 2,
+                "apparent_bytes": 100,
+                "allocated_bytes": 200,
+                "complete": True,
+                "ignored": None,
+            },
+            "content": ["code"],
+            "code_totals": code,
+        }
+
+    def test_content_answers_must_agree_unless_a_difference_is_declared(self) -> None:
+        # F1: v0.3.0's one-file code difference passed every check before.
+        records = [
+            self.content_record("v0.2.0", self.CODE),
+            self.content_record("exp201", self.CODE),
+            self.content_record("v0.3.0", self.CODE_030),
+        ]
+        problems = history.answer_problems(history.answer_groups(records, self.FINGERPRINT))
+        self.assertIn("builds disagree on code_totals", " ".join(problems))
+        known = [
+            {
+                "label": "v0.3.0",
+                "field": "code_totals",
+                "value": self.CODE_030,
+                "reason": "fixture",
+                "commit": "2ed3af9f",
+            }
+        ]
+        groups = history.answer_groups(records, self.FINGERPRINT, known)
+        self.assertEqual(history.answer_problems(groups), [])
+        self.assertEqual(
+            groups["with_gitignore"]["known_differences_applied"], ["v0.3.0: code_totals"]
+        )
+        self.assertEqual(groups["with_gitignore"]["content"]["code_totals"], self.CODE)
+        # A declared difference that is not observed exactly is itself a failure.
+        stale = [{**known[0], "value": {**self.CODE_030, "code": 1}}]
+        problems = history.answer_problems(history.answer_groups(records, self.FINGERPRINT, stale))
+        self.assertIn("declared code_totals", " ".join(problems))
+        # Any other difference still fails, and so does a missing content answer.
+        other = records + [self.content_record("v0.2.1", {**self.CODE, "files": 1})]
+        problems = history.answer_problems(history.answer_groups(other, self.FINGERPRINT, known))
+        self.assertIn("builds disagree on code_totals", " ".join(problems))
+        missing = [self.content_record("v0.2.0", None)]
+        problems = history.answer_problems(history.answer_groups(missing, self.FINGERPRINT))
+        self.assertIn("no code_totals to compare", " ".join(problems))
+
+    def test_documents_totals_are_read_from_the_documents_section(self) -> None:
+        single = (
+            "Percentage column: document words\n"
+            "    34 MiB   78.6%  rst                3,598 files, 745,461 lines (565,334 nonblank, "
+            "180,127 blank), 3,898,406 words (15,593.6 pages), 3,597 documentation\n"
+            "    12 KiB   <0.1%  latex              1 file, 234 lines (228 nonblank, 6 blank), "
+            "1,334 words (5.3 pages), 1 documentation\n"
+        )
+        self.assertEqual(
+            history.document_totals(single.encode()),
+            {"formats": 2, "files": 3599, "lines": 745695, "words": 3899740},
+        )
+        # Before 0.2.0 the numbers had no thousands separators.
+        early = "   380 KiB    0.6%  markdown           62 files, 6604 lines (5016 nonblank, 1588 blank), 29693 words (118.7 pages), 61 documentation\n"
+        self.assertEqual(history.document_totals(early.encode())["words"], 29693)
+        # In a multi-view report the LANGUAGES rows look the same and must not count.
+        multi = (
+            "CODE\nCode lines  Language\n\nDOCUMENTS\n" + single + "\nLANGUAGES\n"
+            "    12 MiB    0.0%  Assembly     1,338 files, 376,316 lines (328,436 nonblank, "
+            "47,880 blank), 1,370,730 words (5,482.9 pages), 1,338 unsupported\n"
+        )
+        self.assertEqual(history.document_totals(multi.encode())["words"], 3899740)
+        self.assertIsNone(history.document_totals(b"no documents here\n"))
+
+    def test_a_build_must_start_from_the_state_its_component_declares(self) -> None:
+        # F2: a filled cache found cold, or empty caches found warm, refuse the cell.
+        def record(state: str, evidence: str, cached: int | None) -> Dict[str, Any]:
+            return {
+                "label": "b",
+                "expected_state": state,
+                "cache_evidence": evidence,
+                "analysis": None if cached is None else {"fresh": 0, "cached": cached},
+            }
+
+        self.assertIsNone(history.state_problem(record("filled", "warm", 86630)))
+        self.assertIn("filled", history.state_problem(record("filled", "cold", 0)) or "")
+        self.assertIn("filled", history.state_problem(record("filled", "warm", 0)) or "")
+        self.assertIsNone(history.state_problem(record("empty", "cold", 0)))
+        self.assertIn("empty", history.state_problem(record("empty", "warm", 86630)) or "")
+        self.assertIn("empty", history.state_problem(record("empty", "cold", 5)) or "")
+        # A build that prints no performance line cannot contradict its state.
+        self.assertIsNone(history.state_problem(record("filled", "unknown", None)))
+        self.assertIsNone(history.state_problem(record("steady", "cold", 0)))
+        groups = history.answer_groups(
+            [{**self.content_record("b", self.CODE), **record("filled", "cold", 0)}],
+            self.FINGERPRINT,
+        )
+        self.assertIn("declared a filled cache", " ".join(history.answer_problems(groups)))
 
     def test_performance_lines_say_what_state_a_run_started_from(self) -> None:
         warm = "perf: took 0.6 s; content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation"
@@ -853,7 +967,15 @@ class CellTests(unittest.TestCase):
                 "reads_gitignore": True,
                 "exit_ok": True,
                 "totals_exit_code": 0,
-                "totals": None,
+                # The fixture tree's tallies, so the group agrees with the walk.
+                "totals": {
+                    "files": 10,
+                    "dirs": 2,
+                    "apparent_bytes": 100,
+                    "allocated_bytes": 200,
+                    "complete": True,
+                    "ignored": None,
+                },
                 "cache_evidence": "cold",
             }
             for label in (self.FIRST, "v0.3.0")
@@ -983,6 +1105,115 @@ class CellTests(unittest.TestCase):
                 ),
                 perf_index.component_digest(entry("summary")),
             )
+
+    def stored(self, directory: Path, parts: Dict[str, Any], earlier: Dict[str, Any]) -> None:
+        """Lay a fixture cell out as a stored run: its run, answer check, and cell."""
+        (directory / "run-cell.json").write_text(json.dumps(parts["document"]))
+        (directory / "answer-check-cell.json").write_text(json.dumps(parts["answer_check"]))
+        (directory / "cell.json").write_text(json.dumps(earlier))
+
+    def rebuild(self, directory: Path, parts: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        path = history.rebuild_cell(
+            directory,
+            "cell",
+            builds=parts["builds"],
+            entry=entry("summary"),
+            manifest=MANIFEST,
+            reference="v0.3.0",
+            metadata_source=parts["source"],
+            summary_revision="def",
+            **kwargs,
+        )
+        return json.loads(path.read_text())
+
+    def test_a_rebuilt_cell_keeps_the_text_it_was_timed_under(self) -> None:
+        # E3: a cell admitted by argv equivalence says so, and says what it was timed under.
+        parts: Dict[str, Any] = {}
+        earlier = self.make_cell(capture=parts)
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            self.stored(directory, parts, earlier)
+            same = self.rebuild(directory, parts)
+            self.assertEqual(same["stamped_by"], "argv equivalence")
+            self.assertEqual(same["timed_under"]["command"], entry("summary")["command"])
+            self.assertEqual(
+                same["timed_under"]["source"], "the run artifact's contract description"
+            )
+            # The text it was timed under is the manifest's own, so nothing was overridden.
+            self.assertIsNone(same["override"])
+            document = dict(parts["document"])
+            document["index_component"] = {
+                "command": "fdu --view summary --something-earlier PATH",
+                "cache_state": entry("summary")["cache_state"],
+                "override_note": None,
+            }
+            (directory / "run-cell.json").write_text(json.dumps(document))
+            earlier_text = self.rebuild(directory, parts)
+            self.assertEqual(
+                earlier_text["timed_under"]["command"],
+                "fdu --view summary --something-earlier PATH",
+            )
+            self.assertEqual(
+                earlier_text["override"]["command"], "fdu --view summary --something-earlier PATH"
+            )
+            self.assertIn("argv equivalence", earlier_text["override"]["note"])
+            self.assertEqual(earlier_text["manifest_command"], entry("summary")["command"])
+
+    def test_a_cell_anchored_elsewhere_is_refused(self) -> None:
+        # F3: a cell's ratios are to its anchor; only the suite's reference may anchor one.
+        parts: Dict[str, Any] = {}
+        earlier = self.make_cell(capture=parts)
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            self.stored(directory, parts, earlier)
+            document = {**parts["document"], "anchor": self.FIRST}
+            (directory / "run-cell.json").write_text(json.dumps(document))
+            with self.assertRaisesRegex(history.HistoryError, "not the suite's reference"):
+                self.rebuild(directory, parts)
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            code = history.main(
+                [
+                    *("--component", "summary", "--root", "missing", "--label", "x"),
+                    *("--build", "v0.2.0=missing", "--name", "cell", "--reference", "v0.2.0"),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("is not the suite's reference build", errors.getvalue())
+
+    def test_the_stamp_compares_the_cache_scope(self) -> None:
+        # F10: the same commands run from another start state are another definition.
+        mapped = shape("default-tree", V030)
+        ran = {"b": (list(mapped.argv), list(mapped.setup_argv), "sample")}
+        problems = history.definition_problems(ran, {"b": mapped})
+        self.assertEqual(len(problems), 1)
+        self.assertIn("'tool'", problems[0])
+        ran["b"] = (list(mapped.argv), list(mapped.setup_argv), "tool")
+        self.assertEqual(history.definition_problems(ran, {"b": mapped}), [])
+
+    def test_a_cell_that_drifts_from_its_stored_run_is_caught(self) -> None:
+        # E8: every figure a cell states is derived again from its run artifact.
+        parts: Dict[str, Any] = {}
+        cell = self.make_cell(capture=parts)
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            with gzip.open(directory / "cell.run.json.gz", "wt", encoding="utf-8") as handle:
+                json.dump(parts["document"], handle)
+            (directory / "cell.json").write_text(json.dumps(cell))
+            self.assertEqual(history.check_cells(directory), [])
+            tampered = copy.deepcopy(cell)
+            tampered["milestones"][0]["wall_ms"]["median"] += 0.01
+            tampered["milestones"][2]["peak_rss_mib"]["max"] = 1.0
+            (directory / "cell.json").write_text(json.dumps(tampered))
+            problems = history.check_cells(directory)
+            self.assertEqual(len(problems), 2)
+            self.assertIn("wall_ms", problems[0])
+            (directory / "cell.run.json.gz").unlink()
+            self.assertIn("is missing", history.check_cells(directory)[0])
+
+    def test_every_committed_cell_matches_its_stored_run(self) -> None:
+        # The committed evidence itself: no cell may state a figure its run does not give.
+        self.assertEqual(history.check_cells(self.COMMITTED.parent), [])
 
     def test_the_cell_names_its_component_manifest_and_platform(self) -> None:
         cell = self.make_cell()
