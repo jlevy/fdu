@@ -387,6 +387,9 @@ pub struct AxisNames {
     pub stale_ok: &'static str,
     /// The request to repeat the answer as a watch.
     pub watch: &'static str,
+    /// What joins several settings in one suggestion: flags read as one command line,
+    /// keyword arguments as one call's arguments.
+    pub setting_separator: &'static str,
 }
 
 impl AxisNames {
@@ -425,6 +428,7 @@ impl AxisNames {
         cache: "--cache",
         stale_ok: "--stale-ok",
         watch: "--watch",
+        setting_separator: " ",
     };
 
     /// How the library and the Python API spell them, and the default: a `Query` built
@@ -465,6 +469,7 @@ impl AxisNames {
         cache: "cache policy",
         stale_ok: "stale_ok",
         watch: "watch",
+        setting_separator: ", ",
     };
 }
 

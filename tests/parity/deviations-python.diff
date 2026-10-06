@@ -956,7 +956,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  note: totals include hidden languages
  note: ranked by code lines
  note: 15 languages analyzed
- note: display limits: 8 languages below min share
+ note: display limits: 8 rows below min share
 -tip: show more: --min-share=0%
 +tip: show more: min_share=0%
   ✗ Code Totals Survive Bounds and Unsupported Languages
@@ -1033,7 +1033,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
     stderr:
 @@ -1,5 +1,5 @@
  note: totals include descendants
- note: percentages are shares of document words
+ note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
  note: 2 languages analyzed
  note: display limits: row limit 2
 -tip: show more: --limit=all

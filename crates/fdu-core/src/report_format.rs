@@ -3898,6 +3898,39 @@ mod tests {
             ["note: percentages are shares of code lines (LANGUAGES), document words (DOCUMENTS)"],
             "one note names each view's denominator"
         );
+
+        // Beside a byte-share view, one non-byte denominator still names its section, so
+        // the tree's percentages are not read as code lines.
+        let mut beside_tree = fixture(&[ViewSpec::Tree, ViewSpec::Languages]);
+        let Section::Metrics { summary, .. } = &mut beside_tree.sections[1] else {
+            panic!("languages should be a metric section");
+        };
+        summary.share_metric = ShareMetric::CodeLines;
+        assert_eq!(
+            shares(&beside_tree),
+            ["note: percentages are shares of code lines (LANGUAGES)"]
+        );
+    }
+
+    #[test]
+    fn share_floor_omissions_name_their_section_beside_other_views() {
+        let mut report = fixture(&[ViewSpec::Types, ViewSpec::Families]);
+        for section in &mut report.sections {
+            let Section::Metrics { summary, .. } = section else {
+                panic!("types and families should be metric sections");
+            };
+            summary.share_omitted = 2;
+        }
+        let limits = report_notes(&report)
+            .into_iter()
+            .filter(|note| note.starts_with("note: display limits:"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            limits,
+            ["note: display limits: 2 rows below min share in TYPES, 2 rows below min share in \
+              FAMILIES"],
+            "equal counts in different views stay distinct"
+        );
     }
 
     #[test]
