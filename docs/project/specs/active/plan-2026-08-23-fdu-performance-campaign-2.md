@@ -6,8 +6,11 @@
 
 **Status:** Active.
 Completed experiments settle their measured cells; the H148 Linux PGO
-screen did not adopt a release profile, which remains `fdu-pdne`. This plan owns the
-current prioritization; the queue orderings in
+screen did not adopt a release profile, which remains `fdu-pdne`. Where each tier stands
+after every round through exp-202 is
+[the evidence report’s termination table](../../reports/report-2026-08-20-fdu-performance-evidence.md#campaign-2-termination);
+no tier has been recorded as closed.
+This plan owns the current prioritization; the queue orderings in
 [the structural review](../../research/research-2026-08-14-structural-performance-review.md)
 and
 [the consumer structural-headroom review](../../research/research-2026-08-15-consumer-structural-headroom.md)
@@ -526,6 +529,10 @@ strategy and the record is visible in review.
 
 - [The metadata-walk floor report](../../reports/report-2026-08-23-metadata-walk-floor.md)
   — the denominator
+- [The performance evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md)
+  — the full record of every round through exp-202, with
+  [the charted page](../../reports/performance-evidence/index.html) generated from the
+  records
 - [The consumer structural-headroom review](../../research/research-2026-08-15-consumer-structural-headroom.md)
   — the ceiling measurement and the prior queue
 - [The structural review](../../research/research-2026-08-14-structural-performance-review.md)

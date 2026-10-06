@@ -43,13 +43,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
-from benchmarks.realtree.experiment import kept_arm
+from benchmarks.realtree.experiment import compares_two_builds, kept_arm
+from benchmarks.realtree.history import check_cells
+from benchmarks.realtree.perf_index import (
+    SUITE_PATH,
+    load_suite,
+    project_index,
+    reference_key,
+    unmapped_jobs,
+)
 from benchmarks.realtree.summary import (
     BASELINE_COMMIT,
     EXPERIMENTS_DIR,
     SummaryError,
     load_experiments,
 )
+
+#: Where history cells live: one summary per cell, each timing a series of fdu releases
+#: interleaved in one session on one fixed tree. The raw harness run sits beside it.
+HISTORY_DIR = EXPERIMENTS_DIR.parent / "reports" / "performance-evidence" / "history"
 
 #: Emitted alongside the data so a consumer can tell which projection it holds.
 DATASET_VERSION = "fdu.performance.timeline/1"
@@ -296,6 +308,10 @@ def project(experiments: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
                 "hypotheses": experiment.get("hypotheses") or [],
                 "decision": decision,
                 "kept": kept_variant(verdict),
+                # Whether the two arms are different builds. A baseline usually measures
+                # one build against itself and has one value to show; an end-to-end or
+                # release cell is a baseline too, and its change is the point of it.
+                "compares": compares_two_builds(experiment),
                 "primary_job": verdict.get("primary_job"),
                 "primary_metric": verdict.get("primary_metric"),
                 "change_pct": verdict.get("change_pct"),
@@ -461,10 +477,84 @@ def _totals(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def load_history(directory: Path) -> List[Dict[str, Any]]:
+    """Project each history cell's summary to what the page draws.
+
+    A history cell times every milestone build in one interleaved session on one tree, so
+    its milestones compare with each other directly, which no chain of experiments can.
+    Cells are listed by their `display_order`, then by file name.
+    """
+    cells = []
+    summaries = []
+    for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+        summaries.append((path, json.loads(path.read_text(encoding="utf-8"))))
+    summaries.sort(key=lambda item: (item[1].get("display_order", float("inf")), item[0].name))
+    for path, summary in summaries:
+        subject = summary.get("subject") or {}
+        host = summary.get("host") or {}
+        regime = summary.get("regime") or {}
+        # The paired figure is keyed by the build the cell is anchored on; a cell that
+        # names no anchor has no paired figures to read.
+        reference = summary.get("reference_build")
+        paired_key = reference_key(reference) if reference else None
+        milestones = []
+        for item in summary.get("milestones") or []:
+            paired = (item.get(paired_key) if paired_key else None) or {}
+            milestones.append(
+                {
+                    "label": item["label"],
+                    "role": item.get("role") or "",
+                    "short": item.get("short") or item["label"],
+                    "includes": item.get("includes") or "",
+                    "after_experiment": item.get("after_experiment") or "",
+                    "commit": (item.get("commit") or "")[:8],
+                    "date": (item.get("commit_date") or "")[:10],
+                    "version": item.get("version") or "",
+                    "wall_ms": (item.get("wall_ms") or {}).get("median"),
+                    "peak_rss_mib": (item.get("peak_rss_mib") or {}).get("median"),
+                    "user_s": (item.get("cpu_s_median") or {}).get("user"),
+                    "system_s": (item.get("cpu_s_median") or {}).get("system"),
+                    "vs_latest_pct": paired.get("median_change_pct"),
+                    "vs_latest_ci95_pct": paired.get("ci95_change_pct"),
+                    "supported": item.get("supported", True),
+                }
+            )
+        headline = summary.get("headline") or {}
+        cells.append(
+            {
+                "id": path.stem,
+                "component": summary.get("component"),
+                "job": summary.get("job") or summary.get("component"),
+                "component_digest": summary.get("component_digest"),
+                "manifest_version": summary.get("manifest_version"),
+                "platform": summary.get("platform") or host.get("system") or "",
+                "reference_build": reference,
+                "subject": subject.get("label") or path.stem,
+                "title": subject.get("title") or subject.get("label") or path.stem,
+                "entries": (subject.get("counts") or {}).get("total"),
+                "storage": subject.get("storage") or "",
+                "cpu": host.get("cpu_model") or "",
+                "regime": regime.get("host_regime") or "",
+                "stage": regime.get("campaign_stage") or "",
+                "above_quiet_gate": (regime.get("cpu_busy_pct_at_sample_boundaries") or {}).get(
+                    "share_above_quiet_gate"
+                ),
+                "trials": (summary.get("rounds") or {}).get("trials"),
+                "invalid_samples": summary.get("invalid_samples"),
+                "speedup_x": headline.get("paired_speedup_x"),
+                "speedup_x_ci95": headline.get("paired_speedup_x_ci95"),
+                "milestones": milestones,
+            }
+        )
+    return cells
+
+
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="benchmarks.realtree.timeline", description=__doc__)
     parser.add_argument("--experiments", type=Path, default=EXPERIMENTS_DIR)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--history", type=Path, default=HISTORY_DIR)
+    parser.add_argument("--suite", type=Path, default=SUITE_PATH)
     parser.add_argument(
         "--prepared",
         default="",
@@ -486,6 +576,28 @@ def main(argv: Sequence[str]) -> int:
         print("no experiment artifacts found", file=sys.stderr)
         return 1
     dataset = project(experiments)
+    # A committed cell must still say what its own stored run says: its figures are
+    # derived again from the run artifact, and the projection refuses a cell that drifted
+    # (a hand edit, or a summarizer change that was not re-run).
+    drift = check_cells(arguments.history)
+    if drift:
+        for problem in drift:
+            print(f"error: history cell drift: {problem}", file=sys.stderr)
+        return 1
+    dataset["history"] = load_history(arguments.history)
+    # Every job the loop has measured must count toward the score, or a kept change
+    # could improve something the score cannot see. Refuse to project until it does.
+    suite = load_suite(arguments.suite)
+    missing = unmapped_jobs(dataset["experiments"], suite)
+    if missing:
+        print(
+            f"error: {arguments.suite} maps no index component for job(s) "
+            f"{', '.join(missing)}; add each to job_components with a component",
+            file=sys.stderr,
+        )
+        return 1
+    dataset["index"] = project_index(dataset["history"], suite)
+    dataset["index_jobs"] = dict(sorted(suite["job_components"].items()))
     # Carried in the dataset rather than stamped at render time, so the drift check
     # compares evidence against evidence and does not fail every midnight.
     dataset["prepared"] = arguments.prepared or _preserved_prepared(arguments.out)

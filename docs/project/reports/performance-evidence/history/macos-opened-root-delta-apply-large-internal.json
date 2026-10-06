@@ -1,0 +1,1588 @@
+{
+  "schema": "fdu-history-summary-v1",
+  "component": "opened-root",
+  "component_title": "Opened root",
+  "manifest_version": 1,
+  "manifest_command": "the probe's opened-second-report, and the probe's delta-apply-large",
+  "cache_state": "each job opens the root itself; timed whole-process, discovery included",
+  "override": {
+    "note": "review B on PR #175 (B1, B4): opened root is two probe jobs, opened-second-report and delta-apply-large, each timed whole-process so discovery is included; the manifest on this branch still names perf_probe opened-second-report alone",
+    "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
+    "cache_state": "the library's open, then a second report; then an applied change"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": "review B on PR #175 (B1, B4): opened root is two probe jobs, opened-second-report and delta-apply-large, each timed whole-process so discovery is included; the manifest on this branch still names perf_probe opened-second-report alone",
+    "timed_metric": "wall_ns",
+    "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
+    "cache_state": "the library's open, then a second report; then an applied change",
+    "source": "the run artifact's index_component"
+  },
+  "timed_metric": "wall_ns",
+  "job": "delta-apply-large",
+  "component_digest": "4e282eed355457ec",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
+  "tree_key": "K",
+  "platform": "macOS",
+  "reference_build": "v0.3.0",
+  "run_artifact": "macos-opened-root-delta-apply-large-internal.run.json.gz",
+  "driver": "benchmarks.realtree.history",
+  "harness": {
+    "module": "benchmarks.realtree.history, timing through benchmarks.realtree.compare_tools with per-build command contracts",
+    "harness_revision": "3bfa3ba2dd8bcc69ebeee6e6d5baa8f7ba3f6a43",
+    "artifact_schema": "fdu-tool-comparison-v3",
+    "schedule": "competitor-adjacent-fdu-anchor-v1",
+    "stopping_rule": "fixed-N-no-optional-stopping-v1",
+    "confidence_interval": "paired-bootstrap-median-95-v1",
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
+  },
+  "subject": {
+    "label": "linux-v6.12-macos",
+    "title": "the Linux v6.12 source tree",
+    "provenance": "Reproduced as the linux-v6.12 records (e.g. exp-178) describe: git clone --depth 1 --branch v6.12 https://github.com/torvalds/linux.git, HEAD adc218676eef25575469234709c2d87185ca223a (tag v6.12, tree ac4266ccaf1cf79e8fb22ad3e0d86deac358ffb9), git 2.50.1. Cloned on the external drive (kept there) and copied with ditto to the internal SSD, where it was fingerprinted and timed.",
+    "record_shape": {
+      "entries": 92474,
+      "directories": 5769,
+      "files": 86643,
+      "symlinks": 62,
+      "apparent_bytes": 1759293209,
+      "allocated_bytes": 1965477888,
+      "max_depth": 14,
+      "filesystem": "ext4 (Linux host)"
+    },
+    "shape_difference": "92,460 entries here against 92,474: 13 fewer files because APFS here is case-insensitive and git keeps one path of each of 13 case-colliding pairs (netfilter headers and sources, one litmus test), and 1 fewer directory, most likely .git/branches, which older git templates create (inference). Bytes differ by the .git pack the server sent and by APFS against ext4 allocation.",
+    "gitignore_files": 358,
+    "storage": "internal SSD",
+    "storage_detail": "internal APFS SSD (Apple M1 Pro Data volume, case-insensitive): the measured tree (in a Spotlight-excluded .noindex directory), the timed fdu and perf_probe binaries (sha256-verified copies), the harness source, its venv and its temporary directory, which holds every cache directory and snapshot, were all on the internal volume during timing; only logs and results were written to the external drive",
+    "storage_check": {
+      "subject": "internal",
+      "harness": "internal",
+      "python": "internal",
+      "temporary": "internal",
+      "binary:exp101": "internal",
+      "binary:v0.1.0": "internal",
+      "binary:v0.2.0": "internal",
+      "binary:v0.2.1": "internal",
+      "binary:exp178": "internal",
+      "binary:exp180": "internal",
+      "binary:ebc06c78": "internal",
+      "binary:exp201": "internal",
+      "binary:v0.3.0": "internal"
+    },
+    "fingerprint_schema": "fdu-reference-tree-v3",
+    "root_id": "c57740da0f9053c718d1b33ad9dfae3ac69ef788e32a96ff0278087ab179a170",
+    "engine_digest": "c387402b2f57b8a66b0da95878eff3271e6699917fbca5c98fdfeae6b839ce4b",
+    "engine_digest_after": "c387402b2f57b8a66b0da95878eff3271e6699917fbca5c98fdfeae6b839ce4b",
+    "counts": {
+      "directories": 5768,
+      "files": 86630,
+      "other": 0,
+      "symlinks": 62,
+      "total": 92460
+    },
+    "sizes": {
+      "allocated_bytes": 1965858816,
+      "apparent_bytes": 1759711146,
+      "directory_allocated_bytes": 0
+    },
+    "max_depth": 14,
+    "hardlinks": {
+      "duplicate_allocated_bytes": 0,
+      "duplicate_apparent_bytes": 0,
+      "duplicate_file_entries": 0,
+      "groups": 0,
+      "linked_file_entries": 0
+    },
+    "baseline_drift": [],
+    "mutated_during_run": [],
+    "answer_check_groups": {
+      "without_gitignore": {
+        "labels": [
+          "exp101"
+        ],
+        "all_identical": true,
+        "exit_codes_zero": true,
+        "matches_fingerprint": null,
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      },
+      "with_gitignore": {
+        "labels": [
+          "v0.1.0",
+          "v0.2.0",
+          "v0.2.1",
+          "exp178",
+          "exp180",
+          "ebc06c78",
+          "exp201",
+          "v0.3.0"
+        ],
+        "all_identical": true,
+        "exit_codes_zero": true,
+        "matches_fingerprint": null,
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      }
+    }
+  },
+  "host": {
+    "arch": "arm64",
+    "cpu_count": 10,
+    "cpu_model": "Apple M1 Pro",
+    "efficiency_cores": 2,
+    "filesystem": "apfs",
+    "max_vnodes": 263168,
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "python": "3.14.7",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "virtualization": "bare-metal"
+  },
+  "regime": {
+    "campaign_stage": "exploratory",
+    "host_regime": "uncontrolled",
+    "os_cache": "warm-steady",
+    "quiet_gate_cpu_busy_pct": 25.0,
+    "initial": {
+      "controlled_load_alive": null,
+      "cpu_busy_pct": 9.79,
+      "cpu_busy_unavailable_reason": null,
+      "load_15m": 6.964,
+      "load_1m": 2.372,
+      "load_1m_per_cpu": 0.2372,
+      "load_5m": 3.102,
+      "logical_cpu_count": 10,
+      "power_source": "AC",
+      "system": "Darwin",
+      "thermal_pressure": "normal",
+      "unavailable_reason": null
+    },
+    "final": {
+      "controlled_load_alive": null,
+      "cpu_busy_pct": 8.79,
+      "cpu_busy_unavailable_reason": null,
+      "load_15m": 4.523,
+      "load_1m": 1.619,
+      "load_1m_per_cpu": 0.1619,
+      "load_5m": 2.314,
+      "logical_cpu_count": 10,
+      "power_source": "AC",
+      "system": "Darwin",
+      "thermal_pressure": "normal",
+      "unavailable_reason": null
+    },
+    "cpu_busy_pct_at_sample_boundaries": {
+      "n": 480,
+      "min": 7.75,
+      "median": 9.31,
+      "max": 58.47,
+      "share_above_quiet_gate": 0.033
+    },
+    "load_1m_at_sample_boundaries": {
+      "min": 1.739,
+      "median": 2.395,
+      "max": 3.672
+    },
+    "thermal_pressure_seen": [
+      "normal"
+    ],
+    "power_source_seen": [
+      "AC"
+    ]
+  },
+  "rounds": {
+    "trials": 12,
+    "warmups": 3,
+    "processes": 240,
+    "setup_processes": 0,
+    "started_utc": "2026-10-06T10:53:38Z",
+    "duration_seconds": 632.569
+  },
+  "invalid_samples": 0,
+  "semantic_mismatches": 0,
+  "answer_check": {
+    "builds": [
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 474594791,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp101",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 103989083,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.1.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 103546625,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.2.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 103873917,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.2.1",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 104042459,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp178",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 104382584,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp180",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 103083334,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "ebc06c78",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 103950542,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp201",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
+        "component_ns": 103841000,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.3.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
+      }
+    ],
+    "problems": []
+  },
+  "milestones": [
+    {
+      "label": "prework",
+      "short": "start",
+      "includes": "pre-work baseline: serial walker, no .gitignore support",
+      "after_experiment": "exp-000",
+      "ref": "b565882b",
+      "commit": "b565882bd9f2a877934bd96415d3a8eab6504f92",
+      "commit_choice": "exp-032 control",
+      "author_date": "2026-08-10T15:22:26-07:00",
+      "commit_date": "2026-08-10T15:22:26-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "this build's perf_probe has no delta-apply-large mode",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp001",
+      "short": "H1 producer",
+      "includes": "H1 bounded parallel directory producer",
+      "after_experiment": "exp-001",
+      "ref": "a0cc981d",
+      "commit": "a0cc981da037e3473a91360a0c41602a13b38a13",
+      "commit_choice": "exp-001 record commit a0cc981",
+      "author_date": "2026-08-10T16:53:05-07:00",
+      "commit_date": "2026-08-10T16:53:05-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "this build's perf_probe has no delta-apply-large mode",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp022",
+      "short": "bulk metadata",
+      "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+      "after_experiment": "exp-022",
+      "ref": "b1227256",
+      "commit": "b12272565d570ebb8237df6e58a96178b72ad965",
+      "commit_choice": "exp-022 record has commit: null; b1227256 'perf: batch macOS scan metadata' is the commit that landed it",
+      "author_date": "2026-08-12T04:29:37-07:00",
+      "commit_date": "2026-08-12T04:29:37-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "this build's perf_probe has no delta-apply-large mode",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp030",
+      "short": "parallel reconcile",
+      "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+      "after_experiment": "exp-030",
+      "ref": "c9c91d95",
+      "commit": "c9c91d9518ef1324531ecd79a3a43b9e96e95eef",
+      "commit_choice": "exp-030 record has commit: null; the change landed in 09d65590, and c9c91d95 differs from it only by an equivalent let-chain rewrite for Rust 1.85 (the exp-032 candidate code); same binary as the external cell's exp032",
+      "author_date": "2026-08-12T06:32:42-07:00",
+      "commit_date": "2026-08-12T06:32:42-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "this build's perf_probe has no delta-apply-large mode",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp101",
+      "short": "H86 compact index",
+      "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+      "after_experiment": "exp-101",
+      "ref": "5d7b86fe",
+      "commit": "5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f",
+      "commit_choice": "exp-101 record has commit: null; 5d7b86fe 'perf(index): compact detached child storage' added the code and the exp-101 record",
+      "author_date": "2026-09-01T13:38:20-07:00",
+      "commit_date": "2026-09-01T13:41:23-07:00",
+      "version": "fdu 0.1.0-dev+g5d7b86fe6",
+      "reads_gitignore": false,
+      "supported": true,
+      "binary_sha256": "c9873db66177ed7f7d4e95adeafbea0ec8f4ee578d66079d448414433cfc29b4",
+      "binary_size_bytes": 2255888,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 743.52,
+        "min": 741.21,
+        "max": 749.44,
+        "iqr_derived": [
+          742.7,
+          747.37
+        ],
+        "median_bootstrap95_derived": [
+          742.7,
+          747.42
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 124.3,
+        "max": 127.4
+      },
+      "cpu_s_median": {
+        "user": 0.72,
+        "system": 0.021
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 474.44,
+        "min": 472.61,
+        "max": 477.72,
+        "iqr_derived": [
+          473.62,
+          475.52
+        ],
+        "median_bootstrap95_derived": [
+          473.54,
+          475.84
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 99.541,
+        "ci95_change_pct": [
+          98.702,
+          100.418
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 372.69,
+        "speed_ratio_this_over_reference": 1.9954
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 354.943,
+        "ci95_change_pct": [
+          350.035,
+          356.777
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 104.37,
+        "speed_ratio_this_over_reference": 4.5494
+      },
+      "cli_binary_sha256": "1c0de443a05a086ddb962bc798282094992fd1d92b646b408f4873db0ffda9f6",
+      "job": "delta-apply-large",
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "v0.1.0",
+      "short": "0.1.0",
+      "includes": "release v0.1.0 (.gitignore read by default)",
+      "after_experiment": "exp-157",
+      "ref": "v0.1.0",
+      "commit": "7cf7f1b4b39930ebcf54df7ebd2645d995e4e458",
+      "commit_choice": "release tag",
+      "author_date": "2026-09-25T16:58:16-07:00",
+      "commit_date": "2026-09-25T16:58:16-07:00",
+      "version": "fdu 0.1.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "b887a6be24e59f7a8c5ec9e09adff5ecfdc480134c1fa0308a7aa89f95dbd0e3",
+      "binary_size_bytes": 2884272,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 372.8,
+        "min": 370.97,
+        "max": 376.54,
+        "iqr_derived": [
+          372.25,
+          373.62
+        ],
+        "median_bootstrap95_derived": [
+          372.16,
+          373.69
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 121.4,
+        "max": 121.4
+      },
+      "cpu_s_median": {
+        "user": 0.352,
+        "system": 0.017
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 103.85,
+        "min": 103.06,
+        "max": 105.35,
+        "iqr_derived": [
+          103.39,
+          104.11
+        ],
+        "median_bootstrap95_derived": [
+          103.38,
+          104.2
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.115,
+        "ci95_change_pct": [
+          -0.384,
+          0.15
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 372.95,
+        "speed_ratio_this_over_reference": 0.9989
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.358,
+        "ci95_change_pct": [
+          -0.72,
+          0.481
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 104.05,
+        "speed_ratio_this_over_reference": 0.9964
+      },
+      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -49.92,
+          "ci95_change_pct": [
+            -50.11,
+            -49.73
+          ],
+          "median_ratio_x": 0.5008,
+          "median_speedup_x": 1.997
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -49.99,
+          "ci95_change_pct": [
+            -50.32,
+            -49.7
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp101",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -49.92,
+        "ci95_change_pct": [
+          -50.11,
+          -49.73
+        ],
+        "median_ratio_x": 0.5008
+      }
+    },
+    {
+      "label": "v0.2.0",
+      "short": "0.2.0",
+      "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+      "after_experiment": "exp-163",
+      "ref": "v0.2.0",
+      "commit": "6ec77163a8a1b5a33276bfb6dcaed7dff833d618",
+      "commit_choice": "exp-163 candidate 93cd1bb1 is in v0.2.0 and not in v0.1.0, so v0.2.0 is the first release carrying it",
+      "author_date": "2026-09-28T06:19:42-07:00",
+      "commit_date": "2026-09-28T06:19:42-07:00",
+      "version": "fdu 0.2.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "c8e2a24e8cb17bd728be28d02fdffea481a7205cf485dfca9f6ba3f6ee00cc54",
+      "binary_size_bytes": 3148912,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 373.2,
+        "min": 370.32,
+        "max": 397.96,
+        "iqr_derived": [
+          371.64,
+          376.22
+        ],
+        "median_bootstrap95_derived": [
+          371.57,
+          376.43
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 124.5,
+        "max": 126.7
+      },
+      "cpu_s_median": {
+        "user": 0.352,
+        "system": 0.019
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 103.69,
+        "min": 102.95,
+        "max": 127.96,
+        "iqr_derived": [
+          103.24,
+          105.84
+        ],
+        "median_bootstrap95_derived": [
+          103.18,
+          106.23
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.425,
+        "ci95_change_pct": [
+          -0.117,
+          0.927
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 372.15,
+        "speed_ratio_this_over_reference": 1.0043
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.291,
+        "ci95_change_pct": [
+          -0.637,
+          2.127
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 103.92,
+        "speed_ratio_this_over_reference": 0.9971
+      },
+      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -49.93,
+          "ci95_change_pct": [
+            -50.08,
+            -49.34
+          ],
+          "median_ratio_x": 0.5007,
+          "median_speedup_x": 1.997
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -49.75,
+          "ci95_change_pct": [
+            -50.13,
+            -49.18
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.1.0",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -0.07,
+        "ci95_change_pct": [
+          -0.33,
+          0.98
+        ],
+        "median_ratio_x": 0.9993
+      }
+    },
+    {
+      "label": "v0.2.1",
+      "short": "0.2.1",
+      "includes": "H159, H161, H162, H163",
+      "after_experiment": "exp-191",
+      "ref": "c1644575",
+      "commit": "c16445757ce82501a2d4eea1ff59b638eef42bd1",
+      "commit_choice": "release tag v0.2.1",
+      "author_date": "2026-09-28T21:40:06-07:00",
+      "commit_date": "2026-09-28T21:40:06-07:00",
+      "version": "fdu 0.2.1",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "3a1a9f9c7f17fbc07b583fa4a85081fdf1a4ad9552791ef35a768c5e61678bb6",
+      "binary_size_bytes": 3198512,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 373.4,
+        "min": 371.51,
+        "max": 378.16,
+        "iqr_derived": [
+          372.26,
+          374.58
+        ],
+        "median_bootstrap95_derived": [
+          372.25,
+          374.99
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 124.5,
+        "max": 126.0
+      },
+      "cpu_s_median": {
+        "user": 0.352,
+        "system": 0.018
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 104.14,
+        "min": 103.38,
+        "max": 107.23,
+        "iqr_derived": [
+          103.6,
+          105.55
+        ],
+        "median_bootstrap95_derived": [
+          103.56,
+          105.66
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.136,
+        "ci95_change_pct": [
+          -0.31,
+          0.94
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 372.51,
+        "speed_ratio_this_over_reference": 1.0014
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.181,
+        "ci95_change_pct": [
+          -1.078,
+          1.815
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 104.26,
+        "speed_ratio_this_over_reference": 0.9982
+      },
+      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -49.78,
+          "ci95_change_pct": [
+            -50.05,
+            -49.59
+          ],
+          "median_ratio_x": 0.5022,
+          "median_speedup_x": 1.991
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -49.9,
+          "ci95_change_pct": [
+            -50.06,
+            -49.46
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.2.0",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.12,
+        "ci95_change_pct": [
+          -0.91,
+          0.67
+        ],
+        "median_ratio_x": 1.0012
+      }
+    },
+    {
+      "label": "exp178",
+      "short": "bucketed gitignore",
+      "includes": "H171 bucketed .gitignore matching",
+      "after_experiment": "exp-178",
+      "ref": "7c69e88a",
+      "commit": "7c69e88a4610685b7b1a32bfd1e668e9f4ee2ef3",
+      "commit_choice": "exp-178 record commit 7c69e88a (v0.2.1 plus H171)",
+      "author_date": "2026-09-29T09:09:05Z",
+      "commit_date": "2026-09-29T09:09:05Z",
+      "version": "fdu 0.2.1-dev+g7c69e88a4",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "d97cdd286a0d9fb3416c68df837f01dd7e28839a9641a35240f66015652899d7",
+      "binary_size_bytes": 3264608,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 373.19,
+        "min": 370.71,
+        "max": 376.51,
+        "iqr_derived": [
+          371.76,
+          374.17
+        ],
+        "median_bootstrap95_derived": [
+          371.55,
+          374.2
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 121.5,
+        "max": 124.5
+      },
+      "cpu_s_median": {
+        "user": 0.352,
+        "system": 0.018
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 103.61,
+        "min": 102.97,
+        "max": 106.97,
+        "iqr_derived": [
+          103.35,
+          104.18
+        ],
+        "median_bootstrap95_derived": [
+          103.32,
+          104.25
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.211,
+        "ci95_change_pct": [
+          -0.522,
+          0.213
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 373.4,
+        "speed_ratio_this_over_reference": 0.9979
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.672,
+        "ci95_change_pct": [
+          -1.382,
+          0.491
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 104.25,
+        "speed_ratio_this_over_reference": 0.9933
+      },
+      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -49.87,
+          "ci95_change_pct": [
+            -50.1,
+            -49.68
+          ],
+          "median_ratio_x": 0.5013,
+          "median_speedup_x": 1.995
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -49.99,
+          "ci95_change_pct": [
+            -50.24,
+            -49.86
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.2.1",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -0.11,
+        "ci95_change_pct": [
+          -0.5,
+          0.08
+        ],
+        "median_ratio_x": 0.9989
+      }
+    },
+    {
+      "label": "exp180",
+      "short": "transient tree",
+      "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+      "after_experiment": "exp-180",
+      "ref": "956659de",
+      "commit": "956659de335ec96c73d4424f93cc5888f9d55dc5",
+      "commit_choice": "exp-180 record commit 956659de",
+      "author_date": "2026-09-29T10:19:12Z",
+      "commit_date": "2026-09-29T10:19:12Z",
+      "version": "fdu 0.2.1-dev+g956659de3",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "04502130b7519a1a2b328f5673a8f23cd9000f8ee64227bf09117a6f0a84ae90",
+      "binary_size_bytes": 3297680,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 373.3,
+        "min": 371.67,
+        "max": 376.85,
+        "iqr_derived": [
+          372.63,
+          374.08
+        ],
+        "median_bootstrap95_derived": [
+          372.59,
+          374.43
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 124.1,
+        "max": 124.6
+      },
+      "cpu_s_median": {
+        "user": 0.353,
+        "system": 0.018
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 103.75,
+        "min": 103.36,
+        "max": 105.03,
+        "iqr_derived": [
+          103.56,
+          104.13
+        ],
+        "median_bootstrap95_derived": [
+          103.52,
+          104.28
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.259,
+        "ci95_change_pct": [
+          -0.421,
+          0.665
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 372.68,
+        "speed_ratio_this_over_reference": 1.0026
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.433,
+        "ci95_change_pct": [
+          -1.078,
+          -0.245
+        ],
+        "direction": "improved",
+        "anchor_median_ms_in_these_pairs": 104.17,
+        "speed_ratio_this_over_reference": 0.9957
+      },
+      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -49.84,
+          "ci95_change_pct": [
+            -49.89,
+            -49.75
+          ],
+          "median_ratio_x": 0.5016,
+          "median_speedup_x": 1.994
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -50.04,
+          "ci95_change_pct": [
+            -50.12,
+            -49.51
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp178",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.08,
+        "ci95_change_pct": [
+          -0.23,
+          0.48
+        ],
+        "median_ratio_x": 1.0008
+      }
+    },
+    {
+      "label": "ebc06c78",
+      "short": "overnight round",
+      "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+      "after_experiment": "exp-195",
+      "ref": "ebc06c78",
+      "commit": "ebc06c784378639b7c950c2adc37ab48b60abf60",
+      "commit_choice": "exp-195 record commit ebc06c78",
+      "author_date": "2026-09-29T15:38:28Z",
+      "commit_date": "2026-09-29T15:38:28Z",
+      "version": "fdu 0.2.1-dev+gebc06c784",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "356e3fa3c58e4cf1d4dc50acc28eec35375f7e256dd6a0393445f02419794c53",
+      "binary_size_bytes": 3297680,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 373.03,
+        "min": 370.42,
+        "max": 375.55,
+        "iqr_derived": [
+          372.62,
+          374.06
+        ],
+        "median_bootstrap95_derived": [
+          372.61,
+          374.18
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 121.4,
+        "max": 124.5
+      },
+      "cpu_s_median": {
+        "user": 0.352,
+        "system": 0.018
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 103.7,
+        "min": 102.97,
+        "max": 105.93,
+        "iqr_derived": [
+          103.15,
+          104.29
+        ],
+        "median_bootstrap95_derived": [
+          103.15,
+          104.41
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.363,
+        "ci95_change_pct": [
+          -0.312,
+          0.607
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 372.1,
+        "speed_ratio_this_over_reference": 1.0036
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.397,
+        "ci95_change_pct": [
+          -1.242,
+          0.613
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 104.07,
+        "speed_ratio_this_over_reference": 0.996
+      },
+      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -49.81,
+          "ci95_change_pct": [
+            -49.98,
+            -49.7
+          ],
+          "median_ratio_x": 0.5019,
+          "median_speedup_x": 1.992
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -49.78,
+          "ci95_change_pct": [
+            -50.13,
+            -49.54
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp180",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.04,
+        "ci95_change_pct": [
+          -0.47,
+          0.27
+        ],
+        "median_ratio_x": 1.0004
+      }
+    },
+    {
+      "label": "exp201",
+      "short": "pdu track",
+      "includes": "pdu track: H185, H186, H188, H189",
+      "after_experiment": "exp-201",
+      "ref": "a356d456",
+      "commit": "a356d4565b2787864ca029d263ad05091036aeb5",
+      "commit_choice": "exp-201 candidate a356d456",
+      "author_date": "2026-09-29T22:47:02Z",
+      "commit_date": "2026-09-29T22:47:02Z",
+      "version": "fdu 0.2.1-dev+ga356d4565",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "cb511a1e4904bd39ee5c72be7a7395fe47fe2a6492b5a559a4b10384e2e1c080",
+      "binary_size_bytes": 3297696,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 374.83,
+        "min": 372.33,
+        "max": 421.2,
+        "iqr_derived": [
+          373.86,
+          375.78
+        ],
+        "median_bootstrap95_derived": [
+          373.71,
+          375.96
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 121.5,
+        "max": 124.5
+      },
+      "cpu_s_median": {
+        "user": 0.354,
+        "system": 0.017
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 103.81,
+        "min": 102.89,
+        "max": 113.23,
+        "iqr_derived": [
+          103.45,
+          104.3
+        ],
+        "median_bootstrap95_derived": [
+          103.41,
+          104.45
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.67,
+        "ci95_change_pct": [
+          0.1,
+          0.81
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 373.38,
+        "speed_ratio_this_over_reference": 1.0067
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.555,
+        "ci95_change_pct": [
+          -1.027,
+          0.406
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 104.11,
+        "speed_ratio_this_over_reference": 0.9944
+      },
+      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -49.6,
+          "ci95_change_pct": [
+            -49.81,
+            -49.5
+          ],
+          "median_ratio_x": 0.504,
+          "median_speedup_x": 1.984
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -49.69,
+          "ci95_change_pct": [
+            -49.99,
+            -49.34
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "ebc06c78",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.36,
+        "ci95_change_pct": [
+          0.17,
+          0.74
+        ],
+        "median_ratio_x": 1.0036
+      }
+    },
+    {
+      "label": "v0.3.0",
+      "short": "0.3.0",
+      "includes": "release v0.3.0",
+      "after_experiment": "exp-202",
+      "ref": "v0.3.0",
+      "commit": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",
+      "commit_choice": "release tag",
+      "author_date": "2026-09-30T10:03:43-07:00",
+      "commit_date": "2026-09-30T10:03:43-07:00",
+      "version": "fdu 0.3.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "001d1d35d4dbcb122dae5382beb0eaad4b121a11f969c789aeba8ec899c4d1ad",
+      "binary_size_bytes": 3347312,
+      "contract": "fdu-index/opened-root/probe-delta-apply-large",
+      "command": [
+        "{binary}",
+        "delta-apply-large",
+        "--root",
+        "{root}",
+        "--operations",
+        "100000"
+      ],
+      "setup_command": null,
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 96,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples; the anchor's 96 samples beside every competitor",
+        "median": 372.69,
+        "min": 369.97,
+        "max": 381.95,
+        "iqr_derived": [
+          371.9,
+          374.03
+        ],
+        "median_bootstrap95_derived": [
+          372.36,
+          373.1
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 121.4,
+        "max": 126.0
+      },
+      "cpu_s_median": {
+        "user": 0.352,
+        "system": 0.017
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 104.14,
+        "min": 103.26,
+        "max": 109.54,
+        "iqr_derived": [
+          103.85,
+          104.79
+        ],
+        "median_bootstrap95_derived": [
+          104.01,
+          104.22
+        ]
+      },
+      "vs_v0_3_0_paired_harness": null,
+      "vs_v0_3_0_paired_harness_component": null,
+      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
+      "job": "delta-apply-large",
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "adjacent pairs (one side is the anchor)",
+          "pairs": 12,
+          "median_change_pct": -49.88,
+          "ci95_change_pct": [
+            -50.1,
+            -49.67
+          ],
+          "median_ratio_x": 0.5012,
+          "median_speedup_x": 1.995
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -49.88,
+          "ci95_change_pct": [
+            -50.1,
+            -49.67
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp201",
+        "method": "adjacent pairs (one side is the anchor)",
+        "pairs": 12,
+        "median_change_pct": -0.67,
+        "ci95_change_pct": [
+          -0.8,
+          -0.1
+        ],
+        "median_ratio_x": 0.9933
+      }
+    }
+  ],
+  "headline": {
+    "first_label": "exp101",
+    "timed_metric": "wall_ns",
+    "median_ratio_prework_over_v0_3_0": 1.995,
+    "median_ratio_using_anchor_samples_in_prework_pairs": 1.995,
+    "paired_harness_prework_vs_v0_3_0_change_pct": 99.541,
+    "paired_harness_prework_vs_v0_3_0_ci95_pct": [
+      98.702,
+      100.418
+    ],
+    "paired_speedup_x": 1.995,
+    "paired_speedup_x_ci95": [
+      1.987,
+      2.004
+    ],
+    "paired_harness_v0_3_0_vs_prework_change_pct": -49.885,
+    "paired_harness_v0_3_0_vs_prework_ci95_pct": [
+      -50.104,
+      -49.673
+    ],
+    "naming": "for schema compatibility the keys say prework and v0_3_0; they mean first_label and the reference build"
+  }
+}

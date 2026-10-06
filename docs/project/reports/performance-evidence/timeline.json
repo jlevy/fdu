@@ -837,6 +837,7 @@
    "candidate": "none; this establishes the numbers",
    "change_pct": null,
    "commit": "b565882",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -1473,6 +1474,7 @@
    "candidate": "four producer threads feeding one index consumer (--threads 4)",
    "change_pct": -50.033,
    "commit": "a0cc981",
+   "compares": true,
    "complexity": {
     "lines_changed": 210,
     "new_dependencies": [],
@@ -1829,6 +1831,7 @@
    "candidate": "revalidation sweep parallelized with the same worker pool",
    "change_pct": -2.593,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 180,
     "new_dependencies": [],
@@ -2197,6 +2200,7 @@
    "candidate": "bootstrap applies directly, with no effective-op list and no journal entry",
    "change_pct": 1.019,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 32,
     "new_dependencies": [],
@@ -2565,6 +2569,7 @@
    "candidate": "components borrowed from the caller's path; validation allocates nothing",
    "change_pct": -9.4,
    "commit": "bf7a05a",
+   "compares": true,
    "complexity": {
     "lines_changed": 38,
     "new_dependencies": [],
@@ -3047,6 +3052,7 @@
    "candidate": "parent path memoized, child id read from the parent's children, duplicate check folded into the insert",
    "change_pct": -18.597,
    "commit": "954d27b",
+   "compares": true,
    "complexity": {
     "lines_changed": 34,
     "new_dependencies": [],
@@ -3428,6 +3434,7 @@
    "candidate": "HEAD 954d27b: exp-001, exp-004 and exp-005 together",
    "change_pct": -48.909,
    "commit": "954d27b",
+   "compares": true,
    "complexity": {
     "lines_changed": 282,
     "new_dependencies": [],
@@ -4023,6 +4030,7 @@
    "candidate": "ReconcileTarget::Direct routed through collect_child_expectations; the slow twin deleted",
    "change_pct": -7.092,
    "commit": "92d6212",
+   "compares": true,
    "complexity": {
     "lines_changed": 14,
     "new_dependencies": [],
@@ -4303,6 +4311,7 @@
    "candidate": "by_ext keyed by u32 ExtId; names interned once per index at insert, resolved only at query time",
    "change_pct": -15.652,
    "commit": "bb1529d",
+   "compares": true,
    "complexity": {
     "lines_changed": 120,
     "new_dependencies": [],
@@ -4785,6 +4794,7 @@
    "candidate": "CRC folds over bytes as the parser consumes them; the verdict still gates the returned index",
    "change_pct": -12.383,
    "commit": "9f4f029",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -5065,6 +5075,7 @@
    "candidate": "sorted claim-list with binary search; the path join deferred until an op or descent needs it",
    "change_pct": -0.031,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 90,
     "new_dependencies": [],
@@ -5431,6 +5442,7 @@
    "candidate": "consecutive same-parent inserts accumulate contributions locally; one upward merge per run instead of per file",
    "change_pct": -2.531,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -5797,6 +5809,7 @@
    "candidate": "breadth-first, the new default, so partial results are monotone lower bounds",
    "change_pct": -0.58,
    "commit": "fbc28f4",
+   "compares": true,
    "complexity": {
     "lines_changed": 153,
     "new_dependencies": [],
@@ -6151,6 +6164,7 @@
    "candidate": "per-region LIFO buckets with a round-robin ready ring",
    "change_pct": -3.772,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -6416,6 +6430,7 @@
    "candidate": "--order breadth-first (the shipped default)",
    "change_pct": -3.043,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -6770,6 +6785,7 @@
    "candidate": "sixteen workers on a tree larger than the vnode cache",
    "change_pct": -11.723,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -7008,6 +7024,7 @@
    "candidate": "move non-directory relative paths into observation ops",
    "change_pct": -0.437,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 5,
     "new_dependencies": [],
@@ -7246,6 +7263,7 @@
    "candidate": "six active workers plus ten dormant reserve threads",
    "change_pct": 2.009,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 126,
     "new_dependencies": [],
@@ -7486,6 +7504,7 @@
    "candidate": "start at six and spawn up to sixteen after 100k observed entries",
    "change_pct": -4.043,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 128,
     "new_dependencies": [],
@@ -7726,6 +7745,7 @@
    "candidate": "spawn ten reserve workers after 100k observed entries",
    "change_pct": 1.23,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -7964,6 +7984,7 @@
    "candidate": "spawn reserve workers after 262144 observed entries",
    "change_pct": -1.71,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -8202,6 +8223,7 @@
    "candidate": "measure the first 16k entries and expand only above 30 microseconds of worker service per entry",
    "change_pct": -5.313,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 181,
     "new_dependencies": [],
@@ -8442,6 +8464,7 @@
    "candidate": "macOS getattrlistbulk names and complete stat-tier metadata, with portable directory fallback",
    "change_pct": -30.132,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 542,
     "new_dependencies": [
@@ -8686,6 +8709,7 @@
    "candidate": "current code through exp-022: accepted traversal, index, snapshot, BFS scheduling, adaptive-depth, and macOS bulk-metadata changes",
    "change_pct": -53.495,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -9267,6 +9291,7 @@
    "candidate": "one retained root fd per worker and root-relative openat",
    "change_pct": -0.075,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 69,
     "new_dependencies": [],
@@ -9509,6 +9534,7 @@
    "candidate": "the pre-H26 sixteen-worker large-tree target",
    "change_pct": 19.193,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -9747,6 +9773,7 @@
    "candidate": "the existing macOS bulk metadata reader reused by direct, shared, and scoped reconciliation",
    "change_pct": -34.389,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 139,
     "new_dependencies": [],
@@ -9903,6 +9930,7 @@
    "candidate": "current code through exp-026, including accepted traversal, index, snapshot, BFS scheduling, adaptive-depth, and macOS bulk cold/warm changes",
    "change_pct": -52.835,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -10485,6 +10513,7 @@
    "candidate": "one retained entry vector per bulk reader, drained after complete validation",
    "change_pct": 0.207,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 20,
     "new_dependencies": [],
@@ -10841,6 +10870,7 @@
    "candidate": "256 KiB macOS bulk metadata buffer",
    "change_pct": -1.798,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1,
     "new_dependencies": [],
@@ -11197,6 +11227,7 @@
    "candidate": "four-worker bounded immutable-baseline waves with producer-side no-op elision",
    "change_pct": -59.53,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 419,
     "new_dependencies": [],
@@ -11339,6 +11370,7 @@
    "candidate": "4096-directory immutable-baseline waves",
    "change_pct": 1.642,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1,
     "new_dependencies": [],
@@ -11478,6 +11510,7 @@
    "candidate": "final Rust-1.85-compatible code through exp-030, including accepted cold, snapshot, BFS, bulk metadata, and bounded parallel reconciliation changes",
    "change_pct": -54.532,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -12047,6 +12080,7 @@
    "candidate": "PR #8 after merging origin/main, correctness review, and exact CLI-equivalence checks",
    "change_pct": -42.261,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1514,
     "new_dependencies": [
@@ -12625,6 +12659,7 @@
    "candidate": "PR #8 after merging origin/main and correctness review",
    "change_pct": -30.458,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -12879,6 +12914,7 @@
    "candidate": "PR #8 after merging origin/main and correctness review",
    "change_pct": -31.349,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13130,6 +13166,7 @@
    "candidate": "fixed 8, 10, 12, and 16-worker sweep",
    "change_pct": -1.302,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13267,6 +13304,7 @@
    "candidate": "depth-first traversal",
    "change_pct": 3.573,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13404,6 +13442,7 @@
    "candidate": "bounded parent-relative openat frontier",
    "change_pct": -0.694,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13544,6 +13583,7 @@
    "candidate": "256 KiB getattrlistbulk buffer",
    "change_pct": 2.217,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13681,6 +13721,7 @@
    "candidate": "cache-off summary reduced directly from the scan through a derived execution plan",
    "change_pct": -14.559,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 273,
     "new_dependencies": [],
@@ -13814,6 +13855,7 @@
    "candidate": "worker-local summary reduction with paths retained only for directories",
    "change_pct": -1.377,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 299,
     "new_dependencies": [],
@@ -13938,6 +13980,7 @@
    "candidate": "H62 worker-local reduction plus a requirement-derived macOS bulk record",
    "change_pct": 1.857,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 547,
     "new_dependencies": [],
@@ -14063,6 +14106,7 @@
    "candidate": "H59 transient summary with a fixed eight-worker pool",
    "change_pct": 0.669,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 12,
     "new_dependencies": [],
@@ -14187,6 +14231,7 @@
    "candidate": "selected allocated total folded inside a strict requirement-derived macOS bulk reader",
    "change_pct": -1.147,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 636,
     "new_dependencies": [],
@@ -14321,6 +14366,7 @@
    "candidate": "six scan and parser workers plus two bounded directory-open helpers",
    "change_pct": -4.465,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 78,
     "new_dependencies": [],
@@ -14457,6 +14503,7 @@
    "candidate": "six scan and parser workers drawing opened directories from one shared two-thread opener pool",
    "change_pct": -3.98,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 121,
     "new_dependencies": [],
@@ -14592,6 +14639,7 @@
    "candidate": "inline analysis at or below 512 files and 8 MiB",
    "change_pct": 66.338,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 54,
     "new_dependencies": [],
@@ -15049,6 +15097,7 @@
    "candidate": "skip prose-only collectors for code families",
    "change_pct": 1.501,
    "commit": "d7363a298ac58905597b2ede8c9f3240938a3129",
+   "compares": true,
    "complexity": {
     "lines_changed": 31,
     "new_dependencies": [],
@@ -15519,6 +15568,7 @@
    "candidate": "reserve up to the known bounded file size",
    "change_pct": -3.548,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 5,
     "new_dependencies": [],
@@ -15772,6 +15822,7 @@
    "candidate": "decode directly unless a UTF-8 carry is pending",
    "change_pct": -12.042,
    "commit": "2fef9bf",
+   "compares": true,
    "complexity": {
     "lines_changed": 7,
     "new_dependencies": [],
@@ -15909,6 +15960,7 @@
    "candidate": "same, with a one-slot parent memo in apply_validated",
    "change_pct": -7.348,
    "commit": "2475c82",
+   "compares": true,
    "complexity": {
     "lines_changed": 78,
     "new_dependencies": [
@@ -16149,6 +16201,7 @@
    "candidate": "same probe with perf-counters and a counting global allocator",
    "change_pct": 0.026,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 420,
     "new_dependencies": [
@@ -16387,6 +16440,7 @@
    "candidate": "probe with fdu counters compiled in and recording off",
    "change_pct": -1.257,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 690,
     "new_dependencies": [],
@@ -16522,6 +16576,7 @@
    "candidate": "PR 22 after cross-platform review fixes",
    "change_pct": -15.682,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -16770,6 +16825,7 @@
    "candidate": "PR 22 with R1-R8 addressed",
    "change_pct": -0.949,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 2796,
     "new_dependencies": [],
@@ -17018,6 +17074,7 @@
    "candidate": "bounded scan diagnostics enabled",
    "change_pct": -0.548,
    "commit": "1f7251149f9ec8147a7ebc037a31555ae1351bde",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17155,6 +17212,7 @@
    "candidate": "repeated independent windows",
    "change_pct": 58.492,
    "commit": "1d70c628cc4ed262ed2e4d04d992eb977b73c8b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17292,6 +17350,7 @@
    "candidate": "staged ready-work-gated expansion",
    "change_pct": 60.726,
    "commit": "1d70c628cc4ed262ed2e4d04d992eb977b73c8b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17429,6 +17488,7 @@
    "candidate": "fixed eight workers",
    "change_pct": 35.551,
    "commit": "1d70c628cc4ed262ed2e4d04d992eb977b73c8b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17566,6 +17626,7 @@
    "candidate": "raw-suffix one-slot memo answering repeat extensions without derive, validate, or search",
    "change_pct": 1.589,
    "commit": "3bda5c8",
+   "compares": true,
    "complexity": {
     "lines_changed": 130,
     "new_dependencies": [],
@@ -17815,6 +17876,7 @@
    "candidate": "slicing-by-8 through eight const-derived tables, bit-identical digest",
    "change_pct": -12.202,
    "commit": "3bda5c8",
+   "compares": true,
    "complexity": {
     "lines_changed": 55,
     "new_dependencies": [],
@@ -18068,6 +18130,7 @@
    "candidate": "apply_with(journal: false) on the baseline path; arbitration identical, history capture skipped",
    "change_pct": -5.058,
    "commit": "87fd0bd",
+   "compares": true,
    "complexity": {
     "lines_changed": 40,
     "new_dependencies": [],
@@ -18306,6 +18369,7 @@
    "candidate": "open_with_pending_save returns Arc<Index>; the writer takes a reference",
    "change_pct": -10.503,
    "commit": "575db66",
+   "compares": true,
    "complexity": {
     "lines_changed": 45,
     "new_dependencies": [],
@@ -18546,6 +18610,7 @@
    "candidate": "HashMap rollups plus LazyLock-indexed name and extension tiers",
    "change_pct": -30.307,
    "commit": "9fb6a33",
+   "compares": true,
    "complexity": {
     "lines_changed": 78,
     "new_dependencies": [],
@@ -18800,6 +18865,7 @@
    "candidate": "HashMap rollups plus LazyLock-indexed name and extension tiers, as accepted in exp-064",
    "change_pct": -25.776,
    "commit": "b061f5b",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -19271,6 +19337,7 @@
    "candidate": "the same binary: a self-comparison that establishes the default-path numbers",
    "change_pct": -1.925,
    "commit": "62f82f6",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -19721,6 +19788,7 @@
    "candidate": "write_atomically compares the encoded bytes against the file and leaves an identical snapshot in place",
    "change_pct": -10.612,
    "commit": "c013f1a",
+   "compares": true,
    "complexity": {
     "lines_changed": 117,
     "new_dependencies": [],
@@ -20072,6 +20140,7 @@
    "candidate": "out.flush() before pending_save.join(): same bytes, earlier",
    "change_pct": 1.238,
    "commit": "4d29d6d",
+   "compares": true,
    "complexity": {
     "lines_changed": 9,
     "new_dependencies": [],
@@ -20322,6 +20391,7 @@
    "candidate": "ContentIndex::files keyed by a byte-ordered PathKey; prefix-range invalidation with an explicit separator",
    "change_pct": -31.003,
    "commit": "50260a5",
+   "compares": true,
    "complexity": {
     "lines_changed": 133,
     "new_dependencies": [],
@@ -21211,6 +21281,7 @@
    "candidate": "f204abb: normalized() on the content key path, for Path equality on Windows",
    "change_pct": -1.281,
    "commit": "f204abb",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -22098,6 +22169,7 @@
    "candidate": "PR #51 head at e8f1bed",
    "change_pct": -49.545,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 304,
     "new_dependencies": [],
@@ -22235,6 +22307,7 @@
    "candidate": "diagnostic PR #51 without detached publication or ancestry overlay",
    "change_pct": -66.653,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -22372,6 +22445,7 @@
    "candidate": "PR #51 head at e8f1bed",
    "change_pct": 144.455,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -22509,6 +22583,7 @@
    "candidate": "PR #51 head at e8f1bed",
    "change_pct": 7.678,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 28439,
     "new_dependencies": [],
@@ -22745,6 +22820,7 @@
    "candidate": "scoped instrumentation at 1393d31",
    "change_pct": 1.929,
    "commit": "1393d31",
+   "compares": true,
    "complexity": {
     "lines_changed": 1151,
     "new_dependencies": [],
@@ -22981,6 +23057,7 @@
    "candidate": "snapshot and path correctness fixes plus scoped instrumentation",
    "change_pct": 0.294,
    "commit": "b5d9ba4",
+   "compares": true,
    "complexity": {
     "lines_changed": 2396,
     "new_dependencies": [],
@@ -23550,6 +23627,7 @@
    "candidate": "zero-sized detached consequence sink at da5b8bc",
    "change_pct": -6.568,
    "commit": "da5b8bc",
+   "compares": true,
    "complexity": {
     "lines_changed": 281,
     "new_dependencies": [],
@@ -24133,6 +24211,7 @@
    "candidate": "single exact Commit representation at db18e5e",
    "change_pct": -1.551,
    "commit": "db18e5e",
+   "compares": true,
    "complexity": {
     "lines_changed": 288,
     "new_dependencies": [],
@@ -24514,6 +24593,7 @@
    "candidate": "owned scanner batch with resolved parent proof at d9979aa",
    "change_pct": -9.5,
    "commit": "d9979aa",
+   "compares": true,
    "complexity": {
     "lines_changed": 572,
     "new_dependencies": [],
@@ -24865,6 +24945,7 @@
    "candidate": "journal capacity preflight at e2ac4f9",
    "change_pct": -3.46,
    "commit": "e2ac4f9",
+   "compares": true,
    "complexity": {
     "lines_changed": 12,
     "new_dependencies": [],
@@ -25246,6 +25327,7 @@
    "candidate": "borrowed impact-path working-tree spike",
    "change_pct": -1.071,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 10,
     "new_dependencies": [],
@@ -25627,6 +25709,7 @@
    "candidate": "journal-owned scanner commit working-tree spike",
    "change_pct": -0.013,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 53,
     "new_dependencies": [],
@@ -25776,6 +25859,7 @@
    "candidate": "optional unignored reducer working-tree spike",
    "change_pct": -1.606,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 127,
     "new_dependencies": [],
@@ -26014,6 +26098,7 @@
    "candidate": "compact optional partition working-tree composite",
    "change_pct": -2.628,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 260,
     "new_dependencies": [],
@@ -26254,6 +26339,7 @@
    "candidate": "compact scanner batches plus optional fixed-partition storage",
    "change_pct": -2.561,
    "commit": "3c0e1a2",
+   "compares": true,
    "complexity": {
     "lines_changed": 490,
     "new_dependencies": [],
@@ -26506,6 +26592,7 @@
    "candidate": "off-by-default scanner phase timing counters",
    "change_pct": -0.12,
    "commit": "c7b2120",
+   "compares": true,
    "complexity": {
     "lines_changed": 66,
     "new_dependencies": [],
@@ -26756,6 +26843,7 @@
    "candidate": "fused detached reducer plus compact optional partitions",
    "change_pct": -1.115,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 460,
     "new_dependencies": [],
@@ -27009,6 +27097,7 @@
    "candidate": "one-shot causal-fragment coalescer",
    "change_pct": 0.126,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 139,
     "new_dependencies": [],
@@ -27261,6 +27350,7 @@
    "candidate": "unordered producer-only diagnostic",
    "change_pct": 0.68,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 43,
     "new_dependencies": [],
@@ -27400,6 +27490,7 @@
    "candidate": "same immutable default-tree probe with diagnostics enabled",
    "change_pct": -3.476,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 112,
     "new_dependencies": [],
@@ -27537,6 +27628,7 @@
    "candidate": "pipelined directory-group builder",
    "change_pct": 2.477,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 846,
     "new_dependencies": [],
@@ -27678,6 +27770,7 @@
    "candidate": "shared generic walker with detached emission",
    "change_pct": 1.129,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 812,
     "new_dependencies": [],
@@ -27817,6 +27910,7 @@
    "candidate": "hashed transient parent table and unique child insertion",
    "change_pct": 0.831,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 829,
     "new_dependencies": [],
@@ -27957,6 +28051,7 @@
    "candidate": "borrowed final directory roll-up merge",
    "change_pct": 0.189,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 844,
     "new_dependencies": [],
@@ -28097,6 +28192,7 @@
    "candidate": "moved names and bounded transient directory paths",
    "change_pct": -0.307,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 857,
     "new_dependencies": [],
@@ -28238,6 +28334,7 @@
    "candidate": "controls-aware directory-group builder",
    "change_pct": -33.553,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1025,
     "new_dependencies": [],
@@ -28377,6 +28474,7 @@
    "candidate": "controls-aware detached bootstrap candidate",
    "change_pct": 0.927,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1031,
     "new_dependencies": [],
@@ -28831,6 +28929,7 @@
    "candidate": "shared runner with dynamically dispatched message consumption",
    "change_pct": 0.816,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 140,
     "new_dependencies": [],
@@ -29083,6 +29182,7 @@
    "candidate": "shared generic runner with monomorphized message consumption",
    "change_pct": 0.159,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 7,
     "new_dependencies": [],
@@ -29234,6 +29334,7 @@
    "candidate": "out-of-line directory payload with inline arena entries",
    "change_pct": -0.829,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -29587,6 +29688,7 @@
    "candidate": "inline entries, directory payloads, sorted detached children, and per-parent promotion",
    "change_pct": -7.701,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 634,
     "new_dependencies": [],
@@ -29941,6 +30043,7 @@
    "candidate": "ad52469 standard hash-map overlay with unchanged ownership and contracts",
    "change_pct": -49.785,
    "commit": "ad52469d7d16fee3135a515fd07a43c5bab8ba11",
+   "compares": true,
    "complexity": {
     "lines_changed": 129,
     "new_dependencies": [],
@@ -30219,6 +30322,7 @@
    "candidate": "5d7b86f H86 consumer representation (codex/streaming-performance-parity)",
    "change_pct": -31.704,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -30560,6 +30664,7 @@
    "candidate": "ContentIndex::rollups keyed by byte-hashed PathKey under an in-crate FxHash-style hasher",
    "change_pct": 0.054,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 66,
     "new_dependencies": [],
@@ -30712,6 +30817,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 2.459,
    "commit": "285a41d2",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -30960,6 +31066,7 @@
    "candidate": "same probe shipped default read_controls on",
    "change_pct": 1.639,
    "commit": "285a41d2",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -31109,6 +31216,7 @@
    "candidate": "second fdu PATH sharing that cache",
    "change_pct": -0.625,
    "commit": "bd03cd6c",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -31186,6 +31294,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": -0.294,
    "commit": "a35a4cee",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -31338,6 +31447,7 @@
    "candidate": "off-by-default sidecar restore phase timers",
    "change_pct": 0.309,
    "commit": "0ec489e7af94f2a647d1ed94ac55f214fac5e477",
+   "compares": true,
    "complexity": {
     "lines_changed": 89,
     "new_dependencies": [],
@@ -31490,6 +31600,7 @@
    "candidate": "file-count completeness instead of walking analysis_candidates",
    "change_pct": -7.594,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 20,
     "new_dependencies": [],
@@ -31642,6 +31753,7 @@
    "candidate": "get_mut before entry for ContentRollUp type-id String",
    "change_pct": -0.558,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 16,
     "new_dependencies": [],
@@ -31794,6 +31906,7 @@
    "candidate": "one bottom-up ContentRollUp rebuild after restore inserts",
    "change_pct": -9.688,
    "commit": "7798fdc1",
+   "compares": true,
    "complexity": {
     "lines_changed": 167,
     "new_dependencies": [],
@@ -31946,6 +32059,7 @@
    "candidate": "Index lookup plus restore-only classify skip",
    "change_pct": 8.701,
    "commit": "7f289d5f",
+   "compares": true,
    "complexity": {
     "lines_changed": 50,
     "new_dependencies": [],
@@ -32100,6 +32214,7 @@
    "candidate": "analyze_index apply_restored_analysis plus one rebuild",
    "change_pct": -2.604,
    "commit": "55261e6c",
+   "compares": true,
    "complexity": {
     "lines_changed": 15,
     "new_dependencies": [],
@@ -32239,6 +32354,7 @@
    "candidate": "opened-second-report second retained tree read",
    "change_pct": -2.158,
    "commit": "984e4618",
+   "compares": true,
    "complexity": {
     "lines_changed": 120,
     "new_dependencies": [],
@@ -32489,6 +32605,7 @@
    "candidate": "stream sidecar records into apply without a decoded Vec",
    "change_pct": -10.127,
    "commit": "bbfd7d1c",
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -32641,6 +32758,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 0.181,
    "commit": "018b4c86",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -32790,6 +32908,7 @@
    "candidate": "index-second-report second query::report",
    "change_pct": 1.5,
    "commit": "ee014340",
+   "compares": true,
    "complexity": {
     "lines_changed": 98,
     "new_dependencies": [],
@@ -33040,6 +33159,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 0.742,
    "commit": "ee014340",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33192,6 +33312,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": -4.221,
    "commit": "45727e1d",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33329,6 +33450,7 @@
    "candidate": "same probe plus dir_enumeration_calls counter",
    "change_pct": -1.945,
    "commit": "8dd95be8",
+   "compares": true,
    "complexity": {
     "lines_changed": 40,
     "new_dependencies": [],
@@ -33478,6 +33600,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 3.263,
    "commit": "01ccc4b8",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33630,6 +33753,7 @@
    "candidate": "restore candidate count instead of a second analysis_candidates walk",
    "change_pct": -8.031,
    "commit": "be8d4d69",
+   "compares": true,
    "complexity": {
     "lines_changed": 16,
     "new_dependencies": [],
@@ -33782,6 +33906,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.309,
    "commit": "25f423fd",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33934,6 +34059,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": -4.966,
    "commit": "81f9e447",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34172,6 +34298,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": 1.121,
    "commit": "59fa413a",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34309,6 +34436,7 @@
    "candidate": "restore-only candidates without classify; restore apply skips the classify self-check",
    "change_pct": -13.111,
    "commit": "6887a864",
+   "compares": true,
    "complexity": {
     "lines_changed": 115,
     "new_dependencies": [],
@@ -34461,6 +34589,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.209,
    "commit": "6e101ace",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34613,6 +34742,7 @@
    "candidate": "analysis-file DFS joins parent path instead of path_of",
    "change_pct": -4.07,
    "commit": "7840ce9b",
+   "compares": true,
    "complexity": {
     "lines_changed": 20,
     "new_dependencies": [],
@@ -34765,6 +34895,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.021,
    "commit": "69704206",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34917,6 +35048,7 @@
    "candidate": "insert_loaded_child skips path_of when serving is None",
    "change_pct": -6.366,
    "commit": "143a1c73",
+   "compares": true,
    "complexity": {
     "lines_changed": 47,
     "new_dependencies": [],
@@ -35069,6 +35201,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.372,
    "commit": "f1e9ef9c",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35221,6 +35354,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": -3.704,
    "commit": "6a93fc12",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35358,6 +35492,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": 0.182,
    "commit": "2aa3b7ee",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35495,6 +35630,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": -3.267,
    "commit": "afd0c919",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35632,6 +35768,7 @@
    "candidate": "share one every_entry for unfiltered entry-row views",
    "change_pct": -18.764,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 68,
     "new_dependencies": [],
@@ -35769,6 +35906,7 @@
    "candidate": "HEAD probe with H125 H129 H131 H133 stacked",
    "change_pct": -22.483,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35921,6 +36059,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 0.636,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36058,6 +36197,7 @@
    "candidate": "HEAD probe with H138 share-one-every-entry walk",
    "change_pct": -17.598,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36195,6 +36335,7 @@
    "candidate": "same probe; floor scoreboard is the verdict",
    "change_pct": 1.986,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36334,6 +36475,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 0.131,
    "commit": "937f9445",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36482,6 +36624,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 0.447,
    "commit": "937f9445",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36619,6 +36762,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": -0.085,
    "commit": "345cd8fc",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36771,6 +36915,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": -0.231,
    "commit": "eec14927",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36919,6 +37064,7 @@
    "candidate": "same probe --threads 8",
    "change_pct": 1.754,
    "commit": "0a979786",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37157,6 +37303,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 1.484,
    "commit": "f0126084",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37294,6 +37441,7 @@
    "candidate": "same probe --no-controls --threads 8",
    "change_pct": -10.064,
    "commit": "a58f9e30",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37431,6 +37579,7 @@
    "candidate": "same probe --threads 8",
    "change_pct": 7.123,
    "commit": "06b12212",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37568,6 +37717,7 @@
    "candidate": "same probe --no-controls, drained batches returned to producing worker",
    "change_pct": -4.981,
    "commit": "5c6e6394",
+   "compares": true,
    "complexity": {
     "lines_changed": 186,
     "new_dependencies": [],
@@ -37707,6 +37857,7 @@
    "candidate": "same probe --no-controls, drained batches returned to producing worker",
    "change_pct": -4.981,
    "commit": "5c6e6394",
+   "compares": true,
    "complexity": {
     "lines_changed": 186,
     "new_dependencies": [],
@@ -37844,6 +37995,7 @@
    "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
    "change_pct": -1.627,
    "commit": "f841662c",
+   "compares": true,
    "complexity": {
     "lines_changed": 123,
     "new_dependencies": [],
@@ -37981,6 +38133,7 @@
    "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
    "change_pct": -9.01,
    "commit": "f841662c",
+   "compares": true,
    "complexity": {
     "lines_changed": 123,
     "new_dependencies": [],
@@ -38118,6 +38271,7 @@
    "candidate": "same source rebuilt with -Cprofile-use after linux-v6.12 training",
    "change_pct": -8.347,
    "commit": "b46edf65",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -38356,6 +38510,7 @@
    "candidate": "same probe leftover restore-mix profile",
    "change_pct": 0.039,
    "commit": "065175ee",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -38508,6 +38663,7 @@
    "candidate": "progress-indicator branch at ead98807 with no handle attached",
    "change_pct": -1.777,
    "commit": "ead98807",
+   "compares": true,
    "complexity": {
     "lines_changed": 1173,
     "new_dependencies": [],
@@ -39278,6 +39434,7 @@
    "candidate": "the same probe with --progress: a handle attached and polled every 80 ms",
    "change_pct": 5.755,
    "commit": "ead98807",
+   "compares": true,
    "complexity": {
     "lines_changed": 318,
     "new_dependencies": [],
@@ -39415,6 +39572,7 @@
    "candidate": "byte-identical release probe at 1ba06b19",
    "change_pct": 1.022,
    "commit": "1ba06b19",
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -39554,6 +39712,7 @@
    "candidate": "release probe at d0902cfd with one-pass shared metric resolution",
    "change_pct": -47.005,
    "commit": "d0902cfd",
+   "compares": true,
    "complexity": {
     "lines_changed": 396,
     "new_dependencies": [],
@@ -39693,6 +39852,7 @@
    "candidate": "same probe with release_index: a large last reference is released on a detached thread",
    "change_pct": -3.194,
    "commit": "71c52591",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -40032,6 +40192,7 @@
    "candidate": "H156 plus direct file fold into the parent roll-up and owned walker names",
    "change_pct": -2.222,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 95,
     "new_dependencies": [],
@@ -40270,6 +40431,7 @@
    "candidate": "same probe holding leaf-only chunks until a batch fills",
    "change_pct": 0.879,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -40508,6 +40670,7 @@
    "candidate": "93cd1bb1 probe: auto persists only where a later request reads it",
    "change_pct": -13.813,
    "commit": "93cd1bb1",
+   "compares": true,
    "complexity": {
     "lines_changed": 150,
     "new_dependencies": [],
@@ -40847,6 +41010,7 @@
    "candidate": "pr138 probe at ea786683 (layer 2): a large last index reference is released on a detached thread",
    "change_pct": -1.001,
    "commit": "71c52591",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -41186,6 +41350,7 @@
    "candidate": "pr139 probe at a5c0ab46 (layer 3): auto persists only where a later request reads it",
    "change_pct": -3.092,
    "commit": "93cd1bb1",
+   "compares": true,
    "complexity": {
     "lines_changed": 150,
     "new_dependencies": [],
@@ -41525,6 +41690,7 @@
    "candidate": "H159 first build 666b51f0: drained detached listings returned to their walker, up to 16 spare listings of up to 256 children per worker",
    "change_pct": 1.318,
    "commit": "666b51f0",
+   "compares": true,
    "complexity": {
     "lines_changed": 253,
     "new_dependencies": [],
@@ -41775,6 +41941,7 @@
    "candidate": "H159 b1f57ecd: drained detached listings returned to their walker, reuse bounded to DIR_CLAIM spare listings of up to 64 children per worker",
    "change_pct": -1.41,
    "commit": "b1f57ecd",
+   "compares": true,
    "complexity": {
     "lines_changed": 256,
     "new_dependencies": [],
@@ -42025,6 +42192,7 @@
    "candidate": "060bbfe6 probe: the transient summary classifies entries against .gitignore",
    "change_pct": -69.119,
    "commit": "060bbfe6",
+   "compares": true,
    "complexity": {
     "lines_changed": 999,
     "new_dependencies": [],
@@ -42164,6 +42332,7 @@
    "candidate": "060bbfe6 probe: the transient summary classifies entries against .gitignore",
    "change_pct": -57.86,
    "commit": "060bbfe6",
+   "compares": true,
    "complexity": {
     "lines_changed": 999,
     "new_dependencies": [],
@@ -42303,6 +42472,7 @@
    "candidate": "cbeb9e57 probe: first cut, each listing held whole until it ends",
    "change_pct": -17.072,
    "commit": "cbeb9e57",
+   "compares": true,
    "complexity": {
     "lines_changed": 900,
     "new_dependencies": [],
@@ -42440,6 +42610,7 @@
    "candidate": "892cef40 probe: stack-buffered components, fixed-length fast path, stack DP rows",
    "change_pct": -47.021,
    "commit": "892cef40",
+   "compares": true,
    "complexity": {
     "lines_changed": 150,
     "new_dependencies": [],
@@ -42678,6 +42849,7 @@
    "candidate": "a15b20f4 probe: governing controls resolved once per listing",
    "change_pct": -36.434,
    "commit": "a15b20f4",
+   "compares": true,
    "complexity": {
     "lines_changed": 104,
     "new_dependencies": [],
@@ -42901,6 +43073,7 @@
    "candidate": "e5a71c8a probe, copy B (A/A)",
    "change_pct": -1.12,
    "commit": null,
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -43122,6 +43295,7 @@
    "candidate": "e5a71c8a probe, copy B (A/A)",
    "change_pct": 3.862,
    "commit": null,
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -43343,6 +43517,7 @@
    "candidate": "e5a71c8a probe, copy B (A/A)",
    "change_pct": 1.548,
    "commit": null,
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -43564,6 +43739,7 @@
    "candidate": "7c69e88a probe: H171 bucketed matching",
    "change_pct": -29.621,
    "commit": "7c69e88a",
+   "compares": true,
    "complexity": {
     "lines_changed": 1481,
     "new_dependencies": [],
@@ -43787,6 +43963,7 @@
    "candidate": "a1a4a568 probe: H171 + H175 derived chains",
    "change_pct": -3.312,
    "commit": "a1a4a568",
+   "compares": true,
    "complexity": {
     "lines_changed": 141,
     "new_dependencies": [],
@@ -44010,6 +44187,7 @@
    "candidate": "956659de probe: H172 transient tree tier with H176 and F6e",
    "change_pct": -13.485,
    "commit": "956659de",
+   "compares": true,
    "complexity": {
     "lines_changed": 1555,
     "new_dependencies": [],
@@ -44219,6 +44397,7 @@
    "candidate": "956659de probe: H172 transient tree tier",
    "change_pct": -10.304,
    "commit": "956659de",
+   "compares": true,
    "complexity": {
     "lines_changed": 1555,
     "new_dependencies": [],
@@ -44442,6 +44621,7 @@
    "candidate": "956659de probe, --threads 3 (cores - 1)",
    "change_pct": 10.253,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -44564,6 +44744,7 @@
    "candidate": "70c2725c probe: H180 summary walker trims",
    "change_pct": -8.678,
    "commit": "70c2725c",
+   "compares": true,
    "complexity": {
     "lines_changed": 125,
     "new_dependencies": [],
@@ -44772,6 +44953,7 @@
    "candidate": "70c2725c probe: H180 summary walker trims",
    "change_pct": -5.635,
    "commit": "70c2725c",
+   "compares": true,
    "complexity": {
     "lines_changed": 125,
     "new_dependencies": [],
@@ -44980,6 +45162,7 @@
    "candidate": "20933081 probe: H169 Linux-native reader",
    "change_pct": -6.251,
    "commit": "20933081",
+   "compares": true,
    "complexity": {
     "lines_changed": 1621,
     "new_dependencies": [],
@@ -45188,6 +45371,7 @@
    "candidate": "20933081 probe: H169 Linux-native reader",
    "change_pct": -7.899,
    "commit": "20933081",
+   "compares": true,
    "complexity": {
     "lines_changed": 1621,
     "new_dependencies": [],
@@ -45396,6 +45580,7 @@
    "candidate": "0d73ed54 probe (main with 149): the transient summary classifies entries",
    "change_pct": -6.926,
    "commit": "0d73ed54",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -45533,6 +45718,7 @@
    "candidate": "aa58a6b1 probe (150): drained listings return to their walker",
    "change_pct": -2.191,
    "commit": "aa58a6b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -45771,6 +45957,7 @@
    "candidate": "a15b20f4 probe: H159 with H162 and H163",
    "change_pct": 2.259,
    "commit": "aa58a6b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -46009,6 +46196,7 @@
    "candidate": "a15b20f4 probe: H159 with H162 and H163",
    "change_pct": -8.612,
    "commit": "aa58a6b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -46247,6 +46435,7 @@
    "candidate": "4c283de0: direct file fold and moved walker names",
    "change_pct": -5.513,
    "commit": "4c283de0",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -46485,6 +46674,7 @@
    "candidate": "7233dad6 probe: H181 + H182 bundle",
    "change_pct": 0.2,
    "commit": "7233dad6",
+   "compares": true,
    "complexity": {
     "lines_changed": 700,
     "new_dependencies": [],
@@ -46694,6 +46884,7 @@
    "candidate": "e2ef8bcb probe: H183 matcher pre-checks",
    "change_pct": -7.622,
    "commit": "e2ef8bcb",
+   "compares": true,
    "complexity": {
     "lines_changed": 300,
     "new_dependencies": [],
@@ -46902,6 +47093,7 @@
    "candidate": "ebc06c78 probe (the final head of the round)",
    "change_pct": -39.003,
    "commit": "ebc06c78",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -47108,6 +47300,7 @@
    "candidate": "ebc06c78 probe (the final head of the round)",
    "change_pct": -9.75,
    "commit": "ebc06c78",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -47314,6 +47507,7 @@
    "candidate": "17874dd6 probe: fdu-d2fn, every route through the native reader",
    "change_pct": -2.744,
    "commit": "17874dd6",
+   "compares": true,
    "complexity": {
     "lines_changed": 777,
     "new_dependencies": [],
@@ -47638,6 +47832,7 @@
    "candidate": "c0da65ae probe (the H185 head)",
    "change_pct": -3.551,
    "commit": "c0da65ae",
+   "compares": true,
    "complexity": {
     "lines_changed": 136,
     "new_dependencies": [],
@@ -47947,6 +48142,7 @@
    "candidate": "7a3a7058 probe (the H188 part-2 head, with H189)",
    "change_pct": -6.152,
    "commit": "7a3a7058",
+   "compares": true,
    "complexity": {
     "lines_changed": 261,
     "new_dependencies": [],
@@ -48156,6 +48352,7 @@
    "candidate": "a356d456 probe (the H186 head)",
    "change_pct": -4.913,
    "commit": "a356d456",
+   "compares": true,
    "complexity": {
     "lines_changed": 178,
     "new_dependencies": [],
@@ -48364,6 +48561,7 @@
    "candidate": "cfae174e probe (the H187 head)",
    "change_pct": -0.348,
    "commit": "cfae174e",
+   "compares": true,
    "complexity": {
     "lines_changed": 210,
     "new_dependencies": [],
@@ -48673,6 +48871,7 @@
    "candidate": "a356d456 probe (the H186 head, the pdu track's shipped stack)",
    "change_pct": -3.051,
    "commit": "a356d456",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -48884,6 +49083,7 @@
    "candidate": "b82f26e1 probe (the 0.3.0 release head)",
    "change_pct": -48,
    "commit": "b82f26e1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -49086,7 +49286,4058 @@
    "trials": 20
   }
  ],
- "prepared": "2026-09-29",
+ "history": [
+  {
+   "above_quiet_gate": 0.764,
+   "component": "scale",
+   "component_digest": "00cff7b322450d6d",
+   "cpu": "Apple M1 Pro",
+   "entries": 1000001,
+   "id": "macos-balanced-1m-internal",
+   "invalid_samples": 0,
+   "job": "scale",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": 452.2,
+     "role": "",
+     "short": "start",
+     "supported": true,
+     "system_s": 23.096,
+     "user_s": 2.368,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      787.749,
+      1065.174
+     ],
+     "vs_latest_pct": 975.475,
+     "wall_ms": 70393.51
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": 455.1,
+     "role": "",
+     "short": "H1 producer",
+     "supported": true,
+     "system_s": 30.163,
+     "user_s": 2.784,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      96.519,
+      118.727
+     ],
+     "vs_latest_pct": 100.834,
+     "wall_ms": 13299.88
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": 422.6,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": true,
+     "system_s": 35.655,
+     "user_s": 1.856,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      -0.261,
+      6.838
+     ],
+     "vs_latest_pct": 1.881,
+     "wall_ms": 6449.74
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": 422.9,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": true,
+     "system_s": 35.522,
+     "user_s": 1.814,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      -0.491,
+      18.312
+     ],
+     "vs_latest_pct": 3.924,
+     "wall_ms": 6992.66
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 285.5,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 36.116,
+     "user_s": 1.353,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      -4.357,
+      10.227
+     ],
+     "vs_latest_pct": 0.168,
+     "wall_ms": 7013.58
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 285.9,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 36.254,
+     "user_s": 1.309,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      -15.611,
+      5.207
+     ],
+     "vs_latest_pct": 3.003,
+     "wall_ms": 6519.03
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 286.4,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 35.453,
+     "user_s": 1.241,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      -2.933,
+      0.281
+     ],
+     "vs_latest_pct": -2.081,
+     "wall_ms": 6623.21
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 286.2,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 34.976,
+     "user_s": 1.194,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      -1.349,
+      5.411
+     ],
+     "vs_latest_pct": 1.162,
+     "wall_ms": 6373.24
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 286.6,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 35.348,
+     "user_s": 1.201,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      -2.476,
+      15.92
+     ],
+     "vs_latest_pct": 3.385,
+     "wall_ms": 7066.59
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 66.6,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 35.456,
+     "user_s": 0.97,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      -3.322,
+      6.396
+     ],
+     "vs_latest_pct": 2.746,
+     "wall_ms": 6301.51
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 66.6,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 35.472,
+     "user_s": 1.012,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -6.317,
+      9.623
+     ],
+     "vs_latest_pct": 1.282,
+     "wall_ms": 6313.22
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 66.4,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 36.27,
+     "user_s": 1.019,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -1.747,
+      8.565
+     ],
+     "vs_latest_pct": 4.914,
+     "wall_ms": 6593.78
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 66.2,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 35.433,
+     "user_s": 1.016,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 6536.98
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 10.755,
+   "speedup_x_ci95": [
+    8.877,
+    11.652
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "macos-balanced-1m-internal",
+   "title": "the generated 1M-entry tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.6,
+   "component": "cold-cache",
+   "component_digest": "58487def188c1b4f",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-linux-v6.12-internal",
+   "invalid_samples": 0,
+   "job": "cold-cache",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": 41.9,
+     "role": "",
+     "short": "start",
+     "supported": true,
+     "system_s": 0.376,
+     "user_s": 0.159,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      224.172,
+      238.959
+     ],
+     "vs_latest_pct": 234.472,
+     "wall_ms": 543.07
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": 44.6,
+     "role": "",
+     "short": "H1 producer",
+     "supported": true,
+     "system_s": 0.902,
+     "user_s": 0.204,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      12.099,
+      23.877
+     ],
+     "vs_latest_pct": 18.114,
+     "wall_ms": 194.36
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": 43.2,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": true,
+     "system_s": 0.785,
+     "user_s": 0.13,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      -4.095,
+      1.593
+     ],
+     "vs_latest_pct": 0.3,
+     "wall_ms": 163.46
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": 43.3,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": true,
+     "system_s": 0.769,
+     "user_s": 0.132,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      -0.186,
+      3.996
+     ],
+     "vs_latest_pct": 2.123,
+     "wall_ms": 166.2
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 30.9,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 0.804,
+     "user_s": 0.082,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      -3.943,
+      1.399
+     ],
+     "vs_latest_pct": -0.847,
+     "wall_ms": 163.52
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 38.7,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.835,
+     "user_s": 0.442,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      163.633,
+      175.236
+     ],
+     "vs_latest_pct": 167.47,
+     "wall_ms": 430.1
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 38.8,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.855,
+     "user_s": 0.439,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      152.509,
+      178.777
+     ],
+     "vs_latest_pct": 164.891,
+     "wall_ms": 433.38
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 34.4,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.814,
+     "user_s": 0.193,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      7.963,
+      17.769
+     ],
+     "vs_latest_pct": 13.218,
+     "wall_ms": 190.8
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 33.4,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.847,
+     "user_s": 0.123,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      1.958,
+      9.668
+     ],
+     "vs_latest_pct": 8.508,
+     "wall_ms": 176.8
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 13.9,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.846,
+     "user_s": 0.097,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      1.333,
+      9.005
+     ],
+     "vs_latest_pct": 6.333,
+     "wall_ms": 173.93
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 14.0,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.85,
+     "user_s": 0.074,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      2.533,
+      10.129
+     ],
+     "vs_latest_pct": 7.62,
+     "wall_ms": 172.8
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 13.8,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.845,
+     "user_s": 0.074,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -0.709,
+      6.908
+     ],
+     "vs_latest_pct": 3.125,
+     "wall_ms": 169.43
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 13.9,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.856,
+     "user_s": 0.075,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 162.81
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 3.345,
+   "speedup_x_ci95": [
+    3.242,
+    3.39
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 20
+  },
+  {
+   "above_quiet_gate": 0.994,
+   "component": "code",
+   "component_digest": "ac8e95ddcbc1d319",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-code-internal",
+   "invalid_samples": 0,
+   "job": "code",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "0.1.0",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 148.7,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 8.386,
+     "user_s": 30.13,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      2.512,
+      39.896
+     ],
+     "vs_latest_pct": 19.299,
+     "wall_ms": 9657.39
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 142.7,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 8.431,
+     "user_s": 29.476,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      -1.881,
+      22.912
+     ],
+     "vs_latest_pct": 13.116,
+     "wall_ms": 9237.33
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 143.7,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 8.11,
+     "user_s": 31.005,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      -3.369,
+      27.35
+     ],
+     "vs_latest_pct": 7.55,
+     "wall_ms": 8209.93
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 140.5,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 8.22,
+     "user_s": 29.662,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      -9.518,
+      20.938
+     ],
+     "vs_latest_pct": 2.378,
+     "wall_ms": 8377.37
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 140.1,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 8.339,
+     "user_s": 29.809,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      1.054,
+      31.173
+     ],
+     "vs_latest_pct": 12.263,
+     "wall_ms": 6804.3
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 143.0,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 8.403,
+     "user_s": 29.954,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      4.432,
+      20.277
+     ],
+     "vs_latest_pct": 10.021,
+     "wall_ms": 7598.45
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 117.6,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 8.354,
+     "user_s": 26.385,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 7534.07
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.193,
+   "speedup_x_ci95": [
+    1.025,
+    1.399
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.825,
+   "component": "default-tree",
+   "component_digest": "5cfc2952e813ce77",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-default-tree-internal",
+   "invalid_samples": 0,
+   "job": "default-tree",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": 52.9,
+     "role": "",
+     "short": "start",
+     "supported": true,
+     "system_s": 0.412,
+     "user_s": 0.42,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      418.246,
+      478.967
+     ],
+     "vs_latest_pct": 426.955,
+     "wall_ms": 876.09
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": 52.9,
+     "role": "",
+     "short": "H1 producer",
+     "supported": true,
+     "system_s": 0.408,
+     "user_s": 0.419,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      420.725,
+      454.076
+     ],
+     "vs_latest_pct": 438.295,
+     "wall_ms": 856.56
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": 51.4,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": true,
+     "system_s": 0.415,
+     "user_s": 0.245,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      301.244,
+      355.482
+     ],
+     "vs_latest_pct": 322.048,
+     "wall_ms": 693.7
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": 52.4,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": true,
+     "system_s": 0.534,
+     "user_s": 0.236,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      114.052,
+      126.929
+     ],
+     "vs_latest_pct": 118.808,
+     "wall_ms": 360.45
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 40.9,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 0.795,
+     "user_s": 0.091,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      2.408,
+      12.385
+     ],
+     "vs_latest_pct": 10.527,
+     "wall_ms": 178.47
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 47.7,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.84,
+     "user_s": 0.451,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      170.664,
+      186.671
+     ],
+     "vs_latest_pct": 172.513,
+     "wall_ms": 456.6
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 38.9,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.817,
+     "user_s": 0.444,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      166.512,
+      185.022
+     ],
+     "vs_latest_pct": 173.357,
+     "wall_ms": 449.82
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 34.7,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.822,
+     "user_s": 0.195,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      11.555,
+      22.274
+     ],
+     "vs_latest_pct": 15.522,
+     "wall_ms": 192.83
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 33.4,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.823,
+     "user_s": 0.123,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      8.465,
+      12.702
+     ],
+     "vs_latest_pct": 10.414,
+     "wall_ms": 180.32
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 14.0,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.862,
+     "user_s": 0.089,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      5.446,
+      11.764
+     ],
+     "vs_latest_pct": 8.774,
+     "wall_ms": 178.31
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 14.0,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.822,
+     "user_s": 0.073,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      2.058,
+      11.089
+     ],
+     "vs_latest_pct": 6.751,
+     "wall_ms": 174.71
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 13.9,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.825,
+     "user_s": 0.071,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      4.207,
+      12.446
+     ],
+     "vs_latest_pct": 10.04,
+     "wall_ms": 175.83
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 14.0,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.82,
+     "user_s": 0.074,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 163.98
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 5.27,
+   "speedup_x_ci95": [
+    5.182,
+    5.79
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 20
+  },
+  {
+   "above_quiet_gate": 0.89,
+   "component": "documents",
+   "component_digest": "67a3eb9ac7d7083a",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-documents-internal",
+   "invalid_samples": 0,
+   "job": "documents",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 161.9,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 9.991,
+     "user_s": 8.272,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      -0.406,
+      6.133
+     ],
+     "vs_latest_pct": 1.651,
+     "wall_ms": 3337.34
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 146.7,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 10.424,
+     "user_s": 8.503,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      3.916,
+      30.448
+     ],
+     "vs_latest_pct": 9.115,
+     "wall_ms": 3585.05
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 150.2,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 10.867,
+     "user_s": 8.689,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      3.304,
+      11.643
+     ],
+     "vs_latest_pct": 6.749,
+     "wall_ms": 3515.35
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 143.9,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 11.181,
+     "user_s": 8.314,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      -7.929,
+      2.014
+     ],
+     "vs_latest_pct": -3.149,
+     "wall_ms": 3287.0
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 144.5,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 11.715,
+     "user_s": 8.195,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      -10.267,
+      4.468
+     ],
+     "vs_latest_pct": -0.498,
+     "wall_ms": 3175.4
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 141.5,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 11.556,
+     "user_s": 8.265,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      -1.324,
+      3.457
+     ],
+     "vs_latest_pct": 0.225,
+     "wall_ms": 3261.35
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 142.9,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 11.16,
+     "user_s": 8.172,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -2.499,
+      1.528
+     ],
+     "vs_latest_pct": -1.094,
+     "wall_ms": 3275.18
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 145.0,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 9.659,
+     "user_s": 8.253,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -2.42,
+      2.5
+     ],
+     "vs_latest_pct": 0.279,
+     "wall_ms": 3246.92
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 118.8,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 10.613,
+     "user_s": 8.039,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 3304.2
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.017,
+   "speedup_x_ci95": [
+    0.996,
+    1.061
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.722,
+   "component": "multi-view",
+   "component_digest": "46e1a7688a008721",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-multi-view-internal",
+   "invalid_samples": 0,
+   "job": "multi-view",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "0.1.0",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 149.7,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 9.643,
+     "user_s": 31.435,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      6.412,
+      15.589
+     ],
+     "vs_latest_pct": 13.201,
+     "wall_ms": 6060.64
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 142.2,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 9.674,
+     "user_s": 31.134,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      5.062,
+      11.278
+     ],
+     "vs_latest_pct": 8.436,
+     "wall_ms": 5655.02
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 144.0,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 10.137,
+     "user_s": 32.843,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      8.6,
+      22.192
+     ],
+     "vs_latest_pct": 11.549,
+     "wall_ms": 5862.92
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 141.5,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 9.888,
+     "user_s": 31.172,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      5.067,
+      11.004
+     ],
+     "vs_latest_pct": 7.464,
+     "wall_ms": 5606.0
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 141.1,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 9.724,
+     "user_s": 31.537,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      0.761,
+      9.123
+     ],
+     "vs_latest_pct": 4.707,
+     "wall_ms": 5490.88
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 143.9,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 9.176,
+     "user_s": 31.376,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      6.309,
+      11.361
+     ],
+     "vs_latest_pct": 9.515,
+     "wall_ms": 5573.79
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 118.5,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 10.461,
+     "user_s": 27.92,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 5231.77
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.132,
+   "speedup_x_ci95": [
+    1.064,
+    1.156
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.033,
+   "component": "opened-root",
+   "component_digest": "4e282eed355457ec",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-opened-root-delta-apply-large-internal",
+   "invalid_samples": 0,
+   "job": "delta-apply-large",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 124.3,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 0.021,
+     "user_s": 0.72,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      98.702,
+      100.418
+     ],
+     "vs_latest_pct": 99.541,
+     "wall_ms": 743.52
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 121.4,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.017,
+     "user_s": 0.352,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      -0.384,
+      0.15
+     ],
+     "vs_latest_pct": -0.115,
+     "wall_ms": 372.8
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 124.5,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.019,
+     "user_s": 0.352,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      -0.117,
+      0.927
+     ],
+     "vs_latest_pct": 0.425,
+     "wall_ms": 373.2
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 124.5,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.018,
+     "user_s": 0.352,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      -0.31,
+      0.94
+     ],
+     "vs_latest_pct": 0.136,
+     "wall_ms": 373.4
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 121.5,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.018,
+     "user_s": 0.352,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      -0.522,
+      0.213
+     ],
+     "vs_latest_pct": -0.211,
+     "wall_ms": 373.19
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 124.1,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.018,
+     "user_s": 0.353,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      -0.421,
+      0.665
+     ],
+     "vs_latest_pct": 0.259,
+     "wall_ms": 373.3
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 121.4,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.018,
+     "user_s": 0.352,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -0.312,
+      0.607
+     ],
+     "vs_latest_pct": 0.363,
+     "wall_ms": 373.03
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 121.5,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.017,
+     "user_s": 0.354,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      0.1,
+      0.81
+     ],
+     "vs_latest_pct": 0.67,
+     "wall_ms": 374.83
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 121.4,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.017,
+     "user_s": 0.352,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 372.69
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.995,
+   "speedup_x_ci95": [
+    1.987,
+    2.004
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.031,
+   "component": "opened-root",
+   "component_digest": "4e282eed355457ec",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-opened-root-opened-second-report-internal",
+   "invalid_samples": 0,
+   "job": "opened-second-report",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 107.5,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.442,
+     "user_s": 1.236,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      19.254,
+      22.055
+     ],
+     "vs_latest_pct": 20.425,
+     "wall_ms": 1586.84
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 107.8,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.44,
+     "user_s": 1.231,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      18.878,
+      22.113
+     ],
+     "vs_latest_pct": 20.08,
+     "wall_ms": 1582.11
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 107.8,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.443,
+     "user_s": 1.082,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      7.813,
+      8.714
+     ],
+     "vs_latest_pct": 8.061,
+     "wall_ms": 1434.79
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 108.2,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.443,
+     "user_s": 0.996,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      1.31,
+      3.306
+     ],
+     "vs_latest_pct": 2.026,
+     "wall_ms": 1352.09
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 107.7,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.435,
+     "user_s": 0.997,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      1.151,
+      3.017
+     ],
+     "vs_latest_pct": 2.032,
+     "wall_ms": 1344.46
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 107.9,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.437,
+     "user_s": 0.967,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -0.723,
+      1.276
+     ],
+     "vs_latest_pct": -0.274,
+     "wall_ms": 1318.23
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 108.1,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.432,
+     "user_s": 0.962,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -1.14,
+      -0.308
+     ],
+     "vs_latest_pct": -0.837,
+     "wall_ms": 1304.97
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 107.7,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.435,
+     "user_s": 0.971,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 1315.96
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.204,
+   "speedup_x_ci95": [
+    1.193,
+    1.221
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.927,
+   "component": "summary",
+   "component_digest": "ffda5eeef3fd4e06",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-summary-internal",
+   "invalid_samples": 0,
+   "job": "summary",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 10.4,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 0.774,
+     "user_s": 0.056,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      -7.718,
+      2.305
+     ],
+     "vs_latest_pct": -5.109,
+     "wall_ms": 166.32
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 48.0,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.762,
+     "user_s": 0.458,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      174.306,
+      191.865
+     ],
+     "vs_latest_pct": 183.576,
+     "wall_ms": 475.97
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 38.8,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.756,
+     "user_s": 0.445,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      176.384,
+      200.552
+     ],
+     "vs_latest_pct": 180.232,
+     "wall_ms": 469.74
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 18.4,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.72,
+     "user_s": 0.198,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      1.792,
+      21.833
+     ],
+     "vs_latest_pct": 12.606,
+     "wall_ms": 192.12
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 14.0,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.765,
+     "user_s": 0.126,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      -3.337,
+      7.142
+     ],
+     "vs_latest_pct": 1.55,
+     "wall_ms": 179.0
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 13.5,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.784,
+     "user_s": 0.129,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      -1.768,
+      6.29
+     ],
+     "vs_latest_pct": 0.508,
+     "wall_ms": 176.48
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 13.0,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.794,
+     "user_s": 0.087,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -1.404,
+      9.348
+     ],
+     "vs_latest_pct": 3.213,
+     "wall_ms": 169.03
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 13.1,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.836,
+     "user_s": 0.072,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -2.272,
+      8.382
+     ],
+     "vs_latest_pct": 2.292,
+     "wall_ms": 178.96
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 13.2,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.809,
+     "user_s": 0.074,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 168.61
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 0.949,
+   "speedup_x_ci95": [
+    0.923,
+    1.023
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 20
+  },
+  {
+   "above_quiet_gate": 0.933,
+   "component": "warm-content-code",
+   "component_digest": "8b3c1eecd7bb78e9",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-warm-content-code-internal",
+   "invalid_samples": 0,
+   "job": "warm-content-code",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "0.1.0",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 175.9,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.589,
+     "user_s": 0.773,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      41.139,
+      44.601
+     ],
+     "vs_latest_pct": 42.163,
+     "wall_ms": 913.06
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 173.1,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.58,
+     "user_s": 0.642,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      12.052,
+      24.36
+     ],
+     "vs_latest_pct": 20.301,
+     "wall_ms": 777.59
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 175.2,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.566,
+     "user_s": 0.569,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      6.343,
+      20.521
+     ],
+     "vs_latest_pct": 11.823,
+     "wall_ms": 716.02
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 173.1,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.586,
+     "user_s": 0.566,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      5.329,
+      10.535
+     ],
+     "vs_latest_pct": 8.639,
+     "wall_ms": 706.35
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 172.6,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.577,
+     "user_s": 0.55,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      2.958,
+      13.508
+     ],
+     "vs_latest_pct": 6.061,
+     "wall_ms": 693.81
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 176.2,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.596,
+     "user_s": 0.545,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      5.506,
+      18.789
+     ],
+     "vs_latest_pct": 8.556,
+     "wall_ms": 679.97
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 163.2,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.568,
+     "user_s": 0.512,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 642.0
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.422,
+   "speedup_x_ci95": [
+    1.411,
+    1.446
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.887,
+   "component": "warm-content-documents",
+   "component_digest": "765de6f12f3186e8",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-warm-content-documents-internal",
+   "invalid_samples": 0,
+   "job": "warm-content-documents",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 230.7,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 0.581,
+     "user_s": 0.501,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      -0.762,
+      22.459
+     ],
+     "vs_latest_pct": 6.254,
+     "wall_ms": 651.42
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 162.4,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.56,
+     "user_s": 0.754,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      34.348,
+      47.525
+     ],
+     "vs_latest_pct": 43.616,
+     "wall_ms": 873.93
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 177.5,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.582,
+     "user_s": 0.76,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      40.349,
+      47.296
+     ],
+     "vs_latest_pct": 43.419,
+     "wall_ms": 888.02
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 176.1,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.545,
+     "user_s": 0.619,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      19.426,
+      25.968
+     ],
+     "vs_latest_pct": 22.111,
+     "wall_ms": 735.23
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 176.9,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.507,
+     "user_s": 0.545,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      5.318,
+      12.109
+     ],
+     "vs_latest_pct": 10.27,
+     "wall_ms": 650.28
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 173.4,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.497,
+     "user_s": 0.546,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      7.203,
+      14.823
+     ],
+     "vs_latest_pct": 10.858,
+     "wall_ms": 655.87
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 175.7,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.522,
+     "user_s": 0.53,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      4.439,
+      10.181
+     ],
+     "vs_latest_pct": 6.913,
+     "wall_ms": 639.11
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 177.2,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.562,
+     "user_s": 0.53,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      4.625,
+      12.81
+     ],
+     "vs_latest_pct": 7.406,
+     "wall_ms": 650.14
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 165.9,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.531,
+     "user_s": 0.496,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 606.52
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.063,
+   "speedup_x_ci95": [
+    0.992,
+    1.225
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.86,
+   "component": "warm-metadata",
+   "component_digest": "b6a22549a84a93b8",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-warm-metadata-cold-open-save-internal",
+   "invalid_samples": 0,
+   "job": "cold-open-save",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "start",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "H1 producer",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": null,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": false,
+     "system_s": null,
+     "user_s": null,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": null
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 35.4,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 0.815,
+     "user_s": 0.201,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      -4.924,
+      -2.25
+     ],
+     "vs_latest_pct": -2.757,
+     "wall_ms": 292.03
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 42.6,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.832,
+     "user_s": 0.566,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      77.454,
+      85.076
+     ],
+     "vs_latest_pct": 82.729,
+     "wall_ms": 555.7
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 42.3,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.849,
+     "user_s": 0.557,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      79.924,
+      84.121
+     ],
+     "vs_latest_pct": 81.8,
+     "wall_ms": 548.16
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 37.6,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.847,
+     "user_s": 0.315,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      -1.257,
+      3.465
+     ],
+     "vs_latest_pct": 0.043,
+     "wall_ms": 305.6
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 36.8,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.89,
+     "user_s": 0.239,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      -0.652,
+      6.026
+     ],
+     "vs_latest_pct": 2.182,
+     "wall_ms": 303.49
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 36.9,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.877,
+     "user_s": 0.231,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      -0.379,
+      5.823
+     ],
+     "vs_latest_pct": 2.369,
+     "wall_ms": 315.23
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 36.0,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.874,
+     "user_s": 0.21,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -1.387,
+      1.683
+     ],
+     "vs_latest_pct": 0.515,
+     "wall_ms": 305.74
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 36.2,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.884,
+     "user_s": 0.212,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -2.493,
+      4.696
+     ],
+     "vs_latest_pct": -0.308,
+     "wall_ms": 306.46
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 36.6,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.883,
+     "user_s": 0.21,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 302.69
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 0.972,
+   "speedup_x_ci95": [
+    0.951,
+    0.978
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  },
+  {
+   "above_quiet_gate": 0.481,
+   "component": "warm-metadata",
+   "component_digest": "b6a22549a84a93b8",
+   "cpu": "Apple M1 Pro",
+   "entries": 92460,
+   "id": "macos-warm-metadata-warm-revalidate-internal",
+   "invalid_samples": 0,
+   "job": "warm-revalidate",
+   "manifest_version": 1,
+   "milestones": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "peak_rss_mib": 44.0,
+     "role": "",
+     "short": "start",
+     "supported": true,
+     "system_s": 0.371,
+     "user_s": 0.504,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      75.524,
+      84.461
+     ],
+     "vs_latest_pct": 80.119,
+     "wall_ms": 881.43
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "peak_rss_mib": 44.0,
+     "role": "",
+     "short": "H1 producer",
+     "supported": true,
+     "system_s": 0.369,
+     "user_s": 0.512,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      78.162,
+      85.963
+     ],
+     "vs_latest_pct": 84.276,
+     "wall_ms": 889.42
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "peak_rss_mib": 42.6,
+     "role": "",
+     "short": "bulk metadata",
+     "supported": true,
+     "system_s": 0.366,
+     "user_s": 0.318,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      42.529,
+      46.117
+     ],
+     "vs_latest_pct": 44.701,
+     "wall_ms": 687.67
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "peak_rss_mib": 43.2,
+     "role": "",
+     "short": "parallel reconcile",
+     "supported": true,
+     "system_s": 0.482,
+     "user_s": 0.314,
+     "version": "fdu 0.0.1",
+     "vs_latest_ci95_pct": [
+      -19.732,
+      -12.916
+     ],
+     "vs_latest_pct": -17.818,
+     "wall_ms": 404.5
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "peak_rss_mib": 39.1,
+     "role": "",
+     "short": "H86 compact index",
+     "supported": true,
+     "system_s": 0.412,
+     "user_s": 0.274,
+     "version": "fdu 0.1.0-dev+g5d7b86fe6",
+     "vs_latest_ci95_pct": [
+      -29.837,
+      -24.929
+     ],
+     "vs_latest_pct": -27.888,
+     "wall_ms": 346.74
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "peak_rss_mib": 40.2,
+     "role": "",
+     "short": "0.1.0",
+     "supported": true,
+     "system_s": 0.431,
+     "user_s": 0.636,
+     "version": "fdu 0.1.0",
+     "vs_latest_ci95_pct": [
+      47.69,
+      50.169
+     ],
+     "vs_latest_pct": 48.649,
+     "wall_ms": 709.18
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "peak_rss_mib": 40.4,
+     "role": "",
+     "short": "0.2.0",
+     "supported": true,
+     "system_s": 0.425,
+     "user_s": 0.632,
+     "version": "fdu 0.2.0",
+     "vs_latest_ci95_pct": [
+      45.365,
+      50.409
+     ],
+     "vs_latest_pct": 47.534,
+     "wall_ms": 701.17
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "peak_rss_mib": 40.2,
+     "role": "",
+     "short": "0.2.1",
+     "supported": true,
+     "system_s": 0.445,
+     "user_s": 0.499,
+     "version": "fdu 0.2.1",
+     "vs_latest_ci95_pct": [
+      16.845,
+      21.23
+     ],
+     "vs_latest_pct": 19.216,
+     "wall_ms": 574.41
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "peak_rss_mib": 40.4,
+     "role": "",
+     "short": "bucketed gitignore",
+     "supported": true,
+     "system_s": 0.412,
+     "user_s": 0.425,
+     "version": "fdu 0.2.1-dev+g7c69e88a4",
+     "vs_latest_ci95_pct": [
+      1.389,
+      4.05
+     ],
+     "vs_latest_pct": 3.262,
+     "wall_ms": 491.48
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "peak_rss_mib": 40.3,
+     "role": "",
+     "short": "transient tree",
+     "supported": true,
+     "system_s": 0.411,
+     "user_s": 0.425,
+     "version": "fdu 0.2.1-dev+g956659de3",
+     "vs_latest_ci95_pct": [
+      -1.186,
+      3.611
+     ],
+     "vs_latest_pct": 2.867,
+     "wall_ms": 488.72
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "peak_rss_mib": 40.5,
+     "role": "",
+     "short": "overnight round",
+     "supported": true,
+     "system_s": 0.429,
+     "user_s": 0.404,
+     "version": "fdu 0.2.1-dev+gebc06c784",
+     "vs_latest_ci95_pct": [
+      -2.585,
+      1.851
+     ],
+     "vs_latest_pct": -1.086,
+     "wall_ms": 480.16
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "peak_rss_mib": 40.6,
+     "role": "",
+     "short": "pdu track",
+     "supported": true,
+     "system_s": 0.461,
+     "user_s": 0.408,
+     "version": "fdu 0.2.1-dev+ga356d4565",
+     "vs_latest_ci95_pct": [
+      -2.986,
+      2.87
+     ],
+     "vs_latest_pct": -0.666,
+     "wall_ms": 483.55
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "peak_rss_mib": 40.5,
+     "role": "",
+     "short": "0.3.0",
+     "supported": true,
+     "system_s": 0.425,
+     "user_s": 0.408,
+     "version": "fdu 0.3.0",
+     "vs_latest_ci95_pct": null,
+     "vs_latest_pct": null,
+     "wall_ms": 478.01
+    }
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "regime": "uncontrolled",
+   "speedup_x": 1.801,
+   "speedup_x_ci95": [
+    1.755,
+    1.845
+   ],
+   "stage": "exploratory",
+   "storage": "internal SSD",
+   "subject": "linux-v6.12-macos",
+   "title": "the Linux v6.12 source tree",
+   "trials": 12
+  }
+ ],
+ "index": [
+  {
+   "above_quiet_gate_range": [
+    0.031,
+    0.994
+   ],
+   "builds": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "common": {
+      "high": 4.866887112460381,
+      "index": 4.731966583359796,
+      "low": 4.600786340144654
+     },
+     "components": {
+      "cold-cache": 3.34472,
+      "default-tree": 5.269549999999999,
+      "memory": 4.269068688213132,
+      "scale": 10.754749999999998
+     },
+     "coverage": 0.4,
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "memory_common": 4.269068688213132,
+     "short": "start"
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "common": {
+      "high": 2.686253062694976,
+      "index": 2.625050464936536,
+      "low": 2.565242284563561
+     },
+     "components": {
+      "cold-cache": 1.18114,
+      "default-tree": 5.38295,
+      "memory": 4.368163111285518,
+      "scale": 2.00834
+     },
+     "coverage": 0.4,
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "memory_common": 4.368163111285518,
+     "short": "H1 producer"
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "common": {
+      "high": 2.1139855674808716,
+      "index": 2.058776359916027,
+      "low": 2.0050090054304213
+     },
+     "components": {
+      "cold-cache": 1.003,
+      "default-tree": 4.22048,
+      "memory": 4.176301502016018,
+      "scale": 1.01881
+     },
+     "coverage": 0.4,
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "memory_common": 4.176301502016018,
+     "short": "bulk metadata"
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "common": {
+      "high": 1.653908448531112,
+      "index": 1.6256866981261593,
+      "low": 1.5979465143983869
+     },
+     "components": {
+      "cold-cache": 1.02123,
+      "default-tree": 2.1880800000000002,
+      "memory": 4.207447261941459,
+      "scale": 1.03924
+     },
+     "coverage": 0.4,
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "memory_common": 4.207447261941459,
+     "short": "parallel reconcile"
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "common": {
+      "high": 1.215848099307235,
+      "index": 1.1893511418392266,
+      "low": 1.1634316321259681
+     },
+     "components": {
+      "cold-cache": 0.99153,
+      "default-tree": 1.10527,
+      "documents": 1.01651,
+      "memory": 1.696289632807276,
+      "scale": 1.00168,
+      "summary": 0.94891,
+      "warm-content-documents": 1.06254,
+      "warm-metadata": 0.8373999770718888
+     },
+     "coverage": 0.725,
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "memory_common": 3.03688974388126,
+     "short": "H86 compact index"
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "common": {
+      "high": 2.515689052002966,
+      "index": 2.467684931061747,
+      "low": 2.420596819841803
+     },
+     "components": {
+      "cold-cache": 2.6747,
+      "default-tree": 2.72513,
+      "documents": 1.09115,
+      "memory": 1.931084066937922,
+      "opened-root": 1.096752074308501,
+      "scale": 1.03003,
+      "summary": 2.8357599999999996,
+      "warm-content-documents": 1.43616,
+      "warm-metadata": 1.6481044603119064
+     },
+     "coverage": 0.775,
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "memory_common": 3.447314382986922,
+     "short": "0.1.0"
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "common": {
+      "high": 2.4810420686912,
+      "index": 2.425802617011619,
+      "low": 2.371793050572747
+     },
+     "components": {
+      "code": 1.19299,
+      "cold-cache": 2.64891,
+      "default-tree": 2.7335700000000003,
+      "documents": 1.06749,
+      "memory": 1.6518716260898054,
+      "multi-view": 1.13201,
+      "opened-root": 1.0981363303342624,
+      "scale": 0.97919,
+      "summary": 2.8023199999999995,
+      "warm-content-code": 1.42163,
+      "warm-content-documents": 1.43419,
+      "warm-metadata": 1.6377326155389347
+     },
+     "coverage": 1.0,
+     "date": "2026-09-28",
+     "full": {
+      "high": 1.7354774711816705,
+      "index": 1.708376258558811,
+      "low": 1.6816982584165656
+     },
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "measured_full": {
+      "high": 1.7354774711816705,
+      "index": 1.708376258558811,
+      "low": 1.6816982584165656
+     },
+     "memory_common": 3.225406858231666,
+     "short": "0.2.0"
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "common": {
+      "high": 1.300492740896343,
+      "index": 1.2695786368837183,
+      "low": 1.2393993942023802
+     },
+     "components": {
+      "code": 1.13116,
+      "cold-cache": 1.13218,
+      "default-tree": 1.15522,
+      "documents": 0.96851,
+      "memory": 1.48085828786029,
+      "multi-view": 1.08436,
+      "opened-root": 1.0402305655959163,
+      "scale": 1.01162,
+      "summary": 1.12606,
+      "warm-content-code": 1.20301,
+      "warm-content-documents": 1.22111,
+      "warm-metadata": 1.0920955218294779
+     },
+     "coverage": 1.0,
+     "date": "2026-09-28",
+     "full": {
+      "high": 1.1542951442347875,
+      "index": 1.1357687169723933,
+      "low": 1.1175396387102294
+     },
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "measured_full": {
+      "high": 1.1542951442347875,
+      "index": 1.1357687169723933,
+      "low": 1.1175396387102294
+     },
+     "memory_common": 2.982077370715327,
+     "short": "0.2.1"
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "common": {
+      "high": 1.2518100809565011,
+      "index": 1.228442265971198,
+      "low": 1.205510663144188
+     },
+     "components": {
+      "code": 1.0755,
+      "cold-cache": 1.08508,
+      "default-tree": 1.10414,
+      "documents": 0.99502,
+      "memory": 1.43867627501489,
+      "multi-view": 1.11549,
+      "opened-root": 1.009013008538542,
+      "scale": 1.03385,
+      "summary": 1.0155,
+      "warm-content-code": 1.11823,
+      "warm-content-documents": 1.1027,
+      "warm-metadata": 1.0272058062530605
+     },
+     "coverage": 1.0,
+     "date": "2026-09-29",
+     "full": {
+      "high": 1.1035468689280947,
+      "index": 1.085536326024647,
+      "low": 1.0678197259203772
+     },
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "measured_full": {
+      "high": 1.1035468689280947,
+      "index": 1.085536326024647,
+      "low": 1.0678197259203772
+     },
+     "memory_common": 2.9169082229080265,
+     "short": "bucketed gitignore"
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "common": {
+      "high": 1.0797175229682952,
+      "index": 1.0599297028984649,
+      "low": 1.0405045312202617
+     },
+     "components": {
+      "code": 1.02378,
+      "cold-cache": 1.06333,
+      "default-tree": 1.08774,
+      "documents": 1.00225,
+      "memory": 1.0632250023288876,
+      "multi-view": 1.07464,
+      "opened-root": 1.0114161501577874,
+      "scale": 1.02746,
+      "summary": 1.00508,
+      "warm-content-code": 1.08639,
+      "warm-content-documents": 1.10858,
+      "warm-metadata": 1.0261769790343185
+     },
+     "coverage": 1.0,
+     "date": "2026-09-29",
+     "full": {
+      "high": 1.0699703964782348,
+      "index": 1.0546997052670308,
+      "low": 1.0396469584128256
+     },
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "measured_full": {
+      "high": 1.0699703964782348,
+      "index": 1.0546997052670308,
+      "low": 1.0396469584128256
+     },
+     "memory_common": 1.0020100556599878,
+     "short": "transient tree"
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "common": {
+      "high": 1.0802297948771171,
+      "index": 1.0556734861012993,
+      "low": 1.031675403272917
+     },
+     "components": {
+      "code": 1.12263,
+      "cold-cache": 1.0762,
+      "default-tree": 1.06751,
+      "documents": 0.98906,
+      "memory": 1.0597446925497405,
+      "multi-view": 1.04707,
+      "opened-root": 1.00043993013074,
+      "scale": 1.01282,
+      "summary": 1.03213,
+      "warm-content-code": 1.06061,
+      "warm-content-documents": 1.06913,
+      "warm-metadata": 0.9971128677336383
+     },
+     "coverage": 1.0,
+     "date": "2026-09-29",
+     "full": {
+      "high": 1.066664375088871,
+      "index": 1.0504822711792463,
+      "low": 1.0345456620035394
+     },
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "measured_full": {
+      "high": 1.066664375088871,
+      "index": 1.0504822711792463,
+      "low": 1.0345456620035394
+     },
+     "memory_common": 1.0044072180387686,
+     "short": "overnight round"
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "common": {
+      "high": 1.0765754883069234,
+      "index": 1.054365892607777,
+      "low": 1.032614477636761
+     },
+     "components": {
+      "code": 1.10021,
+      "cold-cache": 1.03125,
+      "default-tree": 1.1004,
+      "documents": 1.00279,
+      "memory": 1.0667339626095313,
+      "multi-view": 1.09515,
+      "opened-root": 0.9991365877596515,
+      "scale": 1.04914,
+      "summary": 1.02292,
+      "warm-content-code": 1.08556,
+      "warm-content-documents": 1.07406,
+      "warm-metadata": 0.9951283901085327
+     },
+     "coverage": 1.0,
+     "date": "2026-09-29",
+     "full": {
+      "high": 1.0684234796487353,
+      "index": 1.0545940059815053,
+      "low": 1.0409435384345596
+     },
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "measured_full": {
+      "high": 1.0684234796487353,
+      "index": 1.0545940059815053,
+      "low": 1.0409435384345596
+     },
+     "memory_common": 0.996216461051314,
+     "short": "pdu track"
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "common": {
+      "high": 1.0,
+      "index": 1.0,
+      "low": 1.0
+     },
+     "components": {
+      "code": 1.0,
+      "cold-cache": 1.0,
+      "default-tree": 1.0,
+      "documents": 1.0,
+      "memory": 1.0,
+      "multi-view": 1.0,
+      "opened-root": 1.0,
+      "scale": 1.0,
+      "summary": 1.0,
+      "warm-content-code": 1.0,
+      "warm-content-documents": 1.0,
+      "warm-metadata": 1.0
+     },
+     "coverage": 1.0,
+     "date": "2026-09-30",
+     "full": {
+      "high": 1.0,
+      "index": 1.0,
+      "low": 1.0
+     },
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "measured_full": {
+      "high": 1.0,
+      "index": 1.0,
+      "low": 1.0
+     },
+     "memory_common": 1.0,
+     "short": "0.3.0"
+    }
+   ],
+   "common": [
+    "cold-cache",
+    "default-tree",
+    "scale",
+    "memory"
+   ],
+   "common_weight": 0.4,
+   "exploratory": true,
+   "fewest_rounds": 12,
+   "host_regimes": [
+    "uncontrolled"
+   ],
+   "manifest_version": 1,
+   "measured": [
+    "code",
+    "cold-cache",
+    "default-tree",
+    "documents",
+    "memory",
+    "multi-view",
+    "opened-root",
+    "scale",
+    "summary",
+    "warm-content-code",
+    "warm-content-documents",
+    "warm-metadata"
+   ],
+   "missing": [],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "stages": [
+    "exploratory"
+   ],
+   "titles": {
+    "code": "Code view",
+    "cold-cache": "Cold cache",
+    "default-tree": "Default tree view",
+    "documents": "Documents view",
+    "memory": "Memory",
+    "multi-view": "Multi-view content report",
+    "opened-root": "Opened root",
+    "scale": "Scale",
+    "summary": "Summary view",
+    "warm-content-code": "Warm-cache content: code",
+    "warm-content-documents": "Warm-cache content: documents",
+    "warm-metadata": "Warm metadata cache"
+   },
+   "unmeasured_platforms": {
+    "Linux": 0.5
+   }
+  }
+ ],
+ "index_jobs": {
+  "adaptive-scan-index": "cold-cache",
+  "aggregate-summary": "summary",
+  "cli-default-tree": "default-tree",
+  "code-sloc": "code",
+  "code-sloc-cache-hit": "warm-content-code",
+  "cold-open-save": "warm-metadata",
+  "cold-scan-index": "cold-cache",
+  "cold-scan-producer": "cold-cache",
+  "cold-snapshot-save": "warm-metadata",
+  "content-basic": "code",
+  "content-cache-hit": "warm-content-code",
+  "content-disabled": "cold-cache",
+  "content-query": "multi-view",
+  "default-tree": "default-tree",
+  "default-tree-first": "cold-cache",
+  "delta-apply-batched": "opened-root",
+  "delta-apply-large": "opened-root",
+  "document-cache-hit": "warm-content-documents",
+  "index-second-report": "opened-root",
+  "markdown-prose": "documents",
+  "opened-discovery": "opened-root",
+  "opened-second-report": "opened-root",
+  "rich-summary-open-pipeline": "summary",
+  "rich-summary-report": "summary",
+  "rich-summary-shared-openers": "summary",
+  "selected-allocated-total": "summary",
+  "text-prose": "documents",
+  "warm-revalidate": "warm-metadata",
+  "warm-snapshot-load": "warm-metadata"
+ },
+ "prepared": "2026-09-30",
  "subjects": [
   {
    "apparent_bytes": 1726062376,

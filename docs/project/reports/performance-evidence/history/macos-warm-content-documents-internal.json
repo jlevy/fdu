@@ -1,0 +1,1678 @@
+{
+  "schema": "fdu-history-summary-v1",
+  "component": "warm-content-documents",
+  "component_title": "Warm-cache content: documents",
+  "manifest_version": 1,
+  "manifest_command": "fdu --view documents --analyze words PATH",
+  "cache_state": "content cache filled by an untimed run of the same build just before",
+  "override": {
+    "note": "timed under earlier manifest text; stamped by argv equivalence: every build ran exactly what this definition asks",
+    "command": "fdu --view documents PATH",
+    "cache_state": "content cache filled by an untimed run of the same build just before"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": null,
+    "timed_metric": "wall_ns",
+    "command": "fdu --view documents PATH",
+    "cache_state": "content cache filled by an untimed run of the same build just before",
+    "source": "the run artifact's contract description"
+  },
+  "timed_metric": "wall_ns",
+  "job": "warm-content-documents",
+  "component_digest": "765de6f12f3186e8",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
+  "tree_key": "K",
+  "platform": "macOS",
+  "reference_build": "v0.3.0",
+  "run_artifact": "macos-warm-content-documents-internal.run.json.gz",
+  "driver": "benchmarks.realtree.history",
+  "harness": {
+    "module": "benchmarks.realtree.history, timing through benchmarks.realtree.compare_tools with per-build command contracts",
+    "harness_revision": "8c019f242cf8d88aa824954bc2e71c8b679afaae",
+    "artifact_schema": "fdu-tool-comparison-v3",
+    "schedule": "competitor-adjacent-fdu-anchor-v1",
+    "stopping_rule": "fixed-N-no-optional-stopping-v1",
+    "confidence_interval": "paired-bootstrap-median-95-v1",
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
+  },
+  "subject": {
+    "label": "linux-v6.12-macos",
+    "title": "the Linux v6.12 source tree",
+    "provenance": "Reproduced as the linux-v6.12 records (e.g. exp-178) describe: git clone --depth 1 --branch v6.12 https://github.com/torvalds/linux.git, HEAD adc218676eef25575469234709c2d87185ca223a (tag v6.12, tree ac4266ccaf1cf79e8fb22ad3e0d86deac358ffb9), git 2.50.1. Cloned on the external drive (kept there) and copied with ditto to the internal SSD, where it was fingerprinted and timed.",
+    "record_shape": {
+      "entries": 92474,
+      "directories": 5769,
+      "files": 86643,
+      "symlinks": 62,
+      "apparent_bytes": 1759293209,
+      "allocated_bytes": 1965477888,
+      "max_depth": 14,
+      "filesystem": "ext4 (Linux host)"
+    },
+    "shape_difference": "92,460 entries here against 92,474: 13 fewer files because APFS here is case-insensitive and git keeps one path of each of 13 case-colliding pairs (netfilter headers and sources, one litmus test), and 1 fewer directory, most likely .git/branches, which older git templates create (inference). Bytes differ by the .git pack the server sent and by APFS against ext4 allocation.",
+    "gitignore_files": 358,
+    "storage": "internal SSD",
+    "storage_detail": "internal APFS SSD (Apple M1 Pro Data volume, case-insensitive): the measured tree (in a Spotlight-excluded .noindex directory), the timed fdu and perf_probe binaries (sha256-verified copies), the harness source, its venv and its temporary directory, which holds every cache directory, were all on the internal volume during timing; only logs and results were written to the external drive",
+    "storage_check": {
+      "subject": "internal",
+      "harness": "internal",
+      "python": "internal",
+      "temporary": "internal",
+      "binary:exp101": "internal",
+      "binary:v0.1.0": "internal",
+      "binary:v0.2.0": "internal",
+      "binary:v0.2.1": "internal",
+      "binary:exp178": "internal",
+      "binary:exp180": "internal",
+      "binary:ebc06c78": "internal",
+      "binary:exp201": "internal",
+      "binary:v0.3.0": "internal"
+    },
+    "fingerprint_schema": "fdu-reference-tree-v3",
+    "root_id": "c57740da0f9053c718d1b33ad9dfae3ac69ef788e32a96ff0278087ab179a170",
+    "engine_digest": "c387402b2f57b8a66b0da95878eff3271e6699917fbca5c98fdfeae6b839ce4b",
+    "engine_digest_after": "c387402b2f57b8a66b0da95878eff3271e6699917fbca5c98fdfeae6b839ce4b",
+    "counts": {
+      "directories": 5768,
+      "files": 86630,
+      "other": 0,
+      "symlinks": 62,
+      "total": 92460
+    },
+    "sizes": {
+      "allocated_bytes": 1965858816,
+      "apparent_bytes": 1759711146,
+      "directory_allocated_bytes": 0
+    },
+    "max_depth": 14,
+    "hardlinks": {
+      "duplicate_allocated_bytes": 0,
+      "duplicate_apparent_bytes": 0,
+      "duplicate_file_entries": 0,
+      "groups": 0,
+      "linked_file_entries": 0
+    },
+    "baseline_drift": [],
+    "mutated_during_run": [],
+    "answer_check_groups": {
+      "without_gitignore": {
+        "labels": [
+          "exp101"
+        ],
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": null
+        },
+        "all_identical": true,
+        "exit_codes_zero": true,
+        "matches_fingerprint": true,
+        "oracle_errors": [],
+        "content": {
+          "document_totals": {
+            "files": 5304,
+            "formats": 7,
+            "lines": 965628,
+            "words": 5100802
+          }
+        },
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      },
+      "with_gitignore": {
+        "labels": [
+          "v0.1.0",
+          "v0.2.0",
+          "v0.2.1",
+          "exp178",
+          "exp180",
+          "ebc06c78",
+          "exp201",
+          "v0.3.0"
+        ],
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "all_identical": true,
+        "exit_codes_zero": true,
+        "matches_fingerprint": true,
+        "oracle_errors": [],
+        "content": {
+          "document_totals": {
+            "files": 5285,
+            "formats": 6,
+            "lines": 962511,
+            "words": 5084348
+          }
+        },
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      }
+    }
+  },
+  "host": {
+    "arch": "arm64",
+    "cpu_count": 10,
+    "cpu_model": "Apple M1 Pro",
+    "efficiency_cores": 2,
+    "filesystem": "apfs",
+    "max_vnodes": 263168,
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "python": "3.14.7",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "virtualization": "bare-metal"
+  },
+  "regime": {
+    "campaign_stage": "exploratory",
+    "host_regime": "uncontrolled",
+    "os_cache": "warm-steady",
+    "quiet_gate_cpu_busy_pct": 25.0,
+    "initial": {
+      "controlled_load_alive": null,
+      "cpu_busy_pct": 64.36,
+      "cpu_busy_unavailable_reason": null,
+      "load_15m": 24.439,
+      "load_1m": 23.278,
+      "load_1m_per_cpu": 2.3278,
+      "load_5m": 25.686,
+      "logical_cpu_count": 10,
+      "power_source": "AC",
+      "system": "Darwin",
+      "thermal_pressure": "normal",
+      "unavailable_reason": null
+    },
+    "final": {
+      "controlled_load_alive": null,
+      "cpu_busy_pct": 30.27,
+      "cpu_busy_unavailable_reason": null,
+      "load_15m": 25.646,
+      "load_1m": 35.124,
+      "load_1m_per_cpu": 3.5124,
+      "load_5m": 30.027,
+      "logical_cpu_count": 10,
+      "power_source": "AC",
+      "system": "Darwin",
+      "thermal_pressure": "normal",
+      "unavailable_reason": null
+    },
+    "cpu_busy_pct_at_sample_boundaries": {
+      "n": 480,
+      "min": 11.65,
+      "median": 35.515,
+      "max": 100.0,
+      "share_above_quiet_gate": 0.887
+    },
+    "load_1m_at_sample_boundaries": {
+      "min": 10.486,
+      "median": 23.2155,
+      "max": 39.183
+    },
+    "thermal_pressure_seen": [
+      "normal"
+    ],
+    "power_source_seen": [
+      "AC"
+    ]
+  },
+  "rounds": {
+    "trials": 12,
+    "warmups": 3,
+    "processes": 240,
+    "setup_processes": 240,
+    "started_utc": "2026-10-06T09:41:51Z",
+    "duration_seconds": 1527.515
+  },
+  "invalid_samples": 0,
+  "semantic_mismatches": 0,
+  "answer_check": {
+    "builds": [
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5304,
+          "formats": 7,
+          "lines": 965628,
+          "words": 5100802
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "exp101",
+        "performance_line": "Performance: walked 86,630 files / 1.6 GiB; content read 0 B; analysis 0 fresh, 86,630 cached / 1.6 GiB; warm revalidation; total 568.8 ms",
+        "reads_gitignore": false,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": null
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "v0.1.0",
+        "performance_line": "Performance: walked 86,630 files / 1.8 GiB; ignore rules 358 files; content read 0 B; analysis 0 fresh, 86,630 cached / 1.6 GiB; warm revalidation; total 802.7 ms",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "v0.2.0",
+        "performance_line": "perf: took 794.7 ms to walk 86,630 files (1.8 GiB) at 109,009 files/s (2.304 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "v0.2.1",
+        "performance_line": "perf: took 688.1 ms to walk 86,630 files (1.8 GiB) at 125,903 files/s (2.661 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "exp178",
+        "performance_line": "perf: took 589.7 ms to walk 86,630 files (1.8 GiB) at 146,903 files/s (3.105 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "exp180",
+        "performance_line": "perf: took 596.8 ms to walk 86,630 files (1.8 GiB) at 145,156 files/s (3.068 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "ebc06c78",
+        "performance_line": "perf: took 590.8 ms to walk 86,630 files (1.8 GiB) at 146,625 files/s (3.099 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "exp201",
+        "performance_line": "perf: took 566.6 ms to walk 86,630 files (1.8 GiB) at 152,907 files/s (3.232 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      },
+      {
+        "analysis": {
+          "cached": 86630,
+          "fresh": 0
+        },
+        "cache_evidence": "warm",
+        "cache_files_after": 2,
+        "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "expected_state": "filled",
+        "label": "v0.3.0",
+        "performance_line": "perf: took 539.8 ms to walk 86,630 files (1.8 GiB) at 160,494 files/s (3.392 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "reads_gitignore": true,
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": {
+            "allocated": 283328512,
+            "bytes": 283240291,
+            "dirs": 11,
+            "files": 28
+          }
+        },
+        "totals_exit_code": 0
+      }
+    ],
+    "problems": [],
+    "rechecked": {
+      "note": "the answer check run again, untimed, after timing, to record the content answers and start states it now compares; the same builds on a tree with the timed tree's tallies",
+      "revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
+    }
+  },
+  "milestones": [
+    {
+      "label": "prework",
+      "short": "start",
+      "includes": "pre-work baseline: serial walker, no .gitignore support",
+      "after_experiment": "exp-000",
+      "ref": "b565882b",
+      "commit": "b565882bd9f2a877934bd96415d3a8eab6504f92",
+      "commit_choice": "exp-032 control",
+      "author_date": "2026-08-10T15:22:26-07:00",
+      "commit_date": "2026-08-10T15:22:26-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "no documents view",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp001",
+      "short": "H1 producer",
+      "includes": "H1 bounded parallel directory producer",
+      "after_experiment": "exp-001",
+      "ref": "a0cc981d",
+      "commit": "a0cc981da037e3473a91360a0c41602a13b38a13",
+      "commit_choice": "exp-001 record commit a0cc981",
+      "author_date": "2026-08-10T16:53:05-07:00",
+      "commit_date": "2026-08-10T16:53:05-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "no documents view",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp022",
+      "short": "bulk metadata",
+      "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+      "after_experiment": "exp-022",
+      "ref": "b1227256",
+      "commit": "b12272565d570ebb8237df6e58a96178b72ad965",
+      "commit_choice": "exp-022 record has commit: null; b1227256 'perf: batch macOS scan metadata' is the commit that landed it",
+      "author_date": "2026-08-12T04:29:37-07:00",
+      "commit_date": "2026-08-12T04:29:37-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "no documents view",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp030",
+      "short": "parallel reconcile",
+      "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+      "after_experiment": "exp-030",
+      "ref": "c9c91d95",
+      "commit": "c9c91d9518ef1324531ecd79a3a43b9e96e95eef",
+      "commit_choice": "exp-030 record has commit: null; the change landed in 09d65590, and c9c91d95 differs from it only by an equivalent let-chain rewrite for Rust 1.85 (the exp-032 candidate code); same binary as the external cell's exp032",
+      "author_date": "2026-08-12T06:32:42-07:00",
+      "commit_date": "2026-08-12T06:32:42-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": false,
+      "unsupported_reason": "no documents view",
+      "contract": null,
+      "command": null,
+      "timed_samples": 0,
+      "wall_ms": null,
+      "peak_rss_mib": null,
+      "cpu_s_median": null,
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp101",
+      "short": "H86 compact index",
+      "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+      "after_experiment": "exp-101",
+      "ref": "5d7b86fe",
+      "commit": "5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f",
+      "commit_choice": "exp-101 record has commit: null; 5d7b86fe 'perf(index): compact detached child storage' added the code and the exp-101 record",
+      "author_date": "2026-09-01T13:38:20-07:00",
+      "commit_date": "2026-09-01T13:41:23-07:00",
+      "version": "fdu 0.1.0-dev+g5d7b86fe6",
+      "reads_gitignore": false,
+      "supported": true,
+      "binary_sha256": "1c0de443a05a086ddb962bc798282094992fd1d92b646b408f4873db0ffda9f6",
+      "binary_size_bytes": 3085216,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 651.42,
+        "min": 608.91,
+        "max": 1438.54,
+        "iqr_derived": [
+          622.45,
+          696.8
+        ],
+        "median_bootstrap95_derived": [
+          622.13,
+          730.71
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 230.7,
+        "max": 232.4
+      },
+      "cpu_s_median": {
+        "user": 0.501,
+        "system": 0.581
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 6.254,
+        "ci95_change_pct": [
+          -0.762,
+          22.459
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 616.28,
+        "speed_ratio_this_over_reference": 1.0625
+      },
+      "vs_first_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "v0.1.0",
+      "short": "0.1.0",
+      "includes": "release v0.1.0 (.gitignore read by default)",
+      "after_experiment": "exp-157",
+      "ref": "v0.1.0",
+      "commit": "7cf7f1b4b39930ebcf54df7ebd2645d995e4e458",
+      "commit_choice": "release tag",
+      "author_date": "2026-09-25T16:58:16-07:00",
+      "commit_date": "2026-09-25T16:58:16-07:00",
+      "version": "fdu 0.1.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
+      "binary_size_bytes": 3780080,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 873.93,
+        "min": 843.63,
+        "max": 1710.5,
+        "iqr_derived": [
+          869.12,
+          905.04
+        ],
+        "median_bootstrap95_derived": [
+          868.37,
+          916.18
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 162.4,
+        "max": 163.8
+      },
+      "cpu_s_median": {
+        "user": 0.754,
+        "system": 0.56
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 43.616,
+        "ci95_change_pct": [
+          34.348,
+          47.525
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 611.89,
+        "speed_ratio_this_over_reference": 1.4362
+      },
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": 33.58,
+          "ci95_change_pct": [
+            22.64,
+            40.87
+          ],
+          "median_ratio_x": 1.3358,
+          "median_speedup_x": 0.749
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 31.06,
+          "ci95_change_pct": [
+            12.73,
+            35.73
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp101",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 33.58,
+        "ci95_change_pct": [
+          22.64,
+          40.87
+        ],
+        "median_ratio_x": 1.3358
+      }
+    },
+    {
+      "label": "v0.2.0",
+      "short": "0.2.0",
+      "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+      "after_experiment": "exp-163",
+      "ref": "v0.2.0",
+      "commit": "6ec77163a8a1b5a33276bfb6dcaed7dff833d618",
+      "commit_choice": "exp-163 candidate 93cd1bb1 is in v0.2.0 and not in v0.1.0, so v0.2.0 is the first release carrying it",
+      "author_date": "2026-09-28T06:19:42-07:00",
+      "commit_date": "2026-09-28T06:19:42-07:00",
+      "version": "fdu 0.2.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
+      "binary_size_bytes": 4160144,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 888.02,
+        "min": 843.4,
+        "max": 1165.34,
+        "iqr_derived": [
+          862.8,
+          913.33
+        ],
+        "median_bootstrap95_derived": [
+          861.63,
+          916.09
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 177.5,
+        "max": 178.7
+      },
+      "cpu_s_median": {
+        "user": 0.76,
+        "system": 0.582
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 43.419,
+        "ci95_change_pct": [
+          40.349,
+          47.296
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 601.59,
+        "speed_ratio_this_over_reference": 1.4342
+      },
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": 38.1,
+          "ci95_change_pct": [
+            29.72,
+            40.64
+          ],
+          "median_ratio_x": 1.381,
+          "median_speedup_x": 0.724
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 35.88,
+          "ci95_change_pct": [
+            29.54,
+            45.91
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.1.0",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -0.05,
+        "ci95_change_pct": [
+          -3.27,
+          3.85
+        ],
+        "median_ratio_x": 0.9995
+      }
+    },
+    {
+      "label": "v0.2.1",
+      "short": "0.2.1",
+      "includes": "H159, H161, H162, H163",
+      "after_experiment": "exp-191",
+      "ref": "c1644575",
+      "commit": "c16445757ce82501a2d4eea1ff59b638eef42bd1",
+      "commit_choice": "release tag v0.2.1",
+      "author_date": "2026-09-28T21:40:06-07:00",
+      "commit_date": "2026-09-28T21:40:06-07:00",
+      "version": "fdu 0.2.1",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
+      "binary_size_bytes": 4209760,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 735.23,
+        "min": 718.36,
+        "max": 800.48,
+        "iqr_derived": [
+          725.64,
+          755.22
+        ],
+        "median_bootstrap95_derived": [
+          724.72,
+          757.77
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 176.1,
+        "max": 177.7
+      },
+      "cpu_s_median": {
+        "user": 0.619,
+        "system": 0.545
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 22.111,
+        "ci95_change_pct": [
+          19.426,
+          25.968
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 609.0,
+        "speed_ratio_this_over_reference": 1.2211
+      },
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": 12.03,
+          "ci95_change_pct": [
+            2.18,
+            19.57
+          ],
+          "median_ratio_x": 1.1203,
+          "median_speedup_x": 0.893
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 9.41,
+          "ci95_change_pct": [
+            -6.09,
+            25.38
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.2.0",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -17.36,
+        "ci95_change_pct": [
+          -20.34,
+          -13.71
+        ],
+        "median_ratio_x": 0.8264
+      }
+    },
+    {
+      "label": "exp178",
+      "short": "bucketed gitignore",
+      "includes": "H171 bucketed .gitignore matching",
+      "after_experiment": "exp-178",
+      "ref": "7c69e88a",
+      "commit": "7c69e88a4610685b7b1a32bfd1e668e9f4ee2ef3",
+      "commit_choice": "exp-178 record commit 7c69e88a (v0.2.1 plus H171)",
+      "author_date": "2026-09-29T09:09:05Z",
+      "commit_date": "2026-09-29T09:09:05Z",
+      "version": "fdu 0.2.1-dev+g7c69e88a4",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
+      "binary_size_bytes": 4275856,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 650.28,
+        "min": 638.59,
+        "max": 694.44,
+        "iqr_derived": [
+          644.62,
+          682.22
+        ],
+        "median_bootstrap95_derived": [
+          643.56,
+          684.04
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 176.9,
+        "max": 178.3
+      },
+      "cpu_s_median": {
+        "user": 0.545,
+        "system": 0.507
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 10.27,
+        "ci95_change_pct": [
+          5.318,
+          12.109
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 609.73,
+        "speed_ratio_this_over_reference": 1.1027
+      },
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": 1.01,
+          "ci95_change_pct": [
+            -10.1,
+            7.76
+          ],
+          "median_ratio_x": 1.0101,
+          "median_speedup_x": 0.99
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 3.02,
+          "ci95_change_pct": [
+            -9.84,
+            12.78
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.2.1",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -10.92,
+        "ci95_change_pct": [
+          -12.83,
+          -8.81
+        ],
+        "median_ratio_x": 0.8908
+      }
+    },
+    {
+      "label": "exp180",
+      "short": "transient tree",
+      "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+      "after_experiment": "exp-180",
+      "ref": "956659de",
+      "commit": "956659de335ec96c73d4424f93cc5888f9d55dc5",
+      "commit_choice": "exp-180 record commit 956659de",
+      "author_date": "2026-09-29T10:19:12Z",
+      "commit_date": "2026-09-29T10:19:12Z",
+      "version": "fdu 0.2.1-dev+g956659de3",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
+      "binary_size_bytes": 4308928,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 655.87,
+        "min": 632.28,
+        "max": 1118.15,
+        "iqr_derived": [
+          643.2,
+          677.98
+        ],
+        "median_bootstrap95_derived": [
+          642.69,
+          680.6
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 173.4,
+        "max": 178.1
+      },
+      "cpu_s_median": {
+        "user": 0.546,
+        "system": 0.497
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 10.858,
+        "ci95_change_pct": [
+          7.203,
+          14.823
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 599.46,
+        "speed_ratio_this_over_reference": 1.1086
+      },
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": 3.08,
+          "ci95_change_pct": [
+            -11.29,
+            7.24
+          ],
+          "median_ratio_x": 1.0308,
+          "median_speedup_x": 0.97
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 4.53,
+          "ci95_change_pct": [
+            -11.9,
+            14.69
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp178",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -0.04,
+        "ci95_change_pct": [
+          -3.6,
+          5.14
+        ],
+        "median_ratio_x": 0.9996
+      }
+    },
+    {
+      "label": "ebc06c78",
+      "short": "overnight round",
+      "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+      "after_experiment": "exp-195",
+      "ref": "ebc06c78",
+      "commit": "ebc06c784378639b7c950c2adc37ab48b60abf60",
+      "commit_choice": "exp-195 record commit ebc06c78",
+      "author_date": "2026-09-29T15:38:28Z",
+      "commit_date": "2026-09-29T15:38:28Z",
+      "version": "fdu 0.2.1-dev+gebc06c784",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
+      "binary_size_bytes": 4308944,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 639.11,
+        "min": 613.93,
+        "max": 762.95,
+        "iqr_derived": [
+          624.61,
+          659.74
+        ],
+        "median_bootstrap95_derived": [
+          624.5,
+          664.84
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 175.7,
+        "max": 177.3
+      },
+      "cpu_s_median": {
+        "user": 0.53,
+        "system": 0.522
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 6.913,
+        "ci95_change_pct": [
+          4.439,
+          10.181
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 603.86,
+        "speed_ratio_this_over_reference": 1.0691
+      },
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -2.91,
+          "ci95_change_pct": [
+            -13.53,
+            8.05
+          ],
+          "median_ratio_x": 0.9709,
+          "median_speedup_x": 1.03
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 1.63,
+          "ci95_change_pct": [
+            -12.66,
+            12.7
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp180",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -4.34,
+        "ci95_change_pct": [
+          -8.43,
+          1.19
+        ],
+        "median_ratio_x": 0.9566
+      }
+    },
+    {
+      "label": "exp201",
+      "short": "pdu track",
+      "includes": "pdu track: H185, H186, H188, H189",
+      "after_experiment": "exp-201",
+      "ref": "a356d456",
+      "commit": "a356d4565b2787864ca029d263ad05091036aeb5",
+      "commit_choice": "exp-201 candidate a356d456",
+      "author_date": "2026-09-29T22:47:02Z",
+      "commit_date": "2026-09-29T22:47:02Z",
+      "version": "fdu 0.2.1-dev+ga356d4565",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
+      "binary_size_bytes": 4308944,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 650.14,
+        "min": 611.5,
+        "max": 884.64,
+        "iqr_derived": [
+          635.27,
+          684.52
+        ],
+        "median_bootstrap95_derived": [
+          631.76,
+          693.82
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 177.2,
+        "max": 178.8
+      },
+      "cpu_s_median": {
+        "user": 0.53,
+        "system": 0.562
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 7.406,
+        "ci95_change_pct": [
+          4.625,
+          12.81
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 606.68,
+        "speed_ratio_this_over_reference": 1.0741
+      },
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -0.06,
+          "ci95_change_pct": [
+            -12.55,
+            8.53
+          ],
+          "median_ratio_x": 0.9994,
+          "median_speedup_x": 1.001
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -1.38,
+          "ci95_change_pct": [
+            -10.56,
+            7.74
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "ebc06c78",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.59,
+        "ci95_change_pct": [
+          -4.24,
+          10.4
+        ],
+        "median_ratio_x": 1.0059
+      }
+    },
+    {
+      "label": "v0.3.0",
+      "short": "0.3.0",
+      "includes": "release v0.3.0",
+      "after_experiment": "exp-202",
+      "ref": "v0.3.0",
+      "commit": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",
+      "commit_choice": "release tag",
+      "author_date": "2026-09-30T10:03:43-07:00",
+      "commit_date": "2026-09-30T10:03:43-07:00",
+      "version": "fdu 0.3.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
+      "binary_size_bytes": 4358592,
+      "contract": "fdu-index/warm-content-documents/default",
+      "command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "setup_command": [
+        "{binary}",
+        "--analyze",
+        "words",
+        "--view",
+        "documents",
+        "--color",
+        "never",
+        "{root}"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "warm",
+      "timed_samples": 96,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples; the anchor's 96 samples beside every competitor",
+        "median": 606.52,
+        "min": 569.85,
+        "max": 897.98,
+        "iqr_derived": [
+          592.27,
+          624.05
+        ],
+        "median_bootstrap95_derived": [
+          602.43,
+          612.33
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 165.9,
+        "max": 168.8
+      },
+      "cpu_s_median": {
+        "user": 0.496,
+        "system": 0.531
+      },
+      "vs_v0_3_0_paired_harness": null,
+      "vs_first_derived": {
+        "first": "exp101",
+        "round_matched": {
+          "method": "adjacent pairs (one side is the anchor)",
+          "pairs": 12,
+          "median_change_pct": -5.89,
+          "ci95_change_pct": [
+            -17.73,
+            0.87
+          ],
+          "median_ratio_x": 0.9411,
+          "median_speedup_x": 1.063
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -5.89,
+          "ci95_change_pct": [
+            -17.73,
+            0.87
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp201",
+        "method": "adjacent pairs (one side is the anchor)",
+        "pairs": 12,
+        "median_change_pct": -6.88,
+        "ci95_change_pct": [
+          -11.35,
+          -4.42
+        ],
+        "median_ratio_x": 0.9312
+      }
+    }
+  ],
+  "headline": {
+    "first_label": "exp101",
+    "timed_metric": "wall_ns",
+    "median_ratio_prework_over_v0_3_0": 1.074,
+    "median_ratio_using_anchor_samples_in_prework_pairs": 1.057,
+    "paired_harness_prework_vs_v0_3_0_change_pct": 6.254,
+    "paired_harness_prework_vs_v0_3_0_ci95_pct": [
+      -0.762,
+      22.459
+    ],
+    "paired_speedup_x": 1.063,
+    "paired_speedup_x_ci95": [
+      0.992,
+      1.225
+    ],
+    "paired_harness_v0_3_0_vs_prework_change_pct": -5.885,
+    "paired_harness_v0_3_0_vs_prework_ci95_pct": [
+      -17.728,
+      0.871
+    ],
+    "naming": "for schema compatibility the keys say prework and v0_3_0; they mean first_label and the reference build"
+  }
+}

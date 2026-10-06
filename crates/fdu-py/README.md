@@ -8,7 +8,7 @@ request its lines of code and prose volume.
 It walks a tree on several threads through each platform’s native directory interface,
 and on a million-file tree runs about 9× as fast as `du` on macOS and 2.6× as fast on
 Linux, ahead of pdu, diskus, and dust
-([speed](https://github.com/jlevy/fdu/blob/main/docs/speed.md)).
+([performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)).
 
 ## Set Up with Any Coding Agent
 

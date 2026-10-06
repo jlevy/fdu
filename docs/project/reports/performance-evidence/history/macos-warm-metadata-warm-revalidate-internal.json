@@ -1,0 +1,2449 @@
+{
+  "schema": "fdu-history-summary-v1",
+  "component": "warm-metadata",
+  "component_title": "Warm metadata cache",
+  "manifest_version": 1,
+  "manifest_command": "the probe's cold-open-save, and the probe's revalidate mode",
+  "cache_state": "cold-open-save: caches empty, writes the snapshot; warm-revalidate: snapshot written by an untimed run of the same build just before",
+  "override": {
+    "note": "review B on PR #175 (B1, B2): warm metadata is two probe jobs timed whole-process, a cold-open-save first run that scans and writes the snapshot, and a warm-revalidate (probe mode revalidate) of a snapshot written by an untimed run just before; the manifest on this branch still names fdu --cache on PATH",
+    "command": "perf_probe cold-open-save; perf_probe revalidate",
+    "cache_state": "a first run that scans and writes the snapshot; then a run that loads and revalidates a snapshot written by an untimed run of the same build just before"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": "review B on PR #175 (B1, B2): warm metadata is two probe jobs timed whole-process, a cold-open-save first run that scans and writes the snapshot, and a warm-revalidate (probe mode revalidate) of a snapshot written by an untimed run just before; the manifest on this branch still names fdu --cache on PATH",
+    "timed_metric": "wall_ns",
+    "command": "perf_probe cold-open-save; perf_probe revalidate",
+    "cache_state": "a first run that scans and writes the snapshot; then a run that loads and revalidates a snapshot written by an untimed run of the same build just before",
+    "source": "the run artifact's index_component"
+  },
+  "timed_metric": "wall_ns",
+  "job": "warm-revalidate",
+  "component_digest": "b6a22549a84a93b8",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
+  "tree_key": "K",
+  "platform": "macOS",
+  "reference_build": "v0.3.0",
+  "run_artifact": "macos-warm-metadata-warm-revalidate-internal.run.json.gz",
+  "driver": "benchmarks.realtree.history",
+  "harness": {
+    "module": "benchmarks.realtree.history, timing through benchmarks.realtree.compare_tools with per-build command contracts",
+    "harness_revision": "3bfa3ba2dd8bcc69ebeee6e6d5baa8f7ba3f6a43",
+    "artifact_schema": "fdu-tool-comparison-v3",
+    "schedule": "competitor-adjacent-fdu-anchor-v1",
+    "stopping_rule": "fixed-N-no-optional-stopping-v1",
+    "confidence_interval": "paired-bootstrap-median-95-v1",
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
+  },
+  "subject": {
+    "label": "linux-v6.12-macos",
+    "title": "the Linux v6.12 source tree",
+    "provenance": "Reproduced as the linux-v6.12 records (e.g. exp-178) describe: git clone --depth 1 --branch v6.12 https://github.com/torvalds/linux.git, HEAD adc218676eef25575469234709c2d87185ca223a (tag v6.12, tree ac4266ccaf1cf79e8fb22ad3e0d86deac358ffb9), git 2.50.1. Cloned on the external drive (kept there) and copied with ditto to the internal SSD, where it was fingerprinted and timed.",
+    "record_shape": {
+      "entries": 92474,
+      "directories": 5769,
+      "files": 86643,
+      "symlinks": 62,
+      "apparent_bytes": 1759293209,
+      "allocated_bytes": 1965477888,
+      "max_depth": 14,
+      "filesystem": "ext4 (Linux host)"
+    },
+    "shape_difference": "92,460 entries here against 92,474: 13 fewer files because APFS here is case-insensitive and git keeps one path of each of 13 case-colliding pairs (netfilter headers and sources, one litmus test), and 1 fewer directory, most likely .git/branches, which older git templates create (inference). Bytes differ by the .git pack the server sent and by APFS against ext4 allocation.",
+    "gitignore_files": 358,
+    "storage": "internal SSD",
+    "storage_detail": "internal APFS SSD (Apple M1 Pro Data volume, case-insensitive): the measured tree (in a Spotlight-excluded .noindex directory), the timed fdu and perf_probe binaries (sha256-verified copies), the harness source, its venv and its temporary directory, which holds every cache directory and snapshot, were all on the internal volume during timing; only logs and results were written to the external drive",
+    "storage_check": {
+      "subject": "internal",
+      "harness": "internal",
+      "python": "internal",
+      "temporary": "internal",
+      "binary:prework": "internal",
+      "binary:exp001": "internal",
+      "binary:exp022": "internal",
+      "binary:exp030": "internal",
+      "binary:exp101": "internal",
+      "binary:v0.1.0": "internal",
+      "binary:v0.2.0": "internal",
+      "binary:v0.2.1": "internal",
+      "binary:exp178": "internal",
+      "binary:exp180": "internal",
+      "binary:ebc06c78": "internal",
+      "binary:exp201": "internal",
+      "binary:v0.3.0": "internal"
+    },
+    "fingerprint_schema": "fdu-reference-tree-v3",
+    "root_id": "c57740da0f9053c718d1b33ad9dfae3ac69ef788e32a96ff0278087ab179a170",
+    "engine_digest": "c387402b2f57b8a66b0da95878eff3271e6699917fbca5c98fdfeae6b839ce4b",
+    "engine_digest_after": "c387402b2f57b8a66b0da95878eff3271e6699917fbca5c98fdfeae6b839ce4b",
+    "counts": {
+      "directories": 5768,
+      "files": 86630,
+      "other": 0,
+      "symlinks": 62,
+      "total": 92460
+    },
+    "sizes": {
+      "allocated_bytes": 1965858816,
+      "apparent_bytes": 1759711146,
+      "directory_allocated_bytes": 0
+    },
+    "max_depth": 14,
+    "hardlinks": {
+      "duplicate_allocated_bytes": 0,
+      "duplicate_apparent_bytes": 0,
+      "duplicate_file_entries": 0,
+      "groups": 0,
+      "linked_file_entries": 0
+    },
+    "baseline_drift": [],
+    "mutated_during_run": [],
+    "answer_check_groups": {
+      "without_gitignore": {
+        "labels": [
+          "prework",
+          "exp001",
+          "exp022",
+          "exp030",
+          "exp101"
+        ],
+        "all_identical": true,
+        "exit_codes_zero": true,
+        "matches_fingerprint": null,
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      },
+      "with_gitignore": {
+        "labels": [
+          "v0.1.0",
+          "v0.2.0",
+          "v0.2.1",
+          "exp178",
+          "exp180",
+          "ebc06c78",
+          "exp201",
+          "v0.3.0"
+        ],
+        "all_identical": true,
+        "exit_codes_zero": true,
+        "matches_fingerprint": null,
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      }
+    }
+  },
+  "host": {
+    "arch": "arm64",
+    "cpu_count": 10,
+    "cpu_model": "Apple M1 Pro",
+    "efficiency_cores": 2,
+    "filesystem": "apfs",
+    "max_vnodes": 263168,
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "python": "3.14.7",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "virtualization": "bare-metal"
+  },
+  "regime": {
+    "campaign_stage": "exploratory",
+    "host_regime": "uncontrolled",
+    "os_cache": "warm-steady",
+    "quiet_gate_cpu_busy_pct": 25.0,
+    "initial": {
+      "controlled_load_alive": null,
+      "cpu_busy_pct": 22.33,
+      "cpu_busy_unavailable_reason": null,
+      "load_15m": 21.065,
+      "load_1m": 10.349,
+      "load_1m_per_cpu": 1.0349,
+      "load_5m": 17.619,
+      "logical_cpu_count": 10,
+      "power_source": "AC",
+      "system": "Darwin",
+      "thermal_pressure": "normal",
+      "unavailable_reason": null
+    },
+    "final": {
+      "controlled_load_alive": null,
+      "cpu_busy_pct": 9.24,
+      "cpu_busy_unavailable_reason": null,
+      "load_15m": 13.318,
+      "load_1m": 2.836,
+      "load_1m_per_cpu": 0.2836,
+      "load_5m": 7.29,
+      "logical_cpu_count": 10,
+      "power_source": "AC",
+      "system": "Darwin",
+      "thermal_pressure": "normal",
+      "unavailable_reason": null
+    },
+    "cpu_busy_pct_at_sample_boundaries": {
+      "n": 720,
+      "min": 7.84,
+      "median": 24.134999999999998,
+      "max": 99.7,
+      "share_above_quiet_gate": 0.481
+    },
+    "load_1m_at_sample_boundaries": {
+      "min": 2.814,
+      "median": 14.772,
+      "max": 23.666
+    },
+    "thermal_pressure_seen": [
+      "normal"
+    ],
+    "power_source_seen": [
+      "AC"
+    ]
+  },
+  "rounds": {
+    "trials": 12,
+    "warmups": 3,
+    "processes": 360,
+    "setup_processes": 360,
+    "started_utc": "2026-10-06T10:21:40Z",
+    "duration_seconds": 1128.483
+  },
+  "invalid_samples": 0,
+  "semantic_mismatches": 0,
+  "answer_check": {
+    "builds": [
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 531354875,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "prework",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 458516458,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp001",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 462677292,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp022",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 95955333,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp030",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 125116417,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp101",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 103048958,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.1.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 143622833,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.2.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 117025667,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.2.1",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 199025000,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp178",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 104882333,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp180",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 114988208,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "ebc06c78",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 100390167,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "exp201",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
+        "component_ns": 124069208,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.3.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
+      }
+    ],
+    "problems": []
+  },
+  "milestones": [
+    {
+      "label": "prework",
+      "short": "start",
+      "includes": "pre-work baseline: serial walker, no .gitignore support",
+      "after_experiment": "exp-000",
+      "ref": "b565882b",
+      "commit": "b565882bd9f2a877934bd96415d3a8eab6504f92",
+      "commit_choice": "exp-032 control",
+      "author_date": "2026-08-10T15:22:26-07:00",
+      "commit_date": "2026-08-10T15:22:26-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": true,
+      "binary_sha256": "258a247b534e035d798a3503044dc60fdcf76cdbddccec1b74081e25b032d4d1",
+      "binary_size_bytes": 468848,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 881.43,
+        "min": 860.91,
+        "max": 931.17,
+        "iqr_derived": [
+          868.39,
+          886.26
+        ],
+        "median_bootstrap95_derived": [
+          866.54,
+          888.61
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 44.0,
+        "max": 44.8
+      },
+      "cpu_s_median": {
+        "user": 0.504,
+        "system": 0.371
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 500.35,
+        "min": 482.9,
+        "max": 551.05,
+        "iqr_derived": [
+          489.69,
+          505.97
+        ],
+        "median_bootstrap95_derived": [
+          487.82,
+          507.76
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 80.119,
+        "ci95_change_pct": [
+          75.524,
+          84.461
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 482.68,
+        "speed_ratio_this_over_reference": 1.8012
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 280.012,
+        "ci95_change_pct": [
+          241.356,
+          313.964
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 131.03,
+        "speed_ratio_this_over_reference": 3.8001
+      },
+      "cli_binary_sha256": "338c77153d74452a32c21e4ac6541c670f3d6888b7d32a9c6c08135ca70059bc",
+      "job": "warm-revalidate",
+      "vs_first_derived": null,
+      "vs_prework_derived": null,
+      "vs_previous_milestone_derived": null
+    },
+    {
+      "label": "exp001",
+      "short": "H1 producer",
+      "includes": "H1 bounded parallel directory producer",
+      "after_experiment": "exp-001",
+      "ref": "a0cc981d",
+      "commit": "a0cc981da037e3473a91360a0c41602a13b38a13",
+      "commit_choice": "exp-001 record commit a0cc981",
+      "author_date": "2026-08-10T16:53:05-07:00",
+      "commit_date": "2026-08-10T16:53:05-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": true,
+      "binary_sha256": "ca0c837e5c4c6bc5ec83e765a225b1a0dc8b4d40b2f1c4568b9b053989da2aeb",
+      "binary_size_bytes": 519328,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 889.42,
+        "min": 868.69,
+        "max": 909.46,
+        "iqr_derived": [
+          870.0,
+          891.49
+        ],
+        "median_bootstrap95_derived": [
+          869.86,
+          892.64
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 44.0,
+        "max": 44.2
+      },
+      "cpu_s_median": {
+        "user": 0.512,
+        "system": 0.369
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 502.79,
+        "min": 484.38,
+        "max": 518.71,
+        "iqr_derived": [
+          486.21,
+          506.53
+        ],
+        "median_bootstrap95_derived": [
+          485.86,
+          507.5
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 84.276,
+        "ci95_change_pct": [
+          78.162,
+          85.963
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 480.11,
+        "speed_ratio_this_over_reference": 1.8428
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 299.081,
+        "ci95_change_pct": [
+          273.693,
+          310.106
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 126.62,
+        "speed_ratio_this_over_reference": 3.9908
+      },
+      "cli_binary_sha256": "7f69d59d3df189f44298064fe313c40e635226007f633b2a1636ec3d40e08fde",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": 0.86,
+          "ci95_change_pct": [
+            -0.98,
+            1.96
+          ],
+          "median_ratio_x": 1.0086,
+          "median_speedup_x": 0.991
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 0.67,
+          "ci95_change_pct": [
+            -2.44,
+            4.52
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": 0.86,
+          "ci95_change_pct": [
+            -0.98,
+            1.96
+          ],
+          "median_ratio_x": 1.0086,
+          "median_speedup_x": 0.991
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": 0.67,
+          "ci95_change_pct": [
+            -2.44,
+            4.52
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "prework",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.86,
+        "ci95_change_pct": [
+          -0.98,
+          1.96
+        ],
+        "median_ratio_x": 1.0086
+      }
+    },
+    {
+      "label": "exp022",
+      "short": "bulk metadata",
+      "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+      "after_experiment": "exp-022",
+      "ref": "b1227256",
+      "commit": "b12272565d570ebb8237df6e58a96178b72ad965",
+      "commit_choice": "exp-022 record has commit: null; b1227256 'perf: batch macOS scan metadata' is the commit that landed it",
+      "author_date": "2026-08-12T04:29:37-07:00",
+      "commit_date": "2026-08-12T04:29:37-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": true,
+      "binary_sha256": "e3da3d7ea9d0aad25b3bdc96ee5ed1d6c6190fe59f110d1131b3bcbb0ce47ae7",
+      "binary_size_bytes": 552576,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 687.67,
+        "min": 679.55,
+        "max": 709.11,
+        "iqr_derived": [
+          682.31,
+          695.96
+        ],
+        "median_bootstrap95_derived": [
+          681.89,
+          697.88
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 42.6,
+        "max": 42.7
+      },
+      "cpu_s_median": {
+        "user": 0.318,
+        "system": 0.366
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 421.99,
+        "min": 413.52,
+        "max": 442.03,
+        "iqr_derived": [
+          417.39,
+          430.19
+        ],
+        "median_bootstrap95_derived": [
+          416.6,
+          431.69
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 44.701,
+        "ci95_change_pct": [
+          42.529,
+          46.117
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 472.77,
+        "speed_ratio_this_over_reference": 1.447
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 252.554,
+        "ci95_change_pct": [
+          228.676,
+          259.184
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 120.28,
+        "speed_ratio_this_over_reference": 3.5255
+      },
+      "cli_binary_sha256": "d5c0ab76f357215ef8a2bbaaab273b08a94490b16cb66b952e0ef3472b9760f2",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -21.26,
+          "ci95_change_pct": [
+            -22.74,
+            -20.51
+          ],
+          "median_ratio_x": 0.7874,
+          "median_speedup_x": 1.27
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -20.45,
+          "ci95_change_pct": [
+            -21.14,
+            -17.66
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -21.26,
+          "ci95_change_pct": [
+            -22.74,
+            -20.51
+          ],
+          "median_ratio_x": 0.7874,
+          "median_speedup_x": 1.27
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -20.45,
+          "ci95_change_pct": [
+            -21.14,
+            -17.66
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp001",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -21.7,
+        "ci95_change_pct": [
+          -22.33,
+          -21.36
+        ],
+        "median_ratio_x": 0.783
+      }
+    },
+    {
+      "label": "exp030",
+      "short": "parallel reconcile",
+      "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+      "after_experiment": "exp-030",
+      "ref": "c9c91d95",
+      "commit": "c9c91d9518ef1324531ecd79a3a43b9e96e95eef",
+      "commit_choice": "exp-030 record has commit: null; the change landed in 09d65590, and c9c91d95 differs from it only by an equivalent let-chain rewrite for Rust 1.85 (the exp-032 candidate code); same binary as the external cell's exp032",
+      "author_date": "2026-08-12T06:32:42-07:00",
+      "commit_date": "2026-08-12T06:32:42-07:00",
+      "version": "fdu 0.0.1",
+      "reads_gitignore": false,
+      "supported": true,
+      "binary_sha256": "c1d6a58dfd8029ebe9cb56d48bf8f5b79cebfaad44add7668d3fa1d7d5032476",
+      "binary_size_bytes": 585680,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 404.5,
+        "min": 377.48,
+        "max": 476.41,
+        "iqr_derived": [
+          385.83,
+          413.52
+        ],
+        "median_bootstrap95_derived": [
+          383.69,
+          416.36
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 43.2,
+        "max": 43.3
+      },
+      "cpu_s_median": {
+        "user": 0.314,
+        "system": 0.482
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 136.89,
+        "min": 111.37,
+        "max": 190.65,
+        "iqr_derived": [
+          118.87,
+          143.55
+        ],
+        "median_bootstrap95_derived": [
+          117.73,
+          144.36
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -17.818,
+        "ci95_change_pct": [
+          -19.732,
+          -12.916
+        ],
+        "direction": "improved",
+        "anchor_median_ms_in_these_pairs": 472.86,
+        "speed_ratio_this_over_reference": 0.8218
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 6.342,
+        "ci95_change_pct": [
+          -8.43,
+          22.136
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 120.15,
+        "speed_ratio_this_over_reference": 1.0634
+      },
+      "cli_binary_sha256": "ebac215b326a06d0c68ab8555d4b0af0649b664c39abc8ab268671286ec0330d",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -53.71,
+          "ci95_change_pct": [
+            -55.59,
+            -52.31
+          ],
+          "median_ratio_x": 0.4629,
+          "median_speedup_x": 2.16
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -53.71,
+          "ci95_change_pct": [
+            -55.8,
+            -51.79
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -53.71,
+          "ci95_change_pct": [
+            -55.59,
+            -52.31
+          ],
+          "median_ratio_x": 0.4629,
+          "median_speedup_x": 2.16
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -53.71,
+          "ci95_change_pct": [
+            -55.8,
+            -51.79
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp022",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -42.55,
+        "ci95_change_pct": [
+          -43.91,
+          -38.86
+        ],
+        "median_ratio_x": 0.5745
+      }
+    },
+    {
+      "label": "exp101",
+      "short": "H86 compact index",
+      "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+      "after_experiment": "exp-101",
+      "ref": "5d7b86fe",
+      "commit": "5d7b86fe6d031e76843fe0b8dbcf8663a0d2b53f",
+      "commit_choice": "exp-101 record has commit: null; 5d7b86fe 'perf(index): compact detached child storage' added the code and the exp-101 record",
+      "author_date": "2026-09-01T13:38:20-07:00",
+      "commit_date": "2026-09-01T13:41:23-07:00",
+      "version": "fdu 0.1.0-dev+g5d7b86fe6",
+      "reads_gitignore": false,
+      "supported": true,
+      "binary_sha256": "c9873db66177ed7f7d4e95adeafbea0ec8f4ee578d66079d448414433cfc29b4",
+      "binary_size_bytes": 2255888,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 346.74,
+        "min": 334.87,
+        "max": 380.0,
+        "iqr_derived": [
+          342.28,
+          354.2
+        ],
+        "median_bootstrap95_derived": [
+          342.0,
+          359.47
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 39.1,
+        "max": 40.0
+      },
+      "cpu_s_median": {
+        "user": 0.274,
+        "system": 0.412
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 118.43,
+        "min": 109.61,
+        "max": 149.48,
+        "iqr_derived": [
+          117.32,
+          127.56
+        ],
+        "median_bootstrap95_derived": [
+          116.61,
+          132.71
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -27.888,
+        "ci95_change_pct": [
+          -29.837,
+          -24.929
+        ],
+        "direction": "improved",
+        "anchor_median_ms_in_these_pairs": 479.64,
+        "speed_ratio_this_over_reference": 0.7211
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -5.259,
+        "ci95_change_pct": [
+          -13.698,
+          2.315
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 127.1,
+        "speed_ratio_this_over_reference": 0.9474
+      },
+      "cli_binary_sha256": "1c0de443a05a086ddb962bc798282094992fd1d92b646b408f4873db0ffda9f6",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -60.45,
+          "ci95_change_pct": [
+            -60.93,
+            -59.66
+          ],
+          "median_ratio_x": 0.3955,
+          "median_speedup_x": 2.528
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -59.57,
+          "ci95_change_pct": [
+            -60.62,
+            -58.25
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -60.45,
+          "ci95_change_pct": [
+            -60.93,
+            -59.66
+          ],
+          "median_ratio_x": 0.3955,
+          "median_speedup_x": 2.528
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -59.57,
+          "ci95_change_pct": [
+            -60.62,
+            -58.25
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp030",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -14.27,
+        "ci95_change_pct": [
+          -17.9,
+          -11.14
+        ],
+        "median_ratio_x": 0.8573
+      }
+    },
+    {
+      "label": "v0.1.0",
+      "short": "0.1.0",
+      "includes": "release v0.1.0 (.gitignore read by default)",
+      "after_experiment": "exp-157",
+      "ref": "v0.1.0",
+      "commit": "7cf7f1b4b39930ebcf54df7ebd2645d995e4e458",
+      "commit_choice": "release tag",
+      "author_date": "2026-09-25T16:58:16-07:00",
+      "commit_date": "2026-09-25T16:58:16-07:00",
+      "version": "fdu 0.1.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "b887a6be24e59f7a8c5ec9e09adff5ecfdc480134c1fa0308a7aa89f95dbd0e3",
+      "binary_size_bytes": 2884272,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 709.18,
+        "min": 698.34,
+        "max": 736.24,
+        "iqr_derived": [
+          699.31,
+          727.06
+        ],
+        "median_bootstrap95_derived": [
+          699.21,
+          729.22
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.2,
+        "max": 41.6
+      },
+      "cpu_s_median": {
+        "user": 0.636,
+        "system": 0.431
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 125.65,
+        "min": 114.37,
+        "max": 153.91,
+        "iqr_derived": [
+          118.19,
+          141.63
+        ],
+        "median_bootstrap95_derived": [
+          117.95,
+          142.11
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 48.649,
+        "ci95_change_pct": [
+          47.69,
+          50.169
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 475.56,
+        "speed_ratio_this_over_reference": 1.4865
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 1.549,
+        "ci95_change_pct": [
+          -0.24,
+          7.855
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 121.6,
+        "speed_ratio_this_over_reference": 1.0155
+      },
+      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -19.29,
+          "ci95_change_pct": [
+            -20.76,
+            -17.08
+          ],
+          "median_ratio_x": 0.8071,
+          "median_speedup_x": 1.239
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -16.52,
+          "ci95_change_pct": [
+            -20.22,
+            -15.7
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -19.29,
+          "ci95_change_pct": [
+            -20.76,
+            -17.08
+          ],
+          "median_ratio_x": 0.8071,
+          "median_speedup_x": 1.239
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -16.52,
+          "ci95_change_pct": [
+            -20.22,
+            -15.7
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp101",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 105.86,
+        "ci95_change_pct": [
+          96.75,
+          110.84
+        ],
+        "median_ratio_x": 2.0586
+      }
+    },
+    {
+      "label": "v0.2.0",
+      "short": "0.2.0",
+      "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+      "after_experiment": "exp-163",
+      "ref": "v0.2.0",
+      "commit": "6ec77163a8a1b5a33276bfb6dcaed7dff833d618",
+      "commit_choice": "exp-163 candidate 93cd1bb1 is in v0.2.0 and not in v0.1.0, so v0.2.0 is the first release carrying it",
+      "author_date": "2026-09-28T06:19:42-07:00",
+      "commit_date": "2026-09-28T06:19:42-07:00",
+      "version": "fdu 0.2.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "c8e2a24e8cb17bd728be28d02fdffea481a7205cf485dfca9f6ba3f6ee00cc54",
+      "binary_size_bytes": 3148912,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 701.17,
+        "min": 692.66,
+        "max": 2593.27,
+        "iqr_derived": [
+          696.58,
+          724.43
+        ],
+        "median_bootstrap95_derived": [
+          696.35,
+          725.3
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.4,
+        "max": 41.6
+      },
+      "cpu_s_median": {
+        "user": 0.632,
+        "system": 0.425
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 124.8,
+        "min": 118.1,
+        "max": 241.12,
+        "iqr_derived": [
+          120.49,
+          147.6
+        ],
+        "median_bootstrap95_derived": [
+          120.12,
+          147.98
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 47.534,
+        "ci95_change_pct": [
+          45.365,
+          50.409
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 477.32,
+        "speed_ratio_this_over_reference": 1.4753
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.953,
+        "ci95_change_pct": [
+          -0.435,
+          5.95
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 123.16,
+        "speed_ratio_this_over_reference": 1.0095
+      },
+      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -19.04,
+          "ci95_change_pct": [
+            -21.27,
+            -17.52
+          ],
+          "median_ratio_x": 0.8096,
+          "median_speedup_x": 1.235
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -18.39,
+          "ci95_change_pct": [
+            -19.89,
+            -15.34
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -19.04,
+          "ci95_change_pct": [
+            -21.27,
+            -17.52
+          ],
+          "median_ratio_x": 0.8096,
+          "median_speedup_x": 1.235
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -18.39,
+          "ci95_change_pct": [
+            -19.89,
+            -15.34
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.1.0",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -0.66,
+        "ci95_change_pct": [
+          -1.46,
+          -0.24
+        ],
+        "median_ratio_x": 0.9934
+      }
+    },
+    {
+      "label": "v0.2.1",
+      "short": "0.2.1",
+      "includes": "H159, H161, H162, H163",
+      "after_experiment": "exp-191",
+      "ref": "c1644575",
+      "commit": "c16445757ce82501a2d4eea1ff59b638eef42bd1",
+      "commit_choice": "release tag v0.2.1",
+      "author_date": "2026-09-28T21:40:06-07:00",
+      "commit_date": "2026-09-28T21:40:06-07:00",
+      "version": "fdu 0.2.1",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "3a1a9f9c7f17fbc07b583fa4a85081fdf1a4ad9552791ef35a768c5e61678bb6",
+      "binary_size_bytes": 3198512,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 574.41,
+        "min": 553.83,
+        "max": 714.67,
+        "iqr_derived": [
+          563.48,
+          593.13
+        ],
+        "median_bootstrap95_derived": [
+          563.45,
+          596.56
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.2,
+        "max": 41.6
+      },
+      "cpu_s_median": {
+        "user": 0.499,
+        "system": 0.445
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 129.0,
+        "min": 113.59,
+        "max": 222.4,
+        "iqr_derived": [
+          120.74,
+          150.46
+        ],
+        "median_bootstrap95_derived": [
+          120.71,
+          153.8
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 19.216,
+        "ci95_change_pct": [
+          16.845,
+          21.23
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 486.93,
+        "speed_ratio_this_over_reference": 1.1922
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 1.446,
+        "ci95_change_pct": [
+          -3.287,
+          8.147
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 131.03,
+        "speed_ratio_this_over_reference": 1.0145
+      },
+      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -34.35,
+          "ci95_change_pct": [
+            -36.24,
+            -31.79
+          ],
+          "median_ratio_x": 0.6565,
+          "median_speedup_x": 1.523
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -33.44,
+          "ci95_change_pct": [
+            -36.85,
+            -30.78
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -34.35,
+          "ci95_change_pct": [
+            -36.24,
+            -31.79
+          ],
+          "median_ratio_x": 0.6565,
+          "median_speedup_x": 1.523
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -33.44,
+          "ci95_change_pct": [
+            -36.85,
+            -30.78
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.2.0",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -19.17,
+        "ci95_change_pct": [
+          -20.24,
+          -18.75
+        ],
+        "median_ratio_x": 0.8083
+      }
+    },
+    {
+      "label": "exp178",
+      "short": "bucketed gitignore",
+      "includes": "H171 bucketed .gitignore matching",
+      "after_experiment": "exp-178",
+      "ref": "7c69e88a",
+      "commit": "7c69e88a4610685b7b1a32bfd1e668e9f4ee2ef3",
+      "commit_choice": "exp-178 record commit 7c69e88a (v0.2.1 plus H171)",
+      "author_date": "2026-09-29T09:09:05Z",
+      "commit_date": "2026-09-29T09:09:05Z",
+      "version": "fdu 0.2.1-dev+g7c69e88a4",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "d97cdd286a0d9fb3416c68df837f01dd7e28839a9641a35240f66015652899d7",
+      "binary_size_bytes": 3264608,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 491.48,
+        "min": 481.99,
+        "max": 637.83,
+        "iqr_derived": [
+          485.12,
+          504.4
+        ],
+        "median_bootstrap95_derived": [
+          484.7,
+          509.93
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.4,
+        "max": 41.8
+      },
+      "cpu_s_median": {
+        "user": 0.425,
+        "system": 0.412
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 120.57,
+        "min": 114.87,
+        "max": 212.75,
+        "iqr_derived": [
+          118.52,
+          135.66
+        ],
+        "median_bootstrap95_derived": [
+          118.46,
+          139.73
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 3.262,
+        "ci95_change_pct": [
+          1.389,
+          4.05
+        ],
+        "direction": "regressed",
+        "anchor_median_ms_in_these_pairs": 478.62,
+        "speed_ratio_this_over_reference": 1.0326
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.389,
+        "ci95_change_pct": [
+          -6.573,
+          3.665
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 125.58,
+        "speed_ratio_this_over_reference": 1.0039
+      },
+      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -43.78,
+          "ci95_change_pct": [
+            -44.38,
+            -41.94
+          ],
+          "median_ratio_x": 0.5622,
+          "median_speedup_x": 1.779
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -43.78,
+          "ci95_change_pct": [
+            -45.91,
+            -41.15
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -43.78,
+          "ci95_change_pct": [
+            -44.38,
+            -41.94
+          ],
+          "median_ratio_x": 0.5622,
+          "median_speedup_x": 1.779
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -43.78,
+          "ci95_change_pct": [
+            -45.91,
+            -41.15
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "v0.2.1",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -13.94,
+        "ci95_change_pct": [
+          -14.35,
+          -12.04
+        ],
+        "median_ratio_x": 0.8606
+      }
+    },
+    {
+      "label": "exp180",
+      "short": "transient tree",
+      "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+      "after_experiment": "exp-180",
+      "ref": "956659de",
+      "commit": "956659de335ec96c73d4424f93cc5888f9d55dc5",
+      "commit_choice": "exp-180 record commit 956659de",
+      "author_date": "2026-09-29T10:19:12Z",
+      "commit_date": "2026-09-29T10:19:12Z",
+      "version": "fdu 0.2.1-dev+g956659de3",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "04502130b7519a1a2b328f5673a8f23cd9000f8ee64227bf09117a6f0a84ae90",
+      "binary_size_bytes": 3297680,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 488.72,
+        "min": 479.5,
+        "max": 710.43,
+        "iqr_derived": [
+          487.35,
+          506.28
+        ],
+        "median_bootstrap95_derived": [
+          487.34,
+          508.69
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.3,
+        "max": 41.0
+      },
+      "cpu_s_median": {
+        "user": 0.425,
+        "system": 0.411
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 120.36,
+        "min": 112.37,
+        "max": 308.39,
+        "iqr_derived": [
+          118.1,
+          133.51
+        ],
+        "median_bootstrap95_derived": [
+          117.8,
+          133.71
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 2.867,
+        "ci95_change_pct": [
+          -1.186,
+          3.611
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 477.17,
+        "speed_ratio_this_over_reference": 1.0287
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -1.653,
+        "ci95_change_pct": [
+          -13.236,
+          -0.111
+        ],
+        "direction": "improved",
+        "anchor_median_ms_in_these_pairs": 123.48,
+        "speed_ratio_this_over_reference": 0.9835
+      },
+      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -43.91,
+          "ci95_change_pct": [
+            -44.81,
+            -41.93
+          ],
+          "median_ratio_x": 0.5609,
+          "median_speedup_x": 1.783
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -43.89,
+          "ci95_change_pct": [
+            -46.16,
+            -42.26
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -43.91,
+          "ci95_change_pct": [
+            -44.81,
+            -41.93
+          ],
+          "median_ratio_x": 0.5609,
+          "median_speedup_x": 1.783
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -43.89,
+          "ci95_change_pct": [
+            -46.16,
+            -42.26
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp178",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.27,
+        "ci95_change_pct": [
+          -1.75,
+          2.13
+        ],
+        "median_ratio_x": 1.0027
+      }
+    },
+    {
+      "label": "ebc06c78",
+      "short": "overnight round",
+      "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+      "after_experiment": "exp-195",
+      "ref": "ebc06c78",
+      "commit": "ebc06c784378639b7c950c2adc37ab48b60abf60",
+      "commit_choice": "exp-195 record commit ebc06c78",
+      "author_date": "2026-09-29T15:38:28Z",
+      "commit_date": "2026-09-29T15:38:28Z",
+      "version": "fdu 0.2.1-dev+gebc06c784",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "356e3fa3c58e4cf1d4dc50acc28eec35375f7e256dd6a0393445f02419794c53",
+      "binary_size_bytes": 3297680,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 480.16,
+        "min": 463.36,
+        "max": 815.94,
+        "iqr_derived": [
+          466.65,
+          494.14
+        ],
+        "median_bootstrap95_derived": [
+          466.29,
+          494.45
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.5,
+        "max": 41.9
+      },
+      "cpu_s_median": {
+        "user": 0.404,
+        "system": 0.429
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 125.24,
+        "min": 116.86,
+        "max": 458.61,
+        "iqr_derived": [
+          118.5,
+          146.35
+        ],
+        "median_bootstrap95_derived": [
+          118.48,
+          146.38
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -1.086,
+        "ci95_change_pct": [
+          -2.585,
+          1.851
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 479.95,
+        "speed_ratio_this_over_reference": 0.9891
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -1.059,
+        "ci95_change_pct": [
+          -5.011,
+          6.725
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 127.42,
+        "speed_ratio_this_over_reference": 0.9894
+      },
+      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -45.17,
+          "ci95_change_pct": [
+            -46.88,
+            -43.58
+          ],
+          "median_ratio_x": 0.5483,
+          "median_speedup_x": 1.824
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -44.26,
+          "ci95_change_pct": [
+            -46.05,
+            -42.53
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -45.17,
+          "ci95_change_pct": [
+            -46.88,
+            -43.58
+          ],
+          "median_ratio_x": 0.5483,
+          "median_speedup_x": 1.824
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -44.26,
+          "ci95_change_pct": [
+            -46.05,
+            -42.53
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp180",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": -3.36,
+        "ci95_change_pct": [
+          -4.28,
+          0.68
+        ],
+        "median_ratio_x": 0.9664
+      }
+    },
+    {
+      "label": "exp201",
+      "short": "pdu track",
+      "includes": "pdu track: H185, H186, H188, H189",
+      "after_experiment": "exp-201",
+      "ref": "a356d456",
+      "commit": "a356d4565b2787864ca029d263ad05091036aeb5",
+      "commit_choice": "exp-201 candidate a356d456",
+      "author_date": "2026-09-29T22:47:02Z",
+      "commit_date": "2026-09-29T22:47:02Z",
+      "version": "fdu 0.2.1-dev+ga356d4565",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "cb511a1e4904bd39ee5c72be7a7395fe47fe2a6492b5a559a4b10384e2e1c080",
+      "binary_size_bytes": 3297696,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 12,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples",
+        "median": 483.55,
+        "min": 462.86,
+        "max": 550.98,
+        "iqr_derived": [
+          469.0,
+          511.27
+        ],
+        "median_bootstrap95_derived": [
+          468.92,
+          512.51
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.6,
+        "max": 42.0
+      },
+      "cpu_s_median": {
+        "user": 0.408,
+        "system": 0.461
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 133.4,
+        "min": 115.76,
+        "max": 193.74,
+        "iqr_derived": [
+          120.74,
+          162.39
+        ],
+        "median_bootstrap95_derived": [
+          119.4,
+          163.68
+        ]
+      },
+      "vs_v0_3_0_paired_harness": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in wall_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": -0.666,
+        "ci95_change_pct": [
+          -2.986,
+          2.87
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 485.93,
+        "speed_ratio_this_over_reference": 0.9933
+      },
+      "vs_v0_3_0_paired_harness_component": {
+        "meaning": "(this - adjacent v0.3.0) / adjacent v0.3.0 in component_ns, median of adjacent pairs; positive = this binary slower",
+        "pairs": 12,
+        "median_change_pct": 0.663,
+        "ci95_change_pct": [
+          -6.08,
+          7.743
+        ],
+        "direction": "unclear",
+        "anchor_median_ms_in_these_pairs": 132.67,
+        "speed_ratio_this_over_reference": 1.0066
+      },
+      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -45.04,
+          "ci95_change_pct": [
+            -46.82,
+            -41.72
+          ],
+          "median_ratio_x": 0.5496,
+          "median_speedup_x": 1.82
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -44.67,
+          "ci95_change_pct": [
+            -46.75,
+            -41.87
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "same schedule round, not adjacent",
+          "pairs": 12,
+          "median_change_pct": -45.04,
+          "ci95_change_pct": [
+            -46.82,
+            -41.72
+          ],
+          "median_ratio_x": 0.5496,
+          "median_speedup_x": 1.82
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -44.67,
+          "ci95_change_pct": [
+            -46.75,
+            -41.87
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "ebc06c78",
+        "method": "same schedule round, not adjacent",
+        "pairs": 12,
+        "median_change_pct": 0.43,
+        "ci95_change_pct": [
+          -1.22,
+          0.93
+        ],
+        "median_ratio_x": 1.0043
+      }
+    },
+    {
+      "label": "v0.3.0",
+      "short": "0.3.0",
+      "includes": "release v0.3.0",
+      "after_experiment": "exp-202",
+      "ref": "v0.3.0",
+      "commit": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",
+      "commit_choice": "release tag",
+      "author_date": "2026-09-30T10:03:43-07:00",
+      "commit_date": "2026-09-30T10:03:43-07:00",
+      "version": "fdu 0.3.0",
+      "reads_gitignore": true,
+      "supported": true,
+      "binary_sha256": "001d1d35d4dbcb122dae5382beb0eaad4b121a11f969c789aeba8ec899c4d1ad",
+      "binary_size_bytes": 3347312,
+      "contract": "fdu-index/warm-metadata/probe-warm-revalidate",
+      "command": [
+        "{binary}",
+        "revalidate",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "setup_command": [
+        "{binary}",
+        "snapshot-save",
+        "--root",
+        "{root}",
+        "--snapshot",
+        "{cache}/snapshot.fdu"
+      ],
+      "cache_scope": "sample",
+      "cache_evidence": "unknown",
+      "timed_samples": 144,
+      "wall_ms": {
+        "source": "harness median of this binary's valid timed samples; the anchor's 144 samples beside every competitor",
+        "median": 478.01,
+        "min": 461.66,
+        "max": 832.53,
+        "iqr_derived": [
+          471.92,
+          502.68
+        ],
+        "median_bootstrap95_derived": [
+          475.9,
+          481.36
+        ]
+      },
+      "peak_rss_mib": {
+        "source": "harness rusage max RSS of the child, median of timed samples",
+        "median": 40.5,
+        "max": 42.3
+      },
+      "cpu_s_median": {
+        "user": 0.408,
+        "system": 0.425
+      },
+      "component_ms": {
+        "source": "probe-reported component_ns, harness median of valid timed samples",
+        "median": 123.57,
+        "min": 111.69,
+        "max": 472.06,
+        "iqr_derived": [
+          118.75,
+          145.8
+        ],
+        "median_bootstrap95_derived": [
+          121.57,
+          128.53
+        ]
+      },
+      "vs_v0_3_0_paired_harness": null,
+      "vs_v0_3_0_paired_harness_component": null,
+      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
+      "job": "warm-revalidate",
+      "vs_first_derived": {
+        "first": "prework",
+        "round_matched": {
+          "method": "adjacent pairs (one side is the anchor)",
+          "pairs": 12,
+          "median_change_pct": -44.48,
+          "ci95_change_pct": [
+            -45.79,
+            -43.02
+          ],
+          "median_ratio_x": 0.5552,
+          "median_speedup_x": 1.801
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -44.48,
+          "ci95_change_pct": [
+            -45.79,
+            -43.02
+          ]
+        }
+      },
+      "vs_prework_derived": {
+        "round_matched": {
+          "method": "adjacent pairs (one side is the anchor)",
+          "pairs": 12,
+          "median_change_pct": -44.48,
+          "ci95_change_pct": [
+            -45.79,
+            -43.02
+          ],
+          "median_ratio_x": 0.5552,
+          "median_speedup_x": 1.801
+        },
+        "anchor_normalized": {
+          "method": "per round, (this / its adjacent anchor) / (first build / its adjacent anchor) - 1",
+          "pairs": 12,
+          "median_change_pct": -44.48,
+          "ci95_change_pct": [
+            -45.79,
+            -43.02
+          ]
+        }
+      },
+      "vs_previous_milestone_derived": {
+        "previous": "exp201",
+        "method": "adjacent pairs (one side is the anchor)",
+        "pairs": 12,
+        "median_change_pct": 0.67,
+        "ci95_change_pct": [
+          -2.78,
+          3.08
+        ],
+        "median_ratio_x": 1.0067
+      }
+    }
+  ],
+  "headline": {
+    "first_label": "prework",
+    "timed_metric": "wall_ns",
+    "median_ratio_prework_over_v0_3_0": 1.844,
+    "median_ratio_using_anchor_samples_in_prework_pairs": 1.826,
+    "paired_harness_prework_vs_v0_3_0_change_pct": 80.119,
+    "paired_harness_prework_vs_v0_3_0_ci95_pct": [
+      75.524,
+      84.461
+    ],
+    "paired_speedup_x": 1.801,
+    "paired_speedup_x_ci95": [
+      1.755,
+      1.845
+    ],
+    "paired_harness_v0_3_0_vs_prework_change_pct": -44.481,
+    "paired_harness_v0_3_0_vs_prework_ci95_pct": [
+      -45.787,
+      -43.016
+    ],
+    "naming": "for schema compatibility the keys say prework and v0_3_0; they mean first_label and the reference build"
+  }
+}

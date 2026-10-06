@@ -9,9 +9,11 @@ redacts the subject path and command output.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -19,7 +21,18 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import installed_command, measure, provenance, tree
@@ -61,6 +74,38 @@ class ToolContract:
     #: The text-table layout whose total row validates a line-count sample, or None
     #: for a contract that does not count lines.
     code_table: Optional[str] = None
+    #: Which processes share an isolated cache directory, for a contract that writes one.
+    #:
+    #: ``comparison`` (the default) gives every cache-writing tool in the run one shared
+    #: directory, as this harness always has. ``tool`` gives each tool its own directory
+    #: for the whole run, so a build's steady state after the warm-ups is its own and not
+    #: another build's. ``sample`` gives every process a fresh empty directory, discarded
+    #: after it, so every sample starts from empty caches.
+    cache_scope: str = "comparison"
+    #: An untimed command run immediately before every process of this contract,
+    #: warm-ups included, with the same environment and cache directory. It reproduces a
+    #: start state such as "the cache filled by a run just before" per sample, with the
+    #: filling run outside the timed window. A failed setup invalidates its sample.
+    setup_argv: Tuple[str, ...] = ()
+    #: The contract runs an fdu build and may anchor a comparison, although it is not
+    #: one of the contracts in this table. A driver that times fdu builds against each
+    #: other (``benchmarks.realtree.history``) declares its own contracts this way rather
+    #: than editing the table.
+    fdu_anchor: bool = False
+    #: Reads a timed process's stdout, given the run's fingerprint, and returns metrics
+    #: to record beside the process's own (such as a probe's ``component_ns``) and
+    #: reasons that invalidate the sample (such as an oracle disagreement). None for a
+    #: contract whose output carries neither.
+    stdout_metrics: Optional[
+        Callable[[bytes, Mapping[str, Any]], Tuple[Dict[str, Optional[int]], List[str]]]
+    ] = None
+    #: The metric the contract's timing claim is about: the process's ``wall_ns``, or a
+    #: metric its ``stdout_metrics`` reports, such as a probe's ``component_ns``.
+    primary_metric: str = "wall_ns"
+
+
+#: The cache scopes a contract may declare; see ``ToolContract.cache_scope``.
+CACHE_SCOPES = ("comparison", "tool", "sample")
 
 
 @dataclass(frozen=True)
@@ -612,8 +657,21 @@ def run(
     timeout_seconds: float = measure.DEFAULT_TIMEOUT_SECONDS,
 ) -> Dict[str, Any]:
     """Run each competitor immediately beside the anchor and return redacted evidence."""
-    if anchor.contract.name not in FDU_ANCHOR_CONTRACTS:
+    if anchor.contract.name not in FDU_ANCHOR_CONTRACTS and not anchor.contract.fdu_anchor:
         raise ComparisonError("the comparison anchor must use an fdu contract")
+    for tool in (anchor, *competitors):
+        if tool.contract.cache_scope not in CACHE_SCOPES:
+            raise ComparisonError(
+                f"contract {tool.contract.name} declares unknown cache scope "
+                f"{tool.contract.cache_scope!r}; choose from {', '.join(CACHE_SCOPES)}"
+            )
+        if tool.contract.primary_metric != "wall_ns" and tool.contract.stdout_metrics is None:
+            raise ComparisonError(
+                f"contract {tool.contract.name} times {tool.contract.primary_metric}, "
+                "which only its output can report, but reads no output"
+            )
+    if len({tool.contract.primary_metric for tool in (anchor, *competitors)}) != 1:
+        raise ComparisonError("every tool in a comparison must time the same metric")
     if not competitors:
         raise ComparisonError("at least one competitor is required")
     mismatched = [
@@ -673,25 +731,30 @@ def run(
     # contract that reads its cache, such as `fdu-code-cached-no-ignore`, is warm after
     # its first warm-up, and every timed trial measures a repeated run; a contract that
     # does not read what it wrote scans cold in every trial.
+    #
+    # A contract may narrow that scope to one directory per tool or a fresh one per
+    # sample; see `ToolContract.cache_scope`. Every directory lives under this one, so
+    # all of them are discarded with it.
     needs_cache_home = any(tool.contract.writes_cache for tool in tools)
     with measure._host_regime(host_regime, background_load_workers) as regime:
         with tempfile.TemporaryDirectory(prefix="fdu-tool-cache-") as cache_directory:
-            cache_home = Path(cache_directory) if needs_cache_home else None
+            cache_homes = _CacheHomes(Path(cache_directory), tools) if needs_cache_home else None
             for competitor, ordinal, warmup, anchor_first in schedule:
                 ordered = (anchor, competitor) if anchor_first else (competitor, anchor)
                 for tool in ordered:
                     position += 1
-                    sample = _run_one(
-                        tool,
-                        pair=competitor.name,
-                        ordinal=ordinal,
-                        warmup=warmup,
-                        root=root,
-                        summary_oracle=before,
-                        host_regime=regime,
-                        timeout_seconds=timeout_seconds,
-                        cache_home=cache_home,
-                    )
+                    with _cache_home(cache_homes, tool) as cache_home:
+                        sample = _run_one(
+                            tool,
+                            pair=competitor.name,
+                            ordinal=ordinal,
+                            warmup=warmup,
+                            root=root,
+                            summary_oracle=before,
+                            host_regime=regime,
+                            timeout_seconds=timeout_seconds,
+                            cache_home=cache_home,
+                        )
                     samples.append(sample)
                     _progress(position, total, sample)
         final_host_pressure = measure._host_pressure_snapshot(regime)
@@ -887,14 +950,22 @@ _CODE_TOTAL_ROWS = {
 }
 
 
+_FDU_PERFORMANCE_LINE = re.compile(r"^(?:perf:|Performance:) .*$")
+
+
 def _code_table_totals(
     layout: str, stdout: bytes, stderr: str
 ) -> Tuple[Optional[Dict[str, int]], Optional[str]]:
     """Parse the one total row of a line counter's text table.
 
-    Any stderr invalidates the sample: fdu runs with `--quiet`, and scc and tokei write
-    there only when a file could not be read, which would make the count incomplete.
+    Any stderr invalidates the sample: fdu's comparison contracts run with `--quiet`,
+    and scc and tokei write there only when a file could not be read, which would make
+    the count incomplete. The one exception is fdu's own performance line (`perf:`, or
+    `Performance:` before 0.2.0), which a build run as it ships, without `--quiet`,
+    prints after every report; it is a timing summary, not a warning.
     """
+    if layout == "fdu":
+        stderr = "\n".join(_FDU_PERFORMANCE_LINE.sub("", line) for line in stderr.splitlines())
     if stderr.strip():
         return None, f"{layout} reported warnings or errors"
     try:
@@ -936,6 +1007,72 @@ def _schedule(
     return schedule
 
 
+class _CacheHomes:
+    """The isolated cache directories of one comparison, all under one discarded root.
+
+    The root itself is the shared ``comparison`` directory, so a run whose contracts
+    declare nothing else uses exactly the directory it always did.
+    """
+
+    def __init__(self, root: Path, tools: Sequence[Tool]) -> None:
+        self.root = root
+        self._per_tool = {
+            tool.name: root / f"tool-{index}"
+            for index, tool in enumerate(tools)
+            if tool.contract.cache_scope == "tool"
+        }
+        for directory in self._per_tool.values():
+            directory.mkdir()
+
+    def for_tool(self, tool: Tool) -> Path:
+        if tool.contract.cache_scope == "tool":
+            return self._per_tool[tool.name]
+        return self.root
+
+
+@contextlib.contextmanager
+def _cache_home(homes: Optional[_CacheHomes], tool: Tool) -> Iterator[Optional[Path]]:
+    """Yield the cache directory one process of ``tool`` runs with.
+
+    A ``sample``-scoped contract gets a fresh empty directory, removed once its process
+    has been timed, so no sample can start from what an earlier one wrote.
+    """
+    if homes is None:
+        yield None
+        return
+    if not tool.contract.writes_cache or tool.contract.cache_scope != "sample":
+        yield homes.for_tool(tool)
+        return
+    fresh = Path(tempfile.mkdtemp(prefix="sample-", dir=homes.root))
+    try:
+        yield fresh
+    finally:
+        shutil.rmtree(fresh, ignore_errors=True)
+
+
+def _run_setup(
+    tool: Tool,
+    *,
+    root: Path,
+    overrides: Mapping[str, str],
+    timeout_seconds: float,
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """Run the contract's untimed setup command, if it has one, before the timed process."""
+    if not tool.contract.setup_argv:
+        return None, []
+    result = measure._spawn(
+        _expand(tool.contract.setup_argv, tool.binary, root, cache=_cache_of(overrides)),
+        timeout_seconds=timeout_seconds,
+        environment_overrides=dict(overrides) or None,
+    )
+    reasons: List[str] = []
+    if result["timed_out"]:
+        reasons.append("untimed setup command timed out")
+    if result["exit_code"] != 0:
+        reasons.append(f"untimed setup command exited with {result['exit_code']}")
+    return {"exit_code": result["exit_code"], "wall_ns": result["wall_ns"]}, reasons
+
+
 def _run_one(
     tool: Tool,
     *,
@@ -948,7 +1085,12 @@ def _run_one(
     timeout_seconds: float,
     cache_home: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    argv = _expand(tool.contract.argv, tool.binary, root)
+    argv = _expand(
+        tool.contract.argv,
+        tool.binary,
+        root,
+        cache=cache_home if tool.contract.writes_cache else None,
+    )
     requires_scan_diagnostics = tool.contract.name in FDU_SUMMARY_CONTRACTS
     overrides: Dict[str, str] = {}
     if requires_scan_diagnostics:
@@ -960,6 +1102,9 @@ def _run_one(
                 "directory was provisioned"
             )
         overrides["XDG_CACHE_HOME"] = str(cache_home)
+    setup, setup_reasons = _run_setup(
+        tool, root=root, overrides=overrides, timeout_seconds=timeout_seconds
+    )
     pressure_before = measure._host_pressure_snapshot(host_regime)
     result = measure._spawn(
         argv,
@@ -975,12 +1120,16 @@ def _run_one(
         "wall_ns": result["wall_ns"],
         "cpu_ns": user + system if user is not None and system is not None else None,
     }
-    reasons: List[str] = []
+    reasons: List[str] = list(setup_reasons)
     if result["timed_out"]:
         reasons.append("command timed out")
     if result["exit_code"] != 0:
         reasons.append(f"command exited with {result['exit_code']}")
     reasons.extend(measure._host_pressure_reasons(host_regime, pressure_before, pressure_after))
+    if tool.contract.stdout_metrics is not None:
+        reported, output_reasons = tool.contract.stdout_metrics(result["stdout"], summary_oracle)
+        metrics.update(reported)
+        reasons.extend(output_reasons)
     semantic_sha256: Optional[str] = None
     semantic_total_bytes: Optional[int] = None
     summary_oracle_error: Optional[str] = None
@@ -1025,7 +1174,10 @@ def _run_one(
             reasons.append(code_error)
     stderr = effective_stderr.encode("utf-8", errors="replace")
     claim_metrics = metrics if not reasons else {key: None for key in metrics}
+    # Present only for a contract with a setup step, so other runs keep their shape.
+    extra: Dict[str, Any] = {"setup": setup} if setup is not None else {}
     return {
+        **extra,
         "pair": pair,
         "tool": tool.name,
         "ordinal": ordinal,
@@ -1191,11 +1343,29 @@ def _summary_oracle_error(summary: Mapping[str, Any], oracle: Mapping[str, Any])
     return None
 
 
+def _reported_metrics(samples: Sequence[Mapping[str, Any]]) -> List[str]:
+    """The metrics a run summarizes.
+
+    ``blocked_ns`` never: a parallel tool's off-CPU time is not wall minus CPU.
+    ``component_ns`` only where some sample carries one, which a contract's
+    ``stdout_metrics`` reports, so a run of process-timed tools keeps its old shape.
+    """
+    has_component = any(
+        (sample.get("metrics") or {}).get("component_ns") is not None for sample in samples
+    )
+    return [
+        metric
+        for metric in measure.LOWER_IS_BETTER
+        if metric != "blocked_ns" and (metric != "component_ns" or has_component)
+    ]
+
+
 def _statistics(document: Mapping[str, Any]) -> Dict[str, Any]:
     anchor = str(document["anchor"])
     samples = list(document["samples"])
     conditions = document.get("conditions")
     conditions = conditions if isinstance(conditions, Mapping) else {}
+    reported = _reported_metrics(samples)
     statistics_document: Dict[str, Any] = {}
     for competitor in document["competitor_order"]:
         per_tool: Dict[str, Any] = {}
@@ -1226,8 +1396,7 @@ def _statistics(document: Mapping[str, Any]) -> Dict[str, Any]:
                             if sample["metrics"].get(metric) is not None
                         ]
                     )
-                    for metric in measure.LOWER_IS_BETTER
-                    if metric != "component_ns" and metric != "blocked_ns"
+                    for metric in reported
                 },
             }
         statistics_document[competitor] = {
@@ -1279,6 +1448,7 @@ def _censored_peak_rss(samples: Sequence[Mapping[str, Any]]) -> Optional[int]:
 def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
     """Summarize each executable once; fdu includes every adjacent anchor sample."""
     result: Dict[str, Any] = {}
+    reported = _reported_metrics(document["samples"])
     for name in [document["anchor"], *document["competitor_order"]]:
         selected = [
             sample
@@ -1304,8 +1474,7 @@ def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
                         if sample["metrics"].get(metric) is not None
                     ]
                 )
-                for metric in measure.LOWER_IS_BETTER
-                if metric != "component_ns" and metric != "blocked_ns"
+                for metric in reported
             },
             "peak_rss_at_most_bytes": _censored_peak_rss(selected),
         }
@@ -1817,6 +1986,15 @@ def _parse_tool(specification: str, *, expected: Optional[str] = None) -> Tool:
 
 def _identity(tool: Tool) -> Dict[str, Any]:
     content = tool.binary.read_bytes()
+    # The start-state fields appear only where a contract departs from the default, so
+    # every artifact recorded before they existed still has the shape it had.
+    start_state: Dict[str, Any] = {}
+    if tool.contract.writes_cache and tool.contract.cache_scope != "comparison":
+        start_state["cache_scope"] = tool.contract.cache_scope
+    if tool.contract.setup_argv:
+        start_state["setup_command"] = list(tool.contract.setup_argv)
+    if tool.contract.primary_metric != "wall_ns":
+        start_state["primary_metric"] = tool.contract.primary_metric
     return {
         "name": tool.name,
         "contract": tool.contract.name,
@@ -1826,6 +2004,7 @@ def _identity(tool: Tool) -> Dict[str, Any]:
         "version": _version(tool),
         "binary_sha256": hashlib.sha256(content).hexdigest(),
         "binary_size_bytes": len(content),
+        **start_state,
     }
 
 
@@ -1843,11 +2022,36 @@ def _version(tool: Tool) -> str:
     return " ".join(text.split())[:300]
 
 
-def _expand(template: Sequence[str], binary: Path, root: Path) -> List[str]:
-    return [
-        str(binary) if item == "{binary}" else str(root) if item == "{root}" else item
-        for item in template
-    ]
+def _expand(
+    template: Sequence[str], binary: Path, root: Path, *, cache: Optional[Path] = None
+) -> List[str]:
+    """Fill a command template.
+
+    ``{binary}`` and ``{root}`` are whole arguments. ``{cache}`` may appear inside one,
+    such as ``{cache}/snapshot.fdu``, and names the process's isolated cache directory,
+    so a contract can hand a build a file that lives and dies with that directory.
+    """
+    expanded = []
+    for item in template:
+        if item == "{binary}":
+            expanded.append(str(binary))
+        elif item == "{root}":
+            expanded.append(str(root))
+        elif "{cache}" in item:
+            if cache is None:
+                raise ComparisonError(
+                    f"argument {item!r} names the cache directory, which only a "
+                    "cache-writing contract is given"
+                )
+            expanded.append(item.replace("{cache}", str(cache)))
+        else:
+            expanded.append(item)
+    return expanded
+
+
+def _cache_of(overrides: Mapping[str, str]) -> Optional[Path]:
+    home = overrides.get("XDG_CACHE_HOME")
+    return Path(home) if home else None
 
 
 def _load_baseline(path: Optional[Path]) -> Optional[Mapping[str, Any]]:

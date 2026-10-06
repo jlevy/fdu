@@ -6,28 +6,102 @@ is wrong, which is the failure mode a report of measurements can least afford.
 
 from __future__ import annotations
 
+import json
+import math
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Any, Dict, List
 
 from benchmarks.realtree.report_html import (
+    _numbered_builds,
+    metric_series,
+    trend_label,
     STYLE,
     axis_ticks,
     decision_label,
+    STANDING_EXPERIMENT,
+    end_to_end_cells,
     figure_absolute,
+    figure_effects,
+    figure_end_to_end,
+    figure_timeline,
     figure_per_entry,
     fmt_primary,
+    iteration_kind,
     kept_improvements,
     render,
+)
+from benchmarks.realtree.perf_index import (
+    Z95,
+    cells_by_job,
+    combine,
+    component_digest,
+    component_ratios,
+    memory_ratios,
+    load_suite,
+    project_index,
+    score_ratio,
+    unmapped_jobs,
 )
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
     SYNTHETIC_SUBJECTS,
     is_synthetic,
     kept_variant,
+    load_history,
     project,
     subject_family,
     subject_key,
 )
+
+
+def _index_cell(
+    component: str,
+    first_ms: float,
+    last_ms: float,
+    extra_after: str = "",
+    job: str = "",
+    digest: str = "",
+) -> Dict[str, Any]:
+    """A two-build history cell for one job of one index component, anchored on v0.3.0.
+
+    It carries the manifest's digest for the component unless a test passes another.
+    """
+    definition = next(item for item in load_suite()["components"] if item["id"] == component)
+    milestones = [
+        {"label": "prework", "short": "start", "commit": "aaaa", "date": "2026-08-10",
+         "includes": "start", "after_experiment": "exp-000", "wall_ms": first_ms,
+         "peak_rss_mib": 400.0, "vs_latest_pct": (first_ms / last_ms - 1) * 100,
+         "vs_latest_ci95_pct": [(first_ms / last_ms - 1) * 90, (first_ms / last_ms - 1) * 110],
+         "supported": True},
+        {"label": "v0.3.0", "short": "0.3.0", "commit": "bbbb", "date": "2026-09-30",
+         "includes": "end", "after_experiment": "exp-032", "wall_ms": last_ms,
+         "peak_rss_mib": 60.0, "vs_latest_pct": None, "vs_latest_ci95_pct": None,
+         "supported": True},
+    ]
+    if extra_after:
+        milestones.append(
+            {"label": "lost", "short": "unplaced-build", "commit": "cccc", "date": "2026-10-01",
+             "includes": "none", "after_experiment": extra_after, "wall_ms": 1000.0,
+             "vs_latest_pct": -96.7, "vs_latest_ci95_pct": [-97.0, -96.4], "supported": True}
+        )
+    return {
+        "id": f"{component}-{job or component}",
+        "component": component,
+        "job": job or component,
+        "component_digest": digest or component_digest(definition),
+        "platform": "macOS",
+        "reference_build": "v0.3.0",
+        "subject": "linux-v6.12",
+        "title": "the Linux v6.12 source tree",
+        "entries": 92460,
+        "cpu": "M1",
+        "storage": "internal SSD",
+        "trials": 12,
+        "regime": "uncontrolled",
+        "milestones": milestones,
+    }
 
 
 def metric(
@@ -416,6 +490,513 @@ class RenderTests(unittest.TestCase):
         figure = figure_absolute(dataset)
         self.assertIn("exp-006", figure)
 
+    def test_a_baseline_comparing_two_builds_is_drawn_with_its_change(self) -> None:
+        # exp-202 measured the 0.3.0 engine against 0.2.1's and decided nothing, so it is
+        # a baseline; the page left its -48% blank and kept it off the effects figure, as
+        # if it were an A/A cell like exp-175. The binaries the record names tell them
+        # apart.
+        release = experiment(
+            "exp-202",
+            decision="baseline",
+            kept="neither",
+            wall=metric(208.6e6, 109.9e6, -48.0, -50.5, -44.8),
+        )
+        release["method"]["control_binary"] = {"name": "v021", "sha256": "c" * 64, "args": []}
+        release["method"]["candidate_binary"] = {"name": "release", "sha256": "d" * 64, "args": []}
+        same = experiment(
+            "exp-175", decision="baseline", wall=metric(181.9e6, 180.0e6, -1.1, -3.2, +1.4)
+        )
+        same["method"]["control_binary"] = {"name": "a", "sha256": "e" * 64, "args": []}
+        same["method"]["candidate_binary"] = {"name": "b", "sha256": "e" * 64, "args": []}
+        dataset = project([experiment("exp-101"), release, same])
+        records = {record["id"]: record for record in dataset["experiments"]}
+        self.assertTrue(records["exp-101"]["compares"])
+        self.assertTrue(records["exp-202"]["compares"])
+        self.assertFalse(records["exp-175"]["compares"])
+        figure = figure_effects(dataset)
+        self.assertIn("exp-202", figure)
+        self.assertNotIn("exp-175", figure)
+        self.assertIn("1 of them baselines that compare two builds", figure)
+        page = render(dataset)
+        self.assertIn("-48.0%", page)
+        self.assertNotIn("-1.1%", page)
+
+    def _end_to_end(self, identifier: str, *, system: str = "Linux 6.18.44-fc-v50") -> Dict[str, Any]:
+        record = experiment(
+            identifier,
+            decision="baseline",
+            kept="neither",
+            system=system,
+            wall=metric(208.6e6, 109.9e6, -48.0, -50.5, -44.8),
+        )
+        record["results"][0]["job"] = "default-tree"
+        record["verdict"]["primary_job"] = "default-tree"
+        record["method"]["control_binary"] = {"name": "old", "sha256": "c" * 64, "args": []}
+        record["method"]["candidate_binary"] = {"name": "new", "sha256": "d" * 64, "args": []}
+        return record
+
+    def test_the_end_to_end_figure_draws_only_two_build_default_tree_cells(self) -> None:
+        # An A/A cell and an accepted step are not end-to-end comparisons; drawing them
+        # beside the release cell would chain sessions the caption says not to chain.
+        same = self._end_to_end("exp-175")
+        same["method"]["candidate_binary"] = same["method"]["control_binary"]
+        dataset = project(
+            [
+                self._end_to_end(STANDING_EXPERIMENT),
+                self._end_to_end("exp-074", system="Darwin 25.5.0"),
+                same,
+                experiment("exp-178", system="Linux 6.18.44-fc-v49"),
+            ]
+        )
+        self.assertEqual(
+            [record["id"] for record in end_to_end_cells(dataset, "Linux")], [STANDING_EXPERIMENT]
+        )
+        figure = figure_end_to_end(dataset, "Linux")
+        self.assertIn("209 ms", figure)
+        self.assertIn("110 ms", figure)
+        self.assertNotIn("exp-175", figure)
+        self.assertEqual(figure_end_to_end(project([experiment("exp-001")]), "Linux"), "")
+
+    def test_the_header_states_the_release_standing_when_it_is_recorded(self) -> None:
+        with_release = render(project([self._end_to_end(STANDING_EXPERIMENT)]))
+        self.assertIn("0.2.1 to 0.3.0", with_release)
+        # A projection without the release record still renders, without the figure.
+        self.assertNotIn("0.2.1 to 0.3.0", render(project([experiment("exp-001")])))
+
+    def test_every_remeasurement_names_a_record_that_would_otherwise_count(self) -> None:
+        # The list is hand-maintained; an id with no record, or a record that would not
+        # count as kept anyway, means the list and the record have drifted apart.
+        import json
+        from pathlib import Path
+
+        from benchmarks.realtree.report_html import REMEASUREMENTS
+
+        committed = Path("docs/project/reports/performance-evidence/timeline.json")
+        records = {
+            record["id"]: record
+            for record in json.loads(committed.read_text(encoding="utf-8"))["experiments"]
+        }
+        for identifier in REMEASUREMENTS:
+            self.assertIn(identifier, records)
+            record = records[identifier]
+            self.assertEqual(record["decision"], "accepted", identifier)
+            self.assertLessEqual(record["change_pct"], -3, identifier)
+
+    def test_a_remeasurement_is_not_counted_as_a_kept_change(self) -> None:
+        # Cumulative checkpoints re-measure campaign 1; counting them as kept changes drew
+        # the same work four times as tall green bars.
+        dataset = project(
+            [
+                experiment("exp-032"),
+                experiment("exp-154", kept="control"),
+                experiment("exp-190"),
+            ]
+        )
+        kinds = {record["id"]: iteration_kind(record) for record in dataset["experiments"]}
+        self.assertEqual(kinds["exp-032"], "measured")
+        self.assertEqual(kinds["exp-154"], "measured")
+        self.assertEqual(kinds["exp-190"], "kept")
+        self.assertIn("Not a new change: a cumulative checkpoint", figure_timeline(dataset))
+
+    def test_history_cells_load_in_display_order(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from benchmarks.realtree.timeline import load_history
+
+        with tempfile.TemporaryDirectory() as directory:
+            for name, order in (("a-cell", 2), ("b-cell", 1)):
+                Path(directory, f"{name}.json").write_text(
+                    json.dumps(
+                        {
+                            "display_order": order,
+                            "subject": {"label": name, "counts": {"total": 10}},
+                            "milestones": [{"label": "x", "wall_ms": {"median": 5.0}}],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            cells = load_history(Path(directory))
+        self.assertEqual([cell["id"] for cell in cells], ["b-cell", "a-cell"])
+        self.assertEqual(cells[0]["milestones"][0]["wall_ms"], 5.0)
+
+    def test_the_page_carries_the_theme_chooser(self) -> None:
+        page = render(project([experiment("exp-001")]))
+        for choice in ("system", "light", "dark"):
+            self.assertIn(f'data-theme-choice="{choice}"', page)
+        self.assertIn("fdu.report.themeMode", page)
+
+    def test_the_iterations_figure_draws_every_experiment_once(self) -> None:
+        # The figure is the page's record of every iteration; one silently dropped is a
+        # rejected idea the reader never sees.
+        dataset = project(
+            [
+                experiment("exp-001"),
+                experiment("exp-002", decision="rejected"),
+                experiment("exp-067", decision="baseline"),
+                experiment("exp-250"),
+            ]
+        )
+        figure = figure_timeline(dataset)
+        for identifier in ("exp-001", "exp-002", "exp-067", "exp-250"):
+            self.assertEqual(figure.count(f"{identifier}: Experiment {identifier}"), 1)
+        kinds = {record["id"]: iteration_kind(record) for record in dataset["experiments"]}
+        self.assertEqual(kinds["exp-001"], "kept")
+        self.assertEqual(kinds["exp-002"], "rejected")
+        self.assertEqual(kinds["exp-067"], "measured")
+
+    def test_the_runtime_panel_draws_only_milestones_it_can_place(self) -> None:
+        # The top panel steps through the history cell's builds at the experiment each
+        # follows. A milestone naming an experiment the record lacks is left out rather
+        # than drawn at an invented position.
+        dataset = project([experiment("exp-000"), experiment("exp-032")])
+        dataset["history"] = [_index_cell("cold-cache", 150000.0, 30000.0, extra_after="exp-999")]
+        dataset["index"] = project_index(dataset["history"], load_suite())
+        figure = figure_timeline(dataset)
+        self.assertIn("5.0x better", figure)
+        self.assertIn("5.0x faster", figure)
+        # The unplaced build's name would appear in its tooltip and the caption if drawn.
+        self.assertNotIn("unplaced-build", figure)
+        self.assertIn('data-metric="score"', figure)
+        self.assertIn('<option value="cold-cache"', figure)
+        # The header uses the same placement, so it cannot claim 150x for a build the
+        # chart leaves out.
+        page = render(dataset)
+        self.assertNotIn("150.0&times;", page)
+        # Milestone times are milliseconds; passing them to the nanosecond formatter
+        # printed every runtime as "0 ms".
+        self.assertNotIn(" 0 ms", page)
+
+    def test_one_tree_timed_per_component_job_is_described_and_headlined_once(self) -> None:
+        # Twelve cells on the Linux tree once drew twelve "N.Nx faster, the Linux v6.12
+        # source tree" headlines and repeated the tree in the caption twelve times.
+        dataset = project([experiment("exp-000"), experiment("exp-032")])
+        dataset["history"] = [
+            _index_cell("cold-cache", 150.0, 30.0),
+            _index_cell("default-tree", 120.0, 40.0),
+        ]
+        dataset["index"] = project_index(dataset["history"], load_suite())
+        figure = figure_timeline(dataset)
+        self.assertEqual(figure.count("the Linux v6.12 source tree ("), 1)
+        self.assertIn("2 cells, one per component job", figure)
+        page = render(dataset)
+        self.assertNotIn("source tree, first build to", page)
+        # A cell outside the index still gets its own headline.
+        outside = dict(_index_cell("cold-cache", 150.0, 30.0), component=None, id="outside")
+        dataset["history"].append(outside)
+        self.assertIn("source tree, first build to", render(dataset))
+
+    def test_builds_are_numbered_in_the_order_they_landed(self) -> None:
+        # The full score's line starts at the first fully covered build, so numbering
+        # points in line order numbered a late build first.
+        position = {"exp-000": 0, "exp-010": 1, "exp-020": 2}
+        points = [
+            {"after_experiment": "exp-020", "short": "late"},
+            {"after_experiment": "exp-000", "short": "first"},
+            {"after_experiment": "exp-010", "short": "middle"},
+            {"after_experiment": "exp-020", "short": "late"},
+        ]
+        self.assertEqual(
+            list(_numbered_builds(points, position).values()), ["first", "middle", "late"]
+        )
+
+    def _chart_dataset(self, cells: List[Dict[str, Any]]) -> Dict[str, Any]:
+        dataset = project([experiment("exp-000"), experiment("exp-032")])
+        dataset["history"] = cells
+        suite = load_suite()
+        dataset["index"] = project_index(cells, suite)
+        dataset["index_jobs"] = dict(suite["job_components"])
+        return dataset
+
+    def test_the_score_is_named_by_platform_coverage_and_regime(self) -> None:
+        # E7, E1: a macOS-only score is the macOS score, never the full index; and a score
+        # measured on an uncontrolled host is labelled exploratory wherever it is stated.
+        # One cold-cache cell: cold cache and memory, 2 of the 12 components.
+        dataset = self._chart_dataset([_index_cell("cold-cache", 150.0, 30.0)])
+        page = render(dataset)
+        self.assertIn("macOS score, 2 of 12 components", page)
+        self.assertIn("exploratory, uncontrolled host", page)
+        self.assertIn("Linux not yet measured (50% of the combined index)", page)
+        self.assertNotIn("full score", page)
+        self.assertNotIn("unified score,", page)
+        figure = figure_timeline(dataset)
+        self.assertIn("macOS score, 2 of 12 components", figure)
+        # A score whose every cell ran quiet or controlled, at a held-out stage, for 20
+        # rounds is not.
+        quiet = dict(_index_cell("cold-cache", 150.0, 30.0), regime="quiet", stage="held-out", trials=20)
+        quiet_page = render(self._chart_dataset([quiet]))
+        self.assertIn("macOS score, 2 of 12 components", quiet_page)
+        self.assertNotIn("exploratory, ", quiet_page)
+        self.assertNotIn("measured; exploratory", quiet_page)
+        # G5: an exploratory stage on a controlled host is exploratory, not "uncontrolled".
+        controlled = dict(quiet, stage="exploratory")
+        controlled_page = render(self._chart_dataset([controlled]))
+        self.assertIn("measured; exploratory", controlled_page)
+        self.assertNotIn("exploratory, uncontrolled", controlled_page)
+        # A quiet held-out cell of 12 rounds cannot be quoted, and the label says why.
+        short = dict(quiet, trials=12)
+        short_page = render(self._chart_dataset([short]))
+        self.assertIn("measured; exploratory, 12 rounds", short_page)
+        # H1 on #175: on an uncontrolled host the shortfall is named too.
+        loose = dict(short, regime="uncontrolled")
+        self.assertIn("exploratory, uncontrolled host, 12 rounds", render(self._chart_dataset([loose])))
+
+    def test_the_chooser_defaults_to_the_score_and_bars_carry_their_component(self) -> None:
+        # E13: the default the spec asks for, and the attributes the fading reads.
+        figure = figure_timeline(self._chart_dataset([_index_cell("cold-cache", 150.0, 30.0)]))
+        self.assertIn('<option value="score" selected>', figure)
+        self.assertIn('<g class="metric on" data-metric="score">', figure)
+        self.assertIn('<g class="metric" data-metric="cold-cache">', figure)
+        self.assertIn('data-component="cold-cache" data-platform="macOS"', figure)
+        self.assertIn('id="metric" data-platform="macOS"', figure)
+
+    def test_a_line_that_ends_worse_says_so(self) -> None:
+        # E10: a line that rose read "0.8x faster".
+        self.assertEqual(trend_label(5.0, 1.0, "faster", "slower"), "5.0x faster")
+        self.assertEqual(trend_label(0.8, 1.0, "faster", "slower"), "1.2x slower")
+        self.assertEqual(trend_label(0.5, 1.0, "less memory", "more memory"), "2.0x more memory")
+        dataset = self._chart_dataset([_index_cell("cold-cache", 80.0, 100.0)])
+        figure = figure_timeline(dataset)
+        self.assertIn("1.2x slower since start", figure)
+        self.assertNotIn("0.8x faster", figure)
+        # Each tooltip names what its metric is: an index, a peak, or a time.
+        self.assertIn("x v0.3.0&#x27;s time", figure)
+        self.assertIn("x v0.3.0&#x27;s index", figure)
+        self.assertIn("x v0.3.0&#x27;s peak memory", figure)
+
+    def test_the_chart_draws_its_platform_by_name_and_the_headline_every_platform(self) -> None:
+        # E11: the projection sorts platforms by name, so Linux's first cell would have
+        # replaced macOS's chart had the page taken the first.
+        mac = _index_cell("cold-cache", 150.0, 30.0)
+        linux = dict(_index_cell("cold-cache", 300.0, 100.0), platform="Linux", id="linux")
+        dataset = self._chart_dataset([mac, linux])
+        self.assertEqual([item["platform"] for item in dataset["index"]], ["Linux", "macOS"])
+        position = {"exp-000": 0, "exp-032": 1}
+        self.assertTrue(metric_series(dataset, position)[0]["title"].startswith("macOS score"))
+        self.assertTrue(
+            metric_series(dataset, position, "Linux")[0]["title"].startswith("Linux score")
+        )
+        page = render(dataset)
+        self.assertIn("macOS score, 2 of 12 components", page)
+        self.assertIn("Linux score, 2 of 12 components", page)
+        self.assertNotIn("not yet measured", page)
+
+    def test_a_cell_the_projection_cannot_trust_is_refused(self) -> None:
+        suite = load_suite()
+        cold = _index_cell("cold-cache", 150.0, 30.0)
+        # F6: two cells for one component and job; which counted would depend on order.
+        with self.assertRaisesRegex(ValueError, "both time cold-cache/cold-cache"):
+            cells_by_job([cold, dict(cold, id="again")], suite, "macOS")
+        # F6: a job the component does not list.
+        with self.assertRaisesRegex(ValueError, "does not list"):
+            cells_by_job([_index_cell("cold-cache", 150.0, 30.0, job="other")], suite, "macOS")
+        # F3: a cell anchored on another build.
+        with self.assertRaisesRegex(ValueError, "not the suite's reference build"):
+            cells_by_job([dict(cold, reference_build="v0.2.0")], suite, "macOS")
+        # F7: a paired change with no interval is not a zero-width one.
+        bare = _index_cell("cold-cache", 150.0, 30.0)
+        bare["milestones"][0]["vs_latest_ci95_pct"] = None
+        with self.assertRaisesRegex(ValueError, "no interval"):
+            component_ratios([bare], suite, "macOS")
+
+    def test_the_interval_arithmetic_is_exact(self) -> None:
+        # F11. Two components of equal weight whose intervals have the same log spread
+        # L = ln(1.5625): the index is 1, and its interval is 1.5625 ** (+-1 / (2 sqrt 2)).
+        spread = 1.5625
+        result = combine(
+            {
+                "a": {"ratio": 2.0, "low": 1.6, "high": 2.5},
+                "b": {"ratio": 0.5, "low": 0.4, "high": 0.625},
+            },
+            {"a": 0.25, "b": 0.25},
+        )
+        self.assertAlmostEqual(result["index"], 1.0, places=12)
+        self.assertAlmostEqual(result["low"], spread ** (-1 / (2 * math.sqrt(2))), places=12)
+        self.assertAlmostEqual(result["high"], spread ** (1 / (2 * math.sqrt(2))), places=12)
+        # Unequal weights: the heavier component's error counts three times as much.
+        weighted = combine(
+            {
+                "a": {"ratio": 2.0, "low": 1.6, "high": 2.5},
+                "b": {"ratio": 1.0, "low": 1.0, "high": 1.0},
+            },
+            {"a": 0.3, "b": 0.1},
+        )
+        self.assertAlmostEqual(weighted["index"], 2.0**0.75, places=12)
+        self.assertAlmostEqual(
+            weighted["low"], 2.0**0.75 * spread ** (-0.75 / 2), places=12
+        )
+        # Two jobs, 4x [3.7, 4.3] and 1x [1, 1] (the fixture's 90% and 110% of the change):
+        # their geometric mean is 2x, with half the first job's log spread on each side.
+        cells = [
+            _index_cell("warm-metadata", 400.0, 100.0, job="cold-open-save"),
+            _index_cell("warm-metadata", 100.0, 100.0, job="warm-revalidate"),
+        ]
+        ratio = component_ratios(cells, load_suite(), "macOS")["warm-metadata"]["prework"]
+        self.assertAlmostEqual(ratio["ratio"], 2.0, places=12)
+        self.assertAlmostEqual(ratio["low"], 2.0 * (4.3 / 3.7) ** -0.25, places=12)
+        self.assertAlmostEqual(ratio["high"], 2.0 * (4.3 / 3.7) ** 0.25, places=12)
+        self.assertGreater(Z95, 1.959)
+
+    def test_history_cells_are_read_by_their_own_anchor(self) -> None:
+        # F3: the paired key follows the cell's anchor instead of a literal.
+        with tempfile.TemporaryDirectory() as directory:
+            cell = {
+                "component": "cold-cache",
+                "reference_build": "v0.2.0",
+                "milestones": [
+                    {
+                        "label": "old",
+                        "wall_ms": {"median": 2.0},
+                        "vs_v0_2_0_paired_harness": {
+                            "median_change_pct": 100.0,
+                            "ci95_change_pct": [90.0, 110.0],
+                        },
+                        "vs_v0_3_0_paired_harness": {"median_change_pct": 5.0},
+                    }
+                ],
+            }
+            (Path(directory) / "cell.json").write_text(json.dumps(cell))
+            loaded = load_history(Path(directory))
+        self.assertEqual(loaded[0]["reference_build"], "v0.2.0")
+        self.assertEqual(loaded[0]["milestones"][0]["vs_latest_pct"], 100.0)
+
+    def test_the_score_is_a_weighted_sum_of_log_ratios(self) -> None:
+        # A 2x gain on one component and a 2x loss on another of equal weight cancel
+        # exactly; a sum of raw times or raw ratios would not.
+        result = combine(
+            {
+                "a": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+                "b": {"ratio": 0.5, "low": 0.5, "high": 0.5},
+            },
+            {"a": 0.25, "b": 0.25},
+        )
+        self.assertAlmostEqual(result["index"], 1.0)
+        # Weights renormalize over the components a build has.
+        alone = combine({"a": {"ratio": 4.0, "low": 3.0, "high": 5.0}}, {"a": 0.1})
+        self.assertAlmostEqual(alone["index"], 4.0)
+        self.assertLess(alone["low"], 4.0)
+        self.assertGreater(alone["high"], 4.0)
+
+    def test_every_recorded_job_maps_to_a_scored_component(self) -> None:
+        # The completeness rule: a job the loop measures but the score cannot see would
+        # let a kept change improve something no line shows.
+        suite = load_suite()
+        self.assertEqual(unmapped_jobs(project([experiment("exp-001")])["experiments"], suite), [])
+        stray = experiment("exp-002")
+        stray["results"][0]["job"] = "brand-new-job"
+        stray["verdict"]["primary_job"] = "brand-new-job"
+        self.assertEqual(unmapped_jobs(project([stray])["experiments"], suite), ["brand-new-job"])
+
+    def test_the_suite_weights_sum_to_one(self) -> None:
+        suite = load_suite()
+        self.assertAlmostEqual(sum(item["weight"] for item in suite["components"]), 1.0)
+
+    def test_a_cell_measured_under_another_definition_is_refused(self) -> None:
+        # Manifest v1 was once edited in place while cells kept claiming v1; the digest
+        # makes that a refusal instead of a silently wrong score.
+        stale = _index_cell("cold-cache", 300.0, 100.0, digest="0000000000000000")
+        with self.assertRaises(ValueError):
+            project_index([stale], load_suite())
+
+    def test_memory_follows_each_score_lines_components_and_counts_each_once(self) -> None:
+        # Restricting memory to the components every build has hid the content and
+        # summary memory wins from the full score; each line now averages its own mix,
+        # and a component with two jobs counts once, not twice.
+        def cell(peaks: Dict[str, float]) -> Dict[str, Any]:
+            return {"milestones": [{"label": label, "peak_rss_mib": peak} for label, peak in peaks.items()]}
+
+        by_job = {
+            ("cold-cache", "cold-cache"): cell({"prework": 400.0, "mid": 200.0, "v0.3.0": 100.0}),
+            ("code", "code"): cell({"mid": 50.0, "v0.3.0": 100.0}),
+            ("opened-root", "a"): cell({"mid": 400.0, "v0.3.0": 100.0}),
+            ("opened-root", "b"): cell({"mid": 400.0, "v0.3.0": 100.0}),
+        }
+        full = memory_ratios(by_job, "v0.3.0", ["cold-cache", "code", "opened-root"])
+        # mid: cold-cache 2x, code 0.5x, opened-root 4x, its two jobs counted once, gives
+        # (2 * 0.5 * 4) ** (1/3); counting opened-root twice would give exactly 2x.
+        self.assertAlmostEqual(full["mid"]["ratio"], 4 ** (1 / 3), places=6)
+        partial = memory_ratios(by_job, "v0.3.0", ["cold-cache"])
+        self.assertAlmostEqual(partial["mid"]["ratio"], 2.0, places=6)
+        self.assertAlmostEqual(partial["prework"]["ratio"], 4.0, places=6)
+        # A build with only one of a component's two jobs has no memory on it.
+        lopsided = dict(by_job)
+        lopsided[("opened-root", "b")] = cell({"v0.3.0": 100.0})
+        self.assertNotIn("mid", memory_ratios(lopsided, "v0.3.0", ["opened-root"]))
+
+    def test_the_partial_score_uses_its_own_memory_mix(self) -> None:
+        # project_index swaps the common-component memory into the partial score; without
+        # it, a build would be averaged over components the first build never had.
+        def milestone(label: str, wall: float, peak: float, change: float | None) -> Dict[str, Any]:
+            return {
+                "label": label, "short": label, "commit": label[:4], "date": "2026-09-01",
+                "includes": "", "after_experiment": "exp-001", "wall_ms": wall,
+                "peak_rss_mib": peak, "vs_latest_pct": change,
+                "vs_latest_ci95_pct": None if change is None else [change, change],
+                "supported": True,
+            }
+
+        suite = load_suite()
+        definitions = {item["id"]: item for item in suite["components"]}
+        cold = {
+            "id": "cold", "component": "cold-cache", "job": "cold-cache", "platform": "macOS",
+            "reference_build": "v0.3.0",
+            "component_digest": component_digest(definitions["cold-cache"]),
+            "milestones": [
+                milestone("prework", 400.0, 400.0, 300.0),
+                milestone("mid", 200.0, 200.0, 100.0),
+                milestone("v0.3.0", 100.0, 100.0, None),
+            ],
+        }
+        code = {
+            "id": "code", "component": "code", "job": "code", "platform": "macOS",
+            "reference_build": "v0.3.0",
+            "component_digest": component_digest(definitions["code"]),
+            "milestones": [milestone("mid", 100.0, 50.0, 0.0), milestone("v0.3.0", 100.0, 100.0, None)],
+        }
+        rows = {row["label"]: row for row in project_index([cold, code], suite)[0]["builds"]}
+        # mid's full memory mixes cold-cache 2x and code 0.5x to 1x; its partial memory,
+        # over the cold-cache component every build has, is 2x.
+        self.assertAlmostEqual(rows["mid"]["components"]["memory"], 1.0, places=6)
+        self.assertAlmostEqual(rows["mid"]["memory_common"], 2.0, places=6)
+        weights = {item["id"]: item["weight"] for item in suite["components"]}
+        expected = combine(
+            {
+                "cold-cache": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+                "memory": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+            },
+            weights,
+        )
+        self.assertAlmostEqual(rows["mid"]["common"]["index"], expected["index"], places=6)
+
+    def test_a_component_with_two_jobs_scores_their_geometric_mean(self) -> None:
+        # Warm metadata times cold-open-save and warm-revalidate; a 4x and a 1x job score
+        # 2x, and a build missing one job is not scored on the component at all.
+        cells = [
+            _index_cell("warm-metadata", 400.0, 100.0, job="cold-open-save"),
+            _index_cell("warm-metadata", 100.0, 100.0, job="warm-revalidate"),
+        ]
+        ratios = component_ratios(cells, load_suite(), "macOS")
+        self.assertAlmostEqual(ratios["warm-metadata"]["prework"]["ratio"], 2.0, places=6)
+        self.assertNotIn("warm-metadata", component_ratios(cells[:1], load_suite(), "macOS"))
+
+    def test_the_headline_interval_combines_errors_rather_than_extremes(self) -> None:
+        first = {"index": 4.0, "low": 3.0, "high": 5.0}
+        last = {"index": 1.0, "low": 0.8, "high": 1.25}
+        speedup, low, high = score_ratio(first, last)
+        self.assertAlmostEqual(speedup, 4.0)
+        # The worst-case bound would be [2.4, 6.25]; a combined interval is narrower.
+        self.assertGreater(low, 3.0 / 1.25)
+        self.assertLess(high, 5.0 / 0.8)
+
+    def test_a_projection_without_the_field_reads_baselines_as_one_build(self) -> None:
+        # A committed projection written before `compares` existed still renders.
+        dataset = project([experiment("exp-101"), experiment("exp-000", decision="baseline")])
+        for record in dataset["experiments"]:
+            del record["compares"]
+        self.assertNotIn("exp-000", figure_effects(dataset))
+        self.assertIn("exp-101", figure_effects(dataset))
+
     def test_a_record_keeping_neither_arm_is_not_drawn_as_the_trees_current_cost(self) -> None:
         # The per-entry figure plots the arm that stayed in the product. exp-103 is
         # recorded `rejected` because H86's Linux floor claim failed, but the candidate it
@@ -573,8 +1154,8 @@ class PlatformSectionTests(unittest.TestCase):
                 subject["synthetic"] = True
         page = render(dataset)
         self.assertIn('id="platforms"', page)
-        self.assertIn("Linux: 2 improvements kept", page)
-        self.assertIn("macOS: 1 improvement kept", page)
+        self.assertIn("Linux: 2 accepted runs that improved", page)
+        self.assertIn("macOS: 1 accepted run that improved", page)
         self.assertIn("Decided on a generated tree: 1 of 2.", page)
         self.assertIn("Decided on a generated tree: 0 of 1.", page)
         # The rejected Linux run is counted in the summary but never listed as kept.

@@ -800,18 +800,23 @@ Full record:
 
 📏 baseline · 2026-08-11 · H50
 
-**`cold-scan-producer`** (cold start) — measured
+Control: --order depth-first
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 489.4 |
-| component (ms) | 192.0 |
-| cpu (ms) | 2122.0 |
-| user (ms) | 312.5 |
-| system (ms) | 1812.2 |
-| peak rss (MiB) | 33.0 |
+Candidate: --order breadth-first (the shipped default)
 
-Other jobs, wall time: `cold-scan-index` 322 ms, `warm-revalidate` 624 ms.
+**`cold-scan-producer`** (cold start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 489.4 | 469.3 | -3.04% | [-5.99%, -0.96%] |
+| component (ms) | 192.0 | 191.5 | -2.84% | [-4.64%, -0.45%] |
+| cpu (ms) | 2122.0 | 2049.8 | -3.16% | [-4.73%, -1.08%] |
+| user (ms) | 312.5 | 314.6 | +0.39% (n.s.) | [-2.19%, +2.52%] |
+| system (ms) | 1812.2 | 1733.2 | -3.78% | [-5.91%, -0.83%] |
+| peak rss (MiB) | 33.0 | 32.6 | -1.05% (n.s.) | [-1.95%, +0.19%] |
+
+Other jobs, wall time: `cold-scan-index` +0.5% (n.s.), `warm-revalidate` +2.7%
+(regression).
 
 **Baseline:** Same binary both arms, 20 interleaved paired trials.
 Breadth-first is now cheaper where region scheduling reaches: cold-scan-producer wall
@@ -2775,18 +2780,22 @@ Full record:
 
 📏 baseline · 2026-09-01 · no hypothesis id · commit `e8f1bed`
 
-**`default-tree`** (warm start) — measured
+Control: pre-rewrite main at b75bf85
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 59.0 |
-| component (ms) | 54.8 |
-| cpu (ms) | 310.4 |
-| user (ms) | 17.7 |
-| system (ms) | 292.8 |
-| peak rss (MiB) | 11.4 |
+Candidate: PR #51 head at e8f1bed
 
-Other jobs, wall time: `cold-scan-index` 68 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 59.0 | 63.6 | +7.68% (regression) | [+2.69%, +11.19%] |
+| component (ms) | 54.8 | 59.3 | +8.15% (regression) | [+1.99%, +13.00%] |
+| cpu (ms) | 310.4 | 365.6 | +19.20% (regression) | [+4.04%, +24.61%] |
+| user (ms) | 17.7 | 65.4 | +264.51% (regression) | [+233.41%, +288.53%] |
+| system (ms) | 292.8 | 300.1 | +4.09% (n.s.) | [-10.32%, +8.94%] |
+| peak rss (MiB) | 11.4 | 13.9 | +22.65% (regression) | [+21.15%, +23.47%] |
+
+Other jobs, wall time: `cold-scan-index` +8.2% (regression).
 
 **Baseline:** On this 11,142-entry exploratory subject, PR #51 remained 7.68% slower on
 default-tree and 8.21% slower on cold-scan-index; the run establishes the local gap but
@@ -2799,18 +2808,22 @@ Full record:
 
 📏 baseline · 2026-09-01 · no hypothesis id · commit `1393d31`
 
-**`default-tree`** (warm start) — measured
+Control: correctness head b5d9ba4 before scoped instrumentation
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 59.3 |
-| component (ms) | 55.2 |
-| cpu (ms) | 342.9 |
-| user (ms) | 60.9 |
-| system (ms) | 282.4 |
-| peak rss (MiB) | 14.0 |
+Candidate: scoped instrumentation at 1393d31
 
-Other jobs, wall time: `cold-scan-index` 76 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 59.3 | 59.7 | +1.93% (regression) | [+0.63%, +2.45%] |
+| component (ms) | 55.2 | 55.5 | +2.07% (regression) | [+0.60%, +2.35%] |
+| cpu (ms) | 342.9 | 342.7 | +0.39% (n.s.) | [-0.42%, +0.54%] |
+| user (ms) | 60.9 | 62.6 | +2.69% (regression) | [+0.92%, +4.25%] |
+| system (ms) | 282.4 | 280.9 | -0.44% (n.s.) | [-0.71%, +0.07%] |
+| peak rss (MiB) | 14.0 | 14.3 | +2.57% (regression) | [+1.44%, +3.27%] |
+
+Other jobs, wall time: `cold-scan-index` -5.6%.
 
 **Baseline:** The three-pair uncontrolled screen measured +1.93% on default-tree and
 -5.59% on cold-scan-index; this is insufficient for a timing claim but bounds the
@@ -2823,19 +2836,23 @@ Full record:
 
 📏 baseline · 2026-09-01 · no hypothesis id · commit `b5d9ba4`
 
-**`default-tree`** (warm start) — measured
+Control: PR #51 head plus scoped instrumentation
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 60.4 |
-| component (ms) | 56.2 |
-| cpu (ms) | 352.6 |
-| user (ms) | 62.3 |
-| system (ms) | 290.4 |
-| peak rss (MiB) | 14.3 |
+Candidate: snapshot and path correctness fixes plus scoped instrumentation
 
-Other jobs, wall time: `cold-scan-index` 87 ms, `delta-apply-batched` 579 ms,
-`delta-apply-large` 659 ms, `opened-discovery` 362 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 60.4 | 60.3 | +0.29% (n.s.) | [-10.26%, +3.08%] |
+| component (ms) | 56.2 | 56.0 | +0.26% (n.s.) | [-10.90%, +3.21%] |
+| cpu (ms) | 352.6 | 345.5 | -2.25% (n.s.) | [-13.34%, +3.77%] |
+| user (ms) | 62.3 | 63.3 | +2.46% (regression) | [+0.65%, +4.27%] |
+| system (ms) | 290.4 | 282.3 | -3.23% (n.s.) | [-15.98%, +3.66%] |
+| peak rss (MiB) | 14.3 | 14.2 | -0.88% (n.s.) | [-1.71%, +0.11%] |
+
+Other jobs, wall time: `cold-scan-index` -10.1% (n.s.), `delta-apply-batched` +0.5%
+(n.s.), `delta-apply-large` +1.1% (n.s.), `opened-discovery` -2.8% (n.s.).
 
 **Baseline:** All five exact jobs passed their semantic oracles; default-tree moved
 +0.29%, opened discovery -2.84% wall and +0.54% component, and both public delta jobs
@@ -3160,18 +3177,22 @@ Full record:
 
 📏 baseline · 2026-09-01 · H103 · commit `c7b2120`
 
-**`default-tree`** (warm start) — measured
+Control: streaming allocation guards at 3c0e1a2
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 364.3 |
-| component (ms) | 359.2 |
-| cpu (ms) | 2089.0 |
-| user (ms) | 210.4 |
-| system (ms) | 1880.1 |
-| peak rss (MiB) | 85.6 |
+Candidate: off-by-default scanner phase timing counters
 
-Other jobs, wall time: `cold-scan-index` 584 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 364.3 | 362.9 | -0.12% (n.s.) | [-3.06%, +2.40%] |
+| component (ms) | 359.2 | 357.3 | -0.18% (n.s.) | [-3.22%, +2.40%] |
+| cpu (ms) | 2089.0 | 2088.4 | +0.10% (n.s.) | [-2.17%, +1.76%] |
+| user (ms) | 210.4 | 209.8 | -2.39% (n.s.) | [-6.20%, +12.83%] |
+| system (ms) | 1880.1 | 1875.9 | -0.12% (n.s.) | [-2.16%, +1.52%] |
+| peak rss (MiB) | 85.6 | 85.7 | +0.00% (n.s.) | [-1.18%, +0.82%] |
+
+Other jobs, wall time: `cold-scan-index` -2.3%.
 
 **Baseline:** With counters disabled, default-tree changed -0.12% with CI
 [-3.06%, +2.40%]; cold-scan-index changed -2.25%, below the 3% structural threshold.
@@ -3872,17 +3893,21 @@ Full record:
 
 📏 baseline · 2026-09-19 · H112 · commit `0ec489e7af94f2a647d1ed94ac55f214fac5e477`
 
-**`content-cache-hit`** (warm start) — measured
+Control: current best at 98da0c83
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 1195.5 |
-| component (ms) | 891.2 |
-| cpu (ms) | 1183.3 |
-| user (ms) | 1088.6 |
-| system (ms) | 95.3 |
-| blocked (ms) | 11.6 |
-| peak rss (MiB) | 387.6 |
+Candidate: off-by-default sidecar restore phase timers
+
+**`content-cache-hit`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1195.5 | 1210.1 | +0.31% (n.s.) | [-0.81%, +1.63%] |
+| component (ms) | 891.2 | 903.4 | +0.96% (n.s.) | [-0.97%, +2.62%] |
+| cpu (ms) | 1183.3 | 1197.1 | +0.18% (n.s.) | [-0.76%, +1.54%] |
+| user (ms) | 1088.6 | 1094.2 | +0.19% (n.s.) | [-0.28%, +0.84%] |
+| system (ms) | 95.3 | 104.0 | +0.19% (n.s.) | [-5.88%, +9.25%] |
+| blocked (ms) | 11.6 | 9.8 | -3.36% (n.s.) | [-30.28%, +66.92%] |
+| peak rss (MiB) | 387.6 | 386.5 | -0.08% (n.s.) | [-0.49%, +0.08%] |
 
 **Baseline:** apply dominates restore (timers 63 percent, sample 54 percent of
 load_content); parse is about 10 percent; wall non-inferior so timers stay.
@@ -6373,17 +6398,21 @@ Full record:
 
 📏 baseline · 2026-09-29 · no hypothesis id · commit `ebc06c78`
 
-**`default-tree`** (warm start) — measured
+Control: e5a71c8a probe (the Q0 engine)
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 200.3 |
-| component (ms) | 195.0 |
-| cpu (ms) | 586.9 |
-| user (ms) | 213.9 |
-| system (ms) | 377.2 |
+Candidate: ebc06c78 probe (the final head of the round)
 
-Other jobs, wall time: `aggregate-summary` 156 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 200.3 | 119.8 | -39.00% | [-42.99%, -34.93%] |
+| component (ms) | 195.0 | 117.1 | -38.81% | [-42.86%, -34.83%] |
+| cpu (ms) | 586.9 | 443.5 | -24.40% | [-26.18%, -23.07%] |
+| user (ms) | 213.9 | 66.3 | -68.67% | [-72.47%, -66.11%] |
+| system (ms) | 377.2 | 378.3 | +0.25% (n.s.) | [-4.26%, +4.51%] |
+
+Other jobs, wall time: `aggregate-summary` -26.2%.
 
 **Baseline:** Confirms the round’s accepted changes in one paired cell against the Q0
 engine; no decision rests on it.
@@ -6395,17 +6424,21 @@ Full record:
 
 📏 baseline · 2026-09-29 · no hypothesis id · commit `ebc06c78`
 
-**`default-tree`** (warm start) — measured
+Control: e5a71c8a probe (the Q0 engine)
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 126.9 |
-| component (ms) | 122.7 |
-| cpu (ms) | 432.5 |
-| user (ms) | 84.0 |
-| system (ms) | 351.3 |
+Candidate: ebc06c78 probe (the final head of the round)
 
-Other jobs, wall time: `aggregate-summary` 109 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 126.9 | 114.2 | -9.75% | [-11.84%, -7.33%] |
+| component (ms) | 122.7 | 111.4 | -8.44% | [-10.53%, -6.24%] |
+| cpu (ms) | 432.5 | 405.5 | -6.36% | [-8.81%, -3.48%] |
+| user (ms) | 84.0 | 59.2 | -35.80% | [-39.43%, -18.48%] |
+| system (ms) | 351.3 | 344.1 | -1.63% (n.s.) | [-3.51%, +3.83%] |
+
+Other jobs, wall time: `aggregate-summary` -7.0%.
 
 **Baseline:** Confirms the round’s accepted changes on the dense tree in one paired cell
 against the Q0 engine; no decision rests on it.
@@ -6578,17 +6611,21 @@ Full record:
 
 📏 baseline · 2026-09-30 · H185, H186, H188, H189 · commit `a356d456`
 
-**`default-tree`** (warm start) — measured
+Control: ebc06c78 probe (the final head of the round)
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 88.5 |
-| component (ms) | 85.5 |
-| cpu (ms) | 321.2 |
-| user (ms) | 65.7 |
-| system (ms) | 262.3 |
+Candidate: a356d456 probe (the H186 head, the pdu track’s shipped stack)
 
-Other jobs, wall time: `aggregate-summary` 92 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 88.5 | 85.2 | -3.05% | [-5.81%, -1.03%] |
+| component (ms) | 85.5 | 82.0 | -3.83% | [-6.23%, -1.20%] |
+| cpu (ms) | 321.2 | 309.8 | -2.58% | [-5.43%, -1.51%] |
+| user (ms) | 65.7 | 65.7 | -9.83% (n.s.) | [-22.77%, +12.61%] |
+| system (ms) | 262.3 | 252.5 | -2.30% (n.s.) | [-5.61%, +1.52%] |
+
+Other jobs, wall time: `aggregate-summary` -6.1%.
 
 **Baseline:** Confirms the track’s accepted changes in one paired cell per tree against
 the round’s final head, with pdu default, pdu --max-depth 2 and diskus paired with the
@@ -6601,17 +6638,21 @@ Full record:
 
 📏 baseline · 2026-09-30 · no hypothesis id · commit `b82f26e1`
 
-**`default-tree`** (warm start) — measured
+Control: c1644575 probe (v0.2.1)
 
-| metric | value |
-| --- | ---: |
-| wall (ms) | 208.6 |
-| component (ms) | 203.7 |
-| cpu (ms) | 585.3 |
-| user (ms) | 232.7 |
-| system (ms) | 352.5 |
+Candidate: b82f26e1 probe (the 0.3.0 release head)
 
-Other jobs, wall time: `aggregate-summary` 185 ms.
+**`default-tree`** (warm start) — the comparison it measured
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 208.6 | 109.9 | -48.00% | [-50.45%, -44.79%] |
+| component (ms) | 203.7 | 106.8 | -48.13% | [-50.84%, -45.15%] |
+| cpu (ms) | 585.3 | 406.5 | -29.11% | [-33.36%, -27.75%] |
+| user (ms) | 232.7 | 57.7 | -75.15% | [-79.12%, -72.48%] |
+| system (ms) | 352.5 | 343.7 | -1.56% (n.s.) | [-5.54%, +3.26%] |
+
+Other jobs, wall time: `aggregate-summary` -34.6%.
 
 **Baseline:** The release engine end to end on every subject this host has: against
 0.2.1 in one paired probe cell per tree, and against pdu default, pdu --max-depth 2,
@@ -6628,7 +6669,8 @@ Read within a block and never across one: an absolute time describes one tree on
 machine in one cache state, so the same change reads differently against a different
 corpus.
 
-Baselines show one value because they measure a state rather than a change.
+A baseline that measures one build against itself shows one value, because it measures a
+state rather than a change.
 
 ### metabrowser-clone (146,047 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -6700,7 +6742,7 @@ Baselines show one value because they measure a state rather than a change.
 | 186 | Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear | `aggregate-summary` | 63.8 | 60.0 | -7.9% | ✅ accepted |
 | 192 | Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time | `default-tree` | 74.1 | 74.0 | +0.2% | ❌ rejected |
 | 193 | Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12 | `default-tree` | 73.2 | 67.4 | -7.6% | ✅ accepted |
-| 194 | Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12 | `default-tree` | 200.3 | — | — | 📏 baseline |
+| 194 | Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12 | `default-tree` | 200.3 | 119.8 | -39.0% | 📏 baseline |
 
 ### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -6722,7 +6764,7 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 106 | Default gitignore observation versus no-controls on metabrowser | `default-tree` | 338.6 | 341.6 | +1.6% | ❌ rejected |
 | 108 | Deciding-scale content-cache-hit profile on metabrowser | `content-cache-hit` | 1,218.0 | — | — | 📏 baseline |
-| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | — | — | 📏 baseline |
+| 109 | Sidecar restore stage split on metabrowser | `content-cache-hit` | 1,195.5 | 1,210.1 | +0.3% | 📏 baseline |
 | 110 | Cache-only completeness by file count on metabrowser | `content-cache-hit` | 1,246.3 | 1,156.8 | -7.6% | ❌ rejected |
 | 111 | Type-id get-mut on roll-up add on metabrowser | `content-cache-hit` | 1,328.9 | 1,290.9 | -0.6% | ❌ rejected |
 | 112 | Bottom-up roll-up after sidecar restore | `content-cache-hit` | 1,287.6 | 1,174.1 | -9.7% | ✅ accepted |
@@ -6751,7 +6793,7 @@ Baselines show one value because they measure a state rather than a change.
 | 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
 | 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
 | 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
-| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
+| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | 362.9 | -0.1% | 📏 baseline |
 | 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
 | 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
@@ -6785,15 +6827,15 @@ Baselines show one value because they measure a state rather than a change.
 | 196 | Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger | `warm-revalidate` | 554.2 | 542.4 | -2.7% | ❌ rejected |
 | 198 | Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12 | `aggregate-summary` | 90.3 | 85.8 | -6.2% | ✅ accepted |
 | 200 | Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change | `default-tree` | 84.3 | 83.0 | -0.3% | ❌ rejected |
-| 201 | Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees | `default-tree` | 88.5 | — | — | 📏 baseline |
-| 202 | Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees | `default-tree` | 208.6 | — | — | 📏 baseline |
+| 201 | Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees | `default-tree` | 88.5 | 85.2 | -3.1% | 📏 baseline |
+| 202 | Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees | `default-tree` | 208.6 | 109.9 | -48.0% | 📏 baseline |
 
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
-| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
+| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | 469.3 | -3.0% | 📏 baseline |
 | 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
 | 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
 | 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
@@ -6816,15 +6858,15 @@ Baselines show one value because they measure a state rather than a change.
 | 181 | Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense | `default-tree` | 85.3 | 75.4 | -10.3% | ✅ accepted |
 | 183 | Linux H180 summary walker trims cut the default summary 9% on node-modules-dense | `aggregate-summary` | 73.5 | 67.5 | -8.7% | ✅ accepted |
 | 185 | Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
-| 195 | Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense | `default-tree` | 126.9 | — | — | 📏 baseline |
+| 195 | Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense | `default-tree` | 126.9 | 114.2 | -9.8% | 📏 baseline |
 
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| 074 | PR #51 residual reproduced on the current registry tree | `default-tree` | 59.0 | — | — | 📏 baseline |
-| 075 | Scoped counters stay below the exploratory acceptance threshold | `default-tree` | 59.3 | — | — | 📏 baseline |
-| 076 | Correctness fixes preserve the streaming performance baseline | `default-tree` | 60.4 | — | — | 📏 baseline |
+| 074 | PR #51 residual reproduced on the current registry tree | `default-tree` | 59.0 | 63.6 | +7.7% | 📏 baseline |
+| 075 | Scoped counters stay below the exploratory acceptance threshold | `default-tree` | 59.3 | 59.7 | +1.9% | 📏 baseline |
+| 076 | Correctness fixes preserve the streaming performance baseline | `default-tree` | 60.4 | 60.3 | +0.3% | 📏 baseline |
 | 077 | Select detached consequences once per batch | `default-tree` | 59.7 | 55.6 | -6.6% | ✅ accepted |
 
 ### cargo-registry-src-v2 (11,141 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady

@@ -948,6 +948,23 @@ class LineCountContractTests(unittest.TestCase):
                     totals, {"files": files, "code": code, "comment": comment, "blank": blank}
                 )
 
+    def test_fdus_own_performance_line_is_not_a_warning(self) -> None:
+        # A build run as it ships, without --quiet, prints its performance line on stderr
+        # after every report; anything else there still invalidates the count.
+        for line in (
+            "perf: took 8.56 s to walk 86,630 files; analysis 86,630 fresh, 0 cached; cold scan",
+            "Performance: walked 86,630 files / 1.6 GiB; cold scan; total 8.21 s",
+        ):
+            totals, error = compare_tools._code_table_totals("fdu", FDU_CODE_TABLE, line + "\n")
+            self.assertIsNone(error, line)
+            self.assertEqual(totals["files"], 61_452)
+        _totals, error = compare_tools._code_table_totals(
+            "fdu", FDU_CODE_TABLE, "perf: took 1 s\nwarn: could not read a file\n"
+        )
+        self.assertIn("warnings or errors", error or "")
+        _totals, error = compare_tools._code_table_totals("scc", SCC_TABLE, "perf: took 1 s\n")
+        self.assertIn("warnings or errors", error or "")
+
     def test_the_total_row_parser_fails_closed(self) -> None:
         unmeasured = FDU_CODE_TABLE.replace(b"26,312,547  100.0%", "—  —".encode())
         cases = (
@@ -1048,6 +1065,240 @@ class LineCountContractTests(unittest.TestCase):
         self.assertIn("| du | total-only | 2.0 s | +50% | — | — |", rendered)
         self.assertIn("not shown for line counters", rendered)
         self.assertNotIn("Rates divide", rendered)
+
+
+def cache_contract(
+    name: str,
+    *,
+    scope: str = "comparison",
+    setup: tuple = (),
+    anchor: bool = True,
+    argv: tuple = ("{binary}", "timed", "{root}"),
+    stdout_metrics=None,
+    primary_metric: str = "wall_ns",
+) -> compare_tools.ToolContract:
+    return compare_tools.ToolContract(
+        name=name,
+        work_class="fixture",
+        description="fixture",
+        argv=argv,
+        version_argv=(),
+        writes_cache=True,
+        measures="fixture",
+        cache_scope=scope,
+        setup_argv=setup,
+        fdu_anchor=anchor,
+        stdout_metrics=stdout_metrics,
+        primary_metric=primary_metric,
+    )
+
+
+def read_component(stdout: bytes, fingerprint: dict) -> tuple:
+    """A probe-like output reader: the timer from the output, no complaints."""
+    return {"component_ns": json.loads(stdout)["component_ns"]}, []
+
+
+class CacheScopeTests(unittest.TestCase):
+    """Per-tool and per-sample cache directories, and the untimed setup step.
+
+    The fake spawn records what each process found in its cache directory and then
+    writes a file there, as a cache-writing build would, so each test can see exactly
+    which state every process started from.
+    """
+
+    def run_cell(
+        self,
+        anchor: compare_tools.ToolContract,
+        competitor: compare_tools.ToolContract,
+        *,
+        fail_setup: bool = False,
+    ) -> tuple:
+        calls: list = []
+
+        def spawn(argv, *, timeout_seconds, environment_overrides=None):
+            home = (environment_overrides or {}).get("XDG_CACHE_HOME")
+            found = sorted(path.name for path in Path(home).iterdir()) if home else None
+            previous = calls[-1]["home"] if calls else None
+            calls.append(
+                {
+                    "argv": list(argv),
+                    "home": home,
+                    "found": found,
+                    # Whether the previous process's directory, if it was another, survives.
+                    "previous_kept": previous != home and Path(previous).exists()
+                    if previous
+                    else False,
+                }
+            )
+            if home:
+                (Path(home) / f"written-{len(calls)}").write_text("x")
+            setup = argv[1] == "setup"
+            return {
+                "exit_code": 1 if setup and fail_setup else 0,
+                "timed_out": False,
+                "wall_ns": 1_000_000 + len(calls),
+                "stdout": json.dumps({"component_ns": 1_000 + len(calls)}).encode(),
+                "stderr": "",
+                "resources": {field: 1 for field in compare_tools.measure._RESOURCE_FIELDS},
+            }
+
+        fingerprint = {
+            "schema": "fixture",
+            "root_id": "r",
+            "engine_digest": "d",
+            "counts": {"files": 1, "directories": 1, "total": 2},
+            "sizes": {"allocated_bytes": 1, "apparent_bytes": 1},
+        }
+        with tempfile.TemporaryDirectory() as scratch:
+            binary = Path(scratch) / "fdu"
+            binary.write_bytes(b"fixture")
+            root = Path(scratch) / "tree"
+            root.mkdir()
+            with (
+                mock.patch.object(compare_tools.tree, "fingerprint", return_value=fingerprint),
+                mock.patch.object(compare_tools.measure, "_spawn", side_effect=spawn),
+                mock.patch.object(
+                    compare_tools.measure, "_host_pressure_snapshot", return_value={}
+                ),
+                mock.patch.object(compare_tools.measure, "host_facts", return_value={}),
+                mock.patch.object(compare_tools, "_progress"),
+            ):
+                document = compare_tools.run(
+                    root=root,
+                    label="fixture",
+                    anchor=compare_tools.Tool("anchor", anchor, binary),
+                    competitors=[compare_tools.Tool("other", competitor, binary)],
+                    trials=3,
+                    warmups=1,
+                    baseline_fingerprint=None,
+                    baseline_output=None,
+                    storage="fixture",
+                )
+        return document, calls
+
+    def test_the_default_scope_shares_one_directory_as_before(self) -> None:
+        document, calls = self.run_cell(cache_contract("a"), cache_contract("b"))
+
+        self.assertEqual(len({call["home"] for call in calls}), 1)
+        # Later processes see what earlier ones wrote: one shared, persistent directory.
+        self.assertEqual(calls[0]["found"], [])
+        self.assertEqual(len(calls[-1]["found"]), len(calls) - 1)
+        # A run whose contracts declare nothing new keeps the artifact's old shape.
+        self.assertNotIn("cache_scope", document["tools"]["anchor"])
+        self.assertNotIn("setup_command", document["tools"]["anchor"])
+        self.assertNotIn("setup", document["samples"][0])
+
+    def test_a_tool_scope_keeps_each_builds_own_directory_for_the_whole_run(self) -> None:
+        document, calls = self.run_cell(
+            cache_contract("a", scope="tool"), cache_contract("b", scope="tool")
+        )
+
+        homes = {call["home"] for call in calls}
+        self.assertEqual(len(homes), 2)
+        for home in homes:
+            mine = [call for call in calls if call["home"] == home]
+            # Each process finds exactly what the same tool's earlier processes wrote.
+            self.assertEqual([len(call["found"]) for call in mine], list(range(len(mine))))
+        self.assertEqual(document["tools"]["anchor"]["cache_scope"], "tool")
+
+    def test_a_sample_scope_starts_every_process_from_an_empty_directory(self) -> None:
+        document, calls = self.run_cell(
+            cache_contract("a", scope="sample"), cache_contract("b", scope="sample")
+        )
+
+        self.assertEqual(len({call["home"] for call in calls}), len(calls))
+        self.assertTrue(all(call["found"] == [] for call in calls))
+        # Each sample's directory is gone before the next process starts.
+        self.assertFalse(any(call["previous_kept"] for call in calls))
+        self.assertEqual(document["invalid_samples"], 0)
+
+    def test_a_setup_fills_the_same_fresh_directory_just_before_the_timed_run(self) -> None:
+        setup = ("{binary}", "setup", "{root}")
+        document, calls = self.run_cell(
+            cache_contract("a", scope="sample", setup=setup),
+            cache_contract("b", scope="sample", setup=setup),
+        )
+
+        self.assertEqual(len(calls), 2 * len(document["samples"]))
+        for setup_call, timed_call in zip(calls[::2], calls[1::2]):
+            self.assertEqual(setup_call["argv"][1], "setup")
+            self.assertEqual(timed_call["argv"][1], "timed")
+            self.assertEqual(setup_call["home"], timed_call["home"])
+            self.assertEqual(setup_call["found"], [])
+            # The timed process finds only what its own setup wrote.
+            self.assertEqual(len(timed_call["found"]), 1)
+        sample = document["samples"][0]
+        self.assertEqual(sample["setup"]["exit_code"], 0)
+        # The timed figure is the timed process's own, not the setup's.
+        self.assertEqual(sample["metrics"]["wall_ns"], 1_000_000 + 2)
+        self.assertEqual(document["tools"]["anchor"]["setup_command"], list(setup))
+        self.assertEqual(document["tools"]["anchor"]["cache_scope"], "sample")
+
+    def test_a_failed_setup_invalidates_its_sample(self) -> None:
+        setup = ("{binary}", "setup", "{root}")
+        document, _ = self.run_cell(
+            cache_contract("a", scope="sample", setup=setup),
+            cache_contract("b", scope="sample", setup=setup),
+            fail_setup=True,
+        )
+
+        self.assertGreater(document["invalid_samples"], 0)
+        self.assertIn("untimed setup command exited with 1", document["samples"][0]["reasons"])
+
+    def test_an_unknown_scope_or_a_non_fdu_anchor_is_refused(self) -> None:
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "unknown cache scope"):
+            self.run_cell(cache_contract("a", scope="forever"), cache_contract("b"))
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "must use an fdu contract"):
+            self.run_cell(cache_contract("a", anchor=False), cache_contract("b"))
+
+    def test_a_cache_placeholder_names_each_samples_own_directory(self) -> None:
+        snapshot = "{cache}/snapshot.fdu"
+        contract = cache_contract(
+            "a",
+            scope="sample",
+            argv=("{binary}", "timed", snapshot),
+            setup=("{binary}", "setup", snapshot),
+        )
+        _document, calls = self.run_cell(contract, contract)
+
+        for setup_call, timed_call in zip(calls[::2], calls[1::2]):
+            self.assertEqual(setup_call["argv"][2], f"{setup_call['home']}/snapshot.fdu")
+            self.assertEqual(timed_call["argv"][2], setup_call["argv"][2])
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "names the cache directory"):
+            compare_tools._expand(("{cache}/x",), Path("fdu"), Path("tree"))
+
+    def test_output_metrics_are_recorded_compared_and_summarized(self) -> None:
+        contract = cache_contract(
+            "a", stdout_metrics=read_component, primary_metric="component_ns"
+        )
+        document, _calls = self.run_cell(contract, contract)
+
+        sample = next(s for s in document["samples"] if not s["warmup"])
+        self.assertIsNotNone(sample["metrics"]["component_ns"])
+        self.assertIn("component_ns", document["overall"]["anchor"]["metrics"])
+        self.assertEqual(
+            document["statistics"]["other"]["competitor_vs_fdu"]["component_ns"]["pairs"], 3
+        )
+        self.assertEqual(document["tools"]["anchor"]["primary_metric"], "component_ns")
+
+    def test_output_reasons_invalidate_and_a_plain_run_keeps_its_shape(self) -> None:
+        refusing = cache_contract(
+            "a", stdout_metrics=lambda out, fingerprint: ({"component_ns": 5}, ["oracle disagrees"])
+        )
+        document, _ = self.run_cell(refusing, refusing)
+        self.assertEqual(document["invalid_samples"], 6)
+        self.assertIsNone(document["samples"][0]["metrics"]["component_ns"])
+
+        plain, _ = self.run_cell(cache_contract("a"), cache_contract("b"))
+        self.assertNotIn("component_ns", plain["overall"]["anchor"]["metrics"])
+        self.assertNotIn("primary_metric", plain["tools"]["anchor"])
+
+    def test_a_timed_metric_needs_a_reader_and_one_metric_per_run(self) -> None:
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "reads no output"):
+            self.run_cell(cache_contract("a", primary_metric="component_ns"), cache_contract("b"))
+        component = cache_contract("a", stdout_metrics=read_component, primary_metric="component_ns")
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "the same metric"):
+            self.run_cell(component, cache_contract("b"))
 
 
 if __name__ == "__main__":

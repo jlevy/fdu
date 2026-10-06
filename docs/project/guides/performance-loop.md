@@ -10,7 +10,8 @@ re-run it, and get numbers comparable to the ones already recorded.
 New here? To run the next iteration, start at
 [the runbook’s Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30).
 [The campaign status report](../reports/report-2026-08-14-performance-campaign-status.md)
-is the history through 2026-08-23. This document is the protocol.
+is the history of how the loop has been run, through exp-202. This document is the
+protocol.
 
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
@@ -682,8 +683,11 @@ confirmed about which parts are invariant.
 
 Two documents are generated from the artifacts, and neither is ever edited by hand.
 `make perf-ledger` builds the per-experiment ledger; `make perf-report` builds
-[the charted evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md),
-which is what a reader outside the project is given.
+[the charted page](../reports/performance-evidence/index.html), which is what a reader
+outside the project is given.
+[The evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md) is the
+hand-written record over both: every round, what it found, and where each platform
+stands.
 
 Adding an experiment is therefore three commands and one judgement.
 

@@ -80,7 +80,7 @@ analysis, and dut, which still has no harness adapter.
 | [macOS comparison](../reports/report-2026-09-26-fdu-live-tool-comparison.md) | Measured, +49% | Measured | Measured, the next-fastest tool |
 | [Linux comparison](../reports/report-2026-09-27-fdu-linux-tool-comparison.md) | Measured, the fastest peer | Measured | macOS-only tool |
 | [Peer agreement](../reports/report-2026-09-25-peer-agreement.md) | Accounting: hard links per path, symlink and directory sizes; skips interrupted folders on macOS | Counts hard links once; skips failed folders | Not measured |
-| [README “Why”](../../../README.md#why) | Absent from the dozen surveyed tools | Absent | Absent (named in Speed only) |
+| [README “Why”](https://github.com/jlevy/fdu/blob/v0.3.0/README.md#why) | Absent from the dozen surveyed tools | Absent | Absent (named in Speed only) |
 
 So pdu, the fastest Linux peer, had no dedicated analysis, with one refinement: its
 source was read, but only for depth folding and the thread rule.
