@@ -91,6 +91,18 @@ def reference_outside(out: str, started_ns: int, finished_ns: int) -> str | None
     return f"age_reference_ns {reference} outside the run [{started_ns}, {finished_ns}]"
 
 
+def analyze_of(out: str) -> tuple[str, ...] | None:
+    """The analyzers the engine enabled for this report, or None if it cannot be read.
+
+    Read from the report's `request.analyze`, never from the arguments that asked for it:
+    a content view implies its analyzer, so `--view documents` enables words analysis
+    without any `--analyze`. A set re-derived from argv is a second copy of that rule,
+    and the first such copy here drifted from the engine's.
+    """
+    analyze = ((parse(out) or {}).get("request") or {}).get("analyze")
+    return tuple(analyze) if isinstance(analyze, list) else None
+
+
 def _provenance(out: str) -> dict:
     return (parse(out) or {}).get("provenance") or {}
 

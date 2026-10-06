@@ -369,6 +369,21 @@ a command that drops the code analysis it already had; in practice the tip is al
 `--analyze all`. And `--view lines`, whose view does not imply it, is refused as
 `its view is families, with --analyze lines`.
 
+After review ([#177](https://github.com/jlevy/fdu/pull/177)), three more go further.
+A refusal for missing analysis names a remedy its route accepts (`BasisHolder`): an
+index names what it was opened with, an opened root says it runs no analyzer and points
+to a one-shot report or an analyzed index, a basis supplied whole to `Request::new` says
+what it holds, and only a request built from an analyzer axis is told to add one, so a
+held metric sort reads
+`sort code_lines needs code analysis; this index was opened with analyze words`. The
+watch refusal names both axes when both enabled analysis
+(`--analyze words and --view code need words and code analysis, …`) and lists the
+analyzers in the views’ order.
+And analysis some selected view shows and some does not is named analyzer by analyzer
+against `ViewSpec::shows` (`note: code analysis not shown by documents` with
+`tip: show it: --view documents,code`), where the first draft said nothing once any view
+displayed analysis.
+
 The parity class `sameAnalysisTip` in `scripts/parity-classes.mjs` pins the
 omitted-views tip in both vocabularies and is updated to the new text; `KNOBS` already
 elides the axis names.
@@ -390,8 +405,8 @@ not serialized.
 | Code lines by language | `fdu . --analyze=code` | `fdu . --view=code` (the old form still works) |
 | Words and pages by document format | `fdu . --analyze=words` | `fdu . --view=documents` (the old form still works) |
 | Both | `fdu . --analyze=code,words` | `fdu . --view=code,documents` (also `--analyze=all`) |
-| The announcement demo | `fdu linux --analyze code,words --view languages,documents --limit 6` | `fdu linux --view code,documents --limit 6` |
-| The demo with compact per-language rows | same | `fdu linux --analyze code --view languages,documents --limit 6` |
+| The announcement demo | `fdu linux --analyze code,words --view languages,documents --limit 6` | `fdu . --view code,documents`, run inside the tree |
+| The demo with compact per-language rows | same | `fdu . --analyze code --view languages,documents` |
 | Code metrics in the languages rows | `fdu . --analyze=code --view=languages` | unchanged (control) |
 | Physical lines across every language | `fdu . --analyze=lines --view=languages` | unchanged (control) |
 | Warm the sidecar, show the tree | `fdu . --analyze=all --view=tree` | unchanged, with the shorter note and tip |
@@ -402,6 +417,10 @@ not serialized.
 The demo’s second command drops two names.
 Whether it should show the `code` table or the `languages` rows is the maintainer’s
 call; the spec records both spellings.
+The recorded demo
+([`linux.yaml`](../../../../packages/cli-animate/examples/fdu/linux.yaml)) runs from
+inside the source tree, so its root is `.`, and has no `--limit`, so it shows every row
+of both tables.
 
 ### Documentation
 
@@ -494,9 +513,9 @@ One phase, one draft pull request, landed after or merged with the epilogue work
    has shipped and the mapping table is no longer the first thing a user meets?
 
 The implementation took these defaults, each open to revision: the demo uses the
-one-flag `fdu linux --view code,documents --limit 6`; `documents` requires `words` on a
-held basis; `--analyze none` beside a content view is the empty set, so the view still
-implies its analyzer; and the vocabulary split stays.
+one-flag `fdu . --view code,documents`, run inside the tree; `documents` requires
+`words` on a held basis; `--analyze none` beside a content view is the empty set, so the
+view still implies its analyzer; and the vocabulary split stays.
 
 ## References
 

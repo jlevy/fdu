@@ -136,6 +136,15 @@ function main(argv) {
       files.push(argv[k]);
     }
   }
+  // A missing or unknown base would make every file look new and restore nothing,
+  // silently; refuse it instead.
+  try {
+    if (!base) throw new Error('--base needs a revision');
+    execFileSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd: root });
+  } catch {
+    console.error(`golden-restore-patterns: not a revision: ${base ?? '(none)'}`);
+    process.exit(2);
+  }
   if (files.length === 0) {
     const dir = join(root, 'tests', 'golden');
     files.push(...readdirSync(dir).filter((f) => f.endsWith('.tryscript.md')).map((f) => join(dir, f)));

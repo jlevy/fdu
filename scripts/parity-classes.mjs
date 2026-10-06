@@ -160,6 +160,21 @@ const sameStaleWarning = (removed, added) => {
   const marker = removed.startsWith('! ') ? '! ' : '';
   return removed === marker + staleWarning('--stale-ok') && added === marker + staleWarning('stale_ok');
 };
+// A content view under a watch: the command line refuses the analysis its own basis would
+// carry, and a Python watch, which reads an index, refuses the view that index cannot
+// answer. Pinned whole, one line each side naming the same view and analyzer, so no other
+// refusal can borrow it.
+const WATCHED_VIEW =
+  /^(! )?fdu: --view ([a-z]+) needs ([a-z]+) analysis, which --watch cannot keep current; use a one-shot report$/;
+const sameWatchedViewRefusal = (removed, added) => {
+  const match = WATCHED_VIEW.exec(removed);
+  if (!match) return false;
+  const [, marker = '', view, analyzer] = match;
+  return (
+    added ===
+    `${marker}fdu: view ${view} needs ${analyzer} analysis; this index was opened with analyze none`
+  );
+};
 const usesBoundTip = (line) =>
   /^(! )?tip: /.test(line) &&
   /(?:--min-share|min_share|--depth|depth|--breadth|breadth|--limit|limit)=/.test(line);
@@ -265,6 +280,23 @@ export const CLASSES = [
     // match. One mechanism per session, and the two lists must not both claim one.
     matches: ({ name }) =>
       /^(Version Is Exact|The Guide Is Reachable Without a Root)/.test(name),
+  },
+  {
+    id: 'held-basis-watch',
+    title: 'A Python watch reads an index, which a content view never widens',
+    why: [
+      'The command line has no index to watch: --watch builds its own basis, so a content',
+      'view enables its analyzer and the watch refuses the analysis it cannot keep current.',
+      'The package watches only an index, fdu.open(...).watch(...), and a read never widens',
+      'what an index was opened with, so the same view is refused by the index first,',
+      'naming how it was opened. Both refuse before reporting anything, with one exit status;',
+      'which of two true rules speaks first follows the route. Pinned whole: one line on',
+      'each side, the same view and analyzer, and an index opened with no analyzer.',
+    ],
+    matches: ({ removed, added }) =>
+      removed.length === 1 &&
+      added.length === 1 &&
+      sameWatchedViewRefusal(removed[0], added[0]),
   },
 ];
 

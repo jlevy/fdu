@@ -290,8 +290,9 @@ fn validate_report(request: &crate::ReportRequest) -> Result<()> {
     }
     // The same rules every other read is held to, applied to what an opened root holds: a
     // `documents` view is refused here rather than answered with zero words, because
-    // nothing analyzed a file.
-    read_request(request).validate().map_err(Error::InvalidRequest)
+    // nothing analyzed a file, and the refusal says an opened root runs no analyzer rather
+    // than naming an option its constructor does not take.
+    read_request(request).validate_opened().map_err(Error::InvalidRequest)
 }
 
 #[derive(Clone, Copy, Default)]

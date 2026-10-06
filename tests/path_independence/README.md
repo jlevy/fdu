@@ -23,7 +23,7 @@ kind of outcome.
 | `cold` | None, under `auto` on an empty cache |
 | `warm` | One warming request, then `auto`, `on`, and `--stale-ok` |
 | `serves` | A complete `--cache on` run of the identical request, then `--stale-ok` through the command line and both cache-reading Python routes |
-| `implied` | A content view and the analyzer it implies (`--view code` and `--analyze code`): equal cold answers, then a complete `--cache on` run of either and `--stale-ok` of the other on every cache-reading route, which must serve from the shared sidecar |
+| `implied` | A content view and the analyzer it implies (`--view code` and `--analyze code`): equal cold answers; then a complete `--cache on` run of either and `--stale-ok` of the other on every cache-reading route, which must serve from the shared sidecar; and an `auto` run of either and `auto` of the other, whose content tier must report `revalidated` |
 | `selfwarm` | The request itself, then `auto`, `on`, and `--stale-ok` in turn |
 | `mutation` | A warming request, then a file change: rewrite, touch, add, delete, `.gitignore` edits, a symlink retarget, or an unreadable directory |
 | `cross` | Cold and warm, read through `fdu.report`, `fdu.open`, and `fdu.scan`, one-shot CLI reports, and the complete initial CLI watch report |
@@ -37,9 +37,10 @@ the cold answer’s `request.analyze` says the request enabled, because an index
 only what it was opened with and a content view never widens it.
 The subset runs in `make check` and in CI on every pull request.
 It includes code-only warming before mutations, so a later lines request exercises the
-unsupported-language history that once changed the answer.
-The `serves` phase requires a cache-only answer marked stale; refusing every snapshot or
-silently scanning cold cannot pass it.
+unsupported-language history that once changed the answer, and a `--view documents`
+warmer, so mutations are also detected from a sidecar that a content view wrote with no
+`--analyze`. The `serves` phase requires a cache-only answer marked stale; refusing
+every snapshot or silently scanning cold cannot pass it.
 Answer equivalence and positive serving controls protect opposite directions of the
 contract, and both are required.
 The full matrix runs in

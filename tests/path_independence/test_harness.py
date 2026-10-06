@@ -320,21 +320,44 @@ class CompareTests(unittest.TestCase):
             run.cold = {request: cli(answer()) for request in matrix.SUBSET.requests}
             cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
             miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
-            with patch("runner.run_cli", return_value=cli(answer())):
+
+            def warm(content: str) -> Invocation:
+                provenance = {
+                    "source": "warm_revalidate",
+                    "freshness": "fresh",
+                    "tiers": {"content": {"source": content}},
+                }
+                return cli(answer(provenance=provenance))
+
+            reused, rescanned = warm("revalidated"), warm("scanned")
+            with patch("runner.run_cli", return_value=reused):
                 with patch("runner.run_route", return_value=cached):
                     healthy = run.phase_implied()
                 with patch("runner.run_route", return_value=miss):
                     broken = run.phase_implied()
+            with (
+                patch("runner.run_cli", return_value=rescanned),
+                patch("runner.run_route", return_value=cached),
+            ):
+                unreused = run.phase_implied()
             pairs = len(matrix.IMPLIED)
-            # One cold comparison per pair, then each direction on three routes.
-            self.assertEqual(len(healthy), pairs + pairs * 2 * 3)
+            # One cold comparison per pair, then each direction on three routes under
+            # --stale-ok, then each direction under auto.
+            self.assertEqual(len(healthy), pairs + pairs * 2 * 3 + pairs * 2)
             self.assertTrue(all(case.verdict.allowed for case in healthy))
             self.assertEqual(sum(not case.verdict.allowed for case in broken), pairs * 2 * 3)
+            # An auto run that read every file again, though its answer is right, did not
+            # reuse the pair's sidecar.
+            failed = [case for case in unreused if not case.verdict.allowed]
+            self.assertEqual(len(failed), pairs * 2)
+            self.assertTrue(
+                all(case.verdict.paths == ("provenance.tiers.content.source",) for case in failed)
+            )
 
             # A pair whose two cold runs differ, or both refuse, fails its cold case.
             run.cold["v_code"] = cli(answer(reports=[]))
             with (
-                patch("runner.run_cli", return_value=cli(answer())),
+                patch("runner.run_cli", return_value=reused),
                 patch("runner.run_route", return_value=cached),
             ):
                 differing = run.phase_implied()
@@ -342,7 +365,7 @@ class CompareTests(unittest.TestCase):
             refused = cli(None, exit=2, stderr="fdu: refused")
             run.cold["v_code"] = run.cold["a_code"] = refused
             with (
-                patch("runner.run_cli", return_value=cli(answer())),
+                patch("runner.run_cli", return_value=reused),
                 patch("runner.run_route", return_value=cached),
             ):
                 vacuous = run.phase_implied()

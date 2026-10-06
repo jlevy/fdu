@@ -31,8 +31,14 @@ So every case records the mechanism as well as the answer, read from the report�
 | Request | Second run reports | Why |
 | --- | --- | --- |
 | Metadata only | `cold_scan` | A metadata walk is cheap, so it re-walks by design. Its proof that the snapshot a `--cache on` run left serves is the `--stale-ok` run, which must exit 0, report `cache_only`, and label the answer `stale`. |
-| `--analyze …` | content tier `revalidated` | The content sidecar is the expensive tier and is the one that must serve. The report-level `warm_revalidate` only says the entries came from a snapshot. |
+| Analysis, named by `--analyze …` or implied by a content view | content tier `revalidated` | The content sidecar is the expensive tier and is the one that must serve. The report-level `warm_revalidate` only says the entries came from a snapshot. |
 | `--stale-ok` | `cache_only` | Serves without verifying, and labels the answer stale. |
+
+Which row a request falls in is read from its cold answer’s `request.analyze`, the
+analyzer set the engine enabled, and never from its arguments.
+`--view code` names no `--analyze` and still enables code analysis, so a script that
+looked for `--analyze` in its own argv would hold that request to the metadata row and
+never check that its sidecar serves.
 
 A run whose answers all match but whose mechanism column is wrong has proved nothing.
 The first time this procedure ran, every invocation was failing on an unknown flag and
@@ -49,11 +55,12 @@ Over the refusal-free tree, a wrapper that rewrites `--cache on` to `--cache off
 make both scripts exit 1. In `warm_cold.py` every case fails: each metadata case reports
 `NO-SNAPSHOT`, and each analysis case reports `NOT-WARM(scanned)`, because its `auto`
 run scans and then writes a snapshot, which the `--stale-ok` run finds.
-`cross_warm.py` holds only same-analyzer pairs to serving, and each of those reports
-`NOT-WARM(scanned)`. Over the refusal tree, a wrapper that answers `--stale-ok` with the
-cold output relabeled `cache_only` must make every case report `PARTIAL-STORED` and
-`--refusals-only` exit 1. A partial answer exits 2, so a check that trusted a zero exit
-would have called that stored snapshot `withheld`; the first version of this pass did.
+`cross_warm.py` holds only pairs whose warmer and ask enable the same analyzer set to
+serving, and each of those reports `NOT-WARM(scanned)`. Over the refusal tree, a wrapper
+that answers `--stale-ok` with the cold output relabeled `cache_only` must make every
+case report `PARTIAL-STORED` and `--refusals-only` exit 1. A partial answer exits 2, so
+a check that trusted a zero exit would have called that stored snapshot `withheld`; the
+first version of this pass did.
 The two wrappers are `tests/correctness/break_no_snapshot.py` and
 `tests/correctness/break_partial_stored.py`: name one as `FDU_BIN`, and the real binary
 as `FDU_REAL`. A script exits 1 when any one case fails, so read the table as well as
@@ -158,6 +165,18 @@ containment deferral in `fdu-7dj6`), so only matching pairs are held to serving.
 The field’s documented meaning is what the report *requested*, so serving it from a
 wider stored set is itself the defect — a warm `--analyze lines` after `--analyze all`
 must report `["lines"]`, never the stored set.
+
+A request’s analyzer set has two sources: what `--analyze` names, and what its content
+views imply (`code` implies code, `documents` implies words).
+So both sides of the matrix reach analysis both ways, and the set that decides whether a
+pair must serve is each side’s own `request.analyze`: the warmer’s from its own report,
+the ask’s from its cold answer.
+`--analyze lines --view documents` enables lines and words, so it must be served from
+the sidecar `--analyze words` or `--view documents` stored, and not from the one
+`--analyze lines` stored.
+An earlier copy of the script read `--analyze` from argv, and held exactly that pair the
+wrong way round: it failed the lines warmer, which correctly read every file again, and
+never checked the words warmer.
 
 Check that the oracle discriminates before trusting a green run: the expected
 `analysis.analyze` differs per request (`["lines"]`, `["lines","code"]`,
