@@ -78,8 +78,10 @@ chart to any single component.
   - Neither cell sees the summary view, the cache, content, or Linux.
   - Both cells were measured before this spec existed.
     They are adopted as the cold-cache and scale components because their commands and
-    cache state match those components exactly; every other component’s cell runs after
-    its definition here.
+    cache state match those components exactly.
+    The other 11 cells were timed under the driver branch’s earlier text of this spec,
+    and are admitted on the same ground: what each ran equals what version 1 asks, and
+    each records the text it was timed under (see Measurement).
 - **The project’s own rules name the dimensions:**
   - every output surface is a benchmark job
     ([design principles](../../architecture/fdu-design-principles.md#every-output-surface-is-a-benchmark-job));
@@ -170,12 +172,15 @@ Weights per platform, set by the maintainer:
 
 Every job is timed whole-process, from launch to exit, so a probe job’s timed region
 includes the discovery, snapshot load, and snapshot save around its own component timer.
-It also includes the probe’s verification walk, its oracle, which builds before 0.1.0
-cannot turn off. That cost is harness instrumentation and varies by build, across the
-12.5% of the weight the probe jobs carry; separating it is tracked as `fdu-92bg`. The
-commands are written as v0.3.0 spells them; earlier builds use their own spelling of the
-same request (`--no-cache` before 0.1.0, for example), and a build that cannot make the
-request at all has no ratio for that job.
+It also includes the probe’s verification walk, its oracle, in every build: builds
+before 0.1.0 cannot turn it off, so the driver leaves it on for all of them and builds
+compare like for like.
+That cost is harness instrumentation and varies by build, across the 12.5% of the weight
+the probe jobs carry; separating it is tracked as `fdu-92bg`, and until then every
+score, quoted or not, includes it.
+The commands are written as v0.3.0 spells them; earlier builds use their own spelling of
+the same request (`--no-cache` before 0.1.0, for example), and a build that cannot make
+the request at all has no ratio for that job.
 The driver records the exact argv per build.
 
 The split is the maintainer’s: 15% cold cache, 20% warm-cache content, and the rest
@@ -246,7 +251,7 @@ Both halves are in the score, so a platform-specific change shows too.
   not, records the text it was timed under and that it was stamped by argv equivalence.
   All builds in a cell are timed interleaved, anchored on the reference build:
   - order alternated, 3 warm-ups, at least 12 rounds, 20 where the cell stays under an
-    hour;
+    hour, and 20 whatever the duration for a cell meant to stand behind a quoted score;
   - answers checked before timing within each capability group;
   - trees and binaries on internal storage (results may go elsewhere);
   - the harness’s quiet gate unchanged, and the regime recorded.
@@ -254,7 +259,8 @@ Both halves are in the score, so a platform-specific change shows too.
   the page and every figure quoting it say so (“exploratory, uncontrolled host”), as the
   [performance loop’s host-pressure regimes](../../guides/performance-loop.md#host-pressure-regimes)
   require. A score quoted in release notes or a README must come from cells timed quiet
-  or controlled-interactive, at 20 rounds.
+  or controlled-interactive, at 20 rounds; the page labels a score with any cell short
+  of 20 rounds exploratory and names the shortfall (“exploratory, 12 rounds”).
 - **Where.** macOS cells run on the maintainer’s Mac.
   Linux cells run on a Linux host, for example a cloud session handed the same builds
   and manifest.
@@ -265,13 +271,14 @@ Both halves are in the score, so a platform-specific change shows too.
 ### The Page
 
 - **The chooser.** The runtime-over-time chart gets a metric chooser:
-  - **Unified score** (default): the full index from the first build that supports every
-    component; builds before it are drawn as a partial score, visibly distinct, with
-    their coverage;
+  - **Unified score** (default): the full score, each platform’s score over every
+    component, from the first build that supports every component; builds before it are
+    drawn as a partial score, visibly distinct, with their coverage;
   - each component on its own, including memory.
 - **The headline** states the unified score with its interval and coverage: the full
-  index from the first fully covered build to the current release, and, separately, the
+  score from the first fully covered build to the current release, and, separately, the
   partial score from the pre-work binary.
+  The full index is the full scores of both platforms combined.
 - **The experiments panel** marks each bar by the component and platform its primary job
   maps to. A bar that does not count toward the chosen metric is drawn faded, and its
   tooltip says what it counts toward.
@@ -338,8 +345,8 @@ Refresh at each release and at the end of a campaign, not per experiment.
 A full refresh times every component for every build on both platforms, which takes
 hours of machine time.
 Release notes quote the unified score with its interval, coverage, platform, and regime,
-and link the components; only a score timed quiet or controlled-interactive is quoted
-there.
+and link the components; only a score whose every cell was timed quiet or
+controlled-interactive, at 20 rounds, is quoted there.
 
 ## Open Questions
 
