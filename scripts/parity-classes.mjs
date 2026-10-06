@@ -117,22 +117,41 @@ const KNOBS =
   /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
-// A report's bound suggestions name the same setter differently on each surface.
-// The full line, including action and value, is pinned so no other tip can borrow this
-// exception merely because it contains a familiar word.
-const TIP_PAIRS = [
-  ['tip: show smaller entries: --min-share=0%', 'tip: show smaller entries: min_share=0%'],
-  ['tip: expand deeper: --depth=all', 'tip: expand deeper: depth=all'],
-  ['tip: show more children: --breadth=all', 'tip: show more children: breadth=all'],
-  ['tip: show more rows: --limit=all', 'tip: show more rows: limit=all'],
+// A report's one bound suggestion lifts every bound that hid something, and names each
+// setter as its surface does: flags joined as one command line, keyword arguments as one
+// call's arguments. Only these four setters, with these values, in the renderer's fixed
+// order and each at most once, are accepted, so no other tip can borrow this exception
+// merely because it contains a familiar word.
+const BOUND_TIP = 'tip: show more: ';
+const BOUND_SETTERS = [
+  ['--min-share=0%', 'min_share=0%'],
+  ['--depth=all', 'depth=all'],
+  ['--breadth=all', 'breadth=all'],
+  ['--limit=all', 'limit=all'],
 ];
 const sameBoundTip = (removed, added) => {
-  const marker = removed.startsWith('! ') ? '! ' : '';
-  return TIP_PAIRS.some(([cli, api]) => removed === marker + cli && added === marker + api);
+  const prefix = (removed.startsWith('! ') ? '! ' : '') + BOUND_TIP;
+  if (!removed.startsWith(prefix) || !added.startsWith(prefix)) return false;
+  const flags = removed.slice(prefix.length).split(' ');
+  const fields = added.slice(prefix.length).split(', ');
+  if (flags.length !== fields.length) return false;
+  let previous = -1;
+  return flags.every((flag, i) => {
+    const index = BOUND_SETTERS.findIndex(([cli, api]) => cli === flag && api === fields[i]);
+    if (index <= previous) return false;
+    previous = index;
+    return true;
+  });
 };
-const sameAnalysisTip = (removed, added) =>
-  removed === 'tip: include omitted views: add --analyze code' &&
-  added === 'tip: include omitted views: add analyze code';
+// `full` names the analyzer value that includes the views it skipped. Pinned whole, like
+// the bound tip, so no other tip can borrow it.
+const sameAnalysisTip = (removed, added) => {
+  const marker = removed.startsWith('! ') ? '! ' : '';
+  return (
+    removed === `${marker}tip: include them: --analyze all` &&
+    added === `${marker}tip: include them: analyze all`
+  );
+};
 // The engine's stale-answer warning names each surface's own option for a fresh answer
 // (fdu-mdop). Pinned whole, like the tips above, so no other warning can borrow it.
 const staleWarning = (option) =>
@@ -178,8 +197,8 @@ export const CLASSES = [
     title: 'Bound suggestions name the same setter on each surface',
     why: [
       'The command line names bound flags and Python names corresponding fields.',
-      'Only the four exact action, setter, and value pairs emitted by the shared',
-      'report renderer are accepted; every other line remains identical.',
+      'Only the four setter and value pairs the shared report renderer emits, in its',
+      'fixed order, are accepted; every other line remains identical.',
     ],
     matches: ({ removed, added }) =>
       removed.length > 0 &&

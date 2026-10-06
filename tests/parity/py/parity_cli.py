@@ -435,8 +435,7 @@ def run_watch(args: Args) -> int:
     with index.watch(options) as watch:
         # Then the initial answer, identical to a run without --watch. A stream that opens
         # with its changes tells a reader nothing about what it is watching.
-        sys.stdout.write(render(args, watch.report()))
-        sys.stdout.flush()
+        emit(args, watch.report())
         # Views that stream per entry are emitted as records; anything aggregate has to be
         # repainted, because a total cannot be expressed as a change. Both come from the
         # one query, so nothing here is a second grammar.
@@ -479,8 +478,7 @@ def _repaint(args: Args, watch: fdu.Watch) -> None:
 
     if args.format in (fdu.Format.TEXT, fdu.Format.TREE):
         print(f"\n{fdu.watch_rule(datetime.now(tz=UTC))}", flush=True)
-    sys.stdout.write(render(args, watch.report()))
-    sys.stdout.flush()
+    emit(args, watch.report())
 
 
 def _open(args: Args) -> fdu.Index:
@@ -495,10 +493,20 @@ def _open(args: Args) -> fdu.Index:
     )
 
 
-def render(args: Args, report: fdu.Report) -> str:
-    # The one renderer, reached through the API rather than reimplemented. A shim that
-    # drew its own bars and padding would be testing the reimplementation.
+def emit(args: Args, report: fdu.Report) -> None:
+    """Write the result to stdout, then its diagnostics to stderr, as the binary does.
+
+    The one renderer, reached through the API rather than reimplemented. A shim that drew
+    its own bars and padding would be testing the reimplementation.
+
+    `write_report_diagnostics` flushes the result before the first note, and the order is
+    observable wherever the two streams share a destination. Writing the notes first, as
+    this shim did, put a machine report's note above its document once notes moved out
+    of the rendered result.
+    """
     color = args.color == "always"
+    sys.stdout.write(report.render(args.format, color=color, bar_size=args.bar_size))
+    sys.stdout.flush()
     # write_report_diagnostics' order: notes, warnings, tips. --quiet drops notes and tips
     # but never a warning, which is what keeps a stale answer marked as one.
     if not args.quiet:
@@ -509,7 +517,7 @@ def render(args: Args, report: fdu.Report) -> str:
     if not args.quiet:
         for tip in report.tips:
             print(tip, file=sys.stderr)
-    return report.render(args.format, color=color, bar_size=args.bar_size)
+    sys.stderr.flush()
 
 
 def exit_code(args: Args, status: fdu.Status) -> int:
@@ -555,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
         scan=scan_options(args),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
     )
-    sys.stdout.write(render(args, report))
+    emit(args, report)
     return exit_code(args, report.status)
 
 
