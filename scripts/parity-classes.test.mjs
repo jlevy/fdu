@@ -136,17 +136,58 @@ test("bound tips accept only exact CLI-to-Python setter names and values", () =>
     classify(session([removed, "note: same fact"], [added, "note: same fact"]))?.id ===
     "bound-tip-vocabulary";
   for (const [cli, api] of [
-    ["tip: show smaller entries: --min-share=0%", "tip: show smaller entries: min_share=0%"],
-    ["tip: expand deeper: --depth=all", "tip: expand deeper: depth=all"],
-    ["tip: show more children: --breadth=all", "tip: show more children: breadth=all"],
-    ["tip: show more rows: --limit=all", "tip: show more rows: limit=all"],
+    ["tip: show more: --min-share=0%", "tip: show more: min_share=0%"],
+    ["tip: show more: --depth=all", "tip: show more: depth=all"],
+    ["tip: show more: --breadth=all", "tip: show more: breadth=all"],
+    ["tip: show more: --limit=all", "tip: show more: limit=all"],
+    ["tip: show more: --depth=all --limit=all", "tip: show more: depth=all, limit=all"],
+    [
+      "tip: show more: --min-share=0% --depth=all --breadth=all --limit=all",
+      "tip: show more: min_share=0%, depth=all, breadth=all, limit=all",
+    ],
   ]) {
     assert.ok(matches(cli, api), `${cli} / ${api}`);
     assert.ok(matches(`! ${cli}`, `! ${api}`), `stderr: ${cli}`);
     assert.ok(!matches(cli, `${api} now`), "extra text is a real difference");
     assert.ok(!matches(cli, api.replace("=all", "=3").replace("=0%", "=1%")), "value changed");
   }
-  assert.ok(!matches("tip: show smaller entries: --min-share=0%", "tip: expand deeper: depth=all"));
+  assert.ok(!matches("tip: show more: --min-share=0%", "tip: show more: depth=all"));
+  assert.ok(
+    !matches("tip: show more: --depth=all --limit=all", "tip: show more: limit=all, depth=all"),
+    "the same setters in the same order",
+  );
+  assert.ok(!matches("tip: show more: --depth=all --limit=all", "tip: show more: depth=all"));
+  assert.ok(
+    !matches("tip: show more: --limit=all --depth=all", "tip: show more: limit=all, depth=all"),
+    "the renderer's order is fixed",
+  );
+  assert.ok(
+    !matches("tip: show more: --depth=all --depth=all", "tip: show more: depth=all, depth=all"),
+    "each setter appears once",
+  );
+  assert.ok(
+    !matches("tip: show more: --depth=all --limit=all", "tip: show more: depth=all limit=all"),
+    "keyword arguments are separated as one call's arguments",
+  );
+});
+
+test("the omitted-views tip accepts only its exact axis translation", () => {
+  const classified = (cli, api) =>
+    classify(
+      session(["80 B  assets[SEP]logo.png", cli], ["80 B  assets/logo.png", api]),
+    )?.id;
+  assert.equal(
+    classified("tip: include them: --analyze all", "tip: include them: analyze all"),
+    "portable-golden-pattern",
+  );
+  assert.equal(
+    classified("! tip: include them: --analyze all", "! tip: include them: analyze all"),
+    "portable-golden-pattern",
+    "stderr marker",
+  );
+  for (const api of ["tip: include them: analyze code", "tip: include them: analyze all now"]) {
+    assert.equal(classified("tip: include them: --analyze all", api), undefined, api);
+  }
 });
 
 test("the stale-answer warning accepts only its exact option translation", () => {
@@ -179,6 +220,36 @@ test("the stale-answer warning accepts only its exact option translation", () =>
   );
 });
 
+test("a watched content view accepts only the held-index refusal of the same view", () => {
+  const cli = (view, analyzer) =>
+    `! fdu: --view ${view} needs ${analyzer} analysis, which --watch cannot keep current; use a one-shot report`;
+  const api = (view, analyzer, held = "none") =>
+    `! fdu: view ${view} needs ${analyzer} analysis; this index was opened with analyze ${held}`;
+  assert.equal(classify(session([cli("code", "code")], [api("code", "code")]))?.id, "held-basis-watch");
+  assert.equal(
+    classify(session([cli("documents", "words")], [api("documents", "words")]))?.id,
+    "held-basis-watch",
+  );
+  for (const added of [
+    api("documents", "code"),
+    api("code", "words"),
+    api("code", "code", "lines"),
+    `${api("code", "code")} now`,
+    "! fdu: analyze is not yet supported with watch; use a one-shot report",
+  ]) {
+    assert.equal(classify(session([cli("code", "code")], [added])), null, added);
+  }
+  // A multi-view refusal, or one that also names an analyzer, is not this difference.
+  const both =
+    "! fdu: --analyze words and --view code need words and code analysis, which --watch cannot keep current; use a one-shot report";
+  assert.equal(classify(session([both], [api("code", "code", "words")])), null);
+  assert.equal(
+    classify(session([cli("code", "code"), "total 100"], [api("code", "code"), "total 999"])),
+    null,
+    "an extra changed line is never absorbed",
+  );
+});
+
 // A class that cannot fail is worse than no class: the summary then reports a clean
 // surface while a real difference goes unread. Each class gets a fixture it would
 // otherwise match, polluted with one genuinely changed line.
@@ -206,8 +277,8 @@ test("no class absorbs an extra changed line", () => {
       ["error: invalid modified_since", "total 999"],
     ),
     "bound-tip-vocabulary": session(
-      ["tip: expand deeper: --depth=all", "total 100"],
-      ["tip: expand deeper: depth=all", "total 999"],
+      ["tip: show more: --depth=all", "total 100"],
+      ["tip: show more: depth=all", "total 999"],
     ),
   };
   for (const cls of CLASSES) {

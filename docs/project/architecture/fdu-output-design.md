@@ -51,9 +51,36 @@ Apply these roles consistently across human report views.
 Analyzer names describe measurements (`lines`, `code`, `words`); canonical view names
 identify the population or grouping (`families`, `code`, `documents`). Multi-view
 headers use the uppercase canonical view name.
-Metric labels belong in table columns or explicit percentage labels, so document-word
-percentages cannot be mistaken for byte percentages.
+Metric labels belong in table columns or in a note naming the percentage’s denominator,
+so document-word percentages cannot be mistaken for byte percentages.
+A single view’s note names the measure alone; beside other views it names every non-byte
+denominator with its section, the code table’s included, so no table borrows another’s,
+and a section it does not name shares bytes:
+
+```text
+note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
+```
+
+Display-limit notes name their section the same way (`2 rows below min share in TYPES`),
+so equal counts in different views stay distinct.
 See the [analysis mapping](../../usage.md#measurements-views-and-headers).
+The mapping reads both ways for the two views with no metadata meaning: `code` and
+`documents` each request their analyzer, so `--view code,documents` is the one-flag form
+of `--analyze code,words`, and the vocabulary split costs a reader nothing.
+When analysis and views do not match, the epilogue names the remedy in the other
+vocabulary, each as one note and one runnable tip:
+
+```text
+note: code analysis not shown by summary
+tip: show it: --view code
+note: full omits code, documents without analysis
+tip: include them: --analyze all
+```
+
+Analysis is named analyzer by analyzer against what each selected view displays
+(`ViewSpec::shows`), so analysis one view shows and another does not still gets a note,
+and its tip keeps the caller’s views and adds the ones that show the rest
+(`note: code analysis not shown by documents`, `tip: show it: --view documents,code`).
 
 The code overview is one table with aligned code-line, share, comment, blank,
 analyzed-file, and language columns.
@@ -66,8 +93,16 @@ when non-empty: `(20 gitignored, 10 unknown)`. TOTAL uses the complete selected
 population, including rows hidden by display limits.
 Unmeasured SLOC displays a dash, distinct from a measured zero.
 File coverage states how much was analyzed.
-Compact coverage context follows the table, and totals are not repeated as a second
-report. Machine output preserves the existing code overview model.
+Coverage context is a set of notes after the result, not lines below the table, and
+totals are not repeated as a second report:
+
+```text
+note: 15 languages analyzed, gitignored files excluded
+note: not analyzed: 2 unsupported
+note: 22 files with unclassified type
+```
+
+Machine output preserves the existing code overview model.
 
 ## Number Formatting
 
@@ -95,6 +130,17 @@ JSON, JSONL, YAML, paths, or long rows.
 A library renderer returns only the formatted result; notes, the report’s own warnings,
 and tips are exposed separately for the caller to route.
 
+The result itself holds only result rows, column headings, and multi-view section
+headers. Any other explanation — what a percentage measures, how much was analyzed, what
+a display limit hid, how to see more — is a classified `note:` or `tip:` line after the
+result, never an unprefixed line inside or above it.
+A multi-view section header may carry its own row bound, as in `LANGUAGES (6 of 11)`; a
+single-view report has no header, so its bound is a display-limit note.
+
+Keep every line as short as its facts allow, and merge lines that say related things:
+one note for what totals include, one for every display limit that hid something, and
+one runnable tip that lifts them all.
+
 Use short lines with these prefixes, without category headings or empty categories:
 
 | Category | Meaning | Terminal style |
@@ -113,12 +159,13 @@ Preserve failure exit status and diagnostic details when output fails or a backg
 cache save fails.
 
 Add brief interpretation notes by default when the displayed facts can be misread:
-gitignored values are included in totals, and hidden file tallies are recursive subsets
-already included in directory totals.
-Emit each clarification once per report.
-`--quiet` (`-q`) suppresses notes, tips, performance lines, and transient progress.
-It preserves result stdout, warnings, errors, completeness and freshness facts, and exit
-status. Machine reports keep their structured facts; quiet controls diagnostic
+gitignored values are included in totals, and directory totals already include their
+descendants, hidden ones among them
+(`note: totals include gitignored sizes and descendants`). Emit each clarification once
+per report. `--quiet` (`-q`) suppresses notes, tips, performance lines, and transient
+progress.
+It preserves result stdout, warnings, errors, completeness and freshness facts,
+and exit status. Machine reports keep their structured facts; quiet controls diagnostic
 presentation.
 
 A fact the reader must not miss is therefore a warning, not a note.
@@ -198,19 +245,21 @@ The existing `limits` fields provide the corresponding bound values; per-node
 `omissions` retain detailed boundaries for debugging.
 Report schema `fdu.report/10` uses this root-branch accounting for the remainder.
 
-Explain accounting and applicable bounds once at the end, then offer remedies:
+Explain accounting and applicable bounds once at the end, then offer one remedy:
 
 ```text
-note: more covers unlisted root branches; listed directory totals already include their descendants
-note: display limits: below 1% of selected root, depth 5
-tip: show smaller entries: --min-share=0%
-tip: expand deeper: --depth=all
+note: totals include descendants
+note: display limits: below 1% of root, depth 5
+tip: show more: --min-share=0% --depth=all
 ```
 
 The share threshold applies to individual entries against the selected root, not to the
 combined hidden amount.
-Collect remedies from actual omissions, deduplicate across views, and never sum
-remainders across views whose contents may overlap.
+Grouped views list what a bound hid in the same note (`8 languages below min share`,
+`2 of 15 rows shown`). Collect bounds from actual omissions, deduplicate across views,
+and never sum remainders across views whose contents may overlap.
+The tip names each lifted bound once, in a fixed order, as one command line (or one
+call’s keyword arguments on the Python surface).
 
 A complete recursive export is a normal use case:
 
@@ -307,9 +356,9 @@ Preserve portable timestamp, allocation, and rate patterns; inspect golden chang
 rather than accepting host-specific recordings.
 
 Focused tests enforce tree-column alignment, exact omitted sizes, missing-size wording,
-one tip per applicable bound, category ordering, terminal color roles, stdout/stderr
-separation, clean machine parsing, and unchanged partial-result exit status.
-Include multiple directories and multiple views so deduplication is exercised.
+one tip naming each applicable bound once, category ordering, terminal color roles,
+stdout/stderr separation, clean machine parsing, and unchanged partial-result exit
+status. Include multiple directories and multiple views so deduplication is exercised.
 
 Validation belongs to the existing golden, parity, terminal, and full `make check`
 gates.

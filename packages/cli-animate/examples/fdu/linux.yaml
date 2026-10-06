@@ -1,21 +1,43 @@
-# The Linux kernel end to end, in one take: the tree view of the source (every entry of
-# 3% or more, at any depth), then code and document tallies together (lines, code,
-# comments, and blanks per language; words and pages per document format). fdu's cache
-# is cleared first, so the analysis reads every file, with fdu's progress line live. The
-# page cache is warm.
+# The Linux kernel source end to end, in three commands run from inside it: the full
+# usage tree, then code and document tallies twice -- first with fdu's cache cleared, so
+# the analysis reads every file with fdu's progress line live, then again, answered from
+# the cache the first run built. The page cache is warmed in setup, so "no cache" means
+# fdu's own cache, not the disk. The screen never clears: each command's output scrolls
+# up under the next, as in a terminal.
 #
-# Needs this repository's release build and a shallow Linux clone under $FDU_DEMO_TREES:
+# Needs this repository's release build and a shallow Linux clone, without its .git
+# (the pack file is not part of the source), under $FDU_DEMO_TREES:
 #   git clone --depth 1 https://github.com/torvalds/linux "$FDU_DEMO_TREES/linux"
+#   rm -rf "$FDU_DEMO_TREES/linux/.git"
+# Keep the tree and the fdu binary on an internal disk: timed on a USB drive, the
+# recording measures the drive. The intro states the tree's size and file count; update
+# it to match the clone.
 title: "fdu: the Linux kernel, real time"
-terminal: { cols: 160, rows: 28, font_size: 18 }
+# 164 columns fit every result row; only the perf lines wrap.
+terminal: { cols: 164, rows: 48, font_size: 14 }
 typing: { seed: 9 }
 path: [../../../../target/release]
-cwd: $FDU_DEMO_TREES
-setup: [fdu linux --cache-clear]
+cwd: $FDU_DEMO_TREES/linux
+setup:
+  - fdu . --cache-clear
+  - find . -type f -print0 | xargs -0 cat > /dev/null
 steps:
+  - label: intro
+    comment: "# The entire Linux kernel source: 1.7 GiB in 95,938 files"
+    hold: 0.4
+  - comment: "# Full tally of usage"
+    hold: 0.2
   - label: tree
-    run: fdu linux --min-share 3%
-    hold: 3.5
-  - label: code and documents
-    run: fdu linux --analyze code,words --view languages,documents --limit 6
-    hold: 5
+    run: fdu .
+    hold: 2.5
+  - comment: "# Full code and document analysis (first run, no cache, slowest)"
+    hold: 0.2
+  - label: analysis, first run
+    before: [fdu . --cache-clear]
+    run: fdu . --view code,documents
+    hold: 2.5
+  - comment: "# Full code and document analysis (subsequent runs, fast)"
+    hold: 0.2
+  - label: analysis, cached
+    run: fdu . --view code,documents
+    hold: 4

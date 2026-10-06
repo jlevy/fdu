@@ -16,7 +16,7 @@
     "test:parity-classes": "node --test scripts/parity-classes.test.mjs",
     "test:golden": "node scripts/run-golden.mjs",
     "test:golden:update": "node scripts/run-golden.mjs --update",
-    "check:golden-observability": "node --test scripts/check-golden-observability.test.mjs && node scripts/check-golden-observability.mjs",
+    "check:golden-observability": "node --test scripts/check-golden-observability.test.mjs scripts/golden-restore-patterns.test.mjs && node scripts/check-golden-observability.mjs",
     "check:yaml": "node scripts/check-yaml.mjs"
   },
   "devDependencies": {

@@ -91,26 +91,28 @@ A one-level summary of this repository’s files:
 
 ```console
 $ fdu . --depth=1
-██████████   100%      23 MiB  . 872 files (4.0 KiB gitignored)
-█████░░░░░    55%      12 MiB    docs/ 315 files
-██░░░░░░░░    21%     4.7 MiB    crates/ 122 files
-██░░░░░░░░    17%     3.9 MiB    explorations/ 268 files
-░░░░░░░░░░     4%     932 KiB    tests/ 100 files (4.0 KiB gitignored)
-░░░░░░░░░░     1%     352 KiB    scripts/ 29 files
-░░░░░░░░░░     2%     440 KiB    … and 38 more files
+██████████   100%      35 MiB  . 1,119 files (4.0 KiB gitignored)
+██████░░░░    63%      22 MiB    docs/ 460 files
+██░░░░░░░░    16%     5.4 MiB    crates/ 126 files
+█░░░░░░░░░    13%     4.5 MiB    explorations/ 280 files
+░░░░░░░░░░     3%     1.1 MiB    tests/ 112 files (4.0 KiB gitignored)
+░░░░░░░░░░     2%     696 KiB    scripts/ 43 files
+░░░░░░░░░░     1%     412 KiB    packages/ 52 files
+░░░░░░░░░░     2%     544 KiB    … and 46 more files
 ```
 
-Add `--analyze` to read file contents, here for lines of code and words in documents:
+Lines of code by language and words by document type, from one scan:
 
 ```console
-$ fdu . --analyze=code,words
+$ fdu . --view=code,documents
 CODE
 Code lines   Share  Comments   Blank  Analyzed files  Language
-    79,748   61.5%    12,801   6,720         101/101  Rust       (0 gitignored)
-    42,714   32.9%     1,697   5,218         133/133  Python     (0 gitignored)
-     3,988    3.1%       526     358           25/25  JavaScript (0 gitignored)
-     2,518    1.9%       229     145           19/19  C          (0 gitignored)
-       648    0.5%       124      64           18/18  Shell      (0 gitignored)
+    91,382   57.5%    15,689   7,486         102/102  Rust       (0 gitignored)
+    56,021   35.3%     2,192   6,780         160/160  Python     (0 gitignored)
+     6,182    3.9%       747     516           33/33  JavaScript (0 gitignored)
+     2,709    1.7%       251     155           20/20  C          (0 gitignored)
+     1,942    1.2%       252     206           35/35  TypeScript (0 gitignored)
+       648    0.4%       124      64           18/18  Shell      (0 gitignored)
         13   <0.1%         4       1             2/2  Swift      (0 gitignored)
          6   <0.1%         4       1             2/2  C++        (0 gitignored)
          3   <0.1%         3       1             1/1  C#         (0 gitignored)
@@ -120,36 +122,41 @@ Code lines   Share  Comments   Blank  Analyzed files  Language
          2   <0.1%         4       1             1/1  Kotlin     (0 gitignored)
          2   <0.1%         4       1             1/1  Ruby       (0 gitignored)
          2   <0.1%         4       1             1/1  SQL        (0 gitignored)
-         2   <0.1%         4       1             1/1  TypeScript (0 gitignored)
          —       —         —       —             0/2  Make
-   129,654  100.0%    15,416  12,513         308/310  TOTAL      (0 gitignored)
-15 analyzed languages (include population)
-36 selected files with unclassified type
-2 unsupported
+   158,920  100.0%    19,290  15,214         379/381  TOTAL      (0 gitignored)
 
 DOCUMENTS
-Percentage column: document words
-   5.9 MiB   84.6%  markdown           317 files, 117,532 lines (104,000 nonblank, 13,532 blank), 507,111 words (2,028.4 pages), 4 generated, 288 documentation
-   748 KiB   13.4%  text               58 files, 5,455 lines (5,339 nonblank, 116 blank), 80,121 words (320.4 pages), 2 documentation
-   380 KiB    9.7%  html               1 file, 1,125 lines (1,110 nonblank, 15 blank), 58,222 words (232.8 pages), 1 documentation
+   7.4 MiB   69.2%  markdown           379 files, 144,417 lines (128,421 nonblank, 15,996 blank), 638,871 words (2,555.4 pages), 8 generated, 344 documentation
+   1.6 MiB   22.6%  text               66 files, 31,754 lines (31,571 nonblank, 183 blank), 209,075 words (836.3 pages), 10 documentation
+   496 KiB    8.2%  html               2 files, 1,474 lines (1,448 nonblank, 26 blank), 75,380 words (301.5 pages), 1 documentation
+note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
+note: 15 languages analyzed
+note: not analyzed: 2 unsupported
+note: 39 files with unclassified type
 ```
 
-The default `list` view in `tree` format shows allocated sizes, largest first, down to
-depth 5, including file leaves and subtrees contributing at least 1% of the root.
-Set `--depth`, `--min-share`, `--breadth`, and `--limit` to adjust independent display
-bounds. It reads metadata and `.gitignore` files; it does not open regular files for
-content. Hidden and ignored entries are included; ignored byte shares are annotated when
-present.
+The `note:` lines go to stderr after the result, followed by a `perf:` line with the
+run’s timing. `--view=code` and `--view=documents` give either report alone.
+
+Plain `fdu .` shows the default `list` view in `tree` format: allocated sizes, largest
+first, down to depth 5, including file leaves and subtrees contributing at least 1% of
+the root. Set `--depth`, `--min-share`, `--breadth`, and `--limit` to adjust independent
+display bounds. It reads metadata and `.gitignore` files; it does not open regular files
+for content. Hidden and ignored entries are included; ignored byte shares are annotated
+when present.
 
 | Question | Command |
 | --- | --- |
 | Which directories are large? | `fdu .` |
+| Lines of code and words in documents | `fdu . --view=code,documents` |
+| Lines of code by language | `fdu . --view=code` |
+| Words in documents, by format | `fdu . --view=documents` |
 | Old build directories with size and age | `fdu . --kind dir --include node_modules --modified-before 30d --long` |
 | Matching paths only | `fdu . --kind dir --include .venv --format paths` |
 | Totals, excluding ignored entries | `fdu . --ignored=exclude --view=summary` |
 | Languages by space | `fdu . --view=languages` |
 | Ten files that changed most recently | `fdu . --view=recent --limit=10` |
-| Standard lines of code | `fdu . --analyze=code` |
+| Code lines in the language rows | `fdu . --analyze=code --view=languages` |
 | Keep the tree live | `fdu . --watch` |
 | Machine output | `fdu . --format=json` |
 | Complete recursive tree | `fdu . --view tree --full --format json` |
@@ -158,8 +165,10 @@ present.
 | Find Rust files | `fdu . --kind file --include '*.rs' --full --format paths` |
 
 `--view` chooses what is reported; several views share one walk.
-`--analyze` is the only switch that reads file bodies.
-A view never turns analysis on.
+Only `code` and `documents` read file bodies, because neither has anything to show
+without analysis; every other view is metadata-only.
+`--analyze` is the extra control: it adds analysis to the other views, such as code
+lines in `--view=languages`, or runs it only to warm the cache.
 Exit status 0 is a complete result, 1 a failure, and 2 a partial result or a usage
 error.
 
@@ -180,30 +189,30 @@ See
 ## Understand a Codebase
 
 ```shell
-fdu . --analyze=code --ignored=exclude --limit=5
+fdu . --view=code --ignored=exclude --limit=5
 ```
 
-For example, the implementation at repository revision `7a499493` produced this stdout:
+For example, a clean checkout of repository revision `3710882f` produced this stdout:
 
 ```text
-(5 of 16)
 Code lines   Share  Comments   Blank  Analyzed files  Language
-    79,330   65.1%    12,681   6,700         101/101  Rust
-    37,861   31.1%     1,513   4,696           95/95  Python
-     3,988    3.3%       526     358           25/25  JavaScript
-       403    0.3%        65      33             3/3  C
-       249    0.2%        57      45             7/7  Shell
-   121,858  100.0%    14,881  11,840         242/244  TOTAL
-15 analyzed languages (exclude population)
-22 selected files with unclassified type
-2 unsupported
+    90,911   57.4%    15,531   7,465         102/102  Rust
+    55,917   35.3%     2,169   6,775         160/160  Python
+     6,119    3.9%       740     515           33/33  JavaScript
+     2,709    1.7%       251     155           20/20  C
+     1,931    1.2%       237     205           35/35  TypeScript
+   158,271  100.0%    19,087  15,186         379/381  TOTAL
 ```
 
-The note and suggestion appear once on stderr, followed by the run’s `perf:` summary:
+Notes and a suggestion follow on stderr, then the run’s `perf:` summary:
 
 ```text
-note: code totals include languages hidden by display limits
-tip: show more rows: --limit=all
+note: totals include hidden languages
+note: 15 languages analyzed, gitignored files excluded
+note: not analyzed: 2 unsupported
+note: 39 files with unclassified type
+note: display limits: 5 of 16 rows shown
+tip: show more: --limit=all
 ```
 
 The percentages and bold TOTAL row cover all measured code lines, including languages

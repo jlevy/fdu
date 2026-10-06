@@ -112,10 +112,10 @@ const DOCS_POINTER: &str = r"Agent setup:
   uvx --no-build fdu@latest --install-skill
 
 Examples:
-  fdu .                     directory sizes (metadata only)
-  fdu . --ignored=exclude   omit entries covered by .gitignore
-  fdu . --view=summary      one total for the tree
-  fdu . --analyze=code      standard lines of code by language
+  fdu .                         directory sizes (metadata only)
+  fdu . --view=code,documents   lines of code by language, words by document type
+  fdu . --ignored=exclude       omit entries covered by .gitignore
+  fdu . --view=summary          one total for the tree
   fdu . --kind dir --include .venv --modified-before 7d --long
   fdu . --kind dir --include node_modules --modified-before 30d --long
   fdu . --kind dir --include target --modified-before 30d --format paths
@@ -172,42 +172,51 @@ START HERE
   A report requires a PATH. Use `.` for the current directory.
 
     fdu .                                      directory sizes (the default)
+    fdu . --view=code,documents                lines of code and words, one scan
+    fdu . --view=code                          standard lines of code by language
+    fdu . --view=documents                     words and pages by document format
     fdu . --ignored=exclude                    omit entries covered by .gitignore
     fdu . --view=summary                       one total for the tree
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
-    fdu . --analyze=lines                      physical lines and raw words
-    fdu . --analyze=lines --view=languages     those metrics by language
-    fdu . --analyze=code                       standard lines of code by language
-    fdu . --analyze=words                      prose volume by document type
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 
+  code and documents read file contents; --analyze is the extra control for
+  analysis a view does not imply:
+
+    fdu . --analyze=code --view=languages      code lines in the language rows
+    fdu . --analyze=lines --view=languages     physical lines and raw words by language
+
 VIEWS AND ANALYSIS
   --view chooses the question the report answers. Several views share one scan
-    and one requested analysis; adding a view does not run a second scan.
-  --analyze opts into reading eligible file bodies. Without it, regular file
-    contents are not opened. Compatible cached results avoid rereading unchanged
-    bodies, so a repeated content analysis can be much cheaper.
+    and one analysis; adding a view does not run a second scan.
+  code and documents are the views that read file contents: they show nothing
+    without analysis, so naming one runs its analyzer, code or words. Every
+    other view, full included, opens no regular file on its own.
+  --analyze runs analyzers beyond what the views imply: code lines in the
+    languages rows, physical lines in families and types, or a run that only
+    warms the cache. Compatible cached results avoid rereading unchanged bodies,
+    so a repeated content analysis can be much cheaper.
 
-  Naming analyzers selects a view that displays them: code selects code, words
-  selects documents, code,words selects both, and lines selects families.
+  Naming analyzers alone selects a view that displays them: code selects code,
+  words selects documents, code,words selects both, and lines selects families.
   Name --view for a different projection; it always wins. Headers name views;
-  columns name measurements. words is an analyzer; documents selects prose/markup.
-  Use --analyze words for that report, or add --view types for all text types.
+  columns name measurements: words is an analyzer, and documents is its view of
+  prose and markup. --analyze words --view types counts words in every text type.
 
-  A view never turns on an analyzer, because choosing how to look at a result
-  should not quietly authorize reading every file in the tree. If a selected
-  view cannot display requested analysis, fdu still performs the analysis and
-  prints a note. --view=full names any view it had to skip.
+  A view with a metadata meaning never turns on an analyzer, because choosing how
+  to look at a result should not quietly authorize reading every file in the
+  tree. If a selected view cannot display requested analysis, fdu still performs
+  the analysis and prints a note. --view=full names any view it had to skip.
 
 MORE COMPOSITIONS
   fdu ~/Downloads --view=extensions
   fdu . --view=types,families --format=json
-  fdu . --analyze=words --view=documents
+  fdu . --analyze=words --view=types
   fdu PATH --view tree --full --format json                 complete recursive tree
   fdu PATH --kind dir --full --format json                  recursive directory totals
   fdu PATH --kind file --full --format paths                find/fd-style file inventory
@@ -263,6 +272,7 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
+                                                        beyond what the views imply
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --breadth, --min-share
   View       list,summary,tree,families,types,extensions,languages,code,documents,
@@ -274,7 +284,7 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
             r"
 
 CONTENT ANALYSIS
-  none       metadata only; source files are never opened (default)
+  none       no analyzer beyond what the views imply (default)
   lines      physical, blank, and nonblank lines plus raw word counts
   code       standard SLOC from the versioned common-language analyzer
   words      normalized and reader-visible word volume
@@ -284,9 +294,9 @@ CONTENT ANALYSIS
   axis and cannot be combined. code and words already include lines; adding lines
   explicitly changes neither measurements nor work. lines alone measures physical
   text volume without language-specific code counting or word normalization.
-  languages is metadata-only by default; --view code requires --analyze code.
+  languages is metadata-only by default; --view code runs code analysis itself.
   Code reports show source lines, language shares, population columns, and coverage.
-  documents requires any enabled analyzer.
+  --view documents runs words analysis itself.
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --workers bounds content-analysis concurrency; directory scanning uses its own pool.
   --words-per-page changes only report-time page derivation.
@@ -304,7 +314,7 @@ CACHE BEHAVIOR
   Content analysis is where repeated-run caching pays most. The first run reads
   eligible file bodies. A compatible later run reuses results for unchanged files
   and reads only changed or newly eligible bodies; the performance footer reports
-  fresh and cached analysis separately. Repeat the same --analyze command to see it.
+  fresh and cached analysis separately. Repeat a --view=code run to see it.
 
   --stale-ok answers from the snapshot alone: it does no filesystem verification,
   requires a compatible snapshot and content sidecar for the requested analysis,
@@ -340,8 +350,11 @@ OUTPUT AND AUTOMATION
   Metric rows include detection source, confidence, origin flags, and coverage.
   Tree remainder totals are shared by every format: recursive files, apparent and
   allocated bytes, and applicable reasons. Null means nothing hidden; unknown counts
-  or sizes stay null. Text shows one root-level line: ... and SIZE (N files) more.
-  Human diagnostics use note:, warn:, tip:, and perf: on stderr, in that order.
+  or sizes stay null. Text shows one root-level row, `… and N more files`, with the
+  hidden share and size in the tree's columns.
+  Text results hold only rows, column headings, and multi-view headers. Human
+  diagnostics use note:, warn:, tip:, and perf: on stderr, in that order; one
+  `tip: show more:` names the flags that lift every display limit that hid rows.
   One-shot text reports end with gray perf: on stderr; machine formats omit it.
   It counts ignore files and accepted rules, including repeated governing sources.
   Total files/s and binary GiB/s use the displayed elapsed duration. GiB/s represents
@@ -588,13 +601,15 @@ pub struct Cli {
     // ---- view: which roll-ups are reported ----
     /// Views: list, tree, files, extensions, types, families, languages, code, documents,
     /// largest, recent, summary, or full. Defaults to list with no analysis, otherwise to
-    /// a view that displays the requested analysis.
+    /// a view that displays the requested analysis. code and documents read file contents:
+    /// each runs its analyzer.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
     pub view: Option<String>,
 
-    /// Analyzers to run: none, lines, code, words, or all.
+    /// Analyzers to run beyond what the views imply: none, lines, code, words, or all.
     ///
-    /// Anything but none reads each eligible file missing from a compatible content cache.
+    /// Any analyzer, named or implied by a view, reads each eligible file missing from a
+    /// compatible content cache.
     #[arg(
         long,
         value_name = "LIST",
@@ -2896,7 +2911,8 @@ mod tests {
     ///
     /// An agent copies an inline `--view full` as readily as a fenced command, so both
     /// count. Only the guide was checked, and the skill kept `--view all` and an
-    /// analyzer vocabulary the content axis no longer has.
+    /// analyzer vocabulary the content axis no longer has. Both spellings count too:
+    /// splitting on whitespace alone skipped every `--view=code,documents`.
     #[test]
     fn the_skill_only_names_views_and_analyzers_that_parse() {
         let skill = compose_skill();
@@ -2904,7 +2920,8 @@ mod tests {
         let commands = skill.lines().map(str::trim_start).filter(|line| line.starts_with("fdu "));
         let mut checked = 0;
         for text in spans.chain(commands) {
-            let mut words = text.split_whitespace();
+            let mut words =
+                text.split(|c: char| c.is_whitespace() || c == '=').filter(|word| !word.is_empty());
             while let Some(flag) = words.next() {
                 if flag != "--view" && flag != "--analyze" {
                     continue;
@@ -2923,6 +2940,62 @@ mod tests {
             }
         }
         assert!(checked > 0, "the skill should show views and analyzers");
+    }
+
+    /// Every command the skill shows must resolve as written, as the guide's must.
+    ///
+    /// An agent runs these lines verbatim, the `uvx` fallback included, so each line of
+    /// a fenced `bash` block is parsed and its request built and validated, which is
+    /// where every refusal that needs no filesystem happens. `<that>` stands for the
+    /// timestamp the watermark example records.
+    #[test]
+    fn every_command_the_skill_shows_resolves() {
+        let skill = compose_skill();
+        let mut in_bash = false;
+        let mut checked = 0;
+        for line in skill.lines() {
+            if let Some(fence) = line.strip_prefix("```") {
+                in_bash = !in_bash && fence == "bash";
+                continue;
+            }
+            let line = line.trim_start();
+            let command = line
+                .strip_prefix("uvx --no-build fdu@latest ")
+                .or_else(|| line.strip_prefix("fdu "))
+                .filter(|_| in_bash);
+            let Some(command) = command else { continue };
+            // A trailing comment says what the command is for.
+            let command = command.split(" #").next().unwrap_or(command).trim_end();
+            let args = std::iter::once("fdu".to_string())
+                .chain(shell_words(command).into_iter().map(|word| word.replace("<that>", "@0")));
+            let parsed = Cli::try_parse_from(args)
+                .unwrap_or_else(|error| panic!("the skill shows `fdu {command}`: {error}"));
+            if let Err(error) = parsed.resolved_request() {
+                panic!("the skill shows `fdu {command}`: {error}");
+            }
+            checked += 1;
+        }
+        assert!(checked >= 30, "the skill should show its commands; found {checked}");
+    }
+
+    /// A command line split into words the way a POSIX shell splits the ones the skill
+    /// shows: whitespace separates words, and single quotes keep a glob in one word.
+    fn shell_words(command: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut word: Option<String> = None;
+        let mut quoted = false;
+        for c in command.chars() {
+            match c {
+                '\'' => {
+                    quoted = !quoted;
+                    word.get_or_insert_with(String::new);
+                }
+                c if c.is_whitespace() && !quoted => words.extend(word.take()),
+                c => word.get_or_insert_with(String::new).push(c),
+            }
+        }
+        words.extend(word);
+        words
     }
 
     /// The stale-schema bug, made unrepeatable.
@@ -3026,16 +3099,15 @@ mod tests {
         assert!(combined.contains("cannot be combined"), "{combined}");
     }
 
-    /// Principle 13, the direction that protects the user: no view, at any content
-    /// setting, may cause a file body to be opened that `--analyze` did not authorize.
+    /// Cost flows one way, the direction that protects the user: a view with a metadata
+    /// meaning never causes a file body to be opened, and a content view opens exactly
+    /// what its analyzer reads -- naming it is the request for that analysis, and the
+    /// command line passes the flag through for the model to decide.
     #[test]
-    fn no_view_enables_an_analyzer() {
+    fn only_a_content_view_enables_its_analyzer() {
         for view in ViewSpec::ALL {
             let spec = view.label();
             let cli = Cli { view: Some(spec.to_string()), ..cli() };
-            // Built rather than validated, because a view that needs content is refused
-            // rather than answered: what this test pins is that naming it never turns an
-            // analyzer on behind the caller's back.
             let typed = cli.typed_values();
             let built = Request::build(
                 &cli.spec(Path::new("."), &typed).expect("the spec composes"),
@@ -3043,11 +3115,13 @@ mod tests {
                 &AxisNames::FLAGS,
             )
             .expect("every view parses");
-            assert_eq!(
-                built.basis.content,
-                AnalysisSet::NONE,
-                "--view {spec} must leave the content axis empty"
-            );
+            let expected = match view {
+                ViewSpec::Code => AnalysisSet::NONE.with_code(),
+                ViewSpec::Documents => AnalysisSet::NONE.with_words(),
+                _ => AnalysisSet::NONE,
+            };
+            assert_eq!(built.basis.content, expected, "--view {spec}");
+            built.validate().expect("a view answers the basis it built");
         }
     }
 
@@ -3502,7 +3576,7 @@ mod tests {
             "Usage: fdu [OPTIONS] <PATH>",
             "fdu: invalid --view \"bogus\": expected one of tree",
             "  Scope      PATH, --scan-depth",
-            "note: omitted documents — requires content analysis",
+            "note: full omits code, documents without analysis",
             "",
             "  --scan-depth <N>  Limit scanning and retention to N entry levels",
         ] {

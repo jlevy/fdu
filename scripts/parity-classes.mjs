@@ -117,22 +117,41 @@ const KNOBS =
   /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
-// A report's bound suggestions name the same setter differently on each surface.
-// The full line, including action and value, is pinned so no other tip can borrow this
-// exception merely because it contains a familiar word.
-const TIP_PAIRS = [
-  ['tip: show smaller entries: --min-share=0%', 'tip: show smaller entries: min_share=0%'],
-  ['tip: expand deeper: --depth=all', 'tip: expand deeper: depth=all'],
-  ['tip: show more children: --breadth=all', 'tip: show more children: breadth=all'],
-  ['tip: show more rows: --limit=all', 'tip: show more rows: limit=all'],
+// A report's one bound suggestion names the same setters differently on each surface: a
+// command line (`--min-share=0% --depth=all`) or one call's keyword arguments
+// (`min_share=0%, depth=all`). Every setter and value is pinned, and both lists must name
+// the same setters in the renderer's fixed order, each at most once, so no other tip can
+// borrow this exception merely because it contains a familiar word.
+const BOUND_SETTERS = [
+  ['--min-share=0%', 'min_share=0%'],
+  ['--depth=all', 'depth=all'],
+  ['--breadth=all', 'breadth=all'],
+  ['--limit=all', 'limit=all'],
 ];
+const BOUND_TIP = 'tip: show more: ';
 const sameBoundTip = (removed, added) => {
-  const marker = removed.startsWith('! ') ? '! ' : '';
-  return TIP_PAIRS.some(([cli, api]) => removed === marker + cli && added === marker + api);
+  const prefix = (removed.startsWith('! ') ? '! ' : '') + BOUND_TIP;
+  if (!removed.startsWith(prefix) || !added.startsWith(prefix)) return false;
+  const flags = removed.slice(prefix.length).split(' ');
+  const fields = added.slice(prefix.length).split(', ');
+  if (flags.length !== fields.length) return false;
+  let previous = -1;
+  return flags.every((flag, i) => {
+    const index = BOUND_SETTERS.findIndex(([cli, api]) => cli === flag && api === fields[i]);
+    if (index <= previous) return false;
+    previous = index;
+    return true;
+  });
 };
-const sameAnalysisTip = (removed, added) =>
-  removed === 'tip: include omitted views: add --analyze code' &&
-  added === 'tip: include omitted views: add analyze code';
+// `full` names the analyzer value that includes the views it skipped. Pinned whole, like
+// the bound tip, so no other tip can borrow it.
+const sameAnalysisTip = (removed, added) => {
+  const marker = removed.startsWith('! ') ? '! ' : '';
+  return (
+    removed === `${marker}tip: include them: --analyze all` &&
+    added === `${marker}tip: include them: analyze all`
+  );
+};
 // The engine's stale-answer warning names each surface's own option for a fresh answer
 // (fdu-mdop). Pinned whole, like the tips above, so no other warning can borrow it.
 const staleWarning = (option) =>
@@ -140,6 +159,21 @@ const staleWarning = (option) =>
 const sameStaleWarning = (removed, added) => {
   const marker = removed.startsWith('! ') ? '! ' : '';
   return removed === marker + staleWarning('--stale-ok') && added === marker + staleWarning('stale_ok');
+};
+// A content view under a watch: the command line refuses the analysis its own basis would
+// carry, and a Python watch, which reads an index, refuses the view that index cannot
+// answer. Pinned whole, one line each side naming the same view and analyzer, so no other
+// refusal can borrow it.
+const WATCHED_VIEW =
+  /^(! )?fdu: --view ([a-z]+) needs ([a-z]+) analysis, which --watch cannot keep current; use a one-shot report$/;
+const sameWatchedViewRefusal = (removed, added) => {
+  const match = WATCHED_VIEW.exec(removed);
+  if (!match) return false;
+  const [, marker = '', view, analyzer] = match;
+  return (
+    added ===
+    `${marker}fdu: view ${view} needs ${analyzer} analysis; this index was opened with analyze none`
+  );
 };
 const usesBoundTip = (line) =>
   /^(! )?tip: /.test(line) &&
@@ -178,8 +212,8 @@ export const CLASSES = [
     title: 'Bound suggestions name the same setter on each surface',
     why: [
       'The command line names bound flags and Python names corresponding fields.',
-      'Only the four exact action, setter, and value pairs emitted by the shared',
-      'report renderer are accepted; every other line remains identical.',
+      'Only the four setter and value pairs the shared report renderer emits, in its',
+      'fixed order, are accepted; every other line remains identical.',
     ],
     matches: ({ removed, added }) =>
       removed.length > 0 &&
@@ -246,6 +280,23 @@ export const CLASSES = [
     // match. One mechanism per session, and the two lists must not both claim one.
     matches: ({ name }) =>
       /^(Version Is Exact|The Guide Is Reachable Without a Root)/.test(name),
+  },
+  {
+    id: 'held-basis-watch',
+    title: 'A Python watch reads an index, which a content view never widens',
+    why: [
+      'The command line has no index to watch: --watch builds its own basis, so a content',
+      'view enables its analyzer and the watch refuses the analysis it cannot keep current.',
+      'The package watches only an index, fdu.open(...).watch(...), and a read never widens',
+      'what an index was opened with, so the same view is refused by the index first,',
+      'naming how it was opened. Both refuse before reporting anything, with one exit status;',
+      'which of two true rules speaks first follows the route. Pinned whole: one line on',
+      'each side, the same view and analyzer, and an index opened with no analyzer.',
+    ],
+    matches: ({ removed, added }) =>
+      removed.length === 1 &&
+      added.length === 1 &&
+      sameWatchedViewRefusal(removed[0], added[0]),
   },
 ];
 

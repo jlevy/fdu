@@ -87,9 +87,9 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -172,9 +172,9 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -263,9 +263,9 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -346,9 +346,9 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -429,9 +429,9 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -503,10 +503,10 @@ $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -587,10 +587,10 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
 ! note: incomplete subtrees remain visible below the size threshold
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -671,10 +671,10 @@ $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --dept
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
 ! note: incomplete subtrees remain visible below the size threshold
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -755,9 +755,9 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -818,10 +818,10 @@ $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --dept
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -876,7 +876,8 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
     }
   ]
 }
-! tip: show more rows: --limit=all
+! note: display limits: 0 of 10 rows shown
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -934,8 +935,9 @@ $ fdu --stale-ok --format json --size apparent --limit 0 project
     }
   ]
 }
+! note: display limits: 0 of 10 rows shown
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -1000,9 +1002,9 @@ $ fdu --no-gitignore --cache on --view tree --format json --size apparent --dept
     }
   ]
 }
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ? 0
 ```
 

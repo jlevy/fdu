@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 62 sessions differ, and every one of them has a named cause.
+# 66 sessions differ, and every one of them has a named cause.
 #
-#  22  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  23  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
 #      platform separator. The Python replay prints the sandbox root and a literal
 #      separator. Only the exact fixture root and otherwise identical lines match;
@@ -53,10 +53,10 @@
 #
 #  11  Bound suggestions name the same setter on each surface  [bound-tip-vocabulary]
 #      The command line names bound flags and Python names corresponding fields.
-#      Only the four exact action, setter, and value pairs emitted by the shared
-#      report renderer are accepted; every other line remains identical.
+#      Only the four setter and value pairs the shared report renderer emits, in its
+#      fixed order, are accepted; every other line remains identical.
 #
-#  23  Each surface names its own parameter  [surface-label]
+#  25  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -83,6 +83,15 @@
 #      it can never be mistaken for the binary, which is what keeps this artifact
 #      non-empty. An empty artifact would mean the shim never ran.
 #
+#   1  A Python watch reads an index, which a content view never widens  [held-basis-watch]
+#      The command line has no index to watch: --watch builds its own basis, so a content
+#      view enables its analyzer and the watch refuses the analysis it cannot keep current.
+#      The package watches only an index, fdu.open(...).watch(...), and a read never widens
+#      what an index was opened with, so the same view is refused by the index first,
+#      naming how it was opened. Both refuse before reporting anything, with one exit status;
+#      which of two true rules speaks first follows the route. Pinned whole: one line on
+#      each side, the same view and analyzer, and an index opened with no analyzer.
+#
 # An unexplained difference fails the run rather than landing here, so this list is
 # what is known, not what was tolerated.
 
@@ -96,9 +105,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✗ Several Views Come Back in Request Order, From One Scan
     stderr:
 @@ -1,2 +1,2 @@
- note: gitignored sizes are included in row totals
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+ note: totals include gitignored sizes
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Include Narrows by Glob
   ✓ Brace Globs Survive Because Pattern Flags Are Repeatable
   ✓ Exclude Beats Include
@@ -107,33 +116,32 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Every Tally Counts Only What the Selection Admits
   ✓ Min-Size Follows the Selected Metric
   ✗ Sort and Limit Compose Into a Top-N, With No Dedicated View
-@@ -1,3 +1,3 @@
- (2 of 7)
+@@ -1,2 +1,2 @@
 -dist[SEP]acorn-0.1.0.tar.gz
 +dist/acorn-0.1.0.tar.gz
  README.md
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 2 of 7 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Reverse Flips Whatever Order Is in Effect
-@@ -1,3 +1,3 @@
- (2 of 7)
+@@ -1,2 +1,2 @@
  .gitignore
 -src[SEP]omega.rs
 +src/omega.rs
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 2 of 7 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Depth Bounds the Rendered Tree, Not the Scan
     stderr:
-@@ -1,4 +1,4 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: depth 0
--tip: expand deeper: --depth=all
-+tip: expand deeper: depth=all
+-tip: show more: --depth=all
++tip: show more: depth=all
   ✓ Every Row Says How Much of It .gitignore Ignores
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
@@ -159,9 +167,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 +{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 1 of 5 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
@@ -199,7 +208,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +{"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "entry_ignored": false, "bytes": 269, "allocated": [ALLOCATED_VALUE], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist/acorn-0.1.0.tar.gz", "kind": "file", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "entry_ignored": false, "bytes": 48, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "entry_ignored": false, "bytes": 36, "allocated": [ALLOCATED_VALUE], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src/alpha.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src/omega.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "entry_ignored": false, "bytes": 28, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs/FAQ.MD", "kind": "file", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "entry_ignored": false, "bytes": 6, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
     stderr:
 @@ -1,2 +1,2 @@
- note: gitignored sizes are included in row totals
+ note: totals include gitignored sizes
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✓ Retired Policies Name Their Replacement
@@ -268,10 +277,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify No Cache Was Created
   ✗ Report Under the Default Policy
 @@ -1,9 +1,9 @@
@@ -321,10 +330,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify the Default Created No Cache
   ✓ A Stale Answer Has Nothing to Read
   ✗ Create the Snapshot
@@ -375,10 +384,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify Exactly One Snapshot Exists
   ✗ A Second One-Shot Report Scans Cold Again
 @@ -1,9 +1,9 @@
@@ -428,10 +437,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Expand the Fixture
   ✗ Report the Changed Tree
 @@ -1,9 +1,9 @@
@@ -481,10 +490,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ The Rewrite Kept the Snapshot Current for a Stale Answer
 @@ -1,9 +1,9 @@
  {
@@ -533,12 +542,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
--tip: show more rows: --limit=all
+-tip: show more: --limit=all
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
-+tip: show more rows: limit=all
++tip: show more: limit=all
   ✗ Watching Rejects a Snapshot Nothing Verified
     stderr:
 @@ -1,1 +1,1 @@
@@ -592,11 +601,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
  note: incomplete subtrees remain visible below the size threshold
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Corrupt the Snapshot
   ✗ Recover with a Cold Scan
 @@ -1,9 +1,9 @@
@@ -646,11 +655,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
  note: incomplete subtrees remain visible below the size threshold
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify the Corrupt File Was Replaced
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
@@ -700,10 +709,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -752,12 +761,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
--tip: show more rows: --limit=all
+-tip: show more: --limit=all
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
-+tip: show more rows: limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -788,9 +797,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    },
    "ignore_rules": null,
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 0 of 10 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -821,11 +831,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    },
    "ignore_rules": {
     stderr:
-@@ -1,2 +1,2 @@
+@@ -1,3 +1,3 @@
+ note: display limits: 0 of 10 rows shown
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
--tip: show more rows: --limit=all
+-tip: show more: --limit=all
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
-+tip: show more rows: limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -874,10 +885,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Reading No .gitignore Is a Separate Scope
 FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare Mixed Line Endings and Observed Binary Data
@@ -885,31 +896,32 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare a Signature-Only Binary
   ✓ Content Detection Preserves Name-Based Grouping
   ✓ Human Summaries Separate Code and Documents
-  ✗ Human Summaries Separate Code and Documents
-    stderr:
-@@ -1,1 +1,1 @@
--fdu: --view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly
-+fdu: view documents requires content analysis: add analyze lines, code, words, or all; views never enable content analysis implicitly
+  ✓ Human Summaries Separate Code and Documents
   ✗ Human Summaries Separate Code and Documents
     stderr:
 @@ -1,2 +1,2 @@
- note: requested analysis is not displayed by the selected views
--tip: show analysis: --view families, languages, or full
-+tip: show analysis: view families, languages, or full
+ note: lines analysis not shown by summary
+-tip: show it: --view families
++tip: show it: view families
   ✓ Human Summaries Separate Code and Documents
   ✓ Human Summaries Separate Code and Documents
   ✓ JSON Exposes Provenance, Exact Shares, Metrics, and Coverage
   ✗ JSONL Keeps the Envelope and Section Independently Parseable
 @@ -1,2 +1,2 @@
--{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
--{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-+{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
-+{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
+-{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+-{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}]}}
++{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
++{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}]}}
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,3 +1,3 @@
+ note: percentages are shares of document words
+ note: display limits: 1 of 2 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ YAML Derives Pages Only After Document Aggregation
+  ✓ Document Shares Divide by the Rows’ Sum
+  ✓ Document Shares Divide by the Rows’ Sum
+  ✓ Document Shares Divide by the Rows’ Sum
   ✓ Analysis Reads Every Eligible File Completely
   ✓ Analysis Reads Every Eligible File Completely
   ✓ Cached Coverage Exclusions Preserve Evidence
@@ -923,46 +935,54 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✗ Content Cache Hits Preserve the Same Tallies
     stderr:
 @@ -1,2 +1,2 @@
- note: requested analysis is not displayed by the selected views
--tip: show analysis: --view families, languages, or full
-+tip: show analysis: view families, languages, or full
+ note: words analysis not shown by summary
+-tip: show it: --view documents
++tip: show it: view documents
   ✗ Content Cache Hits Preserve the Same Tallies
 @@ -1,2 +1,2 @@
--{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
--{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-+{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
-+{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
+-{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+-{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 3, "denominator": 9}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4, "logical_words": 3, "paragraphs": 2, "visible_words": 0, "visible_logical_words": 0, "document_words": 3}, "coverage": {"lines": {"analyzed": 1, "binary": 1}, "words": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 3, "words_per_page": 250}}]}}
++{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
++{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 3, "denominator": 9}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4, "logical_words": 3, "paragraphs": 2, "visible_words": 0, "visible_logical_words": 0, "document_words": 3}, "coverage": {"lines": {"analyzed": 1, "binary": 1}, "words": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 3, "words_per_page": 250}}]}}
     stderr:
-@@ -1,1 +1,1 @@
+@@ -1,2 +1,2 @@
+ note: percentages are shares of document words
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✗ Content Cache Hits Preserve the Same Tallies
     stderr:
 @@ -1,3 +1,3 @@
- note: requested analysis is not displayed by the selected views
+ note: words analysis not shown by summary
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
--tip: show analysis: --view families, languages, or full
+-tip: show it: --view documents
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
-+tip: show analysis: view families, languages, or full
++tip: show it: view documents
   ✓ Common-Language SLOC Is a Complete Partition
   ✗ Metric Order, Reverse, and Share Threshold Compose
     stderr:
-@@ -1,2 +1,2 @@
- note: code totals include languages hidden by display limits
--tip: show smaller entries: --min-share=0%
-+tip: show smaller entries: min_share=0%
+@@ -1,5 +1,5 @@
+ note: totals include hidden languages
+ note: ranked by code lines
+ note: 15 languages analyzed
+ note: display limits: 8 rows below min share
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
   ✗ Code Totals Survive Bounds and Unsupported Languages
     stderr:
-@@ -1,2 +1,2 @@
- note: code totals include languages hidden by display limits
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,4 +1,4 @@
+ note: totals include hidden languages
+ note: 15 languages analyzed
+ note: display limits: 2 of 15 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Code Totals Survive Bounds and Unsupported Languages
     stderr:
-@@ -1,2 +1,2 @@
- note: code totals include languages hidden by display limits
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,4 +1,4 @@
+ note: totals include hidden languages
+ note: 15 languages analyzed
+ note: display limits: 0 of 15 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Code Totals Survive Bounds and Unsupported Languages
   ✓ Code Totals Survive Bounds and Unsupported Languages
   ✓ Directory Selection Shares One Population Across Code Views
@@ -970,6 +990,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
 +fdu: invalid sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
+  ✗ Unsupported Metric Sorts Fail Before Filesystem Access
+@@ -1,1 +1,1 @@
+-fdu: --sort code_lines needs code analysis: add --analyze code
++fdu: sort code_lines needs code analysis: add analyze code
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
@@ -978,9 +1002,29 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✗ The Analyzer Set Chooses the View
     stderr:
 @@ -1,2 +1,2 @@
- note: requested analysis is not displayed by the selected views
--tip: show analysis: --view families, languages, or full
-+tip: show analysis: view families, languages, or full
+ note: code and words analysis not shown by tree
+-tip: show it: --view code,documents
++tip: show it: view code,documents
+  ✗ The Analyzer Set Chooses the View
+    stderr:
+@@ -1,3 +1,3 @@
+ note: percentages are shares of document words
+ note: code analysis not shown by documents
+-tip: show it: --view documents,code
++tip: show it: view documents,code
+  ✓ The View Chooses the Analyzer Set
+  ✓ The View Chooses the Analyzer Set
+  ✓ The View Chooses the Analyzer Set
+  ✗ The View Chooses the Analyzer Set
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: invalid --view "words": words is an analyzer; its view is documents
++fdu: invalid view "words": words is an analyzer; its view is documents
+  ✗ A Watch Refuses the Analysis a Content View Implies
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: --view code needs code analysis, which --watch cannot keep current; use a one-shot report
++fdu: view code needs code analysis; this index was opened with analyze none
   ✗ Every View One Walk Can Answer
 @@ -22,10 +22,10 @@
        39 B   50.6%  Python  1 file
@@ -997,15 +1041,39 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  docs/notes.txt
     stderr:
 @@ -1,5 +1,5 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 2
- note: omitted code, documents: content analysis required
--tip: show more rows: --limit=all
--tip: include omitted views: add --analyze code
-+tip: show more rows: limit=all
-+tip: include omitted views: add analyze code
+ note: full omits code, documents without analysis
+-tip: show more: --limit=all
+-tip: include them: --analyze all
++tip: show more: limit=all
++tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -30,10 +30,10 @@
+@@ -24,10 +24,10 @@
+          1   25.0%         1      1             1/1  Python   (0 gitignored)
+          4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
+ LARGEST  (2 of 7)
+-80 B  assets[SEP]logo.png
+-42 B  docs[SEP]guide.md
++80 B  assets/logo.png
++42 B  docs/guide.md
+ RECENT  (2 of 7)
+-[RFC3339]  assets[SEP]late.bin.txt
+-[RFC3339]  docs[SEP]notes.txt
++[RFC3339]  assets/late.bin.txt
++[RFC3339]  docs/notes.txt
+    stderr:
+@@ -2,6 +2,6 @@
+ note: percentages are shares of code lines (CODE)
+ note: 2 languages analyzed
+ note: display limits: row limit 2
+ note: full omits documents without words analysis
+-tip: show more: --limit=all
+-tip: include them: --analyze all
++tip: show more: limit=all
++tip: include them: analyze all
+  ✗ Every View One Walk Can Answer
+@@ -28,10 +28,10 @@
        42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
        35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
  LARGEST  (2 of 7)
@@ -1019,11 +1087,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
     stderr:
-@@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,5 +1,5 @@
+ note: totals include descendants
+ note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
+ note: 2 languages analyzed
  note: display limits: row limit 2
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "none,code": "none" names the whole axis and cannot be combined
@@ -1051,19 +1121,18 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✗ Quiet Keeps Results and Errors
     stderr:
 @@ -1,2 +1,2 @@
- note: requested analysis is not displayed by the selected views
--tip: show analysis: --view families, languages, or full
-+tip: show analysis: view families, languages, or full
+ note: lines analysis not shown by summary
+-tip: show it: --view families
++tip: show it: view families
   ✓ Quiet Keeps Results and Errors
 FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
     stderr:
-@@ -1,4 +1,4 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: row limit 10
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ The Full Shorthand Shows the Complete Tree
   ✓ The Full Shorthand Shows the Complete Tree
   ✓ Full Flat File and Directory Listings
@@ -1071,28 +1140,25 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ Zero Rows Still Account for Every Hidden File
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Depth and Number Limit Only the Rendered View
     stderr:
-@@ -1,5 +1,5 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: depth 1, row limit 2
--tip: expand deeper: --depth=all
--tip: show more rows: --limit=all
-+tip: expand deeper: depth=all
-+tip: show more rows: limit=all
+-tip: show more: --depth=all --limit=all
++tip: show more: depth=all, limit=all
   ✓ Type View Honors the Selected Size Metric
   ✗ Several Views Are Labelled; One View Is Left Bare
     stderr:
 @@ -1,3 +1,3 @@
- note: gitignored sizes are included in row totals
+ note: totals include gitignored sizes
  note: display limits: depth 1
--tip: expand deeper: --depth=all
-+tip: expand deeper: depth=all
+-tip: show more: --depth=all
++tip: show more: depth=all
   ✓ A Lone View Keeps the Bare Layout
   ✓ A View That Matched Nothing Still Says So
   ✓ Asking for a Second View Labels the Paths Too
@@ -1183,14 +1249,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
      }
    ]
     stderr:
-@@ -1,5 +1,5 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: depth 1, row limit 2
--tip: expand deeper: --depth=all
--tip: show more rows: --limit=all
-+tip: expand deeper: depth=all
-+tip: show more rows: limit=all
+-tip: show more: --depth=all --limit=all
++tip: show more: depth=all, limit=all
   ✓ Scan Depth Is an Explicit Complete Scope
   ✓ Every View Serializes in Every Format
 FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
@@ -1208,7 +1271,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✗ A Stale Answer Needs a Snapshot Something Left
     stderr:
 @@ -1,2 +1,2 @@
- note: gitignored sizes are included in row totals
+ note: totals include gitignored sizes
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✗ A Stale Answer Needs a Snapshot Something Left
@@ -1253,15 +1316,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✗ Unknown Branches Do Not Disable Filtering for Known Sizes
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
- note: display limits: below 1% of selected root
+ note: totals include descendants
+ note: display limits: below 1% of root
  note: incomplete subtrees remain visible below the size threshold
--tip: show smaller entries: --min-share=0%
-+tip: show smaller entries: min_share=0%
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,226 +1,1 @@
+@@ -1,239 +1,1 @@
 -fdu — the fastest du replacement, with file tree analysis.
 -
 -  For every directory in a tree at once, fdu reports its size, file count,
@@ -1300,42 +1363,51 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  A report requires a PATH. Use `.` for the current directory.
 -
 -    fdu .                                      directory sizes (the default)
+-    fdu . --view=code,documents                lines of code and words, one scan
+-    fdu . --view=code                          standard lines of code by language
+-    fdu . --view=documents                     words and pages by document format
 -    fdu . --ignored=exclude                    omit entries covered by .gitignore
 -    fdu . --view=summary                       one total for the tree
 -    fdu . --view=languages                     languages by byte size
 -    fdu . --view=families,types,extensions     three file-kind breakdowns
 -    fdu . --view=recent --limit=10             ten most recently modified files
--    fdu . --analyze=lines                      physical lines and raw words
--    fdu . --analyze=lines --view=languages     those metrics by language
--    fdu . --analyze=code                       standard lines of code by language
--    fdu . --analyze=words                      prose volume by document type
 -
 -  `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
 -  to depth 5, showing contents with at least 1% of the selected root size. Hidden
 -  and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 -
+-  code and documents read file contents; --analyze is the extra control for
+-  analysis a view does not imply:
+-
+-    fdu . --analyze=code --view=languages      code lines in the language rows
+-    fdu . --analyze=lines --view=languages     physical lines and raw words by language
+-
 -VIEWS AND ANALYSIS
 -  --view chooses the question the report answers. Several views share one scan
--    and one requested analysis; adding a view does not run a second scan.
--  --analyze opts into reading eligible file bodies. Without it, regular file
--    contents are not opened. Compatible cached results avoid rereading unchanged
--    bodies, so a repeated content analysis can be much cheaper.
+-    and one analysis; adding a view does not run a second scan.
+-  code and documents are the views that read file contents: they show nothing
+-    without analysis, so naming one runs its analyzer, code or words. Every
+-    other view, full included, opens no regular file on its own.
+-  --analyze runs analyzers beyond what the views imply: code lines in the
+-    languages rows, physical lines in families and types, or a run that only
+-    warms the cache. Compatible cached results avoid rereading unchanged bodies,
+-    so a repeated content analysis can be much cheaper.
 -
--  Naming analyzers selects a view that displays them: code selects code, words
--  selects documents, code,words selects both, and lines selects families.
+-  Naming analyzers alone selects a view that displays them: code selects code,
+-  words selects documents, code,words selects both, and lines selects families.
 -  Name --view for a different projection; it always wins. Headers name views;
--  columns name measurements. words is an analyzer; documents selects prose/markup.
--  Use --analyze words for that report, or add --view types for all text types.
+-  columns name measurements: words is an analyzer, and documents is its view of
+-  prose and markup. --analyze words --view types counts words in every text type.
 -
--  A view never turns on an analyzer, because choosing how to look at a result
--  should not quietly authorize reading every file in the tree. If a selected
--  view cannot display requested analysis, fdu still performs the analysis and
--  prints a note. --view=full names any view it had to skip.
+-  A view with a metadata meaning never turns on an analyzer, because choosing how
+-  to look at a result should not quietly authorize reading every file in the
+-  tree. If a selected view cannot display requested analysis, fdu still performs
+-  the analysis and prints a note. --view=full names any view it had to skip.
 -
 -MORE COMPOSITIONS
 -  fdu ~/Downloads --view=extensions
 -  fdu . --view=types,families --format=json
--  fdu . --analyze=words --view=documents
+-  fdu . --analyze=words --view=types
 -  fdu PATH --view tree --full --format json                 complete recursive tree
 -  fdu PATH --kind dir --full --format json                  recursive directory totals
 -  fdu PATH --kind file --full --format paths                find/fd-style file inventory
@@ -1394,6 +1466,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
 -             --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
 -  Content    --analyze none|lines|code|words|all        which file bodies are read
+-                                                        beyond what the views imply
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
 -             --breadth, --min-share
 -  View       list,summary,tree,families,types,extensions,languages,code,documents,
@@ -1403,7 +1476,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Mode       --cache, --watch, --workers
 -
 -CONTENT ANALYSIS
--  none       metadata only; source files are never opened (default)
+-  none       no analyzer beyond what the views imply (default)
 -  lines      physical, blank, and nonblank lines plus raw word counts
 -  code       standard SLOC from the versioned common-language analyzer
 -  words      normalized and reader-visible word volume
@@ -1413,9 +1486,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  axis and cannot be combined. code and words already include lines; adding lines
 -  explicitly changes neither measurements nor work. lines alone measures physical
 -  text volume without language-specific code counting or word normalization.
--  languages is metadata-only by default; --view code requires --analyze code.
+-  languages is metadata-only by default; --view code runs code analysis itself.
 -  Code reports show source lines, language shares, population columns, and coverage.
--  documents requires any enabled analyzer.
+-  --view documents runs words analysis itself.
 -  Analysis streams every eligible file through EOF; files are never size-truncated.
 -  --workers bounds content-analysis concurrency; directory scanning uses its own pool.
 -  --words-per-page changes only report-time page derivation.
@@ -1433,7 +1506,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Content analysis is where repeated-run caching pays most. The first run reads
 -  eligible file bodies. A compatible later run reuses results for unchanged files
 -  and reads only changed or newly eligible bodies; the performance footer reports
--  fresh and cached analysis separately. Repeat the same --analyze command to see it.
+-  fresh and cached analysis separately. Repeat a --view=code run to see it.
 -
 -  --stale-ok answers from the snapshot alone: it does no filesystem verification,
 -  requires a compatible snapshot and content sidecar for the requested analysis,
@@ -1469,8 +1542,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Metric rows include detection source, confidence, origin flags, and coverage.
 -  Tree remainder totals are shared by every format: recursive files, apparent and
 -  allocated bytes, and applicable reasons. Null means nothing hidden; unknown counts
--  or sizes stay null. Text shows one root-level line: ... and SIZE (N files) more.
--  Human diagnostics use note:, warn:, tip:, and perf: on stderr, in that order.
+-  or sizes stay null. Text shows one root-level row, `… and N more files`, with the
+-  hidden share and size in the tree's columns.
+-  Text results hold only rows, column headings, and multi-view headers. Human
+-  diagnostics use note:, warn:, tip:, and perf: on stderr, in that order; one
+-  `tip: show more:` names the flags that lift every display limit that hid rows.
 -  One-shot text reports end with gray perf: on stderr; machine formats omit it.
 -  It counts ignore files and accepted rules, including repeated governing sources.
 -  Total files/s and binary GiB/s use the displayed elapsed duration. GiB/s represents
@@ -1496,9 +1572,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ An Explicit Current Root Works for an Empty Sandbox
     stderr:
 @@ -1,2 +1,2 @@
- note: no size denominator: selected root size is zero
--tip: show smaller entries: --min-share=0%
-+tip: show smaller entries: min_share=0%
+ note: root size is zero, so shares are undefined
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
   ✗ A Time Bound the Index Cannot Represent Is Rejected
     stderr:
 @@ -1,1 +1,1 @@

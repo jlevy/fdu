@@ -286,7 +286,7 @@ The harness runs, in order:
 | tree-cold / tree-warm | `fdu $SMALL` |
 | summary | `--view=summary` |
 | languages, families, types, extensions | one view each |
-| documents-no-analyze | `--view=documents` (no `--analyze`; expect a note, not a crash) |
+| documents | `--view=documents` (no `--analyze`; the view runs words analysis itself) |
 | recent / largest / files | `--limit=10` on files/recent |
 | full | `--view=full` |
 | combo-kinds | `--view=families,types,extensions` |
@@ -303,14 +303,14 @@ The harness runs, in order:
 - `--ignored=exclude` totals are ≤ default totals
 - `--scan-depth=1` is smaller than a full summary
 - JSON parses; YAML is non-empty and names the same totals
-- `--view=documents` without `--analyze` exits 2; stderr says views never enable
-  analysis. That is success for the negative check.
+- `--view=documents` without `--analyze` prints words and pages by document format: the
+  content view requests its own analyzer, and the `perf:` line counts the files it read
 
 **Verify**:
 
 - [ ] Each view exited 0
-- [ ] `documents` without `--analyze` exits 2 with a usage line on stderr (views never
-  enable analysis)
+- [ ] `documents` without `--analyze` reports document rows with word counts, and its
+  `perf:` line shows content read
 - [ ] JSON/YAML summary is valid and not megabytes
 
 **Check for ERROR conditions** (any of these = FAIL):

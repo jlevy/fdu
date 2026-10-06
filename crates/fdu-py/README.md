@@ -47,6 +47,25 @@ uv add fdu
 pip install fdu
 ```
 
+Lines of code by language and words by document type, from one scan:
+
+```python
+from pathlib import Path
+
+import fdu
+
+report = fdu.report(
+    Path("/path/to/tree"),
+    fdu.Query(views=(fdu.View.CODE, fdu.View.DOCUMENTS)),
+)
+print(report.render())
+print(report.notes)
+```
+
+The two content views run the `code` and `words` analyzers they show; `print` gives the
+same tables as `fdu . --view=code,documents`, and `report.sections` holds them as typed
+values.
+
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
 roll-ups, per-path provenance, cache management, refresh results, and change feeds.
@@ -111,6 +130,14 @@ reconciliation, while a watch feed reports metadata changes.
 and `words`, with `none` and `all` as totals.
 `AnalysisOptions` takes one of them or a comma-separated set such as `"code,words"`,
 plus a worker count.
+A content view requests the analysis it shows, as `--view code` does on the command
+line: `fdu.report(root, fdu.Query(views=(fdu.View.CODE, fdu.View.DOCUMENTS)))` runs the
+`code` and `words` analyzers without naming them.
+An index holds exactly the analyzers it was opened with, so `index.report` never adds
+one: the same view on an index opened without `words` raises `InvalidArgumentError`
+naming the analyzer.
+`AnalysisOptions` is the control for the rest: analysis shown in a metadata view, such
+as code lines in `View.LANGUAGES`, and analysis an index runs for every read it serves.
 Typed report sections expose stable type/family groups, exact share fractions, line and
 word slots, page denominators, coverage outcomes, analyzer provenance, detection source
 and confidence, and generated/vendor/documentation flags.
@@ -127,8 +154,10 @@ import fdu
 
 report = fdu.report(
     ".",
-    fdu.Query(selection=fdu.Selection(ignored=fdu.IgnoredEntries.EXCLUDE)),
-    analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.CODE),
+    fdu.Query(
+        views=(fdu.View.CODE,),
+        selection=fdu.Selection(ignored=fdu.IgnoredEntries.EXCLUDE),
+    ),
     cache_dir="/path/to/cache",
 )
 ```
@@ -142,8 +171,9 @@ A default read inherits it.
 An Include index can answer a narrower selection; an index that never retained a
 population cannot widen its answer.
 
-Code analysis defaults to `CodeSection`, whose overview includes selected source lines,
-language shares, ignored/non-ignored contributions, and coverage.
+`View.CODE` runs code analysis and reports a `CodeSection`, the view code analysis also
+defaults to, whose overview includes selected source lines, language shares,
+ignored/non-ignored contributions, and coverage.
 `SortKey.CODE_LINES` ranks files or directories when code analysis was requested.
 File rows carry nullable `sort_value` and `classification` evidence; unavailable counts
 remain distinct from zero.

@@ -61,8 +61,18 @@ Major-fault non-regression was inconclusive, so H153 remains in progress pending
 confirming run. The provisionally retained code is platform-neutral; Linux transfer is
 expected but unmeasured.
 H152 / exp-158 is the exact report oracle and current-path determination that preceded
-it. The probe performs one fresh scan and line-analysis setup, then constructs four
+it. The probe performed one fresh scan and line-analysis setup, then constructed four
 unfiltered metric views 100 times.
+
+**The `content-query` setup changed regime in
+[#177](https://github.com/jlevy/fdu/pull/177).** `documents` now needs words analysis on
+a held index, so the probe’s setup analyzes words (with its shared line pass) instead of
+lines alone, under the same job name and scenario id.
+exp-136, exp-140, exp-158, and exp-159 were all measured over a lines-only index, so a
+`content-query` figure from after that change is not comparable with them.
+Record a new baseline first (`fdu-mvnp`), and build the control and candidate of any
+later pair, including the H153 confirmation below, from probes with the same setup.
+
 After the #136 integration, bare `--analyze all` defaults to Code and Documents.
 Only Documents participates in metric resolution, so that request does not exercise
 H153; `--analyze all --view full` can use it during report construction, but its

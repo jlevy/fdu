@@ -6,6 +6,11 @@ schema before decoding.
 The [schema rule](project/guides/release-process.md) requires a new version when a
 published shape changes.
 Content analysis does not select another schema.
+`request.analyze` lists the analyzers the request enabled, whether `--analyze` named
+them or a content view implied them, so `--view=code` and `--analyze=code` serialize one
+request; `analysis.analyze` and the content sidecar identity follow it.
+`request.views` and `request.omitted_views` are the views shown and the ones `full` had
+to drop.
 
 ## Recursive Trees and Hidden Content
 
@@ -101,11 +106,11 @@ The root denominator and aggregate totals are unchanged by display bounds.
 
 ## Code Overview
 
-`--analyze=code` defaults to a `view: code` section with a `code` object.
-It states `population`, `share_metric: code_lines`, `analyzed_languages`, `selected`
-totals, `non_ignored` and `ignored` population totals when available, an `unknown`
-tally, `unclassified_files`, and the complete `languages` table unless an explicit
-display bound applies.
+`--view=code`, and `--analyze=code` with no view, give a `view: code` section with a
+`code` object. It states `population`, `share_metric: code_lines`, `analyzed_languages`,
+`selected` totals, `non_ignored` and `ignored` population totals when available, an
+`unknown` tally, `unclassified_files`, and the complete `languages` table unless an
+explicit display bound applies.
 `unclassified_files` counts selected regular files whose detected family is unknown;
 known document, data, and other non-code families are excluded from that count.
 Each language row includes its selected and population totals and an exact share
@@ -118,6 +123,11 @@ when `bound` is present, or the displayed row count plus `share_omitted` when it
 null. Use `--min-share 0%` to restore share-filtered rows and `--limit all` to restore
 rows removed by a row cap.
 Selected aggregate totals stay unchanged by both display bounds.
+A grouped metric section’s share denominator is the sum of every row’s numerator before
+either bound, which is also the total row’s share.
+For `document_words` it can differ from the total row’s own `document_words` and
+`pages.words`, in either direction: logical words are derived after pooling, so a pooled
+total of mixed formats is not the sum of its rows.
 
 A code tally has `source_files`, `analyzed_files`, `code_lines`, `comment_lines`,
 `blank_lines`, `missing_records`, and a `coverage` reason map.

@@ -128,8 +128,11 @@ REQUESTS: dict[str, Spec] = {
     "v_recent": spec(views=["recent"]),
     "v_files": spec(views=["files"]),
     "v_full": spec(views=["full"]),
-    "v_documents": spec(views=["documents"]),
     "v_summary_types": spec(views=["summary", "types"]),
+    # content views, which imply the analysis they show
+    "v_code": spec(views=["code"]),
+    "v_documents": spec(views=["documents"]),
+    "v_code_documents": spec(views=["code", "documents"]),
     # analysis with implied views
     "a_none": spec(analyze="none"),
     "a_lines": spec(analyze="lines"),
@@ -169,10 +172,26 @@ REQUESTS: dict[str, Spec] = {
     "v_summary_a_lines": spec(views=["summary"], analyze="lines"),
 }
 
+# The views with no metadata meaning. Naming one requests the analyzer it shows, so a
+# request that names one is a content request on every delivery: a watch refuses it as it
+# refuses `--analyze`. The engine's table is `ViewSpec::implies`.
+CONTENT_VIEWS = frozenset({"code", "documents"})
+
+# A request built from content views alone, and the analyzer request it implies. The two
+# are one basis -- one content sidecar and one answer -- whichever axis named the
+# analyzer, so each must equal the other cold and serve the other from the cache.
+IMPLIED: tuple[tuple[str, str], ...] = (
+    ("v_code", "a_code"),
+    ("v_documents", "a_words"),
+    ("v_code_documents", "a_all"),
+)
+
 # A warmer's spec and the cache policy its own run uses. A metadata warmer exists to
 # leave a snapshot of its scope, which a one-shot report does only under `on`; analysis
 # warmers leave theirs under `auto`, which is the path they cover. `W_auto` is the default
-# command's own history, which leaves nothing.
+# command's own history, which leaves nothing. The view warmers write the content sidecar
+# through the analyzer a content view implies, with no `--analyze` at all, so a history can
+# start from a sidecar a view wrote as well as from one an analyzer named.
 WARMERS: dict[str, tuple[Spec, str]] = {
     "W_default": (spec(), "on"),
     "W_nogi": (spec(no_gitignore=True), "on"),
@@ -180,6 +199,8 @@ WARMERS: dict[str, tuple[Spec, str]] = {
     "W_code": (spec(analyze="code"), "auto"),
     "W_lines": (spec(analyze="lines"), "auto"),
     "W_words": (spec(analyze="words"), "auto"),
+    "W_view_code": (spec(views=["code"]), "auto"),
+    "W_view_documents": (spec(views=["documents"]), "auto"),
     "W_budget1k": (spec(budget="1KiB"), "on"),
     "W_summary": (spec(views=["summary"]), "on"),
     "W_scandepth1": (spec(scan_depth=1), "on"),
@@ -319,7 +340,18 @@ FULL = Tier(
     warmers=tuple(WARMERS),
     selfwarm=True,
     mutations=tuple(MUTATIONS),
-    mutation_warmers=("W_default", "W_all", "W_code", "W_nogi", "W_budget1k"),
+    mutation_warmers=(
+        "W_default",
+        "W_all",
+        "W_code",
+        "W_nogi",
+        "W_budget1k",
+        "W_view_code",
+        "W_view_documents",
+    ),
+    # No view warmer here: a cross history also warms through `fdu.open`, whose index a
+    # content view never widens, so on that route a view warmer is refused and warms
+    # nothing.
     cross_warmers=("W_default", "W_all", "W_lines", "W_summary"),
 )
 
@@ -340,13 +372,16 @@ SUBSET = Tier(
         "a_words",
         "a_all",
         "a_lines_v_documents",
+        "v_code",
+        "v_documents",
+        "v_code_documents",
         "a_code_langs_name_lim1",
         "a_code_metric_rev",
         "v_tree_bounds",
         "a_all_nogi",
         "onefs",
     ),
-    warmers=("W_default", "W_nogi", "W_all", "W_code", "W_words"),
+    warmers=("W_default", "W_nogi", "W_all", "W_code", "W_words", "W_view_code"),
     selfwarm=False,
     # One mutation per way a change can be detected: a visible mtime, content alone,
     # entries added and removed, a rule change, a link retarget, and an unlistable tree.
@@ -359,7 +394,9 @@ SUBSET = Tier(
         "symlink",
         "unreadable",
     ),
-    mutation_warmers=("W_default", "W_all", "W_code"),
+    # `W_view_documents` writes the words sidecar through the view alone, so each mutation
+    # is also detected from a sidecar no `--analyze` named.
+    mutation_warmers=("W_default", "W_all", "W_code", "W_view_documents"),
     cross_warmers=("W_default", "W_all"),
 )
 

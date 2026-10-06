@@ -12,6 +12,12 @@
 //! ones. It is a warning rather than a note so that quiet output keeps it, and it names the
 //! surface's own option for a fresh answer (`--stale-ok` or `stale_ok`).
 //!
+//! The rendered result carries no explanation of its own: what a percentage measures,
+//! what the code overview analyzed, what a display limit hid, and how to see more are all
+//! lines here, after the result. Keep each as short as its facts allow and merge related
+//! ones: one note for what totals include, one listing every display limit that hid
+//! something, and one runnable tip that lifts them all.
+//!
 //! Collect remedies from actual omissions across all directories and views, then emit
 //! each once in stable order. A display omission changes neither totals nor scan work.
 //! Never sum omitted bytes across views: their populations can overlap.
@@ -29,7 +35,10 @@
 //! pure description of report facts.
 //! See `docs/project/architecture/fdu-output-design.md` for examples and test coverage.
 
-use crate::query::{IgnoredEntries, Report, ReportSource, Section, SizeMetric, TreeOmissionReason};
+use crate::content::CoverageReason;
+use crate::query::{
+    IgnoredEntries, Report, ReportSource, Section, SizeMetric, TreeOmissionReason, ViewSpec,
+};
 
 /// Human diagnostics retain categories rather than parsing rendered text.
 #[derive(Clone, Debug, Default)]
@@ -113,29 +122,39 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     let mut notes = Vec::new();
     let mut tips = Vec::new();
     let mut reasons = Vec::new();
-    let mut tree_omitted = false;
     let mut tree_remainder_shown = false;
     let mut ignored_subset_shown = false;
     let mut code_rows_hidden = false;
-    let mut tree_bounds = Vec::new();
+    // Every display limit that hid something, as one list for one note.
+    let mut limits_hit = Vec::new();
+    let mut share_labels: Vec<(&'static str, &'static str)> = Vec::new();
+    let mut coverage = Vec::new();
     let mut zero = false;
     let mut reason = |why| {
         if !reasons.contains(&why) {
             reasons.push(why);
         }
     };
+    let single = report.sections.len() == 1;
     for section in &report.sections {
-        if super::bounded_rows(section).is_some() {
+        if let Some((shown, total)) = super::bounded_rows(section) {
             reason(TreeOmissionReason::Rows);
+            // A multi-view report states the bound on each section header.
+            if single {
+                unique(
+                    &mut limits_hit,
+                    format!(
+                        "{} of {} rows shown",
+                        super::human_count(shown as u64),
+                        super::human_count(total as u64)
+                    ),
+                );
+            }
         }
         match section {
             Section::Tree { root, omissions, limits, .. } => {
                 tree_remainder_shown |=
                     crate::query::TreeRemainder::from_tree(root.as_deref(), omissions).is_some();
-                for omission in omissions {
-                    tree_omitted = true;
-                    reason(omission.reason);
-                }
                 let mut stack = root.iter().map(AsRef::as_ref).collect::<Vec<_>>();
                 if let Some(root) = root {
                     let size = match report.size {
@@ -150,17 +169,13 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                 let mut local_reasons: Vec<_> = omissions.iter().map(|o| o.reason).collect();
                 while let Some(node) = stack.pop() {
                     ignored_subset_shown |= node.ignored.is_some_and(|share| share.files > 0);
-                    for omission in &node.omissions {
-                        local_reasons.push(omission.reason);
-                        tree_omitted = true;
-                        reason(omission.reason);
-                    }
+                    local_reasons.extend(node.omissions.iter().map(|omission| omission.reason));
                     stack.extend(node.children.iter());
                 }
                 for (why, description) in [
                     (
                         TreeOmissionReason::Share,
-                        format!("below {} of selected root", limits.min_share.label()),
+                        format!("below {} of root", limits.min_share.label()),
                     ),
                     (TreeOmissionReason::Depth, format!("depth {}", bound_label(limits.depth))),
                     (
@@ -170,66 +185,172 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                     (TreeOmissionReason::Rows, format!("row limit {}", bound_label(limits.rows))),
                 ] {
                     if local_reasons.contains(&why) {
-                        unique(&mut tree_bounds, description);
+                        reason(why);
+                        unique(&mut limits_hit, description);
                     }
                 }
             }
             Section::Extensions { rows, share_omitted, .. } => {
                 ignored_subset_shown |=
                     rows.iter().any(|row| row.ignored.is_some_and(|share| share.files > 0));
-                if *share_omitted > 0 {
-                    reason(TreeOmissionReason::Share);
-                }
+                share_hidden(&mut limits_hit, &mut reason, *share_omitted, section, single);
             }
             Section::Summary(row) => {
                 ignored_subset_shown |= row.ignored.is_some_and(|share| share.files > 0);
             }
-            Section::Metrics { summary, .. } if summary.share_omitted > 0 => {
-                reason(TreeOmissionReason::Share);
+            Section::Metrics { view, summary } => {
+                share_hidden(&mut limits_hit, &mut reason, summary.share_omitted, section, single);
+                if let Some(label) = super::share_metric_label(summary.share_metric) {
+                    share_labels.push((label, super::view_header(*view)));
+                }
             }
             Section::Code(overview) => {
                 code_rows_hidden |= overview.share_omitted > 0
                     || overview.languages.len() < overview.total_languages;
-                if overview.share_omitted > 0 {
-                    reason(TreeOmissionReason::Share);
+                share_hidden(&mut limits_hit, &mut reason, overview.share_omitted, section, single);
+                // Alone, the table's `Code lines` heading names its share; beside other
+                // views, the note must say which section each denominator belongs to.
+                if !single {
+                    share_labels.push(("code lines", super::view_header(ViewSpec::Code)));
                 }
+                code_coverage(&mut coverage, overview);
             }
-            _ => {}
+            Section::Files { .. } => {}
         }
     }
+    let mut includes = Vec::new();
     if report.ignored_entries == IgnoredEntries::Include && ignored_subset_shown {
-        notes.push("note: gitignored sizes are included in row totals".to_owned());
-    }
-    if code_rows_hidden {
-        notes.push("note: code totals include languages hidden by display limits".to_owned());
+        includes.push("gitignored sizes");
     }
     if tree_remainder_shown {
-        notes.push("note: more covers unlisted root branches; listed directory totals already include their descendants".to_owned());
+        includes.push("descendants");
     }
-    if tree_omitted && !tree_bounds.is_empty() {
-        notes.push(format!("note: display limits: {}", tree_bounds.join(", ")));
+    if code_rows_hidden {
+        includes.push("hidden languages");
+    }
+    if !includes.is_empty() {
+        notes.push(format!("note: totals include {}", includes.join(" and ")));
+    }
+    // A single view needs no section name; beside other views, every non-byte denominator
+    // names its section, so no table borrows another's (fdu-gda7 review A1).
+    match share_labels.as_slice() {
+        [] => {}
+        [(label, _)] if single => notes.push(format!("note: percentages are shares of {label}")),
+        labels => notes.push(format!(
+            "note: percentages are shares of {}",
+            labels
+                .iter()
+                .map(|(label, view)| format!("{label} ({view})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+    if let Some(metric) = report.sort_metric {
+        notes.push(format!("note: ranked by {}", metric.replace('_', " ")));
+    }
+    notes.extend(coverage);
+    if !limits_hit.is_empty() {
+        notes.push(format!("note: display limits: {}", limits_hit.join(", ")));
     }
     if zero {
-        notes.push("note: no size denominator: selected root size is zero".to_owned());
+        notes.push("note: root size is zero, so shares are undefined".to_owned());
     }
     for note in &report.notes {
         unique(&mut notes, note.clone());
     }
-    // Fixed category order is independent of tree traversal and requested view order.
-    for (why, action, axis, value) in [
-        (TreeOmissionReason::Share, "show smaller entries", report.axes.min_share, "0%"),
-        (TreeOmissionReason::Depth, "expand deeper", report.axes.depth, "all"),
-        (TreeOmissionReason::Breadth, "show more children", report.axes.breadth, "all"),
-        (TreeOmissionReason::Rows, "show more rows", report.axes.limit, "all"),
-    ] {
-        if reasons.contains(&why) {
-            tips.push(format!("tip: {action}: {axis}={value}"));
-        }
+    // One runnable tip lifts every bound that hid something, in a fixed order that is
+    // independent of tree traversal and requested view order.
+    let flags = [
+        (TreeOmissionReason::Share, report.axes.min_share, "0%"),
+        (TreeOmissionReason::Depth, report.axes.depth, "all"),
+        (TreeOmissionReason::Breadth, report.axes.breadth, "all"),
+        (TreeOmissionReason::Rows, report.axes.limit, "all"),
+    ]
+    .into_iter()
+    .filter(|(why, ..)| reasons.contains(why))
+    .map(|(_, axis, value)| format!("{axis}={value}"))
+    .collect::<Vec<_>>();
+    if !flags.is_empty() {
+        tips.push(format!("tip: show more: {}", flags.join(report.axes.setting_separator)));
     }
     for tip in &report.tips {
         unique(&mut tips, tip.clone());
     }
     (notes, tips)
+}
+
+/// Record rows a share floor hid in a grouped section, naming the section beside others
+/// so equal counts in different views stay distinct.
+fn share_hidden(
+    limits_hit: &mut Vec<String>,
+    reason: &mut impl FnMut(TreeOmissionReason),
+    omitted: usize,
+    section: &Section,
+    single: bool,
+) {
+    if omitted > 0 {
+        reason(TreeOmissionReason::Share);
+        let rows = format!(
+            "{} {} below min share",
+            super::human_count(omitted as u64),
+            if omitted == 1 { "row" } else { "rows" }
+        );
+        unique(
+            limits_hit,
+            if single { rows } else { format!("{rows} in {}", super::view_header(section.view())) },
+        );
+    }
+}
+
+/// What the code overview analyzed and what it could not, as notes.
+fn code_coverage(notes: &mut Vec<String>, overview: &crate::query::CodeOverview) {
+    let mut analyzed = format!(
+        "note: {} {} analyzed",
+        super::human_count(overview.analyzed_languages),
+        if overview.analyzed_languages == 1 { "language" } else { "languages" }
+    );
+    match overview.population {
+        IgnoredEntries::Include => {}
+        IgnoredEntries::Exclude => analyzed.push_str(", gitignored files excluded"),
+        IgnoredEntries::Only => analyzed.push_str(", gitignored files only"),
+    }
+    unique(notes, analyzed);
+    let selected = &overview.selected;
+    let mut skipped = selected
+        .coverage
+        .iter()
+        .filter(|(reason, _)| **reason != CoverageReason::Analyzed)
+        .map(|(reason, files)| {
+            format!("{} {}", super::human_count(*files), super::human_coverage_label(*reason))
+        })
+        .collect::<Vec<_>>();
+    if selected.missing_records > 0 {
+        skipped.push(format!(
+            "{} without analyzer records",
+            super::human_count(selected.missing_records)
+        ));
+    }
+    if !skipped.is_empty() {
+        unique(notes, format!("note: not analyzed: {}", skipped.join(", ")));
+    }
+    if overview.unknown.source_files > 0 {
+        unique(
+            notes,
+            format!(
+                "note: {} source files with unknown ignore classification",
+                super::human_count(overview.unknown.source_files)
+            ),
+        );
+    }
+    if overview.unclassified_files > 0 {
+        unique(
+            notes,
+            format!(
+                "note: {} files with unclassified type",
+                super::human_count(overview.unclassified_files)
+            ),
+        );
+    }
 }
 
 fn bound_label(bound: crate::query::Bound) -> String {

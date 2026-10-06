@@ -35,10 +35,9 @@ $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    … and 1 more file
-! note: gitignored sizes are included in row totals
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include gitignored sizes and descendants
 ! note: display limits: row limit 10
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -62,7 +61,7 @@ $ fdu --cache off --color never --size apparent --view tree --full project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -80,7 +79,7 @@ $ fdu --cache off --color never --size apparent --view tree --depth=all --breadt
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -115,9 +114,9 @@ $ fdu --cache off --color never --size apparent --kind dir --full --sort name --
 ```console
 $ fdu --cache off --color never --size apparent --view tree --limit=0 project
 ██████████   100%       269 B  … and 7 more files
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 0
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -129,11 +128,9 @@ $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
 ██████████   100%       269 B  . 7 files (128 B gitignored)
 █████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
 █████░░░░░    52%       141 B    … and 6 more files
-! note: gitignored sizes are included in row totals
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include gitignored sizes and descendants
 ! note: display limits: depth 1, row limit 2
-! tip: expand deeper: --depth=all
-! tip: show more rows: --limit=all
+! tip: show more: --depth=all --limit=all
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -191,9 +188,9 @@ FAMILIES
 
 SUMMARY
      269 B  7 files, 3 directories (128 B gitignored)
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! note: display limits: depth 1
-! tip: expand deeper: --depth=all
+! tip: show more: --depth=all
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```

@@ -234,9 +234,10 @@ def check_a_report_is_a_snapshot(root: Path) -> None:
 def check_a_report_states_its_own_omissions(root: Path) -> None:
     """A dropped view must be readable as a value, not only inside rendered text.
 
-    `full` without analyzers cannot answer `documents`. The report says so, and a caller
-    reading `sections` needs that as a note rather than having to scrape the text rendering
-    to find out why a section is absent (fdu-7wd1).
+    `full` implies no analysis, so without analyzers it cannot answer `code` or
+    `documents`. The report says so, and a caller reading `sections` needs that as a note
+    rather than having to scrape the text rendering to find out why a section is absent
+    (fdu-7wd1).
     """
 
     report = fdu.report(root, fdu.Query(views=(fdu.View.FULL,)))
@@ -247,17 +248,24 @@ def check_a_report_states_its_own_omissions(root: Path) -> None:
     for line in (*report.notes, *report.tips):
         assert "--analyze" not in line, line
         assert "--view" not in line, line
-    assert any("add analyze " in tip for tip in report.tips), report.tips
+    assert "tip: include them: analyze all" in report.tips, report.tips
     assert all(note not in report.render(fdu.Format.TEXT) for note in report.notes)
 
-    # The same rule as a hard error, in the same vocabulary.
+    # A view named alone is a request for its analysis: a one-shot report builds its own
+    # basis, so it runs the words analyzer the document view shows.
+    documents = fdu.report(root, fdu.Query(views=(fdu.View.DOCUMENTS,)))
+    assert [section.view for section in documents.sections] == [fdu.View.DOCUMENTS]
+    assert documents.request.analyze == (fdu.Analysis.LINES, fdu.Analysis.WORDS)
+
+    # An index holds what it was opened with, and a read never widens it: the same view is
+    # refused there, naming the analyzer in this surface's vocabulary.
     try:
-        fdu.report(root, fdu.Query(views=(fdu.View.DOCUMENTS,)))
-        raise SystemExit("documents without analyzers must be rejected")
+        fdu.scan(root).report(fdu.Query(views=(fdu.View.DOCUMENTS,)))
+        raise SystemExit("an index opened without words must refuse documents")
     except fdu.InvalidArgumentError as error:
-        assert str(error).startswith("view documents"), error
-        assert "add analyze " in str(error), error
-        assert "--analyze" not in str(error), error
+        assert str(error) == (
+            "view documents needs words analysis; this index was opened with analyze none"
+        ), error
 
     # Nothing dropped, nothing said.
     complete = fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)))
@@ -419,16 +427,35 @@ def check_content_axes_agree_on_overlaps() -> None:
         assert document_ids == {"markdown"}, document_ids
         assert next(row for row in types.rows if row.id == "json").metrics.raw_words is not None
 
-        for token, suggested in (("lines", "families"), ("words", "documents")):
+        # `documents` implies words, so naming it is the whole answer; `families` implies
+        # nothing, so the analyzer is named beside it.
+        for token, refusal in (
+            (
+                "lines",
+                'invalid view "lines": lines is an analyzer; its view is families, with analyze '
+                "lines",
+            ),
+            ("words", 'invalid view "words": words is an analyzer; its view is documents'),
+        ):
             try:
                 fdu.report(root, fdu.Query(views=token), cache=fdu.CachePolicy.OFF)
             except fdu.InvalidArgumentError as error:
-                assert f'invalid view "{token}"' in str(error), error
-                assert f"analyze={token}" in str(error), error
-                assert f"view={suggested}" in str(error), error
-                assert "--" not in str(error), error
+                assert str(error) == refusal, error
             else:
                 raise AssertionError(f"{token!r} is an analyzer, not a view")
+
+        # A content view requests its analyzer on a one-shot report, so naming it as a view
+        # and naming it as an analyzer give one answer.
+        assert (
+            fdu.report(root, fdu.Query(views=(fdu.View.CODE,)), cache=fdu.CachePolicy.OFF).sections
+            == answer("code", fdu.View.CODE).sections
+        )
+        assert (
+            fdu.report(
+                root, fdu.Query(views=(fdu.View.DOCUMENTS,)), cache=fdu.CachePolicy.OFF
+            ).sections
+            == answer("words", fdu.View.DOCUMENTS).sections
+        )
 
 
 def check_an_index_can_opt_out_of_control_state() -> None:
@@ -591,16 +618,14 @@ def check_reports_carry_the_ignored_share() -> None:
         raise SystemExit("oversized human tree bars must be rejected")
     except fdu.InvalidArgumentError as error:
         assert "4096" in str(error), error
-    assert report.notes.count("note: gitignored sizes are included in row totals") == 1, (
-        report.notes
-    )
+    assert report.notes.count("note: totals include gitignored sizes") == 1, report.notes
 
     kept_query = fdu.Query(
         views=(fdu.View.SUMMARY,),
         selection=fdu.Selection(size=apparent, ignored=fdu.IgnoredEntries.EXCLUDE),
     )
     kept_report = fdu.report(root, kept_query, cache=fdu.CachePolicy.OFF)
-    assert "note: gitignored sizes are included in row totals" not in kept_report.notes
+    assert "note: totals include gitignored sizes" not in kept_report.notes
     (kept,) = kept_report.sections
     assert isinstance(kept, fdu.SummarySection), kept
     assert (kept.summary.files, kept.summary.bytes) == (2, 18), kept
@@ -612,7 +637,7 @@ def check_reports_carry_the_ignored_share() -> None:
     blind_report = fdu.report(
         root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.OFF, scan=blind
     )
-    assert "note: gitignored sizes are included in row totals" not in blind_report.notes
+    assert "note: totals include gitignored sizes" not in blind_report.notes
     (unread,) = blind_report.sections
     assert isinstance(unread, fdu.SummarySection) and unread.summary.ignored is None, unread
     only_query = fdu.Query(selection=fdu.Selection(ignored=fdu.IgnoredEntries.ONLY))

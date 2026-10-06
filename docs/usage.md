@@ -25,7 +25,17 @@ This is the default report:
 fdu reads per-directory `.gitignore` files by default so it can annotate ignored byte
 shares. Reading the rules does not exclude the entries they match.
 
-These commands cover the most common questions:
+For lines of code by language and words by document type, from one scan:
+
+```shell
+fdu . --view=code,documents
+```
+
+`code` and `documents` are the views that read file contents: naming either runs the
+analyzer it shows, so `--view=code` or `--view=documents` gives one report alone.
+Every other view is metadata-only.
+
+These commands cover the other common questions:
 
 ```shell
 fdu . --ignored=exclude
@@ -33,10 +43,14 @@ fdu . --view=summary
 fdu . --view=languages
 fdu . --view=families,types,extensions
 fdu . --view=recent --limit=10
-fdu . --analyze=lines
+```
+
+`--analyze` is the extra control for analysis a view does not imply, such as code lines
+in the language rows or physical lines across every language:
+
+```shell
+fdu . --analyze=code --view=languages
 fdu . --analyze=lines --view=languages
-fdu . --analyze=code
-fdu . --analyze=words
 ```
 
 ## Choose a View
@@ -54,8 +68,8 @@ repeated filesystem walks.
 | `types` | Detected file types |
 | `extensions` | Raw filename extensions; extensionless names use `(none)` |
 | `languages` | Programming languages, metadata-only unless code analysis is enabled |
-| `code` | Source-line overview, language and population totals, and coverage; requires code analysis |
-| `documents` | Prose metrics; requires an enabled analyzer |
+| `code` | Source-line overview, language and population totals, and coverage; runs code analysis |
+| `documents` | Words and pages by document format; runs words analysis |
 | `largest` | Twenty largest regular files by default |
 | `recent` | Twenty most recently modified regular files by default |
 | `files` | Every selected entry in name order |
@@ -81,6 +95,8 @@ When code analysis is shown by language, it shows code-line share instead.
 In `documents`, it shows document-word share.
 Text output labels those two non-byte denominators; machine output always carries the
 exact `share_metric`, numerator, and denominator.
+The denominator is the sum of every row’s value before display bounds, so unbounded rows
+add up to 100%, within display rounding.
 
 ## Choose a Format
 
@@ -275,12 +291,20 @@ It cannot be combined with either ignored-state selection.
 
 ## Analyze File Contents
 
-Without `--analyze`, fdu classifies paths and metadata without opening regular file
-bodies. Content analysis is explicit:
+fdu opens regular file bodies only when the request asks for content analysis, in one of
+two ways. A content view asks for the analysis it shows: `--view=code` runs the code
+analyzer and `--view=documents` the words analyzer, because neither view has anything to
+show without them.
+`--analyze` names analyzers beyond what the views imply: code lines in
+the `languages` rows, physical lines in `families` or `types`, or a run that only warms
+the content cache.
+Every other view, `full` included, is metadata-only unless `--analyze`
+says otherwise, so choosing how to look at a tree never quietly turns into a read of
+every file in it.
 
 | Analyzer | Metrics |
 | --- | --- |
-| `none` | No content metrics; the default |
+| `none` | No analyzer beyond what the views imply; the default |
 | `lines` | Physical, blank, and nonblank lines plus raw words |
 | `code` | `lines` plus standard code, comment, and code-blank lines for supported languages |
 | `words` | `lines` plus normalized and reader-visible prose words, paragraphs, and pages |
@@ -297,11 +321,19 @@ Under `code`, a code file in a language without a line-of-code counter is report
 Its physical-line metrics remain available; code, comment, and code-blank counts are
 unavailable.
 
+The two directions are one table read both ways.
 Naming analysis without a view chooses one that displays it: `code` selects `code`,
 `words` selects `documents`, `lines` selects `families`, and `code,words` or `all`
-select both `code` and `documents`. An explicit `--view` always wins and never enables
-an analyzer. If that view displays no content metric, fdu still performs the requested
-analysis and prints a note explaining the mismatch.
+select both `code` and `documents`. Naming `code` or `documents` as a view runs the
+analyzer that selects it, so `fdu . --view=code` and `fdu . --analyze=code` are one
+request, with one cache sidecar and one answer.
+An explicit `--view` always wins.
+If it displays no content metric, fdu still performs the requested analysis and names
+the view that would show it: `fdu . --analyze=code --view=summary` ends with
+`note: code analysis not shown by summary` and `tip: show it: --view code`. If it
+displays some of the analysis and not the rest, the note names the rest, and the tip
+keeps your views: `fdu . --analyze=code --view=documents` ends with
+`note: code analysis not shown by documents` and `tip: show it: --view documents,code`.
 
 ### Measurements, Views, and Headers
 
@@ -317,6 +349,10 @@ A standalone report omits the redundant section header.
 | `words` | `documents` / `DOCUMENTS` | Selected prose and markup, grouped by type |
 | `code,words` or `all` | `code,documents` / `CODE`, `DOCUMENTS` | Both populations, from one scan and analysis pass |
 
+The `code` and `documents` rows read in both directions: those views imply their
+analyzers.
+`families` does not imply `lines`, because it is a metadata report without it.
+
 The words analyzer also measures accepted text outside prose and markup.
 Select `--analyze=words --view=types` to see those metrics across all detected types.
 `--analyze=lines --view=languages` compares physical lines across code languages,
@@ -324,9 +360,12 @@ including languages without a code counter.
 Code lines exclude comments and blanks, so they are a different metric from physical
 lines.
 
-For a word report, use `fdu . --analyze=words`; its explicit equivalent is
-`fdu . --analyze=words --view=documents`. Naming a view alone never authorizes content
-reads. `documents` is the population, not another name for the words analyzer.
+For a word report, use `fdu . --view=documents`; `fdu . --analyze=words` is the same
+request. `documents` is the population, not another name for the words analyzer, so
+`--view=words` is refused with the view to use instead.
+An index opened from Rust or Python holds exactly the analyzers it was opened with: a
+read of it never adds one, and a content view it cannot answer is refused with the
+analyzer named.
 
 ## Understand the Cache
 
@@ -352,8 +391,8 @@ narrower, reads the files again and replaces it.
 Run the same analysis twice to see the distinction:
 
 ```shell
-fdu . --analyze=code
-fdu . --analyze=code
+fdu . --view=code
+fdu . --view=code
 ```
 
 The gray performance footer reports metadata source, content bytes read, fresh and
@@ -497,8 +536,9 @@ installing the skill does not install the command.
 The zero-install fallback follows uv’s `exclude-newer` policy; see the
 [installation note](../README.md#other-ways-to-install) if a just-published release is
 filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and later
-`uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
-The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
+`uv tool upgrade --no-build fdu`. `fdu --skill` prints the portable agent-facing
+contract. The skill names the build that wrote it, so re-run the installer after
+upgrading `fdu`.
 
 ## Quiet Diagnostics
 

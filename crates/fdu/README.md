@@ -46,7 +46,7 @@ The [Python package](https://pypi.org/project/fdu/) publishes wheels for GIL-ena
 CPython 3.12 and newer on Linux glibc (x86-64 and arm64), macOS (x86-64 and arm64), and
 Windows x86-64. No Python version is needed in normal use.
 If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`.
-`uv tool upgrade fdu` updates a persistent install.
+`uv tool upgrade --no-build fdu` updates a persistent install.
 
 To install the Rust crate from source, use Rust 1.85 or newer:
 
@@ -67,18 +67,20 @@ fdu requires a path; bare `fdu` prints help and scans nothing.
 
 ```shell
 fdu .                                     # directory tree: allocated sizes, largest first
+fdu . --view=code,documents               # lines of code and words; reads file contents
 fdu . --view=summary                      # one total for the tree
 fdu . --view=languages                    # which languages occupy space
 fdu . --view=recent --limit=10            # the ten most recently modified files
 fdu . --ignored=exclude                   # leave out entries .gitignore rules match
-fdu . --analyze=code                      # standard lines of code; reads file contents
 fdu . --view=summary,types --format=json  # versioned machine output
 fdu --docs                                # the offline usage guide
 ```
 
-Without `--analyze`, fdu reads metadata and `.gitignore` files but never opens a regular
-file for its contents.
-`--view` chooses what is reported and never enables analysis.
+`--view` chooses what is reported.
+Only `code` and `documents` read file contents, since neither has anything to show
+without analysis; `--view=code` or `--view=documents` gives one alone.
+Every other view reads metadata and `.gitignore` files and opens no regular file for its
+contents unless `--analyze`, the extra control, names an analyzer.
 
 ## As a Library
 

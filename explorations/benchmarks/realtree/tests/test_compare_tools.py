@@ -806,7 +806,6 @@ Code lines   Share   Comments      Blank  Analyzed files  Language
 26,059,137   99.0%  4,229,132  4,286,449   59,786/59,786  C           (26,059,137 unknown)
          —       —          —          —         0/1,338  Assembly
 26,312,547  100.0%  4,290,517  4,343,072   61,452/65,896  TOTAL       (26,312,547 unknown)
-6 analyzed languages (include population)
 """.encode()
 
 SCC_TABLE = """\

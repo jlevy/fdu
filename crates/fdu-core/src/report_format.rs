@@ -285,31 +285,24 @@ pub fn flat_diagnostics(report: &Report) -> Vec<String> {
 
 /// Categorized flat-output diagnostics; paths and long rows stay alone on stdout.
 ///
+/// The row bound is already a display-limit note: a flat report has one section.
+///
 /// A cache-only answer is stated by [`report_warnings`], on every format, so it is not
 /// repeated here as a note.
 pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
     let DiagnosticLines { mut notes, tips } = diagnostic_lines(report);
     if !report.status.complete || report.provenance.freshness != Freshness::Fresh {
         notes.push(format!(
-            "note: result freshness: {}; complete: {}",
+            "note: result {}, {}",
             freshness_label(report.provenance.freshness),
-            report.status.complete
+            if report.status.complete { "complete" } else { "incomplete" }
         ));
     }
     if let Some(depth) = report.scope.max_depth {
         notes.push(format!(
-            "note: scan scope limited to depth {}; subtree metrics cover this scope",
+            "note: scanned to depth {} only; totals cover that scope",
             human_count_u128(depth as u128)
         ));
-    }
-    for section in &report.sections {
-        if let Some((shown, total)) = bounded_rows(section) {
-            notes.push(format!(
-                "note: {} of {} rows shown",
-                human_count(shown as u64),
-                human_count(total as u64),
-            ));
-        }
     }
     DiagnosticLines { notes, tips }
 }
@@ -1376,19 +1369,15 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
         if index > 0 {
             out.push('\n');
         }
-        let bound = bound_note(section);
+        // A single-view report has no header; its row bound is a display-limit note in
+        // the epilogue rather than a line of its own above the result.
         if headed {
             let _ = writeln!(
                 out,
                 "{}{}",
                 paint(view_header(section.view()), STYLE_HEADING, color),
-                paint(&bound, STYLE_DETAIL, color),
+                paint(&bound_note(section), STYLE_DETAIL, color),
             );
-        } else if !bound.is_empty() {
-            // A single-view report has no header, and that is precisely the shape
-            // `fdu --view largest` produces — so the bound gets its own line rather than
-            // riding on a header that is not there.
-            let _ = writeln!(out, "{}", detail(bound.trim_start(), color));
         }
         match section {
             Section::Code(overview) => render_text_code(&mut out, overview, color),
@@ -1403,8 +1392,7 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
                     options,
                 );
             }
-            Section::Extensions { rows, share_omitted, .. } => {
-                render_share_omission(&mut out, *share_omitted, "extensions", color);
+            Section::Extensions { rows, .. } => {
                 render_text_types(&mut out, rows, report.size, report.ignored_entries, color);
             }
             Section::Metrics { view, summary } => {
@@ -1415,9 +1403,8 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
             // that ranks by something must show that something — "the twenty largest"
             // with no sizes does not answer the question it is named for, and leaves the
             // ranking unverifiable.
+            // The ranking measure is named by an epilogue note.
             Section::Files { rows, .. } if report.sort_metric.is_some() => {
-                let metric = report.sort_metric.expect("guarded above");
-                let _ = writeln!(out, "{}", detail(&format!("Ranked by {metric}"), color));
                 render_text_metric_files(&mut out, rows, color);
             }
             Section::Files { view, rows, .. } => match view {
@@ -1538,10 +1525,6 @@ fn render_text_metrics(
     size: SizeMetric,
     color: bool,
 ) {
-    if let Some(note) = share_metric_note(summary.share_metric) {
-        let _ = writeln!(out, "{}", detail(note, color));
-    }
-    render_share_omission(out, summary.share_omitted, "groups", color);
     // Languages pad one past the longest name; the other groupings share a floor so
     // separate sections still line up with one another.
     let width = if view == ViewSpec::Languages {
@@ -1644,14 +1627,6 @@ fn render_text_metrics(
     }
 }
 
-fn render_share_omission(out: &mut String, omitted: usize, noun: &str, color: bool) {
-    if omitted > 0 {
-        let note =
-            format!("… {} {noun} omitted (below share threshold)", human_count(omitted as u64));
-        let _ = writeln!(out, "{}", detail(&note, color));
-    }
-}
-
 /// Keep measured zero distinct from missing measurements in every numeric column.
 /// Language display bounds trim rows, never the TOTAL row or its global denominator.
 fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
@@ -1724,7 +1699,6 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
             annotation
         );
     }
-    render_share_omission(out, overview.share_omitted, "languages", color);
     let mut total_detail = String::new();
     if let (true, Some(ignored)) = (selected.analyzed_files > 0, &overview.ignored) {
         let _ = write!(total_detail, "{} gitignored", human_count(ignored.metrics.code_lines));
@@ -1786,53 +1760,8 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
         ),
         total_detail
     );
-    let _ = writeln!(
-        out,
-        "{} analyzed {} {}",
-        human_count(overview.analyzed_languages),
-        plural(overview.analyzed_languages, "language", "languages"),
-        detail(&format!("({} population)", overview.population.label()), color)
-    );
-    if overview.unknown.source_files > 0 {
-        let _ = writeln!(
-            out,
-            "{} {} with unknown ignore classification",
-            human_count(overview.unknown.source_files),
-            plural(overview.unknown.source_files, "source file", "source files")
-        );
-    }
-    if overview.unclassified_files > 0 {
-        let _ = writeln!(
-            out,
-            "{} selected files with unclassified type",
-            human_count(overview.unclassified_files)
-        );
-    }
-    for (reason, files) in &selected.coverage {
-        if *reason != CoverageReason::Analyzed {
-            let _ = writeln!(
-                out,
-                "{}",
-                detail(
-                    &format!("{} {}", human_count(*files), human_coverage_label(*reason)),
-                    color
-                )
-            );
-        }
-    }
-    if selected.missing_records > 0 {
-        let _ = writeln!(
-            out,
-            "{}",
-            detail(
-                &format!(
-                    "{} source files without analyzer records",
-                    human_count(selected.missing_records)
-                ),
-                color
-            )
-        );
-    }
+    // Coverage facts (analyzed languages, unclassified and unanalyzed files) are notes in
+    // the epilogue, not lines below the table.
 }
 
 fn code_cell(value: u64, measured: bool, width: usize, color: bool) -> String {
@@ -1848,17 +1777,17 @@ fn code_total_cell(value: u64, measured: bool, width: usize, color: bool) -> Str
     paint(&format!("{text:>width$}"), AnsiStyle::new().bold(), color)
 }
 
-/// Explain a percentage column whose denominator is not the byte column beside it.
+/// The denominator of a percentage column that is not the byte column beside it.
 ///
 /// Byte shares need no annotation because the adjacent size column already names their
 /// numerator. Code and document reports deliberately rank by a content metric while
-/// retaining bytes in the first column, so leaving the percentage unlabeled makes two
-/// unlike quantities look as though they must agree.
-fn share_metric_note(metric: ShareMetric) -> Option<&'static str> {
+/// retaining bytes in the first column, so leaving the percentage unexplained makes two
+/// unlike quantities look as though they must agree; the epilogue names it in a note.
+pub(super) fn share_metric_label(metric: ShareMetric) -> Option<&'static str> {
     match metric {
-        ShareMetric::CodeLines => Some("Percentage column: code lines"),
-        ShareMetric::DocumentWords => Some("Percentage column: document words"),
-        ShareMetric::RawWords => Some("Percentage column: raw words"),
+        ShareMetric::CodeLines => Some("code lines"),
+        ShareMetric::DocumentWords => Some("document words"),
+        ShareMetric::RawWords => Some("raw words"),
         ShareMetric::ApparentBytes | ShareMetric::AllocatedBytes => None,
     }
 }
@@ -1867,7 +1796,7 @@ fn human_metric_label(view: ViewSpec, id: &str) -> &str {
     if view == ViewSpec::Languages { human_language_name(id) } else { id }
 }
 
-fn human_coverage_label(reason: CoverageReason) -> &'static str {
+pub(super) fn human_coverage_label(reason: CoverageReason) -> &'static str {
     match reason {
         CoverageReason::Analyzed => "analyzed",
         CoverageReason::Binary => "binary",
@@ -2174,7 +2103,7 @@ fn generator() -> String {
 /// presentation change reach into the schema, or freeze the schema for a presentation
 /// reason. They spell the same word today because the same word is right in both places,
 /// and a test holds them in step rather than a shared expression.
-fn view_header(view: ViewSpec) -> &'static str {
+pub(super) fn view_header(view: ViewSpec) -> &'static str {
     match view {
         ViewSpec::List => "LIST",
         ViewSpec::Tree => "TREE",
@@ -3389,11 +3318,17 @@ mod tests {
         assert_eq!(*total, full, "the total is what there was, not what was kept");
 
         let text = render(&bounded, Format::Text, false);
-        assert!(text.contains(&format!("(1 of {full}")), "the header states the bound: {text}");
+        assert!(!text.contains("of {full}"), "a single view states its bound in a note: {text}");
         assert!(!text.contains("--limit"), "actionable guidance stays out of the body: {text}");
+        assert!(
+            report_notes(&bounded)
+                .contains(&format!("note: display limits: 1 of {full} rows shown")),
+            "the epilogue states the bound: {:?}",
+            report_notes(&bounded)
+        );
         assert_eq!(
             report_tips(&bounded),
-            vec!["tip: show more rows: limit=all"],
+            vec!["tip: show more: limit=all"],
             "the shared epilogue names the row remedy once"
         );
         let json = render(&bounded, Format::Json, false);
@@ -3638,8 +3573,8 @@ mod tests {
         let notes = flat_diagnostics(&stale).join("\n");
         assert!(notes.contains("warn: stale answer"), "{notes}");
         assert!(!notes.contains("note: cache-only"), "the warning states it once: {notes}");
-        assert!(notes.contains("freshness: stale"));
-        assert!(notes.contains("scan scope limited to depth 2"));
+        assert!(notes.contains("note: result stale, complete"), "{notes}");
+        assert!(notes.contains("scanned to depth 2 only"), "{notes}");
         assert_eq!(super::render(&stale, Format::Paths, false).expect("paths"), "src\n");
     }
 
@@ -3934,22 +3869,68 @@ mod tests {
             panic!("languages should be a metric section");
         }
         let text = render(&languages, Format::Text, false);
-        assert!(text.starts_with("Percentage column: code lines\n"), "{text}");
+        assert!(!text.contains("code lines"), "the result carries no annotation: {text}");
+        let shares = |report: &Report| {
+            report_notes(report)
+                .into_iter()
+                .filter(|note| note.starts_with("note: percentages are shares of"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shares(&languages), ["note: percentages are shares of code lines"]);
 
         let Section::Metrics { summary, .. } = &mut languages.sections[0] else {
             unreachable!("languages should stay a metric section");
         };
         summary.share_metric = ShareMetric::AllocatedBytes;
-        let text = render(&languages, Format::Text, false);
-        assert!(!text.contains("Percentage column:"), "{text}");
+        assert!(shares(&languages).is_empty(), "byte shares need no note");
 
-        let mut documents = fixture(&[ViewSpec::Documents]);
-        let Section::Metrics { summary, .. } = &mut documents.sections[0] else {
-            panic!("documents should be a metric section");
+        let mut both = fixture(&[ViewSpec::Languages, ViewSpec::Documents]);
+        for (section, metric) in
+            both.sections.iter_mut().zip([ShareMetric::CodeLines, ShareMetric::DocumentWords])
+        {
+            let Section::Metrics { summary, .. } = section else {
+                panic!("both views should be metric sections");
+            };
+            summary.share_metric = metric;
+        }
+        assert_eq!(
+            shares(&both),
+            ["note: percentages are shares of code lines (LANGUAGES), document words (DOCUMENTS)"],
+            "one note names each view's denominator"
+        );
+
+        // Beside a byte-share view, one non-byte denominator still names its section, so
+        // the tree's percentages are not read as code lines.
+        let mut beside_tree = fixture(&[ViewSpec::Tree, ViewSpec::Languages]);
+        let Section::Metrics { summary, .. } = &mut beside_tree.sections[1] else {
+            panic!("languages should be a metric section");
         };
-        summary.share_metric = ShareMetric::DocumentWords;
-        let text = render(&documents, Format::Text, false);
-        assert!(text.starts_with("Percentage column: document words\n"), "{text}");
+        summary.share_metric = ShareMetric::CodeLines;
+        assert_eq!(
+            shares(&beside_tree),
+            ["note: percentages are shares of code lines (LANGUAGES)"]
+        );
+    }
+
+    #[test]
+    fn share_floor_omissions_name_their_section_beside_other_views() {
+        let mut report = fixture(&[ViewSpec::Types, ViewSpec::Families]);
+        for section in &mut report.sections {
+            let Section::Metrics { summary, .. } = section else {
+                panic!("types and families should be metric sections");
+            };
+            summary.share_omitted = 2;
+        }
+        let limits = report_notes(&report)
+            .into_iter()
+            .filter(|note| note.starts_with("note: display limits:"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            limits,
+            ["note: display limits: 2 rows below min share in TYPES, 2 rows below min share in \
+              FAMILIES"],
+            "equal counts in different views stay distinct"
+        );
     }
 
     #[test]
@@ -4822,7 +4803,12 @@ mod tests {
             ["—", "—", "—", "—", "0/2", "TOTAL"]
         );
         assert!(!unmeasured.contains("gitignored"), "{unmeasured}");
-        assert!(unmeasured.contains("2 unsupported"), "{unmeasured}");
+        assert!(!unmeasured.contains("unsupported"), "coverage is a note, not a row: {unmeasured}");
+        assert!(
+            report_notes(&report).contains(&"note: not analyzed: 2 unsupported".to_owned()),
+            "{:?}",
+            report_notes(&report)
+        );
         assert!(unmeasured.lines().all(|line| line.trim_end() == line), "{unmeasured:?}");
     }
 

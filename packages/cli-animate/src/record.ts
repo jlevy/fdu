@@ -6,7 +6,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 import { extractMarkers, formatCast, markerTimes, parseCast } from './cast.js';
-import type { StepTiming } from './driver.js';
+import { runHidden, type StepTiming } from './driver.js';
 import { CliError } from './errors.js';
 import { temporarySibling, writeFileAtomic, writeJsonAtomic } from './fsutil.js';
 import { CLI_MAIN } from './paths.js';
@@ -40,6 +40,14 @@ export function record(scenarioFile: string, castPath: string, options: { quiet?
   const asciinema = findProgram('asciinema');
   const version = programVersion(asciinema, ['--version']);
   if (!/\b3\.\d+/.test(version)) throw new CliError(`asciinema 3.x is required; found "${version}"`);
+
+  // Setup runs before asciinema starts: it is preparation, not part of the take, and a
+  // slow one (warming a page cache) would otherwise open the video on a blank screen.
+  try {
+    runHidden(scenario, scenario.setup);
+  } catch (error) {
+    throw new CliError(`setup: ${(error as Error).message}`, 1);
+  }
 
   const raw = temporarySibling(castPath);
   const sidecar = temporarySibling(receiptPath(castPath));

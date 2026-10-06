@@ -817,6 +817,9 @@ impl PyWatch {
 /// A new scan derives its population from the request; a retained read uses held scope.
 enum RequestBasis<'a> {
     Held(&'a Basis),
+    /// An opened root's basis, which the model states, so a refusal says that an opened
+    /// root runs no analyzer rather than naming one to open it with.
+    Opened,
     Fresh(Box<RequestSpec<'a>>),
 }
 
@@ -883,6 +886,7 @@ fn build_request(
     };
     match basis {
         RequestBasis::Held(basis) => Request::read(basis.clone(), &spec, now, &AxisNames::FIELDS),
+        RequestBasis::Opened => Request::read_opened(&spec, now, &AxisNames::FIELDS),
         RequestBasis::Fresh(mut fresh) => {
             fresh.read = spec;
             Request::build(&fresh, now, &AxisNames::FIELDS).and_then(|request| {

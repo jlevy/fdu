@@ -376,6 +376,10 @@ class Index:
         A snapshot. The index goes on changing underneath it -- that is what an index is
         for -- but the value returned does not, so `as_dict` and `render` are two
         serializations of one answer rather than two answers taken at different times.
+
+        A read never widens what the index was opened with: ``View.CODE`` on an index
+        opened without ``code`` analysis, or ``View.DOCUMENTS`` without ``words``, raises
+        :class:`InvalidArgumentError` naming the analyzer, where :func:`report` would run it.
         """
 
         selected = query if query is not None else Query()
@@ -510,6 +514,10 @@ def open(
     off: that ``open`` reads no control file and keeps a snapshot of another scope. A
     scanning request treats a snapshot of the other scope as a miss and scans cold, and a
     ``stale_ok`` one, which never scans, raises :class:`FduError` naming the remedy.
+
+    The index holds exactly the analyzers ``analysis`` names, for every read it serves; a
+    content view does not add to them. Open with ``AnalysisOptions(analyze="code")`` to
+    report ``View.CODE``, or ``"words"`` for ``View.DOCUMENTS``.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -542,7 +550,8 @@ def scan(
     """Walk a root without reading or writing a snapshot cache.
 
     Like :func:`open`, it observes ``.gitignore`` control state unless
-    ``ScanOptions(read_controls=False)`` turns it off.
+    ``ScanOptions(read_controls=False)`` turns it off, and holds exactly the analyzers
+    ``analysis`` names.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -592,6 +601,11 @@ def report(
     share, and ``Selection(ignored=...)`` can select one side. Turned off, rows carry
     ``ignored=None``, and a selection by ignored state raises
     :class:`InvalidArgumentError`. See :func:`open` for sharing a snapshot with an index.
+
+    A content view requests the analysis it shows, as on the command line:
+    ``Query(views=(View.CODE,))`` runs the ``code`` analyzer and ``View.DOCUMENTS`` the
+    ``words`` analyzer, in union with ``analysis``. Other views read no file contents
+    unless ``analysis`` names an analyzer.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
     """

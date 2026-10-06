@@ -20,6 +20,7 @@ from pathlib import Path
 
 from answer import (
     age_problems,
+    analyze_of,
     answer,
     content_source_of,
     freshness_of,
@@ -65,6 +66,10 @@ CASES: list[tuple[str, list[str]]] = [
     ("analyze-all", ["--analyze", "all"]),
     ("languages", ["--view", "languages", "--analyze", "lines"]),
     ("documents", ["--view", "documents", "--analyze", "words"]),
+    # A content view implies its analyzer, so these are analysis cases with no --analyze.
+    ("view-code", ["--view", "code"]),
+    ("view-documents", ["--view", "documents"]),
+    ("view-code-documents", ["--view", "code,documents"]),
 ]
 
 
@@ -145,7 +150,10 @@ def main() -> int:
             # 1, so a build that never writes a snapshot exited 1 and skipped the check
             # entirely. Seventeen of these cases then printed `ok` against a cache that
             # was never written or served -- the exact failure this file exists to catch.
-            analyses = "--analyze" in extra
+            #
+            # Whether a case analyzes is the engine's statement in its cold answer, not
+            # whether its arguments say `--analyze`: a content view implies its analyzer.
+            analyses = bool(analyze_of(cold_out))
             only_source = source_of(only_out) or "-"
             only_freshness = freshness_of(only_out) or "-"
 

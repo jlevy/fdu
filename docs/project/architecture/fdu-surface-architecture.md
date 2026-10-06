@@ -121,8 +121,13 @@ still match, so it would silently absorb the next real regression.
 ### What deviation classes mean
 
 - **Each surface names its own parameter.** There is no `--view` in Python, so its
-  diagnostics name the parameter.
-  Everything after the label is byte-identical.
+  diagnostics name the parameter: `tip: show it: --view code` is
+  `tip: show it: view code`. Everything after the label is byte-identical.
+- **Bound and analysis tips name the same setter.** The one bound tip lifts every bound
+  that hid something, as flags on one command line (`--depth=all --limit=all`) or as one
+  call’s keyword arguments (`depth=all, limit=all`), and `full`’s omitted-views tip is
+  `tip: include them: --analyze all` or `analyze all`; the matchers accept exactly those
+  translations.
 - **Output carrying walk telemetry.** The report envelope deliberately excludes it, so a
   `Report` cannot reproduce the performance footer or a note quoting bytes read.
 - **The same rule in each surface’s knob names.** `--scan-depth` against `max_depth`,
@@ -150,6 +155,15 @@ Using `open` for a single question caches state the walk never saved, which a la
 `stale_ok` read can see.
 That was a real defect: a Python run left cache state on a tree that the same command
 would not have.
+
+The two also differ on content views, for the same reason.
+`report` builds its own basis, so `Query(views=(View.CODE,))` runs the code analyzer,
+exactly as `--view code` does on the command line.
+An index holds the analyzers it was opened with for every read it serves, so
+`index.report` never adds one: the same query on an index opened without `code` raises
+`InvalidArgumentError` naming the analyzer.
+The rule is the request model’s (`Request::build` against `Request::read`), not either
+surface’s, so a Rust caller meets the same split.
 
 Both observe `.gitignore` by default, as the command line does, and each surface turns
 it off its own way: `--no-gitignore`, `ScanOptions(read_controls=False)`, or

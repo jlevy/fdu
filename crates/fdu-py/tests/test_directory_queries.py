@@ -219,5 +219,5 @@ def test_opened_flat_reports_preserve_partial_diagnostics(builds: Path) -> None:
             assert result.kind == "report"
             report = result.value
             assert not report.status.complete
-            assert any("complete: false" in note for note in report.notes)
-            assert "complete: false" not in report.render()
+            assert any(note.endswith(", incomplete") for note in report.notes)
+            assert "incomplete" not in report.render()

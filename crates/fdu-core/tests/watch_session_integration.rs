@@ -424,7 +424,9 @@ fn a_session_refuses_an_analyzed_index() {
     assert!(
         matches!(
             refused,
-            Err(fdu_core::Error::InvalidRequest(fdu_core::query::RequestError::WatchContent))
+            Err(fdu_core::Error::InvalidRequest(
+                fdu_core::query::RequestError::WatchContent { .. }
+            ))
         ),
         "expected a refusal, got {:?}",
         refused.err().map(|error| error.to_string())
