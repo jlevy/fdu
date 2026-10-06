@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Human reports hold only the result: rows, column headings, and multi-view section
+  headers. Every explanation is a `note:` or `tip:` line on stderr after it, including
+  what used to sit inside the result: the percentage denominator
+  (`Percentage column: code lines` is now `note: percentages are shares of code lines`),
+  share-floor omissions, a single view’s row bound, `Ranked by`, and the code overview’s
+  coverage lines.
+- Notes and tips are consolidated: one note for what totals include, one listing every
+  display limit that hid something (`note: display limits: below 1% of root, depth 5`),
+  and one runnable tip that lifts them all
+  (`tip: show more: --min-share=0% --depth=all`; in Python, `min_share=0%, depth=all`).
+  The flat-format notes are shorter (`note: result stale, incomplete`).
+
 ## [0.3.0] - 2026-09-30
 
 fdu 0.3.0 is a breaking release focused on Linux speed and stability.
