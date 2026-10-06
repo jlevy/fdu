@@ -3,9 +3,9 @@ type: is
 id: is-01m48ykwg1fz7tsw30h6xfhtmd
 title: "Address PR #174 review B: notes after the result, round 2"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 8
+version: 9
 delegate: claude-code@spud10.local
 labels: []
 dependencies: []
@@ -17,8 +17,12 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-06T15:51:46.943Z
-updated_at: 2026-10-06T16:32:44.818Z
+updated_at: 2026-10-06T18:09:04.500Z
 started_at: 2026-10-06T15:51:59.683Z
+closed_at: 2026-10-06T18:09:04.499Z
+close_reason: "Review B on #174 addressed in #182; dispositions posted"
+resolution: null
+duplicate_of: null
 ---
 Review B (follow-up, round 2) on PR #174 at head 645c3e9e: https://github.com/jlevy/fdu/pull/174#issuecomment-6020029670. Four Low findings B1-B4.
 
