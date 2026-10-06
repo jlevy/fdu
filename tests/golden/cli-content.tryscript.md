@@ -958,7 +958,7 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
 DOCUMENTS
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
-! note: percentages are shares of document words
+! note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ! note: 2 languages analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
@@ -1073,6 +1073,7 @@ RECENT  (2 of 7)
 [RFC3339]  assets[SEP]late.bin.txt
 [RFC3339]  docs[SEP]notes.txt
 ! note: totals include descendants
+! note: percentages are shares of code lines (CODE)
 ! note: 2 languages analyzed
 ! note: display limits: row limit 2
 ! note: full omits documents without words analysis

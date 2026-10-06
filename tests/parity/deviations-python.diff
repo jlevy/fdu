@@ -1060,8 +1060,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
     stderr:
-@@ -1,6 +1,6 @@
- note: totals include descendants
+@@ -2,6 +2,6 @@
+ note: percentages are shares of code lines (CODE)
  note: 2 languages analyzed
  note: display limits: row limit 2
  note: full omits documents without words analysis
