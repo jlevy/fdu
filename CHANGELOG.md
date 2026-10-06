@@ -58,9 +58,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are `AnalysisSet` values and `holder` is the new `BasisHolder`: whether a request it
   built, a basis supplied whole, a retained index, or an opened root fixed the
   analyzers. `WatchContent` becomes `WatchContent { named, views }`, the analyzers the
-  caller named and the views that implied the rest; match it as `WatchContent { .. }`.
+  caller named and the views that implied the rest.
   `AnalyzerNamedAsView::suggested_view` is a `ViewSpec` rather than a `&'static str`;
   `suggested_view.label()` is the old string.
+  `ViewNeedsAnalyzer`, `SortNeedsAnalyzer`, `WatchContent`, and `AnalyzerNamedAsView`
+  are each `#[non_exhaustive]`, so a field one gains later is an additive change: code
+  outside the engine crate matches them with `..`, as in
+  `ViewNeedsAnalyzer { view, holder, .. }` or `WatchContent { .. }`, and cannot
+  construct them.
 - The messages around analysis name the exact remedy:
   `note: code analysis not shown by summary` with `tip: show it: --view code`, and
   `note: full omits code, documents without analysis` with
