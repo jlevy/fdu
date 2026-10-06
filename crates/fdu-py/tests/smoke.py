@@ -388,14 +388,27 @@ def main() -> None:
     assert languages["share_metric"] == "allocated_bytes", languages
     assert [(row["id"], row["files"]) for row in languages["rows"]] == [("rust", 2)], languages
 
-    analyzed = fdu_py.scan(str(query_root), analyze="lines")
+    # An index holds the analyzers it was opened with, and a read never widens them: the
+    # document view needs words, so an index opened with lines alone refuses it, in this
+    # API's names, rather than reading for it.
+    lines_only = fdu_py.scan(str(query_root), analyze="lines")
+    try:
+        report_dict(lines_only, views=["documents"], words_per_page=250)
+    except ValueError as error:
+        assert str(error) == (
+            "view documents needs words analysis; this index was opened with analyze lines"
+        ), error
+    else:
+        raise AssertionError("a read must not widen the analyzers an index holds")
+
+    analyzed = fdu_py.scan(str(query_root), analyze="words")
     documents = report_dict(analyzed, views=["documents"], words_per_page=250)
-    assert documents["analysis"]["analyze"] == ["lines"], documents
+    assert documents["analysis"]["analyze"] == ["lines", "words"], documents
     document_metrics = documents["reports"][0]["metrics"]
     markdown = document_metrics["rows"][0]
     assert markdown["metrics"]["physical_lines"] == 1, markdown
     assert markdown["metrics"]["raw_words"] == 1, markdown
-    assert "pages" not in markdown, markdown
+    assert markdown["pages"]["words_per_page"] == 250, markdown
     try:
         report_dict(analyzed, views=["docs"], words_per_page=250)
     except ValueError:
@@ -621,12 +634,13 @@ def main() -> None:
     assert response.results[6].kind == "diagnostics", response.results[6]
 
     # An opened root runs no analyzer, so a view that needs one has no answer here: it is
-    # refused, not reported with zero words. The whole read fails, because the request's
-    # own shape is what is wrong (fdu-cevv).
+    # refused, not reported with zero words, and never read for -- a read does not widen
+    # what a holder was opened with. The whole read fails, because the request's own shape
+    # is what is wrong (fdu-cevv).
     try:
         opened.read(ReportProjection(query=Query(views=(View.DOCUMENTS,))))
     except ValueError as error:
-        assert "documents requires content analysis" in str(error), error
+        assert "view documents needs words analysis" in str(error), error
     else:
         raise AssertionError("an opened documents read must be refused")
 

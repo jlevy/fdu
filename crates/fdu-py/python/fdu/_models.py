@@ -444,9 +444,18 @@ class ScanOptions:
 
 @dataclass(frozen=True, slots=True)
 class AnalysisOptions:
-    """Content analysis requested while opening or scanning."""
+    """Content analysis requested while opening or scanning.
 
-    #: Analyzers to run, as one :class:`Analysis` value or a comma-separated set.
+    The control axis for file contents. :func:`fdu.report` builds its own basis, so a
+    content view in its query requests its analyzer and these options add only what the
+    views do not imply: analysis shown in a metadata view such as ``View.LANGUAGES``, or
+    run without display to warm the sidecar. :func:`fdu.open` and :func:`fdu.scan` fix a
+    basis that serves many reads, so they run exactly the analyzers named here, and a later
+    ``index.report`` never widens it.
+    """
+
+    #: Analyzers to run beyond what the views imply, as one :class:`Analysis` value or a
+    #: comma-separated set.
     analyze: str = Analysis.NONE
     workers: int = 0
 
@@ -508,6 +517,11 @@ class Query:
     #: Views to report. Empty means "let the requested analyzers choose", which is what
     #: the command line does: asking to read files and then printing a directory tree
     #: containing none of the results is the defect the content axis removed.
+    #: ``View.CODE`` and ``View.DOCUMENTS`` have no metadata meaning, so naming one asks
+    #: for its analysis: :func:`fdu.report` runs the ``code`` or ``words`` analyzer for it,
+    #: while ``index.report`` on an index opened without that analyzer raises
+    #: :class:`InvalidArgumentError` naming it. Every other view, ``full`` included, reads
+    #: no file contents of its own accord.
     #: A raw comma-separated spec is accepted as well as a tuple, so a caller passing
     #: user input through gets the library's list grammar -- duplicate and empty-entry
     #: rejection, and `full` expansion -- rather than having to reimplement it and get a
