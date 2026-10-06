@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
+from benchmarks.realtree.perf_index import score_ratio
 from benchmarks.realtree.timeline import METRICS
 
 #: Jobs shown in the absolute figure, in the order the work happens: build the index
@@ -2287,12 +2288,13 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
         if len(builds) < 2:
             continue
         first, last = builds[0][key], builds[-1][key]
+        speedup, low, high = score_ratio(first, last)
         figures.append(
-            f'<div><span class="n good">{first["index"] / last["index"]:.1f}&times; better</span>'
+            f'<div><span class="n good">{speedup:.1f}&times; better</span>'
             f'<span class="k">{what}, {esc(projected["platform"])}, '
             f'{esc(builds[0].get("short") or builds[0]["label"])} to '
             f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
-            f"[{first['low'] / last['high']:.1f}&times;, {first['high'] / last['low']:.1f}&times;]; "
+            f"[{low:.1f}&times;, {high:.1f}&times;]; "
             f"{len(components)} of {total} components</span></div>"
         )
     return "".join(figures)

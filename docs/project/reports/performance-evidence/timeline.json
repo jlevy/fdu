@@ -49289,10 +49289,12 @@
  "history": [
   {
    "component": "scale",
+   "component_digest": "00cff7b322450d6d",
    "cpu": "Apple M1 Pro",
    "entries": 1000001,
    "id": "macos-balanced-1m-internal",
    "invalid_samples": 0,
+   "job": "scale",
    "manifest_version": 1,
    "milestones": [
     {
@@ -49567,10 +49569,12 @@
   },
   {
    "component": "cold-cache",
+   "component_digest": "58487def188c1b4f",
    "cpu": "Apple M1 Pro",
    "entries": 92460,
    "id": "macos-linux-v6.12-internal",
    "invalid_samples": 0,
+   "job": "cold-cache",
    "manifest_version": 1,
    "milestones": [
     {
@@ -49858,7 +49862,7 @@
      "components": {
       "cold-cache": 3.34472,
       "memory": 4.537701207443966,
-      "scale": 10.75475
+      "scale": 10.754749999999998
      },
      "coverage": 0.25,
      "date": "2026-08-10",
@@ -49995,9 +49999,9 @@
      "after_experiment": "exp-163",
      "commit": "6ec77163",
      "common": {
-      "high": 2.361447588951913,
+      "high": 2.3614475889519126,
       "index": 2.2919593491021986,
-      "low": 2.2245158785287544
+      "low": 2.224515878528755
      },
      "components": {
       "cold-cache": 2.64891,
@@ -50009,9 +50013,9 @@
      "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
      "label": "v0.2.0",
      "measured_full": {
-      "high": 2.361447588951913,
+      "high": 2.3614475889519126,
       "index": 2.2919593491021986,
-      "low": 2.2245158785287544
+      "low": 2.224515878528755
      },
      "short": "0.2.0"
     },
@@ -50021,7 +50025,7 @@
      "common": {
       "high": 1.405967017844225,
       "index": 1.3686370638406367,
-      "low": 1.3322982607305074
+      "low": 1.3322982607305072
      },
      "components": {
       "cold-cache": 1.13218,
@@ -50035,7 +50039,7 @@
      "measured_full": {
       "high": 1.405967017844225,
       "index": 1.3686370638406367,
-      "low": 1.3322982607305074
+      "low": 1.3322982607305072
      },
      "short": "0.2.1"
     },
@@ -50069,7 +50073,7 @@
      "common": {
       "high": 1.0690405660140456,
       "index": 1.0437955687315263,
-      "low": 1.019146722715905
+      "low": 1.0191467227159048
      },
      "components": {
       "cold-cache": 1.06333,
@@ -50083,7 +50087,7 @@
      "measured_full": {
       "high": 1.0690405660140456,
       "index": 1.0437955687315263,
-      "low": 1.019146722715905
+      "low": 1.0191467227159048
      },
      "short": "transient tree"
     },

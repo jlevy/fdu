@@ -25,7 +25,15 @@ from benchmarks.realtree.report_html import (
     kept_improvements,
     render,
 )
-from benchmarks.realtree.perf_index import combine, load_suite, project_index, unmapped_jobs
+from benchmarks.realtree.perf_index import (
+    combine,
+    component_digest,
+    component_ratios,
+    load_suite,
+    project_index,
+    score_ratio,
+    unmapped_jobs,
+)
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
     SYNTHETIC_SUBJECTS,
@@ -37,8 +45,19 @@ from benchmarks.realtree.timeline import (
 )
 
 
-def _index_cell(component: str, first_ms: float, last_ms: float, extra_after: str = "") -> Dict[str, Any]:
-    """A two-build history cell for one index component, anchored on v0.3.0."""
+def _index_cell(
+    component: str,
+    first_ms: float,
+    last_ms: float,
+    extra_after: str = "",
+    job: str = "",
+    digest: str = "",
+) -> Dict[str, Any]:
+    """A two-build history cell for one job of one index component, anchored on v0.3.0.
+
+    It carries the manifest's digest for the component unless a test passes another.
+    """
+    definition = next(item for item in load_suite()["components"] if item["id"] == component)
     milestones = [
         {"label": "prework", "short": "start", "commit": "aaaa", "date": "2026-08-10",
          "includes": "start", "after_experiment": "exp-000", "wall_ms": first_ms,
@@ -57,7 +76,10 @@ def _index_cell(component: str, first_ms: float, last_ms: float, extra_after: st
              "vs_latest_pct": -96.7, "supported": True}
         )
     return {
+        "id": f"{component}-{job or component}",
         "component": component,
+        "job": job or component,
+        "component_digest": digest or component_digest(definition),
         "platform": "macOS",
         "subject": "linux-v6.12",
         "title": "the Linux v6.12 source tree",
@@ -645,6 +667,33 @@ class RenderTests(unittest.TestCase):
     def test_the_suite_weights_sum_to_one(self) -> None:
         suite = load_suite()
         self.assertAlmostEqual(sum(item["weight"] for item in suite["components"]), 1.0)
+
+    def test_a_cell_measured_under_another_definition_is_refused(self) -> None:
+        # Manifest v1 was once edited in place while cells kept claiming v1; the digest
+        # makes that a refusal instead of a silently wrong score.
+        stale = _index_cell("cold-cache", 300.0, 100.0, digest="0000000000000000")
+        with self.assertRaises(ValueError):
+            project_index([stale], load_suite())
+
+    def test_a_component_with_two_jobs_scores_their_geometric_mean(self) -> None:
+        # Warm metadata times cold-open-save and warm-revalidate; a 4x and a 1x job score
+        # 2x, and a build missing one job is not scored on the component at all.
+        cells = [
+            _index_cell("warm-metadata", 400.0, 100.0, job="cold-open-save"),
+            _index_cell("warm-metadata", 100.0, 100.0, job="warm-revalidate"),
+        ]
+        ratios = component_ratios(cells, load_suite(), "macOS")
+        self.assertAlmostEqual(ratios["warm-metadata"]["prework"]["ratio"], 2.0, places=6)
+        self.assertNotIn("warm-metadata", component_ratios(cells[:1], load_suite(), "macOS"))
+
+    def test_the_headline_interval_combines_errors_rather_than_extremes(self) -> None:
+        first = {"index": 4.0, "low": 3.0, "high": 5.0}
+        last = {"index": 1.0, "low": 0.8, "high": 1.25}
+        speedup, low, high = score_ratio(first, last)
+        self.assertAlmostEqual(speedup, 4.0)
+        # The worst-case bound would be [2.4, 6.25]; a combined interval is narrower.
+        self.assertGreater(low, 3.0 / 1.25)
+        self.assertLess(high, 5.0 / 0.8)
 
     def test_a_projection_without_the_field_reads_baselines_as_one_build(self) -> None:
         # A committed projection written before `compares` existed still renders.

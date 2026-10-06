@@ -87,16 +87,17 @@
       "title": "Warm metadata cache",
       "weight": 0.075,
       "tree": "K",
-      "command": "perf_probe warm-revalidate",
-      "cache_state": "snapshot written by an untimed run of the same build just before",
-      "measures": "component"
+      "command": "the probe's cold-open-save, and the probe's revalidate mode",
+      "cache_state": "cold-open-save: caches empty, writes the snapshot; warm-revalidate: snapshot written by an untimed run of the same build just before",
+      "measures": "wall",
+      "jobs": ["cold-open-save", "warm-revalidate"]
     },
     {
       "id": "multi-view",
       "title": "Multi-view content report",
       "weight": 0.05,
       "tree": "K",
-      "command": "fdu --view code,documents,languages --analyze all PATH",
+      "command": "fdu --view code,documents,languages --analyze code,words PATH",
       "cache_state": "fdu's caches empty for every sample",
       "measures": "wall"
     },
@@ -105,9 +106,10 @@
       "title": "Opened root",
       "weight": 0.05,
       "tree": "K",
-      "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
-      "cache_state": "the library's open, then a second report; then an applied change",
-      "measures": "component"
+      "command": "the probe's opened-second-report, and the probe's delta-apply-large",
+      "cache_state": "each job opens the root itself; timed whole-process, discovery included",
+      "measures": "wall",
+      "jobs": ["opened-second-report", "delta-apply-large"]
     },
     {
       "id": "scale",
@@ -123,10 +125,10 @@
       "title": "Memory",
       "weight": 0.05,
       "tree": "K,G",
-      "command": "peak RSS of every component that records it",
+      "command": "peak RSS of the components whose cells record it for every build",
       "cache_state": "as those components",
       "measures": "peak_rss",
-      "from_components": "all"
+      "from_components": "every-build"
     }
   ]
 }

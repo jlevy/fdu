@@ -27,6 +27,7 @@ score.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -94,43 +95,103 @@ def _component_ratio(item: Mapping[str, Any], reference: str) -> Optional[Dict[s
     }
 
 
+def component_digest(component: Mapping[str, Any]) -> str:
+    """A short digest of what a component measures: its tree, command, cache state, jobs.
+
+    A cell records the digest of the definition it was measured under, so a component
+    redefined in place cannot silently reuse cells measured under the old definition.
+    Weight and title are not part of it: reweighting does not change what a cell measured.
+    """
+    fields = {key: component.get(key) for key in ("id", "tree", "command", "cache_state", "measures", "jobs")}
+    return hashlib.sha256(json.dumps(fields, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def component_jobs(component: Mapping[str, Any]) -> List[str]:
+    """The jobs a component times: its `jobs` list, or the component itself."""
+    return list(component.get("jobs") or [component["id"]])
+
+
+def _geometric(ratios: Sequence[Mapping[str, float]]) -> Dict[str, float]:
+    """Equally weighted geometric mean of job ratios, with their combined interval."""
+    count = len(ratios)
+    log_ratio = sum(math.log(ratio["ratio"]) for ratio in ratios) / count
+    variance = 0.0
+    for ratio in ratios:
+        spread = math.log(ratio["high"]) - math.log(ratio["low"])
+        variance += (spread / (2 * Z95) / count) ** 2
+    error = math.sqrt(variance)
+    return {
+        "ratio": math.exp(log_ratio),
+        "low": math.exp(log_ratio - Z95 * error),
+        "high": math.exp(log_ratio + Z95 * error),
+    }
+
+
 def component_ratios(
     cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any], platform: str
 ) -> Dict[str, Dict[str, Dict[str, float]]]:
-    """`{component: {build label: ratio}}` for one platform, memory included."""
+    """`{component: {build label: ratio}}` for one platform, memory included.
+
+    Each cell is one job of one component. A component with several jobs scores a build
+    only when every job has a ratio for it, as the geometric mean of those ratios. A cell
+    whose recorded definition digest does not match the manifest's is refused.
+    """
     reference = suite["reference_build"]
+    definitions = {component["id"]: component for component in suite["components"]}
+    by_job: Dict[tuple, Mapping[str, Any]] = {}
+    for cell in cells:
+        if not cell.get("component") or cell.get("platform") != platform:
+            continue
+        definition = definitions.get(cell["component"])
+        if definition is None:
+            raise ValueError(f"history cell {cell.get('id')} names unknown component {cell['component']!r}")
+        expected = component_digest(definition)
+        if cell.get("component_digest") != expected:
+            raise ValueError(
+                f"history cell {cell.get('id')} was measured under a different definition of "
+                f"{cell['component']!r} (digest {cell.get('component_digest')}, manifest {expected}); "
+                "re-measure it or version the manifest"
+            )
+        by_job[(cell["component"], cell.get("job") or cell["component"])] = cell
     ratios: Dict[str, Dict[str, Dict[str, float]]] = {}
-    by_component = {
-        cell["component"]: cell
-        for cell in cells
-        if cell.get("component") and cell.get("platform") == platform
-    }
     for component in suite["components"]:
         if component["measures"] == "peak_rss":
             continue
-        cell = by_component.get(component["id"])
-        if not cell:
+        jobs = component_jobs(component)
+        job_cells = [by_job.get((component["id"], job)) for job in jobs]
+        if not all(job_cells):
             continue
-        ratios[component["id"]] = {
-            item["label"]: ratio
-            for item in cell["milestones"]
-            if (ratio := _component_ratio(item, reference)) is not None
-        }
+        per_job = [
+            {
+                item["label"]: ratio
+                for item in cell["milestones"]
+                if (ratio := _component_ratio(item, reference)) is not None
+            }
+            for cell in job_cells
+        ]
+        labels = set.intersection(*(set(job) for job in per_job))
+        ratios[component["id"]] = {label: _geometric([job[label] for job in per_job]) for label in labels}
     for component in suite["components"]:
         if component["measures"] != "peak_rss":
             continue
-        named = component.get("from_components", [])
-        if named == "all":
-            sources = list(by_component.values())
-        else:
-            sources = [by_component[name] for name in named if name in by_component]
+        # Memory averages the same cells for every build: those that record peak RSS
+        # for every build in the comparison, so no build's memory is a different mix.
+        candidates = list(by_job.values())
+        labels = {item["label"] for cell in candidates for item in cell["milestones"]}
+        sources = [
+            cell
+            for cell in candidates
+            if all(
+                {item["label"]: item.get("peak_rss_mib") for item in cell["milestones"]}.get(label)
+                for label in labels
+            )
+        ]
         memory: Dict[str, Dict[str, float]] = {}
-        for label in {item["label"] for cell in sources for item in cell["milestones"]}:
+        for label in labels:
             logs = []
             for cell in sources:
                 peaks = {item["label"]: item.get("peak_rss_mib") for item in cell["milestones"]}
-                if peaks.get(label) and peaks.get(reference):
-                    logs.append(math.log(peaks[label] / peaks[reference]))
+                logs.append(math.log(peaks[label] / peaks[reference]))
             if logs:
                 value = math.exp(sum(logs) / len(logs))
                 memory[label] = {"ratio": value, "low": value, "high": value}
@@ -160,6 +221,22 @@ def combine(
         "low": math.exp(log_index - Z95 * error),
         "high": math.exp(log_index + Z95 * error),
     }
+
+
+def score_ratio(first: Mapping[str, float], last: Mapping[str, float]) -> tuple:
+    """How much better `last` scores than `first`, with a combined 95% interval.
+
+    Each index's interval becomes a log-space standard error, and the two combine as
+    independent errors. Dividing the extremes of the two intervals instead would give a
+    worst-case bound, wider than a 95% interval.
+    """
+    errors = []
+    for value in (first, last):
+        spread = math.log(value["high"]) - math.log(value["low"])
+        errors.append(spread / (2 * Z95) if spread > 0 else 0.0)
+    log_ratio = math.log(first["index"]) - math.log(last["index"])
+    error = math.sqrt(sum(item**2 for item in errors))
+    return math.exp(log_ratio), math.exp(log_ratio - Z95 * error), math.exp(log_ratio + Z95 * error)
 
 
 def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) -> List[Dict[str, Any]]:

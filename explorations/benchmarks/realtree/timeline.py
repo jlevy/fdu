@@ -512,6 +512,8 @@ def load_history(directory: Path) -> List[Dict[str, Any]]:
             {
                 "id": path.stem,
                 "component": summary.get("component"),
+                "job": summary.get("job") or summary.get("component"),
+                "component_digest": summary.get("component_digest"),
                 "manifest_version": summary.get("manifest_version"),
                 "platform": summary.get("platform") or host.get("system") or "",
                 "subject": subject.get("label") or path.stem,

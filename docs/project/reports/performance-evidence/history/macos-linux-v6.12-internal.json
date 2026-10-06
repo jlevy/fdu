@@ -1,6 +1,8 @@
 {
  "schema": "fdu-history-summary-v1",
  "component": "cold-cache",
+ "job": "cold-cache",
+ "component_digest": "58487def188c1b4f",
  "manifest_version": 1,
  "platform": "macOS",
  "run_artifact": "macos-linux-v6.12-internal.run.json.gz",

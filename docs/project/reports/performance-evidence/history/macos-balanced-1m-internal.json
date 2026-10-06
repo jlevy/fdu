@@ -1,6 +1,8 @@
 {
  "schema": "fdu-history-summary-v1",
  "component": "scale",
+ "job": "scale",
+ "component_digest": "00cff7b322450d6d",
  "manifest_version": 1,
  "platform": "macOS",
  "run_artifact": "macos-balanced-1m-internal.run.json.gz",
