@@ -715,6 +715,53 @@ class RenderTests(unittest.TestCase):
         partial = memory_ratios(by_job, "v0.3.0", ["cold-cache"])
         self.assertAlmostEqual(partial["mid"]["ratio"], 2.0, places=6)
         self.assertAlmostEqual(partial["prework"]["ratio"], 4.0, places=6)
+        # A build with only one of a component's two jobs has no memory on it.
+        lopsided = dict(by_job)
+        lopsided[("opened-root", "b")] = cell({"v0.3.0": 100.0})
+        self.assertNotIn("mid", memory_ratios(lopsided, "v0.3.0", ["opened-root"]))
+
+    def test_the_partial_score_uses_its_own_memory_mix(self) -> None:
+        # project_index swaps the common-component memory into the partial score; without
+        # it, a build would be averaged over components the first build never had.
+        def milestone(label: str, wall: float, peak: float, change: float | None) -> Dict[str, Any]:
+            return {
+                "label": label, "short": label, "commit": label[:4], "date": "2026-09-01",
+                "includes": "", "after_experiment": "exp-001", "wall_ms": wall,
+                "peak_rss_mib": peak, "vs_latest_pct": change,
+                "vs_latest_ci95_pct": None if change is None else [change, change],
+                "supported": True,
+            }
+
+        suite = load_suite()
+        definitions = {item["id"]: item for item in suite["components"]}
+        cold = {
+            "id": "cold", "component": "cold-cache", "job": "cold-cache", "platform": "macOS",
+            "component_digest": component_digest(definitions["cold-cache"]),
+            "milestones": [
+                milestone("prework", 400.0, 400.0, 300.0),
+                milestone("mid", 200.0, 200.0, 100.0),
+                milestone("v0.3.0", 100.0, 100.0, None),
+            ],
+        }
+        code = {
+            "id": "code", "component": "code", "job": "code", "platform": "macOS",
+            "component_digest": component_digest(definitions["code"]),
+            "milestones": [milestone("mid", 100.0, 50.0, 0.0), milestone("v0.3.0", 100.0, 100.0, None)],
+        }
+        rows = {row["label"]: row for row in project_index([cold, code], suite)[0]["builds"]}
+        # mid's full memory mixes cold-cache 2x and code 0.5x to 1x; its partial memory,
+        # over the cold-cache component every build has, is 2x.
+        self.assertAlmostEqual(rows["mid"]["components"]["memory"], 1.0, places=6)
+        self.assertAlmostEqual(rows["mid"]["memory_common"], 2.0, places=6)
+        weights = {item["id"]: item["weight"] for item in suite["components"]}
+        expected = combine(
+            {
+                "cold-cache": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+                "memory": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+            },
+            weights,
+        )
+        self.assertAlmostEqual(rows["mid"]["common"]["index"], expected["index"], places=6)
 
     def test_a_component_with_two_jobs_scores_their_geometric_mean(self) -> None:
         # Warm metadata times cold-open-save and warm-revalidate; a 4x and a 1x job score

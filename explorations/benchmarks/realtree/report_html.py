@@ -660,14 +660,21 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
             }
         )
     for component in projected["measured"]:
+        # Memory's own line uses the mix every build has, so it compares builds over one
+        # set of components; the full score's memory reads every measured component.
+        key = "memory_common" if component == "memory" else None
         values = points(
             [
                 (
                     build,
-                    build["components"].get(component),
-                    f"{build['components'][component]:.3f} of {reference}"
-                    if component in build["components"]
-                    else "",
+                    build.get(key) if key else build["components"].get(component),
+                    (
+                        f"{build[key]:.3f} of {reference}, over components every build has"
+                        if key and build.get(key)
+                        else f"{build['components'][component]:.3f} of {reference}"
+                        if component in build["components"]
+                        else ""
+                    ),
                 )
                 for build in builds
             ]

@@ -188,7 +188,12 @@ def memory_ratios(
             for label, peak in peaks.items():
                 if peak:
                     logs_by_label.setdefault(label, []).append(math.log(peak / peaks[reference]))
-        per_component[name] = {label: sum(logs) / len(logs) for label, logs in logs_by_label.items()}
+        # A build's memory on a component needs every job of it, as its runtime does.
+        per_component[name] = {
+            label: sum(logs) / len(logs)
+            for label, logs in logs_by_label.items()
+            if len(logs) == len(cells)
+        }
     memory: Dict[str, Dict[str, float]] = {}
     labels = {label for values in per_component.values() for label in values}
     for label in labels:
@@ -300,6 +305,8 @@ def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) 
             row = dict(builds[label])
             row["components"] = {name: available[name]["ratio"] for name in available}
             row["coverage"] = round(sum(weights[name] for name in available), 6)
+            if label in common_memory:
+                row["memory_common"] = common_memory[label]["ratio"]
             if common:
                 partial = {name: available[name] for name in common}
                 if "memory" in partial and label in common_memory:
