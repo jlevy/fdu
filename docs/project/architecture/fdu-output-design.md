@@ -52,11 +52,17 @@ Analyzer names describe measurements (`lines`, `code`, `words`); canonical view 
 identify the population or grouping (`families`, `code`, `documents`). Multi-view
 headers use the uppercase canonical view name.
 Metric labels belong in table columns or in a note naming the percentage’s denominator,
-so document-word percentages cannot be mistaken for byte percentages:
+so document-word percentages cannot be mistaken for byte percentages.
+A single view’s note names the measure alone; beside other views it names every non-byte
+denominator with its section, the code table’s included, so no table borrows another’s,
+and a section it does not name shares bytes:
 
 ```text
-note: percentages are shares of code lines (LANGUAGES), document words (DOCUMENTS)
+note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ```
+
+Display-limit notes name their section the same way (`2 rows below min share in TYPES`),
+so equal counts in different views stay distinct.
 See the [analysis mapping](../../usage.md#measurements-views-and-headers).
 The mapping reads both ways for the two views with no metadata meaning: `code` and
 `documents` each request their analyzer, so `--view code,documents` is the one-flag form
@@ -350,9 +356,9 @@ Preserve portable timestamp, allocation, and rate patterns; inspect golden chang
 rather than accepting host-specific recordings.
 
 Focused tests enforce tree-column alignment, exact omitted sizes, missing-size wording,
-one tip per applicable bound, category ordering, terminal color roles, stdout/stderr
-separation, clean machine parsing, and unchanged partial-result exit status.
-Include multiple directories and multiple views so deduplication is exercised.
+one tip naming each applicable bound once, category ordering, terminal color roles,
+stdout/stderr separation, clean machine parsing, and unchanged partial-result exit
+status. Include multiple directories and multiple views so deduplication is exercised.
 
 Validation belongs to the existing golden, parity, terminal, and full `make check`
 gates.
