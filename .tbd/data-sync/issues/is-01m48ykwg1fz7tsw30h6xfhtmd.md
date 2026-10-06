@@ -5,7 +5,7 @@ title: "Address PR #174 review B: notes after the result, round 2"
 kind: task
 status: in_progress
 priority: 1
-version: 6
+version: 8
 delegate: claude-code@spud10.local
 labels: []
 dependencies: []
@@ -17,7 +17,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-06T15:51:46.943Z
-updated_at: 2026-10-06T15:51:59.684Z
+updated_at: 2026-10-06T16:32:44.818Z
 started_at: 2026-10-06T15:51:59.683Z
 ---
 Review B (follow-up, round 2) on PR #174 at head 645c3e9e: https://github.com/jlevy/fdu/pull/174#issuecomment-6020029670. Four Low findings B1-B4.
+
+## Notes
+
+All four children fixed on local branch fix-174-B (head 256c00a7, on origin/main 55d66863), make check EXIT=0. Unpushed by instruction; coordinator merges it into the combined PR and posts the dispositions there. Close after that.
