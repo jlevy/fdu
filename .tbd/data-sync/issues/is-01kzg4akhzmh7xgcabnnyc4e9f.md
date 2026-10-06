@@ -5,7 +5,7 @@ title: Hardlink attribution policy that survives incremental updates
 kind: task
 status: open
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels:
   - design-gate
@@ -16,7 +16,7 @@ dependencies:
     target: is-01kzg4ajxc0pvgcmj834gahcgt
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:46.239Z
-updated_at: 2026-09-27T06:51:13.298Z
+updated_at: 2026-10-06T15:37:15.111Z
 ---
 No prior art to copy — this needs design, not just a choice.
 
@@ -28,6 +28,4 @@ ncdu's uncounted-set trick is worth borrowing: fall back to full iteration once 
 
 ## Notes
 
-2026-09-14 (PR #55 review, 4727de0): the disk-usage checkpoint plan's recommended default delta measure, unique allocated bytes counted once per (dev, inode) within a checkpoint, depends on this rule. Its slice 2 (fdu-8ybz) uses a provisional attribution, the in-scope path that sorts first by bytes, which is deterministic only across complete captures. This bead's rule has to replace it before incremental refresh (slice 3). The engine retains no link count today (crates/fdu-core/src/engine_contract.rs:81-95 at dda7e6a); the plan proposes retaining one so only multiply-linked files are grouped.
-
-2026-09-26 inventory audit (fdu-6u68): current per-path accounting was confirmed with two hard-linked .venv files sharing one (device,inode): each reports 16,384 allocated bytes, Summary 32,768. Matching-root union is already deduplicated but file identities are not. Retain this bead as the design owner; no duplicate feature created. New assessment: docs/project/specs/active/plan-2026-09-26-directory-inventory-accounting.md. A future unique-identity measure must not imply clone-extent deduplication or reclaimable bytes; Windows currently lacks observed allocation/identity for that claim. Current uv defaults are clone on macOS/Linux, hardlink on Windows; mode and cross-filesystem copy fallback matter.
+Related to the 0.4.1 totals priority (fdu-chcx): totals that count a hardlinked file once per link do not match du. Design gate; assess whether a deterministic rule fits a patch release.
