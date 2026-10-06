@@ -134,7 +134,7 @@ Run `fdu --docs` for setup, libraries, more commands, cache behavior, and the fu
 macro_rules! docs_guide {
     ($watch_composition:literal, $mode_flags:literal) => {
         concat!(
-            r"fdu — the fastest du we measured, with .gitignore-aware sizes and code and
+            r"fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 document counts, for the command line, Python, and Rust.
 
   For every directory in a tree at once, fdu reports its size, file count,

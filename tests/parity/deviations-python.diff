@@ -1325,7 +1325,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
 @@ -1,242 +1,1 @@
--fdu — the fastest du we measured, with .gitignore-aware sizes and code and
+-fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
 -  For every directory in a tree at once, fdu reports its size, file count,

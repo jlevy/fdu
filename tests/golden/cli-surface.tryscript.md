@@ -28,8 +28,8 @@ A unit test separately proves that `--help` produces these exact bytes.
 
 ```console
 $ fdu
-The fastest du we measured, with .gitignore-aware sizes and code and document counts, for the
-command line, Python, and Rust
+Fastest du replacement, with .gitignore-aware sizes and code and document counts, for the command
+line, Python, and Rust
 
 Usage: fdu [OPTIONS] <PATH>
        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
@@ -719,7 +719,7 @@ dropped section fails here rather than in somebody’s terminal.
 
 ```console
 $ fdu --docs
-fdu — the fastest du we measured, with .gitignore-aware sizes and code and
+fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 document counts, for the command line, Python, and Rust.
 
   For every directory in a tree at once, fdu reports its size, file count,

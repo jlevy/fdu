@@ -1,7 +1,7 @@
 # fdu
 
-**The fastest du we measured, with `.gitignore`-aware sizes and code and document
-counts, for the command line, Python, and Rust**
+**Fastest du replacement, with `.gitignore`-aware sizes and code and document counts,
+for the command line, Python, and Rust**
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.

@@ -1,7 +1,7 @@
 # fdu
 
-**The fastest du we measured, with `.gitignore`-aware sizes and code and document
-counts, for the command line, Python, and Rust**
+**Fastest du replacement, with `.gitignore`-aware sizes and code and document counts,
+for the command line, Python, and Rust**
 
 For every directory in a tree at once, fdu reports its size, file count, most recent
 change, file kinds, and how much of it `.gitignore` covers.
@@ -365,11 +365,32 @@ Later questions reuse the index; `refresh` reconciles it against the tree, and w
 
 ## Speed
 
-fdu is optimized by an agent-run
+fdu is fast by measured selection.
+Before writing a walker, the project read the source of the disk-usage tools and walkers
+it found (dust, dua, gdu, ncdu, dut, bfs, and fd first; pdu, diskus, and dumac later)
+and listed what set the fastest apart.
+Each technique became a hypothesis for an agent-run
 [performance loop](docs/project/guides/performance-loop.md), which makes one change at a
 time, measures it against the previous build in interleaved pairs, and keeps it only
 when it is at least 3% faster with a 95% interval below zero.
-Changes it kept include these, with their measured effects:
+
+- **Taken from peers:** a bounded pool of breadth-first walkers; `getattrlistbulk` on
+  macOS, as dumac uses; raw `getdents64` and directory-relative `statx` on Linux, as dut
+  and bfs use, where pdu, diskus, and dust stat full paths; and, like pdu, a summary or
+  default tree that keeps only what it prints while still counting every entry.
+- **Measured and rejected:** io_uring, as bfs uses, measured several times slower, and
+  larger read buffers and deeper worker pools were no faster.
+- **Added beyond them:** `.gitignore` classification on by default, which pdu, diskus,
+  and dust do not read; a worker count chosen from measured service time, which no
+  surveyed tool adapts; a saved scan revalidated by modification time; and a content
+  cache that rereads only changed files, neither of which any surveyed tool has.
+
+[The file roll-up engine survey](docs/project/research/research-2026-08-06-file-rollup-engine.md),
+[the Linux peer study](docs/project/research/research-2026-09-29-linux-peers-matchers-and-hot-path.md),
+and
+[the pdu brief](docs/project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)
+record each technique and its verdict, rejected ones included.
+Changes the loop kept include these, with their measured effects:
 
 - **Parallel bulk reads:** Threads walk the tree at once, and on macOS `getattrlistbulk`
   returns many entries’ names and sizes per call (with the rest of the first campaign,
@@ -503,7 +524,7 @@ Versions checked for the feature cells: GNU coreutils `du` 9.4, and its source a
 runs only on macOS and ncdu only on Unix-like systems; the others run on macOS, Linux,
 and Windows, `du` through a Unix layer such as MSYS2.
 
-**Beyond this table:** A wider survey read fifteen tools: the ten above, and
+**Beyond this table:** A wider survey covered fifteen tools: the ten above, and
 [dut](https://codeberg.org/201984/dut), [duc](https://github.com/zevv/duc),
 [fsearch](https://github.com/cboxdoerfer/fsearch),
 [bfs](https://github.com/tavianator/bfs), and [fd](https://github.com/sharkdp/fd).

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fdu"
-description = "The fastest du we measured, with .gitignore-aware sizes and code and document counts, for the command line, Python, and Rust"
+description = "Fastest du replacement, with .gitignore-aware sizes and code and document counts, for the command line, Python, and Rust"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]

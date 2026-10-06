@@ -1,7 +1,7 @@
 # fdu (Python)
 
-**The fastest du we measured, with `.gitignore`-aware sizes and code and document
-counts, for the command line, Python, and Rust**
+**Fastest du replacement, with `.gitignore`-aware sizes and code and document counts,
+for the command line, Python, and Rust**
 
 Python bindings for [fdu](https://github.com/jlevy/fdu), which reports, for every
 directory in a tree at once, its size, file count, recency, and file kinds, and on
