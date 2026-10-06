@@ -153,6 +153,11 @@ test("bound tips accept only exact CLI-to-Python setter names and values", () =>
   }
   assert.ok(!matches("tip: show more: --min-share=0%", "tip: show more: depth=all"));
   assert.ok(
+    !matches("tip: show more: --depth=all --limit=all", "tip: show more: limit=all, depth=all"),
+    "the same setters in the same order",
+  );
+  assert.ok(!matches("tip: show more: --depth=all --limit=all", "tip: show more: depth=all"));
+  assert.ok(
     !matches("tip: show more: --limit=all --depth=all", "tip: show more: limit=all, depth=all"),
     "the renderer's order is fixed",
   );

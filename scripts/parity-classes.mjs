@@ -117,18 +117,18 @@ const KNOBS =
   /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
-// A report's one bound suggestion lifts every bound that hid something, and names each
-// setter as its surface does: flags joined as one command line, keyword arguments as one
-// call's arguments. Only these four setters, with these values, in the renderer's fixed
-// order and each at most once, are accepted, so no other tip can borrow this exception
-// merely because it contains a familiar word.
-const BOUND_TIP = 'tip: show more: ';
+// A report's one bound suggestion names the same setters differently on each surface: a
+// command line (`--min-share=0% --depth=all`) or one call's keyword arguments
+// (`min_share=0%, depth=all`). Every setter and value is pinned, and both lists must name
+// the same setters in the renderer's fixed order, each at most once, so no other tip can
+// borrow this exception merely because it contains a familiar word.
 const BOUND_SETTERS = [
   ['--min-share=0%', 'min_share=0%'],
   ['--depth=all', 'depth=all'],
   ['--breadth=all', 'breadth=all'],
   ['--limit=all', 'limit=all'],
 ];
+const BOUND_TIP = 'tip: show more: ';
 const sameBoundTip = (removed, added) => {
   const prefix = (removed.startsWith('! ') ? '! ' : '') + BOUND_TIP;
   if (!removed.startsWith(prefix) || !added.startsWith(prefix)) return false;

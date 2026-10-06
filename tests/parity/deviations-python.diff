@@ -96,9 +96,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✗ Several Views Come Back in Request Order, From One Scan
     stderr:
 @@ -1,2 +1,2 @@
- note: gitignored sizes are included in row totals
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+ note: totals include gitignored sizes
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Include Narrows by Glob
   ✓ Brace Globs Survive Because Pattern Flags Are Repeatable
   ✓ Exclude Beats Include
@@ -107,33 +107,32 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Every Tally Counts Only What the Selection Admits
   ✓ Min-Size Follows the Selected Metric
   ✗ Sort and Limit Compose Into a Top-N, With No Dedicated View
-@@ -1,3 +1,3 @@
- (2 of 7)
+@@ -1,2 +1,2 @@
 -dist[SEP]acorn-0.1.0.tar.gz
 +dist/acorn-0.1.0.tar.gz
  README.md
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 2 of 7 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Reverse Flips Whatever Order Is in Effect
-@@ -1,3 +1,3 @@
- (2 of 7)
+@@ -1,2 +1,2 @@
  .gitignore
 -src[SEP]omega.rs
 +src/omega.rs
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 2 of 7 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Depth Bounds the Rendered Tree, Not the Scan
     stderr:
-@@ -1,4 +1,4 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: depth 0
--tip: expand deeper: --depth=all
-+tip: expand deeper: depth=all
+-tip: show more: --depth=all
++tip: show more: depth=all
   ✓ Every Row Says How Much of It .gitignore Ignores
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
@@ -159,9 +158,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 +{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 1 of 5 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
@@ -199,7 +199,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +{"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "entry_ignored": false, "bytes": 269, "allocated": [ALLOCATED_VALUE], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist/acorn-0.1.0.tar.gz", "kind": "file", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "entry_ignored": false, "bytes": 48, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "entry_ignored": false, "bytes": 36, "allocated": [ALLOCATED_VALUE], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src/alpha.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src/omega.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "entry_ignored": false, "bytes": 28, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs/FAQ.MD", "kind": "file", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "entry_ignored": false, "bytes": 6, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
     stderr:
 @@ -1,2 +1,2 @@
- note: gitignored sizes are included in row totals
+ note: totals include gitignored sizes
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✓ Retired Policies Name Their Replacement
@@ -268,10 +268,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify No Cache Was Created
   ✗ Report Under the Default Policy
 @@ -1,9 +1,9 @@
@@ -321,10 +321,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify the Default Created No Cache
   ✓ A Stale Answer Has Nothing to Read
   ✗ Create the Snapshot
@@ -375,10 +375,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify Exactly One Snapshot Exists
   ✗ A Second One-Shot Report Scans Cold Again
 @@ -1,9 +1,9 @@
@@ -428,10 +428,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Expand the Fixture
   ✗ Report the Changed Tree
 @@ -1,9 +1,9 @@
@@ -481,10 +481,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ The Rewrite Kept the Snapshot Current for a Stale Answer
 @@ -1,9 +1,9 @@
  {
@@ -533,12 +533,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
--tip: show more rows: --limit=all
+-tip: show more: --limit=all
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
-+tip: show more rows: limit=all
++tip: show more: limit=all
   ✗ Watching Rejects a Snapshot Nothing Verified
     stderr:
 @@ -1,1 +1,1 @@
@@ -592,11 +592,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
  note: incomplete subtrees remain visible below the size threshold
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Corrupt the Snapshot
   ✗ Recover with a Cold Scan
 @@ -1,9 +1,9 @@
@@ -646,11 +646,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
  note: incomplete subtrees remain visible below the size threshold
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Verify the Corrupt File Was Replaced
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
@@ -700,10 +700,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -752,12 +752,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
--tip: show more rows: --limit=all
+-tip: show more: --limit=all
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
-+tip: show more rows: limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -788,9 +788,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    },
    "ignore_rules": null,
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,2 +1,2 @@
+ note: display limits: 0 of 10 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -821,11 +822,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    },
    "ignore_rules": {
     stderr:
-@@ -1,2 +1,2 @@
+@@ -1,3 +1,3 @@
+ note: display limits: 0 of 10 rows shown
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
--tip: show more rows: --limit=all
+-tip: show more: --limit=all
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
-+tip: show more rows: limit=all
++tip: show more: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
@@ -874,10 +876,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Reading No .gitignore Is a Separate Scope
 FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare Mixed Line Endings and Observed Binary Data
@@ -906,9 +908,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 +{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
     stderr:
-@@ -1,1 +1,1 @@
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,3 +1,3 @@
+ note: percentages are shares of raw words
+ note: display limits: 1 of 2 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ YAML Derives Pages Only After Document Aggregation
   ✓ Analysis Reads Every Eligible File Completely
   ✓ Analysis Reads Every Eligible File Completely
@@ -933,7 +937,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 +{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
     stderr:
-@@ -1,1 +1,1 @@
+@@ -1,2 +1,2 @@
+ note: percentages are shares of raw words
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✗ Content Cache Hits Preserve the Same Tallies
@@ -947,22 +952,29 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Common-Language SLOC Is a Complete Partition
   ✗ Metric Order, Reverse, and Share Threshold Compose
     stderr:
-@@ -1,2 +1,2 @@
- note: code totals include languages hidden by display limits
--tip: show smaller entries: --min-share=0%
-+tip: show smaller entries: min_share=0%
+@@ -1,5 +1,5 @@
+ note: totals include hidden languages
+ note: ranked by code lines
+ note: 15 languages analyzed
+ note: display limits: 8 languages below min share
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
   ✗ Code Totals Survive Bounds and Unsupported Languages
     stderr:
-@@ -1,2 +1,2 @@
- note: code totals include languages hidden by display limits
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,4 +1,4 @@
+ note: totals include hidden languages
+ note: 15 languages analyzed
+ note: display limits: 2 of 15 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Code Totals Survive Bounds and Unsupported Languages
     stderr:
-@@ -1,2 +1,2 @@
- note: code totals include languages hidden by display limits
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+@@ -1,4 +1,4 @@
+ note: totals include hidden languages
+ note: 15 languages analyzed
+ note: display limits: 0 of 15 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ Code Totals Survive Bounds and Unsupported Languages
   ✓ Code Totals Survive Bounds and Unsupported Languages
   ✓ Directory Selection Shares One Population Across Code Views
@@ -997,15 +1009,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  docs/notes.txt
     stderr:
 @@ -1,5 +1,5 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 2
  note: omitted code, documents: content analysis required
--tip: show more rows: --limit=all
+-tip: show more: --limit=all
 -tip: include omitted views: add --analyze code
-+tip: show more rows: limit=all
++tip: show more: limit=all
 +tip: include omitted views: add analyze code
   ✗ Every View One Walk Can Answer
-@@ -30,10 +30,10 @@
+@@ -28,10 +28,10 @@
        42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
        35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
  LARGEST  (2 of 7)
@@ -1019,11 +1031,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
     stderr:
-@@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,5 +1,5 @@
+ note: totals include descendants
+ note: percentages are shares of document words
+ note: 2 languages analyzed
  note: display limits: row limit 2
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "none,code": "none" names the whole axis and cannot be combined
@@ -1058,12 +1072,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
     stderr:
-@@ -1,4 +1,4 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: row limit 10
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✓ The Full Shorthand Shows the Complete Tree
   ✓ The Full Shorthand Shows the Complete Tree
   ✓ Full Flat File and Directory Listings
@@ -1071,28 +1084,25 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ Zero Rows Still Account for Every Hidden File
     stderr:
 @@ -1,3 +1,3 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: totals include descendants
  note: display limits: row limit 0
--tip: show more rows: --limit=all
-+tip: show more rows: limit=all
+-tip: show more: --limit=all
++tip: show more: limit=all
   ✗ Depth and Number Limit Only the Rendered View
     stderr:
-@@ -1,5 +1,5 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: depth 1, row limit 2
--tip: expand deeper: --depth=all
--tip: show more rows: --limit=all
-+tip: expand deeper: depth=all
-+tip: show more rows: limit=all
+-tip: show more: --depth=all --limit=all
++tip: show more: depth=all, limit=all
   ✓ Type View Honors the Selected Size Metric
   ✗ Several Views Are Labelled; One View Is Left Bare
     stderr:
 @@ -1,3 +1,3 @@
- note: gitignored sizes are included in row totals
+ note: totals include gitignored sizes
  note: display limits: depth 1
--tip: expand deeper: --depth=all
-+tip: expand deeper: depth=all
+-tip: show more: --depth=all
++tip: show more: depth=all
   ✓ A Lone View Keeps the Bare Layout
   ✓ A View That Matched Nothing Still Says So
   ✓ Asking for a Second View Labels the Paths Too
@@ -1183,14 +1193,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
      }
    ]
     stderr:
-@@ -1,5 +1,5 @@
- note: gitignored sizes are included in row totals
- note: more covers unlisted root branches; listed directory totals already include their descendants
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes and descendants
  note: display limits: depth 1, row limit 2
--tip: expand deeper: --depth=all
--tip: show more rows: --limit=all
-+tip: expand deeper: depth=all
-+tip: show more rows: limit=all
+-tip: show more: --depth=all --limit=all
++tip: show more: depth=all, limit=all
   ✓ Scan Depth Is an Explicit Complete Scope
   ✓ Every View Serializes in Every Format
 FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
@@ -1208,7 +1215,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✗ A Stale Answer Needs a Snapshot Something Left
     stderr:
 @@ -1,2 +1,2 @@
- note: gitignored sizes are included in row totals
+ note: totals include gitignored sizes
 -warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 +warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✗ A Stale Answer Needs a Snapshot Something Left
@@ -1253,11 +1260,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✗ Unknown Branches Do Not Disable Filtering for Known Sizes
     stderr:
 @@ -1,4 +1,4 @@
- note: more covers unlisted root branches; listed directory totals already include their descendants
- note: display limits: below 1% of selected root
+ note: totals include descendants
+ note: display limits: below 1% of root
  note: incomplete subtrees remain visible below the size threshold
--tip: show smaller entries: --min-share=0%
-+tip: show smaller entries: min_share=0%
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
@@ -1496,9 +1503,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ An Explicit Current Root Works for an Empty Sandbox
     stderr:
 @@ -1,2 +1,2 @@
- note: no size denominator: selected root size is zero
--tip: show smaller entries: --min-share=0%
-+tip: show smaller entries: min_share=0%
+ note: root size is zero, so shares are undefined
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
   ✗ A Time Bound the Index Cannot Represent Is Rejected
     stderr:
 @@ -1,1 +1,1 @@
