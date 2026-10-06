@@ -29,6 +29,7 @@ from benchmarks.realtree.perf_index import (
     combine,
     component_digest,
     component_ratios,
+    memory_ratios,
     load_suite,
     project_index,
     score_ratio,
@@ -693,6 +694,27 @@ class RenderTests(unittest.TestCase):
         stale = _index_cell("cold-cache", 300.0, 100.0, digest="0000000000000000")
         with self.assertRaises(ValueError):
             project_index([stale], load_suite())
+
+    def test_memory_follows_each_score_lines_components_and_counts_each_once(self) -> None:
+        # Restricting memory to the components every build has hid the content and
+        # summary memory wins from the full score; each line now averages its own mix,
+        # and a component with two jobs counts once, not twice.
+        def cell(peaks: Dict[str, float]) -> Dict[str, Any]:
+            return {"milestones": [{"label": label, "peak_rss_mib": peak} for label, peak in peaks.items()]}
+
+        by_job = {
+            ("cold-cache", "cold-cache"): cell({"prework": 400.0, "mid": 200.0, "v0.3.0": 100.0}),
+            ("code", "code"): cell({"mid": 50.0, "v0.3.0": 100.0}),
+            ("opened-root", "a"): cell({"mid": 400.0, "v0.3.0": 100.0}),
+            ("opened-root", "b"): cell({"mid": 400.0, "v0.3.0": 100.0}),
+        }
+        full = memory_ratios(by_job, "v0.3.0", ["cold-cache", "code", "opened-root"])
+        # mid: cold-cache 2x, code 0.5x, opened-root 4x, its two jobs counted once, gives
+        # (2 * 0.5 * 4) ** (1/3); counting opened-root twice would give exactly 2x.
+        self.assertAlmostEqual(full["mid"]["ratio"], 4 ** (1 / 3), places=6)
+        partial = memory_ratios(by_job, "v0.3.0", ["cold-cache"])
+        self.assertAlmostEqual(partial["mid"]["ratio"], 2.0, places=6)
+        self.assertAlmostEqual(partial["prework"]["ratio"], 4.0, places=6)
 
     def test_a_component_with_two_jobs_scores_their_geometric_mean(self) -> None:
         # Warm metadata times cold-open-save and warm-revalidate; a 4x and a 1x job score

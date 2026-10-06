@@ -137,22 +137,7 @@ def component_ratios(
     whose recorded definition digest does not match the manifest's is refused.
     """
     reference = suite["reference_build"]
-    definitions = {component["id"]: component for component in suite["components"]}
-    by_job: Dict[tuple, Mapping[str, Any]] = {}
-    for cell in cells:
-        if not cell.get("component") or cell.get("platform") != platform:
-            continue
-        definition = definitions.get(cell["component"])
-        if definition is None:
-            raise ValueError(f"history cell {cell.get('id')} names unknown component {cell['component']!r}")
-        expected = component_digest(definition)
-        if cell.get("component_digest") != expected:
-            raise ValueError(
-                f"history cell {cell.get('id')} was measured under a different definition of "
-                f"{cell['component']!r} (digest {cell.get('component_digest')}, manifest {expected}); "
-                "re-measure it or version the manifest"
-            )
-        by_job[(cell["component"], cell.get("job") or cell["component"])] = cell
+    by_job = cells_by_job(cells, suite, platform)
     ratios: Dict[str, Dict[str, Dict[str, float]]] = {}
     for component in suite["components"]:
         if component["measures"] == "peak_rss":
@@ -174,30 +159,67 @@ def component_ratios(
     for component in suite["components"]:
         if component["measures"] != "peak_rss":
             continue
-        # Memory averages the same cells for every build: those that record peak RSS
-        # for every build in the comparison, so no build's memory is a different mix.
-        candidates = list(by_job.values())
-        labels = {item["label"] for cell in candidates for item in cell["milestones"]}
-        sources = [
-            cell
-            for cell in candidates
-            if all(
-                {item["label"]: item.get("peak_rss_mib") for item in cell["milestones"]}.get(label)
-                for label in labels
-            )
-        ]
-        memory: Dict[str, Dict[str, float]] = {}
-        for label in labels:
-            logs = []
-            for cell in sources:
-                peaks = {item["label"]: item.get("peak_rss_mib") for item in cell["milestones"]}
-                logs.append(math.log(peaks[label] / peaks[reference]))
-            if logs:
-                value = math.exp(sum(logs) / len(logs))
-                memory[label] = {"ratio": value, "low": value, "high": value}
+        # The full score's memory reads every measured component; the partial score
+        # recomputes it over its own components (`memory_ratios`), so each score line
+        # averages one consistent mix.
+        memory = memory_ratios(by_job, reference, [name for name in ratios])
         if memory:
             ratios[component["id"]] = memory
     return ratios
+
+
+def memory_ratios(
+    by_job: Mapping[tuple, Mapping[str, Any]], reference: str, components: Sequence[str]
+) -> Dict[str, Dict[str, float]]:
+    """Peak-RSS ratio to the reference per build, over the given components.
+
+    Each component counts once: its jobs' peak ratios are averaged first, then the
+    components' averages. A ratio of medians, not a paired figure, since the harness
+    records peak RSS per arm; it carries no interval.
+    """
+    per_component: Dict[str, Dict[str, float]] = {}
+    for name in components:
+        cells = [cell for (component, _), cell in by_job.items() if component == name]
+        logs_by_label: Dict[str, List[float]] = {}
+        for cell in cells:
+            peaks = {item["label"]: item.get("peak_rss_mib") for item in cell["milestones"]}
+            if not peaks.get(reference):
+                continue
+            for label, peak in peaks.items():
+                if peak:
+                    logs_by_label.setdefault(label, []).append(math.log(peak / peaks[reference]))
+        per_component[name] = {label: sum(logs) / len(logs) for label, logs in logs_by_label.items()}
+    memory: Dict[str, Dict[str, float]] = {}
+    labels = {label for values in per_component.values() for label in values}
+    for label in labels:
+        logs = [values[label] for values in per_component.values() if label in values]
+        if logs:
+            value = math.exp(sum(logs) / len(logs))
+            memory[label] = {"ratio": value, "low": value, "high": value}
+    return memory
+
+
+def cells_by_job(
+    cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any], platform: str
+) -> Dict[tuple, Mapping[str, Any]]:
+    """One platform's cells keyed by (component, job), each checked against its digest."""
+    definitions = {component["id"]: component for component in suite["components"]}
+    by_job: Dict[tuple, Mapping[str, Any]] = {}
+    for cell in cells:
+        if not cell.get("component") or cell.get("platform") != platform:
+            continue
+        definition = definitions.get(cell["component"])
+        if definition is None:
+            raise ValueError(f"history cell {cell.get('id')} names unknown component {cell['component']!r}")
+        expected = component_digest(definition)
+        if cell.get("component_digest") != expected:
+            raise ValueError(
+                f"history cell {cell.get('id')} was measured under a different definition of "
+                f"{cell['component']!r} (digest {cell.get('component_digest')}, manifest {expected}); "
+                "re-measure it or version the manifest"
+            )
+        by_job[(cell["component"], cell.get("job") or cell["component"])] = cell
+    return by_job
 
 
 def combine(
@@ -265,6 +287,13 @@ def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) 
                 )
         labels = list(builds)
         common = [name for name, per_build in ratios.items() if all(label in per_build for label in labels)]
+        # The partial score's memory reads only the partial score's own components, so
+        # every build on that line averages the same mix.
+        common_memory = memory_ratios(
+            cells_by_job(cells, suite, platform),
+            suite["reference_build"],
+            [name for name in common if name != "memory"],
+        )
         rows = []
         for label in labels:
             available = {name: per_build[label] for name, per_build in ratios.items() if label in per_build}
@@ -272,7 +301,10 @@ def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) 
             row["components"] = {name: available[name]["ratio"] for name in available}
             row["coverage"] = round(sum(weights[name] for name in available), 6)
             if common:
-                row["common"] = combine({name: available[name] for name in common}, weights)
+                partial = {name: available[name] for name in common}
+                if "memory" in partial and label in common_memory:
+                    partial["memory"] = common_memory[label]
+                row["common"] = combine(partial, weights)
             # Every component measured so far; the same as the full index once the whole
             # suite has been measured on this platform.
             if set(available) == set(ratios):
