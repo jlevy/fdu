@@ -815,7 +815,7 @@ LANGUAGES
 
 SUMMARY
       38 B  1 file, 1 directory
-! note: percentages are shares of code lines (CODE), code lines (LANGUAGES)
+! note: percentages are shares of code lines (CODE, LANGUAGES)
 ! note: 1 language analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0

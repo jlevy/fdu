@@ -232,18 +232,29 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
         notes.push(format!("note: totals include {}", includes.join(" and ")));
     }
     // A single view needs no section name; beside other views, every non-byte denominator
-    // names its section, so no table borrows another's (fdu-gda7 review A1).
+    // names its sections, so no table borrows another's (fdu-gda7 review A1). Sections
+    // sharing a denominator are listed under it once, in first-seen order:
+    // `code lines (CODE, LANGUAGES), document words (DOCUMENTS)`.
     match share_labels.as_slice() {
         [] => {}
         [(label, _)] if single => notes.push(format!("note: percentages are shares of {label}")),
-        labels => notes.push(format!(
-            "note: percentages are shares of {}",
-            labels
-                .iter()
-                .map(|(label, view)| format!("{label} ({view})"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+        labels => {
+            let mut grouped: Vec<(&str, Vec<&str>)> = Vec::new();
+            for &(label, view) in labels {
+                match grouped.iter_mut().find(|(seen, _)| *seen == label) {
+                    Some((_, views)) => views.push(view),
+                    None => grouped.push((label, vec![view])),
+                }
+            }
+            notes.push(format!(
+                "note: percentages are shares of {}",
+                grouped
+                    .iter()
+                    .map(|(label, views)| format!("{label} ({})", views.join(", ")))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
     }
     if let Some(metric) = report.sort_metric {
         notes.push(format!("note: ranked by {}", metric.replace('_', " ")));

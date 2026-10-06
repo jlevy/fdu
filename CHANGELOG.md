@@ -85,7 +85,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`tip: show more: --min-share=0% --depth=all`; in Python, `min_share=0%, depth=all`).
   Beside other views, a note names the section it is about
   (`note: percentages are shares of code lines (CODE), document words (DOCUMENTS)`;
-  `2 rows below min share in TYPES`). The flat-format notes are shorter
+  `2 rows below min share in TYPES`), and sections that share a denominator are listed
+  under it once (`code lines (CODE, LANGUAGES)`). The flat-format notes are shorter
   (`note: result stale, incomplete`).
 - **Breaking:** `fdu_core::query::AxisNames` gains a public field, `setting_separator`,
   that joins several settings in one suggestion (`" "` for flags, `", "` for keyword

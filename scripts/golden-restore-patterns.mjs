@@ -13,10 +13,13 @@
 // author's. Run it after `npm run test:golden:update`, then review `git diff`.
 //
 //   node scripts/golden-restore-patterns.mjs [--base <rev>] [golden.tryscript.md ...]
+//
+// Exits 2, restoring nothing, when the base is not a revision or a named file is missing
+// or outside the checkout: each would otherwise restore nothing and report success.
 
-import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parse as parseYaml } from 'yaml';
@@ -126,7 +129,16 @@ export function restorePatterns(committed, updated) {
   return { text: out.join('\n'), restored };
 }
 
-function main(argv) {
+/** Whether a git command succeeds in `cwd`, with its output discarded. */
+const gitSucceeds = (cwd, args) => spawnSync('git', args, { cwd, stdio: 'ignore' }).status === 0;
+
+/**
+ * Restore patterns in the named goldens, or in every golden when none is named, and
+ * return the exit status: 0 when done, or 2 for an argument that would otherwise make the
+ * run restore nothing and report success. `repo` is the checkout to work in, so tests
+ * can use a scratch repository.
+ */
+export function main(argv, repo = root) {
   let base = 'HEAD';
   const files = [];
   for (let k = 0; k < argv.length; k += 1) {
@@ -138,40 +150,53 @@ function main(argv) {
   }
   // A missing or unknown base would make every file look new and restore nothing,
   // silently; refuse it instead.
-  try {
-    if (!base) throw new Error('--base needs a revision');
-    execFileSync('git', ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd: root });
-  } catch {
+  if (!base || !gitSucceeds(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`])) {
     console.error(`golden-restore-patterns: not a revision: ${base ?? '(none)'}`);
-    process.exit(2);
+    return 2;
   }
-  if (files.length === 0) {
-    const dir = join(root, 'tests', 'golden');
-    files.push(...readdirSync(dir).filter((f) => f.endsWith('.tryscript.md')).map((f) => join(dir, f)));
+  // So would a mistyped file name, or a file outside the checkout.
+  const paths = [];
+  for (const file of files) {
+    if (!existsSync(resolve(file))) {
+      console.error(`golden-restore-patterns: no such file: ${file}`);
+      return 2;
+    }
+    const path = relative(repo, resolve(file)).split('\\').join('/');
+    if (path === '..' || path.startsWith('../') || isAbsolute(path)) {
+      console.error(`golden-restore-patterns: not in this checkout: ${file}`);
+      return 2;
+    }
+    paths.push(path);
+  }
+  if (paths.length === 0) {
+    const dir = join(repo, 'tests', 'golden');
+    for (const name of readdirSync(dir).filter((f) => f.endsWith('.tryscript.md'))) {
+      paths.push(`tests/golden/${name}`);
+    }
   }
   let total = 0;
-  for (const file of files) {
-    const path = relative(root, resolve(file)).split('\\').join('/');
-    let committed;
-    try {
-      committed = execFileSync('git', ['show', `${base}:${path}`], { cwd: root, encoding: 'utf8' });
-    } catch {
-      continue; // New in this change: nothing committed to restore from.
+  for (const path of paths) {
+    // Only a file the base does not have is new in this change, with nothing committed to
+    // restore from. Any other failure to read the committed copy is an error.
+    if (!gitSucceeds(repo, ['cat-file', '-e', `${base}:${path}`])) {
+      continue;
     }
-    const updated = readFileSync(join(root, path), 'utf8');
+    const committed = execFileSync('git', ['show', `${base}:${path}`], { cwd: repo, encoding: 'utf8' });
+    const updated = readFileSync(join(repo, path), 'utf8');
     if (committed === updated) {
       continue;
     }
     const { text, restored } = restorePatterns(committed, updated);
     if (restored > 0) {
-      writeFileAtomicSync(join(root, path), text);
+      writeFileAtomicSync(join(repo, path), text);
       console.log(`golden-restore-patterns: ${path}: restored ${restored} pattern lines`);
       total += restored;
     }
   }
   console.log(`golden-restore-patterns: ${total} lines restored against ${base}`);
+  return 0;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main(process.argv.slice(2));
+  process.exitCode = main(process.argv.slice(2));
 }

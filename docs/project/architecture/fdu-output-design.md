@@ -54,15 +54,18 @@ headers use the uppercase canonical view name.
 Metric labels belong in table columns or in a note naming the percentage’s denominator,
 so document-word percentages cannot be mistaken for byte percentages.
 A single view’s note names the measure alone; beside other views it names every non-byte
-denominator with its section, the code table’s included, so no table borrows another’s,
-and a section it does not name shares bytes:
+denominator with its sections, the code table’s included, so no table borrows another’s,
+and a section it does not name shares bytes.
+Sections that share a denominator are listed under it once, in first-seen order
+(`code lines (CODE, LANGUAGES)`):
 
 ```text
 note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ```
 
 Display-limit notes name their section the same way (`2 rows below min share in TYPES`),
-so equal counts in different views stay distinct.
+but each section keeps its own entry, so equal counts in different views stay distinct
+and are not read as one sum.
 See the [analysis mapping](../../usage.md#measurements-views-and-headers).
 The mapping reads both ways for the two views with no metadata meaning: `code` and
 `documents` each request their analyzer, so `--view code,documents` is the one-flag form
@@ -255,9 +258,10 @@ tip: show more: --min-share=0% --depth=all
 
 The share threshold applies to individual entries against the selected root, not to the
 combined hidden amount.
-Grouped views list what a bound hid in the same note (`8 languages below min share`,
-`2 of 15 rows shown`). Collect bounds from actual omissions, deduplicate across views,
-and never sum remainders across views whose contents may overlap.
+Grouped views list what a bound hid in the same note (`8 rows below min share`,
+`2 of 15 rows shown`), and beside other views each count names its section
+(`2 rows below min share in TYPES`). Collect bounds from actual omissions, deduplicate
+across views, and never sum remainders across views whose contents may overlap.
 The tip names each lifted bound once, in a fixed order, as one command line (or one
 call’s keyword arguments on the Python surface).
 
