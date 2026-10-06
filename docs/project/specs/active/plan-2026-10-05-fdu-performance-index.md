@@ -99,9 +99,10 @@ chart to any single component.
 
 For build *b*, component *c* with weight *w_c*, and reference build *R*:
 
-- **job ratio**: *b*’s cost relative to *R* on one job of a component, taken as the
+- **job ratio**: *b*’s runtime relative to *R* on one job of a component, taken as the
   paired figure from that job’s interleaved session, the median over adjacent pairs of
-  *b*’s time (or peak memory) divided by *R*’s. *R*’s own ratio is 1;
+  *b*’s time divided by *R*’s. *R*’s own ratio is 1. Memory is the exception, a ratio of
+  medians, described under Memory below;
 - **component ratio** *r_b,c*: the job ratio when the component has one job, and the
   geometric mean of its jobs’ ratios, equally weighted, when it has several;
 - **index** *I_b* = exp(Σ_c *w_c* · ln *r_b,c* ÷ Σ_c *w_c*), summed over the components
