@@ -75,6 +75,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tip: show it: --view documents,code`. A refusal for missing analysis names a remedy
   its route accepts: an index names what it was opened with, an opened root says it runs
   no analyzer, and only a request that can add an analyzer is told to.
+  A watch is the exception for now, because it checks a metric sort, and in Python a
+  content view, before it refuses analysis: `fdu . --watch --sort=code_lines` says
+  `add --analyze code`, and `Index.watch()` names the analyzers its index was opened
+  with, remedies a watch then refuses.
   A refused watch names every axis that enabled analysis:
   `fdu . --watch --analyze=words --view=code` says
   `--analyze words and --view code need words and code analysis`.
