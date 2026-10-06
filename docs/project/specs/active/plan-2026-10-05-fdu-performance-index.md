@@ -224,8 +224,9 @@ on macOS the macOS half.
 Both halves are in the score, so a platform-specific change shows too.
 
 - **Platforms.** macOS and Linux each carry 50% of the total.
-- **Missing platform.** A macOS-only index is published as such and never presented as
-  the full index.
+- **Missing platform.** A one-platform score is labelled with its platform (“macOS
+  score, 12 of 12 components”) and never presented as the full index, which needs both
+  platforms.
 - **Missing capability.** A build without a component’s capability (the pre-work binary
   has no content views) has no ratio for that component, and its score covers fewer
   components. A score always carries its coverage, the share of the suite’s weight it
@@ -238,12 +239,19 @@ Both halves are in the score, so a platform-specific change shows too.
   component’s definition (tree, command, cache state, jobs); the projection refuses a
   cell whose digest does not match the manifest, so a component redefined in place
   cannot reuse cells measured under the old definition.
+  A cell stamped after timing, because the manifest’s text changed while the request did
+  not, records the text it was timed under and that it was stamped by argv equivalence.
   All builds in a cell are timed interleaved, anchored on the reference build:
   - order alternated, 3 warm-ups, at least 12 rounds, 20 where the cell stays under an
     hour;
   - answers checked before timing within each capability group;
   - trees and binaries on internal storage (results may go elsewhere);
   - the harness’s quiet gate unchanged, and the regime recorded.
+- **Regime.** A score from any cell measured on an uncontrolled host is exploratory, and
+  the page and every figure quoting it say so (“exploratory, uncontrolled host”), as the
+  [performance loop’s host-pressure regimes](../../guides/performance-loop.md#host-pressure-regimes)
+  require. A score quoted in release notes or a README must come from cells timed quiet
+  or controlled-interactive, at 20 rounds.
 - **Where.** macOS cells run on the maintainer’s Mac.
   Linux cells run on a Linux host, for example a cloud session handed the same builds
   and manifest.
@@ -326,8 +334,9 @@ Both halves are in the score, so a platform-specific change shows too.
 Refresh at each release and at the end of a campaign, not per experiment.
 A full refresh times every component for every build on both platforms, which takes
 hours of machine time.
-Release notes quote the unified score with its interval and coverage, and link the
-components.
+Release notes quote the unified score with its interval, coverage, platform, and regime,
+and link the components; only a score timed quiet or controlled-interactive is quoted
+there.
 
 ## Open Questions
 
