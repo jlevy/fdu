@@ -71,6 +71,11 @@ note: full omits code, documents without analysis
 tip: include them: --analyze all
 ```
 
+Analysis is named analyzer by analyzer against what each selected view displays
+(`ViewSpec::shows`), so analysis one view shows and another does not still gets a note,
+and its tip keeps the caller’s views and adds the ones that show the rest
+(`note: code analysis not shown by documents`, `tip: show it: --view documents,code`).
+
 The code overview is one table with aligned code-line, share, comment, blank,
 analyzed-file, and language columns.
 Primary cells in the TOTAL row are bold; parenthetical population details keep the

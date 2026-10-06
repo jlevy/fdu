@@ -226,6 +226,32 @@ impl ViewSpec {
         }
     }
 
+    /// The analyzers whose results this view displays, when its basis holds them.
+    ///
+    /// The other half of [`Self::implies`]: a view shows everything it implies, and the
+    /// grouping views show more than they imply. `types`, `families`, and `languages` add
+    /// line, code, and word columns to each row under whichever analyzers ran, while `code`
+    /// shows only code analysis and `documents` only words. What a report says about
+    /// analysis no selected view displays is decided against this table, so a request that
+    /// pays for code analysis and shows only `documents` says so rather than staying silent
+    /// because one view displayed something.
+    ///
+    /// A match over every view, so a new one forces this decision too.
+    pub const fn shows(self) -> AnalysisSet {
+        match self {
+            Self::Types | Self::Families | Self::Languages => AnalysisSet::ALL,
+            Self::Code => AnalysisSet::CODE_ONLY,
+            Self::Documents => AnalysisSet::WORDS_ONLY,
+            Self::List
+            | Self::Tree
+            | Self::Extensions
+            | Self::Files
+            | Self::Largest
+            | Self::Recent
+            | Self::Summary => AnalysisSet::NONE,
+        }
+    }
+
     /// The view a request displays its analysis in when the caller named none.
     ///
     /// The converse of [`Self::implies`], and free for the same reason: it re-projects
@@ -1392,8 +1418,11 @@ pub struct Report {
 /// leave them unmatched. `full` implies nothing, so it names the views it skipped and the
 /// one value of the analyzer axis that includes them alongside what already ran. And
 /// analysis no selected view displays -- warming the sidecar is a supported use, so this
-/// is a note rather than an error -- names the views [`ViewSpec::defaults_for`] the
-/// analyzers, which are where it would show.
+/// is a note rather than an error -- is named analyzer by analyzer against
+/// [`ViewSpec::shows`], with a metric sort counting as a display of its analyzer. When no
+/// selected view shows any analysis, the tip names the views [`ViewSpec::defaults_for`]
+/// the analyzers; when some is shown, it keeps the caller's views and adds the ones that
+/// show the rest, so following it never drops what the caller already sees.
 pub(crate) fn display_notes(
     query: &Query,
     content: AnalysisSet,
@@ -1429,30 +1458,46 @@ pub(crate) fn display_notes(
         notes.push(note);
         tips.extend(tip);
     }
-    let displayed = query.views.iter().any(|view| {
-        matches!(
-            view,
-            ViewSpec::Types
-                | ViewSpec::Families
-                | ViewSpec::Languages
-                | ViewSpec::Code
-                | ViewSpec::Documents
-        )
-    });
-    let ranked = matches!(query.selection.sort, Some(SortKey::Metric(_)));
-    if content.is_enabled() && !displayed && !ranked {
+    // A metric sort uses its analyzer even where no column shows it.
+    let ranked = match query.selection.sort {
+        Some(SortKey::Metric(name)) => crate::content::METRICS
+            .iter()
+            .find(|metric| metric.name == name)
+            .map_or(AnalysisSet::NONE, |metric| metric.owner),
+        _ => AnalysisSet::NONE,
+    };
+    let shown = query.views.iter().fold(ranked, |set, view| set.union(view.shows()));
+    let unshown = unshown_analysis(content, shown);
+    if unshown.is_enabled() {
         notes.push(format!(
             "note: {} analysis not shown by {}",
-            content.named().join(" and "),
+            unshown.named().join(" and "),
             labels(&query.views).join(", ")
         ));
-        tips.push(format!(
-            "tip: show it: {} {}",
-            query.axes.view,
-            labels(&ViewSpec::defaults_for(content)).join(",")
-        ));
+        let mut views = if shown.is_enabled() { query.views.clone() } else { Vec::new() };
+        views.extend(ViewSpec::defaults_for(unshown));
+        tips.push(format!("tip: show it: {} {}", query.axes.view, labels(&views).join(",")));
     }
     (notes, tips)
+}
+
+/// The analyzers in `content` that `shown` does not display, as a set a caller could
+/// request.
+///
+/// Every view that shows any analysis shows the shared line pass, so line counts go unshown
+/// only when nothing is shown at all, and then the whole set is.
+fn unshown_analysis(content: AnalysisSet, shown: AnalysisSet) -> AnalysisSet {
+    if !shown.is_enabled() {
+        return content;
+    }
+    let mut unshown = AnalysisSet::NONE;
+    if content.includes_code() && !shown.includes_code() {
+        unshown = unshown.with_code();
+    }
+    if content.includes_words() && !shown.includes_words() {
+        unshown = unshown.with_words();
+    }
+    unshown
 }
 
 /// Directories a refused-controls note names before it counts the rest.
@@ -4418,6 +4463,77 @@ mod tests {
         let (notes, _) =
             display_notes(&ranked, AnalysisSet::CODE_ONLY, &ControlCoverage::NotObserved);
         assert!(notes.is_empty(), "{notes:?}");
+    }
+
+    /// Analysis some selected view displays and some does not is named analyzer by
+    /// analyzer, and the tip keeps the caller's views, adding the ones that show the rest.
+    #[test]
+    fn analysis_partly_shown_names_what_no_view_displays() {
+        for (content, views, sort, note, tip) in [
+            (
+                AnalysisSet::ALL,
+                vec![ViewSpec::Documents],
+                None,
+                "note: code analysis not shown by documents",
+                "tip: show it: --view documents,code",
+            ),
+            (
+                AnalysisSet::ALL,
+                vec![ViewSpec::Summary, ViewSpec::Code],
+                None,
+                "note: words analysis not shown by summary, code",
+                "tip: show it: --view summary,code,documents",
+            ),
+            // A ranking displays its own analyzer and nothing else.
+            (
+                AnalysisSet::ALL,
+                vec![ViewSpec::Files],
+                Some(SortKey::Metric("code_lines")),
+                "note: words analysis not shown by files",
+                "tip: show it: --view files,documents",
+            ),
+        ] {
+            let query = Query {
+                views,
+                selection: Selection { sort, ..Selection::default() },
+                axes: &AxisNames::FLAGS,
+                ..Query::default()
+            };
+            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            assert_eq!((notes, tips), (vec![note.to_owned()], vec![tip.to_owned()]));
+        }
+
+        // The grouping views show every analyzer, so beside one nothing goes unremarked.
+        for view in [ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages] {
+            let query = Query { views: vec![view], ..Query::default() };
+            let (notes, tips) =
+                display_notes(&query, AnalysisSet::ALL, &ControlCoverage::NotObserved);
+            assert!(notes.is_empty() && tips.is_empty(), "{view:?}: {notes:?} {tips:?}");
+        }
+    }
+
+    /// The display table agrees with the implication table and the defaults: each view
+    /// shows what it implies, and the default views for any analyzer set show all of it,
+    /// so a request that names no view is never told its analysis went unshown.
+    #[test]
+    fn every_view_shows_what_it_implies_and_the_defaults_show_everything() {
+        for view in ViewSpec::ALL {
+            assert!(view.shows().contains(view.implies()), "{view:?}");
+        }
+        for content in [
+            AnalysisSet::LINES_ONLY,
+            AnalysisSet::CODE_ONLY,
+            AnalysisSet::WORDS_ONLY,
+            AnalysisSet::ALL,
+        ] {
+            let shown = ViewSpec::defaults_for(content)
+                .into_iter()
+                .fold(AnalysisSet::NONE, |set, view| set.union(view.shows()));
+            assert!(shown.contains(content), "{content:?}");
+            let query = Query { views: ViewSpec::defaults_for(content), ..Query::default() };
+            let (notes, _) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            assert!(notes.is_empty(), "{content:?}: {notes:?}");
+        }
     }
 
     /// A rule belongs to the library; the words a caller can act on belong to their
