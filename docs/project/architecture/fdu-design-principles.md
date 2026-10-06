@@ -823,12 +823,13 @@ entry or none.
 
 Every grouped view divides the selected set into buckets, so its rows sum to the total
 the same selection reports.
-One measure is an estimate rather than a count, and is the exception: logical (document)
-words are derived from statistics pooled across the files measured, so a total over
-mixed formats is not the sum of its rows’ estimates.
+A file that fits no bucket needs one made for it; it never falls out of the tally.
+The one exception is the logical-word estimate: `logical_words`,
+`visible_logical_words`, and `document_words`, and the `pages` derived from them, come
+from statistics pooled across the files measured, so a total over mixed formats is not
+the sum of its rows’ estimates.
 Shares stay a partition all the same: a section divides by the sum of its rows, not by
-the pooled total (fdu-ij5n; whether to make the estimate additive is fdu-x3pq). A file
-that fits no bucket needs one made for it; it never falls out of the tally.
+the pooled total (fdu-ij5n; whether to make the estimate additive is fdu-x3pq).
 
 The extension view got this wrong by inheriting the answer to a different question.
 “What is this name’s extension” is correctly `None` for `Makefile`, and the roll-up used

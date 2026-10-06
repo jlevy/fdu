@@ -2812,9 +2812,9 @@ fn merge_coverage(total: &mut BTreeMap<CoverageReason, u64>, row: &BTreeMap<Cove
 /// document words. Logical words are derived from pooled statistics
 /// ([`LogicalWordStats::logical_words`]), whose regime the pool decides, so a section
 /// mixing formats has a total that differs from the sum of its rows, in either direction.
-/// Dividing by that total made the rows' shares sum past 100% beside long-token formats,
-/// and below it beside very short tokens (fdu-ij5n). For bytes,
-/// code lines, and raw words the two are equal, so this rule changes nothing there.
+/// Dividing by that total would make the rows' shares sum past 100% beside long-token
+/// formats and fall short of it beside very short tokens (fdu-ij5n). For bytes, code
+/// lines, and raw words the two are equal, so this rule changes nothing there.
 fn share_denominator(rows: &[MetricRow], metric: ShareMetric) -> u64 {
     rows.iter().fold(0_u64, |sum, row| sum.saturating_add(share_value(row, metric)))
 }

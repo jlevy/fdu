@@ -349,6 +349,7 @@
    "id": "exp-000",
    "per_entry_ns": 5740.766545411875,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp000-baseline.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "du",
    "wall_ns": 342459687.5
@@ -358,6 +359,7 @@
    "id": "exp-000",
    "per_entry_ns": 3552.594964294096,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp000-baseline.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 211926500
@@ -367,6 +369,7 @@
    "id": "exp-002",
    "per_entry_ns": 3691.127158279411,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp002-parallel-revalidation.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 220190499.5
@@ -376,6 +379,7 @@
    "id": "exp-003",
    "per_entry_ns": 3792.7520870352364,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp003-baseline-apply.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 226252833
@@ -385,6 +389,7 @@
    "id": "exp-004",
    "per_entry_ns": 3515.7774415797767,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp004-borrowed-path-components.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 209730187.5
@@ -394,6 +399,7 @@
    "id": "exp-005",
    "per_entry_ns": 5488.45041405438,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp005-snapshot-load.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 327408021
@@ -403,6 +409,7 @@
    "id": "exp-006",
    "per_entry_ns": 5874.673466992993,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp006-cumulative.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "du",
    "wall_ns": 350447771
@@ -412,6 +419,7 @@
    "id": "exp-006",
    "per_entry_ns": 3680.4454269621483,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp006-cumulative.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 219553291.5
@@ -421,6 +429,7 @@
    "id": "exp-007",
    "per_entry_ns": 3735.3338250578336,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp007-009-requiem.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 222827604
@@ -430,6 +439,7 @@
    "id": "exp-008",
    "per_entry_ns": 3698.671715224461,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp007-009-portable-stack.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 220640562.5
@@ -439,6 +449,7 @@
    "id": "exp-009",
    "per_entry_ns": 3735.3338250578336,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp007-009-requiem.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 222827604
@@ -448,6 +459,7 @@
    "id": "exp-010",
    "per_entry_ns": 4797.460145170483,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp010-011-warm-join-and-grouped-merges.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 286187687.5
@@ -457,6 +469,7 @@
    "id": "exp-011",
    "per_entry_ns": 4797.460145170483,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp010-011-warm-join-and-grouped-merges.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "tool": "dust",
    "wall_ns": 286187687.5
@@ -466,6 +479,7 @@
    "id": "exp-013",
    "per_entry_ns": 3570.137995904573,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-region-scheduler.json",
    "subject": "dbd79ed9c898:60067:c631fbf39d7c",
    "tool": "dust",
    "wall_ns": 214447479
@@ -475,6 +489,7 @@
    "id": "exp-033",
    "per_entry_ns": 4770.659222201874,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp033-post-cli-merge-full.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "tool": "dust",
    "wall_ns": 286559187.5
@@ -484,6 +499,7 @@
    "id": "exp-034",
    "per_entry_ns": 7545.94134405283,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp034-post-cli-cache-pressure.json",
    "subject": "aa81f45748e0:720805:5afd8022acef",
    "tool": "dust",
    "wall_ns": 5439152250.5
@@ -493,6 +509,7 @@
    "id": "exp-035",
    "per_entry_ns": 9078.812768506012,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp035-live-workspace.json",
    "subject": "585f55000d4d:1007659:df4efc612967",
    "tool": "dust",
    "wall_ns": 9148347395.5
@@ -502,6 +519,7 @@
    "id": "exp-040",
    "per_entry_ns": 4058.2254714367923,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-exp040-transient-summary.json",
    "subject": "585f55000d4d:978339:4e6152179266",
    "tool": "dumac",
    "wall_ns": 3970320249.5
@@ -511,6 +529,7 @@
    "id": "exp-044",
    "per_entry_ns": 3203.692414212113,
    "platform": "macOS",
+   "run": null,
    "subject": "c95b1edda576:901963:e7ed1ac6334e",
    "tool": "dumac",
    "wall_ns": 2889612021
@@ -520,6 +539,7 @@
    "id": "exp-045",
    "per_entry_ns": 3310.4686201096943,
    "platform": "macOS",
+   "run": null,
    "subject": "c95b1edda576:901963:26b604b60a15",
    "tool": "dumac",
    "wall_ns": 2985920208
@@ -529,6 +549,7 @@
    "id": "exp-046",
    "per_entry_ns": 3381.9807004278446,
    "platform": "macOS",
+   "run": null,
    "subject": "c95b1edda576:901963:26b604b60a15",
    "tool": "dumac",
    "wall_ns": 3050421458.5
@@ -538,6 +559,7 @@
    "id": "exp-054",
    "per_entry_ns": 4038.2759087108357,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-pr22-current-vs-main-macos.json",
    "subject": "c95b1edda576:60993:f708694be702",
    "tool": "dust",
    "wall_ns": 246306562.5
@@ -547,6 +569,7 @@
    "id": "exp-055",
    "per_entry_ns": 3952.34937615792,
    "platform": "macOS",
+   "run": "benchmarks/results/realtree/run-pr22-current-vs-reviewed-head-macos.json",
    "subject": "c95b1edda576:60993:f708694be702",
    "tool": "dust",
    "wall_ns": 241065645.5
@@ -556,6 +579,7 @@
    "id": "exp-060",
    "per_entry_ns": 1441.8351362931028,
    "platform": "Linux",
+   "run": "/tmp/fdu-realtree/results/run-exp056-ext-memo.json",
    "subject": "9311b5fa18bc:450463:45022e107978",
    "tool": "dust",
    "wall_ns": 649493381
@@ -565,6 +589,7 @@
    "id": "exp-066",
    "per_entry_ns": 1552.9464983931823,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-066-default-command-baseline.json",
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "tool": "dust",
    "wall_ns": 272062250
@@ -574,6 +599,7 @@
    "id": "exp-067",
    "per_entry_ns": 1756.867504609255,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-067-skip-identical-snapshot-rewrite.json",
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "tool": "dust",
    "wall_ns": 307787375
@@ -583,6 +609,7 @@
    "id": "exp-068",
    "per_entry_ns": 2381.6099285922223,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-068-flush-before-join.json",
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "tool": "dust",
    "wall_ns": 417236625
@@ -592,6 +619,7 @@
    "id": "exp-077",
    "per_entry_ns": 8473.211362412494,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-detached-consequence-sink.json",
    "subject": "0fc8126bf6ad:11142:51114fc9f7b6",
    "tool": "dust",
    "wall_ns": 94408521
@@ -601,6 +629,7 @@
    "id": "exp-078",
    "per_entry_ns": 8401.293645094695,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-compatibility-projection-removal.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "tool": "dust",
    "wall_ns": 93598812.5
@@ -610,6 +639,7 @@
    "id": "exp-079",
    "per_entry_ns": 8579.548514496006,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-resolved-parent-proof-final.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "tool": "dust",
    "wall_ns": 95584750
@@ -619,6 +649,7 @@
    "id": "exp-080",
    "per_entry_ns": 8574.101292523113,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-journal-preflight-clone.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "tool": "dust",
    "wall_ns": 95524062.5
@@ -628,6 +659,7 @@
    "id": "exp-081",
    "per_entry_ns": 8231.614442150614,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-borrow-impact-paths.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "tool": "dust",
    "wall_ns": 91708416.5
@@ -637,6 +669,7 @@
    "id": "exp-082",
    "per_entry_ns": 9079.27546898842,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-move-scanner-commits-to-journal.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "tool": "dust",
    "wall_ns": 101152208
@@ -646,6 +679,7 @@
    "id": "exp-085",
    "per_entry_ns": 4343.609030353095,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h99-compact-batches-partitions.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "tool": "dust",
    "wall_ns": 494276646
@@ -655,6 +689,7 @@
    "id": "exp-086",
    "per_entry_ns": 4381.115401515019,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h100-phase-instrumentation-overhead.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "tool": "dust",
    "wall_ns": 498544646
@@ -664,6 +699,7 @@
    "id": "exp-087",
    "per_entry_ns": 4443.578418018525,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h104-composite.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "tool": "dust",
    "wall_ns": 505652562.5
@@ -673,6 +709,7 @@
    "id": "exp-088",
    "per_entry_ns": 3990.858661265093,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h105-coalesced-screen.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "tool": "dust",
    "wall_ns": 454135770.5
@@ -682,6 +719,7 @@
    "id": "exp-097",
    "per_entry_ns": 8564.345251067718,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h86-historical-lifecycle-breakdown-valid-exploratory.json",
    "subject": "a319238d9c29:113794:f41f3744caa3",
    "tool": "dust",
    "wall_ns": 974571103.5
@@ -691,6 +729,7 @@
    "id": "exp-098",
    "per_entry_ns": 4425.665751269838,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h86-shared-orchestration-cleanup-exploratory.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "tool": "dust",
    "wall_ns": 503614208.5
@@ -700,6 +739,7 @@
    "id": "exp-099",
    "per_entry_ns": 4248.427715872542,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h86-shared-orchestration-monomorphized-exploratory.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "tool": "dust",
    "wall_ns": 483445583.5
@@ -709,6 +749,7 @@
    "id": "exp-100",
    "per_entry_ns": 4369.278771288468,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h86-directory-payload-inline-arena.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "tool": "dust",
    "wall_ns": 497197708.5
@@ -718,6 +759,7 @@
    "id": "exp-101",
    "per_entry_ns": 3794.38081533297,
    "platform": "macOS",
+   "run": "/tmp/fdu-streaming-parity/results/run-h86-sorted-child-promotion.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "tool": "dust",
    "wall_ns": 431777770.5
@@ -727,6 +769,7 @@
    "id": "exp-102",
    "per_entry_ns": 1987.3531669177246,
    "platform": "macOS",
+   "run": "docs/project/experiments/evidence/exp-102/run.json",
    "subject": "a319238d9c29:97587:7ec24464a1b5",
    "tool": "dust",
    "wall_ns": 193939833.5
@@ -736,6 +779,7 @@
    "id": "exp-105",
    "per_entry_ns": 2277.5590870196547,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-105-post-010-uncontrolled-baseline.json",
    "subject": "36ce9b22af9a:77132:b839b65efbc7",
    "tool": "dust",
    "wall_ns": 175672687.5
@@ -745,6 +789,7 @@
    "id": "exp-106",
    "per_entry_ns": 2783.072280735416,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-106-h107-gitignore-default-on.json",
    "subject": "a319238d9c29:145931:41a1e8457142",
    "tool": "dust",
    "wall_ns": 406136521
@@ -754,6 +799,7 @@
    "id": "exp-116",
    "per_entry_ns": 16765.152720456193,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-116-h117-opened-second-report.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2660713562.5
@@ -763,6 +809,7 @@
    "id": "exp-118",
    "per_entry_ns": 11326.015771399767,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-118-h122-metadata-walk-profile.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 1797495333
@@ -772,6 +819,7 @@
    "id": "exp-119",
    "per_entry_ns": 13388.343281560128,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-119-h123-index-second-report.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2124797020.5
@@ -781,6 +829,7 @@
    "id": "exp-122",
    "per_entry_ns": 13320.40604895876,
    "platform": "macOS",
+   "run": "/tmp/fdu-realtree/results/run-exp-122-tighter-walk-profile.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2114015042
@@ -790,6 +839,7 @@
    "id": "exp-142",
    "per_entry_ns": 1254.027387716916,
    "platform": "Linux",
+   "run": "/tmp/fdu-realtree/results/run-exp-142-h143-450k-index-leftover.json",
    "subject": "b3459e945151:450001:b77ebb296d34",
    "tool": "dust",
    "wall_ns": 564313578.5
@@ -799,6 +849,7 @@
    "id": "exp-145",
    "per_entry_ns": 933.4126294958583,
    "platform": "Linux",
+   "run": "/tmp/fdu-realtree/results/run-exp-145-h145-linux-opened-discovery-leftover-uncontrolled.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "tool": "dust",
    "wall_ns": 86316399.5
@@ -808,6 +859,7 @@
    "id": "exp-156",
    "per_entry_ns": 11613.791310922781,
    "platform": "macOS",
+   "run": "/private/tmp/fdu-prog/perf/results/run-exp-156-progress-no-handle-vs-main.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 1843166750
@@ -817,6 +869,7 @@
    "id": "exp-166",
    "per_entry_ns": 15735.208011719858,
    "platform": "macOS",
+   "run": "docs/project/experiments/evidence/exp-166/run.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2497256187.5
@@ -826,6 +879,7 @@
    "id": "exp-167",
    "per_entry_ns": 16724.302164393055,
    "platform": "macOS",
+   "run": "docs/project/experiments/evidence/exp-167/run.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2654230375
@@ -1465,6 +1519,7 @@
      "wall_ns_median": 211926500
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp000-baseline.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Baseline on a real 60k-entry tree",
    "trials": 12
@@ -1822,6 +1877,7 @@
    "primary_metric": "wall_ns",
    "reason": "Halved cold-scan wall time with a 95% interval entirely below zero, no new dependency, and byte-identical engine digests at every thread count",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp001-parallel-producer.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Bounded parallel directory producer",
    "trials": 12
@@ -2191,6 +2247,7 @@
      "wall_ns_median": 220190499.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp002-parallel-revalidation.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Parallel revalidation sweep",
    "trials": 12
@@ -2560,6 +2617,7 @@
      "wall_ns_median": 226252833
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp003-baseline-apply.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Skip journalling on the bootstrap apply path",
    "trials": 14
@@ -3043,6 +3101,7 @@
      "wall_ns_median": 209730187.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp004-borrowed-path-components.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Borrowed path components",
    "trials": 14
@@ -3425,6 +3484,7 @@
      "wall_ns_median": 327408021
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp005-snapshot-load.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Snapshot load resolves through the parent",
    "trials": 14
@@ -4021,6 +4081,7 @@
      "wall_ns_median": 219553291.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp006-cumulative.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Cumulative effect of every accepted change",
    "trials": 16
@@ -4302,6 +4363,7 @@
      "wall_ns_median": 222827604
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp007-009-requiem.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Direct reconcile reads expectations off entry ids",
    "trials": 20
@@ -4785,6 +4847,7 @@
      "wall_ns_median": 220640562.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp007-009-portable-stack.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Extensions interned to integer ids",
    "trials": 14
@@ -5066,6 +5129,7 @@
      "wall_ns_median": 222827604
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp007-009-requiem.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Single-pass checksum and parse on snapshot load",
    "trials": 20
@@ -5433,6 +5497,7 @@
      "wall_ns_median": 286187687.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp010-011-warm-join-and-grouped-merges.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "Claim-list join and deferred path joins in reconcile",
    "trials": 16
@@ -5800,6 +5865,7 @@
      "wall_ns_median": 286187687.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp010-011-warm-join-and-grouped-merges.json",
    "subject": "dbd79ed9c898:59654:bf574331eca6",
    "title": "One ancestor merge per same-parent insert run",
    "trials": 16
@@ -6155,6 +6221,7 @@
    "primary_metric": "wall_ns",
    "reason": "No detectable wall-time change on a complete scan (-0.58%, interval [-2.50%, +1.20%] - straddles zero, so this is 'not measurably different', not 'free'). Peak RSS rose measurably on all three jobs (+1.51% [+0.85, +2.88] cold-scan-index, +3.66% [+2.47, +4.72] cold-scan-producer, +1.17% [+0.36, +3.77] warm-revalidate), as did producer CPU (+2.50% [+1.48, +4.04]). Accepted on those costs, not on speed: monotone partial results are worth ~1 MiB of frontier and ~2% producer CPU on a 60k tree",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp012-traversal-order.json",
    "subject": "dbd79ed9c898:60067:c631fbf39d7c",
    "title": "Breadth-first traversal order",
    "trials": 16
@@ -6421,6 +6488,7 @@
      "wall_ns_median": 214447479
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-region-scheduler.json",
    "subject": "dbd79ed9c898:60067:c631fbf39d7c",
    "title": "Region-scheduled breadth-first traversal",
    "trials": 12
@@ -6776,6 +6844,7 @@
    "primary_metric": "wall_ns",
    "reason": "Same binary both arms, 20 interleaved paired trials. Breadth-first is now cheaper where region scheduling reaches: cold-scan-producer wall -3.04% [-5.99%, -0.96%], cold-scan-index peak RSS -1.76% [-2.63%, -0.74%]. warm-revalidate regressed +2.70% [+1.55%, +3.37%] because reconcile walks with the serial take_next and region scheduling never reached it. No code changed; the warm asymmetry is tracked as fdu-v71x",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-order-current.json",
    "subject": "dbd79ed9c898:60067:c631fbf39d7c",
    "title": "What the breadth-first default costs, on the shipped scheduler",
    "trials": 20
@@ -7015,6 +7084,7 @@
    "primary_metric": "wall_ns",
    "reason": "Sixteen workers improved large-tree end-to-end wall 11.72% and producer wall 9.27%, while the separate 60k run showed why the default must adapt rather than rise globally",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp015-thread-curve-large.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Post-BFS worker depth under metadata-cache pressure",
    "trials": 12
@@ -7254,6 +7324,7 @@
    "primary_metric": "wall_ns",
    "reason": "Wall and CPU were unchanged while peak RSS and minor faults regressed about 4%, so the ownership rewrite is not worth carrying",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp016-producer-path-ownership-small.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Move cold-scan producer paths instead of cloning",
    "trials": 12
@@ -7495,6 +7566,7 @@
    "primary_metric": "wall_ns",
    "reason": "Small-tree wall was unclear, but dormant reserves measurably added 5.67% CPU, 2.38% minor faults, and 1.40% peak RSS before ever activating",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp017-adaptive-workers-small.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Pre-create dormant workers for adaptive scan depth",
    "trials": 12
@@ -7736,6 +7808,7 @@
    "primary_metric": "wall_ns",
    "reason": "The 720k endpoint passed, but exp-019 found needless RSS and fault regressions just above the 100k trigger; service-time calibration supersedes scale alone",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp018-threshold-spawn-large.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Spawn reserve workers only after observed scan scale",
    "trials": 12
@@ -7975,6 +8048,7 @@
    "primary_metric": "wall_ns",
    "reason": "At 120k entries the threshold added no wall benefit but measurably regressed RSS and minor faults, so 100k activates before enough work remains",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp019-threshold-boundary.json",
    "subject": "377b56b314cb:120135:c3bede368a3f",
    "title": "Adaptive worker threshold at the first crossing scale",
    "trials": 12
@@ -8214,6 +8288,7 @@
    "primary_metric": "wall_ns",
    "reason": "The safer trigger removed the 120k activation but improved 720k end-to-end wall only 1.71% with an interval crossing zero, below the bar",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp020-capacity-threshold-large.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Delay adaptive workers until metadata-cache capacity",
    "trials": 12
@@ -8455,6 +8530,7 @@
    "primary_metric": "wall_ns",
    "reason": "Latency calibration improved 720k cold-index wall 5.31% and producer wall 10.09%, while the separate 120k boundary left wall, CPU, faults, and RSS unchanged",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp021-service-calibration-large.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Calibrate adaptive workers from initial filesystem service time",
    "trials": 12
@@ -8700,6 +8776,7 @@
    "primary_metric": "wall_ns",
    "reason": "Current code improved 720k end-to-end wall 30.13% and producer wall 41.60%, while the separate 60k run improved them 5.22% and 9.25%; all oracle checks passed and CPU fell at both scales",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp022-getattrlistbulk-large-final.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Batch macOS scan metadata with getattrlistbulk",
    "trials": 12
@@ -9282,6 +9359,7 @@
    "primary_metric": "wall_ns",
    "reason": "Against the original pre-work baseline, current code improved cold-index wall 53.49%, producer wall 58.20%, snapshot-save wall 51.32%, warm revalidation 20.60%, and snapshot load 36.08%; all oracle checks passed",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp023-cumulative-current.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Cumulative effect through adaptive scanning and macOS bulk metadata",
    "trials": 12
@@ -9525,6 +9603,7 @@
    "primary_metric": "wall_ns",
    "reason": "Indexed wall was neutral at -0.07% [-4.06%, +1.53%] and the pre-registered system-CPU signal was also neutral; a producer-only wall win did not justify the extra descriptor, conversion, and unsafe boundary",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp024-root-relative-openat-large-final.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Open macOS directories relative to one retained root fd",
    "trials": 12
@@ -9764,6 +9843,7 @@
    "primary_metric": "wall_ns",
    "reason": "Sixteen workers regressed 720k indexed wall 19.19% and producer wall 12.65%, while roughly doubling CPU and adding about one-third RSS; the exploratory 6/8/12/16 curve found no smaller retune above the acceptance bar",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp025-post-bulk-thread-depth-large-final.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Revisit worker depth after macOS bulk metadata",
    "trials": 12
@@ -9921,6 +10001,7 @@
    "primary_metric": "wall_ns",
    "reason": "Warm-open wall improved 34.39% at 720k and 18.97% at 60k; large-tree total CPU fell 44.06% and system CPU 53.97%, RSS was neutral, and all oracle checks passed",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp026-bulk-warm-reconcile-large-final.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Reuse macOS bulk metadata during full reconciliation",
    "trials": 12
@@ -10504,6 +10585,7 @@
    "primary_metric": "wall_ns",
    "reason": "Against the original baseline, current code improved cold index 52.84%, producer 58.29%, snapshot save 51.13%, warm revalidation 34.78%, and snapshot load 32.69%; all oracle checks passed",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp027-cumulative-through-bulk-reconciliation.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Cumulative effect through bulk reconciliation",
    "trials": 12
@@ -10861,6 +10943,7 @@
    "primary_metric": "wall_ns",
    "reason": "Cold-index wall was +0.21%, producer regressed 1.32%, and warm wall was -0.85%; predicted user-CPU and fault reductions were absent while producer RSS and faults regressed",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp028-reuse-bulk-staging-small-final.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Reuse macOS bulk directory staging allocations",
    "trials": 12
@@ -11218,6 +11301,7 @@
    "primary_metric": "wall_ns",
    "reason": "Cold-index wall was -1.80% with an interval spanning -5.95% to +5.45%; producer and warm paths were neutral, system CPU did not corroborate a gain, and cold RSS plus faults regressed",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp029-larger-bulk-buffer-small-final.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Increase macOS bulk metadata buffer to 256 KiB",
    "trials": 12
@@ -11361,6 +11445,7 @@
    "primary_metric": "wall_ns",
    "reason": "Warm-open wall improved 30.25% at 60k and 59.53% at 720k; reconciliation component improved 50.31% and 72.55%, exact oracles passed, and RSS stayed within the preregistered bound",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp030-bounded-parallel-reconcile-large-exact.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Elide unchanged entries in bounded parallel reconciliation waves",
    "trials": 12
@@ -11501,6 +11586,7 @@
    "primary_metric": "wall_ns",
    "reason": "Warm wall was +1.64% with an interval spanning -3.88% to +10.07%, component was +13.24%, and CPU plus context-switch signals did not show the predicted startup amortization",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp031-larger-reconciliation-wave-small-final.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Increase immutable-baseline reconciliation waves to 4096 directories",
    "trials": 12
@@ -12071,6 +12157,7 @@
    "primary_metric": "wall_ns",
    "reason": "Against the original binary, final code improves cold index 54.53%, producer 60.05%, snapshot save 52.41%, warm revalidation 51.99%, and snapshot load 35.66%; all exact oracles passed",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp032-cumulative-through-parallel-reconciliation-msrv-final.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Cumulative effect through bounded parallel reconciliation",
    "trials": 12
@@ -12650,6 +12737,7 @@
      "wall_ns_median": 286559187.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp033-post-cli-merge-full.json",
    "subject": "dbd79ed9c898:60067:ce5a7430e152",
    "title": "Post-composable-CLI integration validation",
    "trials": 12
@@ -12905,6 +12993,7 @@
      "wall_ns_median": 5439152250.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp034-post-cli-cache-pressure.json",
    "subject": "aa81f45748e0:720805:5afd8022acef",
    "title": "Post-composable-CLI validation under cache pressure",
    "trials": 12
@@ -13157,6 +13246,7 @@
      "wall_ns_median": 9148347395.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp035-live-workspace.json",
    "subject": "585f55000d4d:1007659:df4efc612967",
    "title": "Post-composable-CLI validation on the live 1M workspace",
    "trials": 12
@@ -13295,6 +13385,7 @@
    "primary_metric": "wall_ns",
    "reason": "Eight workers improve wall only 1.30%, below the 3% bar while CPU rises 33.5%; 12 and 16 workers regress wall 2.46% and 10.65%, so the automatic policy remains the best complexity/resource tradeoff",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp036-live-worker-sweep.json",
    "subject": "585f55000d4d:1007659:df4efc612967",
    "title": "Revisit worker depth on the live 1M workspace",
    "trials": 12
@@ -13433,6 +13524,7 @@
    "primary_metric": "wall_ns",
    "reason": "Depth-first regresses indexed wall 3.57% with a 95% paired interval of 2.42% to 5.23%; the breadth-first region scheduler remains faster as well as preserving progressive shallow coverage",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp037-live-order-revisit.json",
    "subject": "585f55000d4d:1007659:df4efc612967",
    "title": "Revisit breadth-first versus depth-first on the live 1M workspace",
    "trials": 12
@@ -13574,6 +13666,7 @@
    "primary_metric": "wall_ns",
    "reason": "The final paired screen changes indexed wall by -0.69% with an interval crossing zero; it does not justify descriptor-lifetime machinery and is reverted",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp038-parent-openat-final.json",
    "subject": "585f55000d4d:1008723:6b33356e83ab",
    "title": "Parent-relative openat frontier on the live 1M workspace",
    "trials": 6
@@ -13712,6 +13805,7 @@
    "primary_metric": "wall_ns",
    "reason": "The 256 KiB screen changes indexed wall by +2.22% with an interval crossing zero and no preregistered mechanism win; it is reverted",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp039-buffer-revisit-screen.json",
    "subject": "585f55000d4d:1009679:71f21a5e1d0c",
    "title": "Revisit the macOS bulk buffer on the live 1M workspace",
    "trials": 6
@@ -13846,6 +13940,7 @@
      "wall_ns_median": 3970320249.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-exp040-transient-summary.json",
    "subject": "585f55000d4d:978339:4e6152179266",
    "title": "Derive an exact rich summary without building an index",
    "trials": 12
@@ -13971,6 +14066,7 @@
    "primary_metric": "wall_ns",
    "reason": "Worker-local reduction cuts user CPU 36.23% and RSS 34.77%, but its 1.38% paired wall improvement misses the preregistered 3% production bar; the 720,805-entry replication is likewise only 1.26% with its interval crossing zero",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp041-worker-local-summary.json",
    "subject": "c95b1edda576:901963:e7ed1ac6334e",
    "title": "Reduce transient summaries inside scan workers",
    "trials": 16
@@ -14097,6 +14193,7 @@
    "primary_metric": "wall_ns",
    "reason": "The composition changes paired wall by +1.86% with a 95% interval spanning -1.96% to +4.56%; lower user CPU and RSS do not justify a second walker and macOS record parser without a user-visible speedup",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp042-derived-summary-bulk.json",
    "subject": "c95b1edda576:901963:e7ed1ac6334e",
    "title": "Derive macOS summary bulk records",
    "trials": 16
@@ -14222,6 +14319,7 @@
    "primary_metric": "wall_ns",
    "reason": "Eight workers looked promising in the 901,963-entry screen but the independent 720,805-entry 20-pair confirmation changed wall by +0.67% [-1.56%, +3.99%] while CPU rose 40.66%; automatic six remains the policy",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-exp043-summary-worker-depth.json",
    "subject": "ffd40fd8482e:720805:f2909250591b",
    "title": "Retune workers for transient summary",
    "trials": 20
@@ -14357,6 +14455,7 @@
      "wall_ns_median": 2889612021
     }
    ],
+   "run_artifact": null,
    "subject": "c95b1edda576:901963:e7ed1ac6334e",
    "title": "Specialize a selected size total",
    "trials": 16
@@ -14494,6 +14593,7 @@
      "wall_ns_median": 2985920208
     }
    ],
+   "run_artifact": null,
    "subject": "c95b1edda576:901963:26b604b60a15",
    "title": "Pipeline macOS directory opens",
    "trials": 5
@@ -14630,6 +14730,7 @@
      "wall_ns_median": 3050421458.5
     }
    ],
+   "run_artifact": null,
    "subject": "c95b1edda576:901963:26b604b60a15",
    "title": "Tune a shared macOS directory-opener pool",
    "trials": 5
@@ -15088,6 +15189,7 @@
    "primary_metric": "wall_ns",
    "reason": "Inline self-host analysis regressed wall 66.34% and component 92.93%; the worker pool was doing useful parallel I/O, so the change is reverted",
    "reference_tools": [],
+   "run_artifact": null,
    "subject": "0d8bca813ccc:307:98360347c76f",
    "title": "Reject inline basic content analysis",
    "trials": 12
@@ -15559,6 +15661,7 @@
    "primary_metric": "wall_ns",
    "reason": "The 12-pair wall interval crossed zero and the median did not clear the 3% acceptance threshold; cache-hit and basic jobs were also neutral.",
    "reference_tools": [],
+   "run_artifact": null,
    "subject": "0d8bca813ccc:307:98360347c76f",
    "title": "Reject prose collector gating for SLOC",
    "trials": 12
@@ -15813,6 +15916,7 @@
    "primary_metric": "wall_ns",
    "reason": "Markdown wall moved -3.55%, but the 95% paired interval [-14.49%, +7.45%] crossed zero; cache hits were neutral, so the capacity hint is reverted",
    "reference_tools": [],
+   "run_artifact": null,
    "subject": "58aeab71141c:2001:8163a878594a",
    "title": "Reject bounded Markdown source reserve",
    "trials": 12
@@ -15951,6 +16055,7 @@
    "primary_metric": "wall_ns",
    "reason": "The 32-pair Markdown run improved wall 12.04% with a 95% interval of [-16.46%, -8.38%], cut user CPU and peak RSS, preserved digests and goldens, and left self-host and cache-hit latency neutral",
    "reference_tools": [],
+   "run_artifact": null,
    "subject": "58aeab71141c:2001:8163a878594a",
    "title": "Decode complete UTF-8 chunks in place",
    "trials": 32
@@ -16192,6 +16297,7 @@
    "primary_metric": "wall_ns",
    "reason": "cold-scan-index -7.35% [-10.42%, -6.12%] over 20 interleaved trials, clearing the 3% bar with the whole interval below zero; the index-build component itself fell 16.6%. warm-revalidate is unchanged (+0.54%, interval spans zero). normalize instructions fell 89%, confirming the memo hits.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-perf/results/run-s1-parent-memo.json",
    "subject": "49fd7bea88ee:450463:5b894066affe",
    "title": "Memoize the parent resolved for the previous upsert",
    "trials": 20
@@ -16431,6 +16537,7 @@
    "primary_metric": "wall_ns",
    "reason": "Overhead is below the noise floor on both jobs: +0.03% [-3.31%, +3.76%] cold and -1.06% [-1.96%, +0.31%] warm, with roughly 13 million counter increments per cold run. Bounds the cost below about 3.3% rather than establishing zero.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-perf/results/run-counter-overhead.json",
    "subject": "49fd7bea88ee:450463:5b894066affe",
    "title": "Per-layer counters cost less than the measurement can see",
    "trials": 20
@@ -16567,6 +16674,7 @@
    "primary_metric": "wall_ns",
    "reason": "Idle cost -1.26% [-2.96%, +1.40%] and recording cost +0.64% [-0.68%, +2.13%], both spanning zero, so counters can stay compiled in and be switched on per run instead of per build. Bounds recording below about 2.1% rather than establishing zero.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-perf/results/run-counters-idle-cost.json",
    "subject": "49fd7bea88ee:450463:5b894066affe",
    "title": "Move instrumentation to a runtime toggle and measure all three of its costs",
    "trials": 20
@@ -16816,6 +16924,7 @@
      "wall_ns_median": 246306562.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-pr22-current-vs-main-macos.json",
    "subject": "c95b1edda576:60993:f708694be702",
    "title": "Validate the Linux campaign's cumulative effect on macOS",
    "trials": 12
@@ -17065,6 +17174,7 @@
      "wall_ns_median": 241065645.5
     }
    ],
+   "run_artifact": "benchmarks/results/realtree/run-pr22-current-vs-reviewed-head-macos.json",
    "subject": "c95b1edda576:60993:f708694be702",
    "title": "Validate review fixes on macOS",
    "trials": 12
@@ -17203,6 +17313,7 @@
    "primary_metric": "wall_ns",
    "reason": "Diagnostics changed wall time by -0.55% with a 95% interval of [-1.09%, +0.17%], bounding overhead below the +3% non-regression margin.",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-diagnostics-overhead.json",
    "subject": "314ea87cd4c0:100001:bd3452ca670e",
    "title": "Bound adaptive scan diagnostics overhead",
    "trials": 12
@@ -17341,6 +17452,7 @@
    "primary_metric": "wall_ns",
    "reason": "Repeated windows were 58.49% slower with a 95% interval of [+49.94%, +66.38%] and exceeded CPU, system-CPU, RSS, and scheduler-pressure gates.",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-discovery-fast-slow-v6-uncontrolled.json",
    "subject": "314ea87cd4c0:100001:bd3452ca670e",
    "title": "Reject repeated adaptive worker windows on APFS",
    "trials": 12
@@ -17479,6 +17591,7 @@
    "primary_metric": "wall_ns",
    "reason": "Staged expansion was 60.73% slower with a 95% interval of [+49.80%, +67.33%] and exceeded CPU, system-CPU, and scheduler-pressure gates.",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-discovery-fast-slow-v6-uncontrolled.json",
    "subject": "314ea87cd4c0:100001:bd3452ca670e",
    "title": "Reject staged adaptive worker expansion on APFS",
    "trials": 12
@@ -17617,6 +17730,7 @@
    "primary_metric": "wall_ns",
    "reason": "Eight workers were 35.55% slower than six with a 95% interval of [+33.34%, +37.98%]; ten and sixteen regressed further.",
    "reference_tools": [],
+   "run_artifact": "benchmarks/results/realtree/run-discovery-fast-slow-v6-uncontrolled.json",
    "subject": "314ea87cd4c0:100001:bd3452ca670e",
    "title": "Reject higher fixed worker counts on mixed-phase APFS",
    "trials": 12
@@ -17867,6 +17981,7 @@
      "wall_ns_median": 649493381
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp056-ext-memo.json",
    "subject": "9311b5fa18bc:450463:45022e107978",
    "title": "One-slot extension memo in front of derive-and-intern",
    "trials": 12
@@ -18121,6 +18236,7 @@
    "primary_metric": "component_ns",
    "reason": "Accepted on the pre-registered component signal: save component -12.20% [-36.02%, -0.10%] clears the bar decisively, load component -2.02% and both walls improved with all intervals below zero, for ~55 dependency-free lines with a bit-identity test",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp057-crc-slice8.json",
    "subject": "9311b5fa18bc:450463:45022e107978",
    "title": "CRC-32C slicing-by-8 on the snapshot digest",
    "trials": 12
@@ -18360,6 +18476,7 @@
    "primary_metric": "wall_ns",
    "reason": "Cold wall -5.06% [-6.03%, -3.54%] on the confirming re-run after -4.62% [-8.45%, -1.02%] first time; the first run's RSS and warm-path alarms did not reproduce, and the reproducing context-switch increase costs no wall or CPU",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp058-journal-skip-rerun.json",
    "subject": "9311b5fa18bc:450463:45022e107978",
    "title": "Skip unread journal capture on the bootstrap apply path",
    "trials": 12
@@ -18601,6 +18718,7 @@
    "primary_metric": "wall_ns",
    "reason": "cold-open-save wall -10.50% [-21.96%, -8.11%], component -17.26%, peak RSS -35.26% [-38.16%, -33.08%] - the second copy of the index disappearing; cold-scan-index unmoved as the placebo at +1.69% [-0.86%, +3.07%]",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp059-shared-save-index.json",
    "subject": "9311b5fa18bc:450463:45022e107978",
    "title": "Share the index with the snapshot writer instead of deep-cloning it",
    "trials": 12
@@ -18856,6 +18974,7 @@
    "primary_metric": "wall_ns",
    "reason": "Cumulative -30.31% [-30.69%, -29.61%] on content-cache-hit and -13.40% on content-basic, both intervals well below zero, RSS neutral, mechanism confirmed by caller-tree profile rather than inferred from a flat one. H95 cold-path transfer prediction dropped: -2.34% [-5.05%, -0.64%] at 40 pairs, below the bar. Scope, established afterwards by exp-065: the warm figure this verdict rests on transfers to a dense real tree at -25.78%; the -13.40% on content-basic does not, reading -2.38% there, because this subject is depth 16 and 22.6x sparse. Read the cold number as evidence about this tree, not about the content tier.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-h94-h95-content.json",
    "subject": "15fd30c5887b:17041:9c17100d19a6",
    "title": "Content roll-up lookup and indexed type-rule tiers",
    "trials": 24
@@ -19328,6 +19447,7 @@
    "primary_metric": "wall_ns",
    "reason": "The warm mechanism transfers to a dense real tree at -25.78% [-26.74%, -24.52%] on content-cache-hit and -26.51% on code-sloc-cache-hit; exp-064 also reproduced on its own regenerated subject at -13.56% against -13.401% recorded. The cold half does not transfer: content-basic reads -2.38% here against -13.56% there, because that subject is depth 16 and 22.6x sparse, so bookkeeping is most of its cold work.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-perf-results/run-pr38-revalidate.json",
    "subject": "3b0c27281785:13020:1e1c005ab9d6",
    "title": "Validate the content roll-up change on a dense real tree",
    "trials": 24
@@ -19779,6 +19899,7 @@
      "wall_ns_median": 272062250
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-066-default-command-baseline.json",
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "title": "Baseline for the default command on a real package cache",
    "trials": 12
@@ -20131,6 +20252,7 @@
      "wall_ns_median": 307787375
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-067-skip-identical-snapshot-rewrite.json",
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "title": "Skip the identical snapshot rewrite on the cold-scan path",
    "trials": 16
@@ -20382,6 +20504,7 @@
      "wall_ns_median": 417236625
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-068-flush-before-join.json",
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "title": "Flush the rendered report before joining the snapshot writer",
    "trials": 12
@@ -21272,6 +21395,7 @@
    "primary_metric": "wall_ns",
    "reason": "content-cache-hit -31.00% [-31.43%, -27.80%] on a dense 52k-file real checkout with the content digest identical and RSS flat, for a key type that changes nothing observable; the cold jobs are unchanged and content-query fell 67% by the same mechanism.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-069-content-files-byte-order.json",
    "subject": "dbd79ed9c898:60089:f7150a975da1",
    "title": "Order the content file map by path bytes instead of components",
    "trials": 12
@@ -22160,6 +22284,7 @@
    "primary_metric": "wall_ns",
    "reason": "The pre-registered warm job moves -1.28% [-5.66%, +1.86%], inside the non-inferiority margin, so exp-069 -31% still describes what ships; content-query +0.94% [+0.08%, +2.38%] excludes zero but user CPU is flat-to-lower and system CPU falls, so the run bounds the fixes below the margin rather than showing a cost.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-070-validate-separator-fixes.json",
    "subject": "dbd79ed9c898:60089:f7150a975da1",
    "title": "Validate the separator fixes against the result they landed on",
    "trials": 12
@@ -22298,6 +22423,7 @@
    "primary_metric": "wall_ns",
    "reason": "The exact-result candidate removes about half of the base cost, but remains above the pre-rewrite control; accept the mechanisms without closing the parity blocker.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-pr51-review-runs/run-pr-base-head-main.json",
    "subject": "63a6945ccbaf:119368:594842ccb17c",
    "title": "PR #51 halves its base regression but does not restore main parity",
    "trials": 6
@@ -22436,6 +22562,7 @@
    "primary_metric": "component_ns",
    "reason": "Removing the path-keyed ancestry overlay closes most of the remaining engine gap, but the diagnostic candidate cannot ship until scanner preparation supplies an equivalent atomic proof.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-pr51-review-runs/run-attribution-ladder.json",
    "subject": "63a6945ccbaf:119368:594842ccb17c",
    "title": "Attribute the PR #51 residual to path-keyed ancestry preflight",
    "trials": 6
@@ -22574,6 +22701,7 @@
    "primary_metric": "wall_ns",
    "reason": "The exact-result PR head remains about 2.4 times the control wall time and 4.7 times its engine component, so the one-shot parity blocker remains open.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-pr51-review-runs/run-pr-base-head-main.json",
    "subject": "63a6945ccbaf:119368:594842ccb17c",
    "title": "PR #51 remains above the pre-rewrite whole-scan control",
    "trials": 6
@@ -22811,6 +22939,7 @@
    "primary_metric": "wall_ns",
    "reason": "On this 11,142-entry exploratory subject, PR #51 remained 7.68% slower on default-tree and 8.21% slower on cold-scan-index; the run establishes the local gap but is not claim-grade.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-initial-three-way.json",
    "subject": "0fc8126bf6ad:11142:51114fc9f7b6",
    "title": "PR #51 residual reproduced on the current registry tree",
    "trials": 4
@@ -23048,6 +23177,7 @@
    "primary_metric": "wall_ns",
    "reason": "The three-pair uncontrolled screen measured +1.93% on default-tree and -5.59% on cold-scan-index; this is insufficient for a timing claim but bounds the enabled-off instrumentation below the 3% experiment bar in the slower direction.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-instrumentation-overhead.json",
    "subject": "0fc8126bf6ad:11142:51114fc9f7b6",
    "title": "Scoped counters stay below the exploratory acceptance threshold",
    "trials": 3
@@ -23618,6 +23748,7 @@
    "primary_metric": "wall_ns",
    "reason": "All five exact jobs passed their semantic oracles; default-tree moved +0.29%, opened discovery -2.84% wall and +0.54% component, and both public delta jobs stayed within 1.1% wall, with four-pair intervals crossing zero.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-five-job-correctness-baseline.json",
    "subject": "0fc8126bf6ad:11142:51114fc9f7b6",
    "title": "Correctness fixes preserve the streaming performance baseline",
    "trials": 4
@@ -24202,6 +24333,7 @@
      "wall_ns_median": 94408521
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-detached-consequence-sink.json",
    "subject": "0fc8126bf6ad:11142:51114fc9f7b6",
    "title": "Select detached consequences once per batch",
    "trials": 12
@@ -24584,6 +24716,7 @@
      "wall_ns_median": 93598812.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-compatibility-projection-removal.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "title": "Remove the eager compatibility projection",
    "trials": 12
@@ -24936,6 +25069,7 @@
      "wall_ns_median": 95584750
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-resolved-parent-proof-final.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "title": "Resolve scanner parents before mutation",
    "trials": 12
@@ -25318,6 +25452,7 @@
      "wall_ns_median": 95524062.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-journal-preflight-clone.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "title": "Skip oversized journal clones",
    "trials": 12
@@ -25700,6 +25835,7 @@
      "wall_ns_median": 91708416.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-borrow-impact-paths.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "title": "Borrow impact paths until the bounded result escapes",
    "trials": 12
@@ -25850,6 +25986,7 @@
      "wall_ns_median": 101152208
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-move-scanner-commits-to-journal.json",
    "subject": "0d6ac3b56b76:11141:1c2f63e8a0cb",
    "title": "Move scanner commits directly into the journal",
    "trials": 12
@@ -26089,6 +26226,7 @@
    "primary_metric": "wall_ns",
    "reason": "Scoped allocation fell by about one event and 323 requested bytes per entry, but default-tree improved only 1.61% and cold-scan-index 0.47%; neither met the 3% rule, and the latter interval crossed zero.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-exp083-optional-unignored.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Skip unignored roll-up maintenance in control-free scopes",
    "trials": 12
@@ -26330,6 +26468,7 @@
    "primary_metric": "wall_ns",
    "reason": "Default-tree wall improved 2.628% with a 95% interval of -3.172% to -1.188%, which is real but below the pre-registered 3% structural-change gate; cold wall did not establish improvement.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h98-compact-partition-screen.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Compact optional fixed-partition storage",
    "trials": 12
@@ -26583,6 +26722,7 @@
      "wall_ns_median": 494276646
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h99-compact-batches-partitions.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Compact scanner batches and optional fixed partitions",
    "trials": 12
@@ -26834,6 +26974,7 @@
      "wall_ns_median": 498544646
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h100-phase-instrumentation-overhead.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Scanner phase counters expose preparation without observer cost",
    "trials": 6
@@ -27088,6 +27229,7 @@
      "wall_ns_median": 505652562.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h104-composite.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Fuse detached control-free scanner preparation and reduction",
    "trials": 12
@@ -27341,6 +27483,7 @@
      "wall_ns_median": 454135770.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h105-coalesced-screen.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Coalesce causal scanner fragments in the one-shot builder",
    "trials": 6
@@ -27481,6 +27624,7 @@
    "primary_metric": "component_ns",
    "reason": "Producer component time changed +0.68% with a 95% interval of -1.04% to +2.13%, missing the 3% gate and establishing no improvement.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h106-unordered-producer.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Suppress causal publication in a producer-only scan",
    "trials": 12
@@ -27619,6 +27763,7 @@
    "primary_metric": "wall_ns",
    "reason": "The opt-in FullIndex trace is noninferior: -3.48% median with a paired 95% interval of [-11.88%, +1.43%], below the predeclared +3% ceiling, with exact tallies and every resource gate held.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h108-fullindex-diagnostics-overhead.json",
    "subject": "a319238d9c29:113794:58bc2ea1deb0",
    "title": "Bound FullIndex scan-diagnostics overhead",
    "trials": 12
@@ -27761,6 +27906,7 @@
    "primary_metric": "wall_ns",
    "reason": "The first pipelined form regressed wall 2.48% [+0.70%, +4.23%]; later ownership and borrow changes retained the pipeline while recovering noninferiority.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-pipelined-controls-disabled-exploratory.json",
    "subject": "a319238d9c29:113794:891c45c10c30",
    "title": "Pipeline directory-shaped detached bootstrap",
    "trials": 12
@@ -27901,6 +28047,7 @@
    "primary_metric": "wall_ns",
    "reason": "The shared walker is noninferior at +1.13% [+0.64%, +2.31%] and removes a second filesystem traversal implementation.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-shared-walker-controls-disabled-exploratory.json",
    "subject": "a319238d9c29:113794:891c45c10c30",
    "title": "Share one filesystem walker across bootstrap modes",
    "trials": 12
@@ -28042,6 +28189,7 @@
    "primary_metric": "wall_ns",
    "reason": "The transient contract is explicit and noninferior at +0.83% [-0.84%, +1.55%], with exact digests.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-hash-unique-controls-disabled-exploratory.json",
    "subject": "a319238d9c29:113794:891c45c10c30",
    "title": "Use transient hashed parents and unique child insertion",
    "trials": 12
@@ -28183,6 +28331,7 @@
    "primary_metric": "wall_ns",
    "reason": "Borrowing removes a clone from the structural path and is noninferior at +0.19% [-2.96%, +1.78%].",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-borrow-merge-controls-disabled-exploratory.json",
    "subject": "a319238d9c29:113794:891c45c10c30",
    "title": "Borrow completed directory roll-ups",
    "trials": 12
@@ -28325,6 +28474,7 @@
    "primary_metric": "wall_ns",
    "reason": "Timing is noninferior at -0.31% [-7.17%, +1.22%], while scoped allocations fall by about one per entry and allocated bytes fall 24%.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-own-names-drain-paths-controls-disabled-exploratory.json",
    "subject": "a319238d9c29:113794:891c45c10c30",
    "title": "Move incoming names and retire consumed paths",
    "trials": 12
@@ -28465,6 +28615,7 @@
    "primary_metric": "wall_ns",
    "reason": "Wall falls 33.55% [-36.41%, -33.14%], component falls 47.43%, peak RSS falls 25.88%, and exact control and mutation oracles pass.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-directory-controls-exploratory.json",
    "subject": "a319238d9c29:113794:f73a8a3d0e0b",
    "title": "Apply fixed controls once per detached directory",
    "trials": 12
@@ -28920,6 +29071,7 @@
      "wall_ns_median": 974571103.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-historical-lifecycle-breakdown-valid-exploratory.json",
    "subject": "a319238d9c29:113794:f41f3744caa3",
    "title": "Audit historical lifecycle parity after detached bootstrap",
    "trials": 12
@@ -29173,6 +29325,7 @@
      "wall_ns_median": 503614208.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-shared-orchestration-cleanup-exploratory.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "title": "Share pool orchestration through a dynamic consumer",
    "trials": 12
@@ -29325,6 +29478,7 @@
      "wall_ns_median": 483445583.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-shared-orchestration-monomorphized-exploratory.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "title": "Monomorphize shared concurrent-walk consumption",
    "trials": 12
@@ -29679,6 +29833,7 @@
      "wall_ns_median": 497197708.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-directory-payload-inline-arena.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "title": "Move directory-only state out of line",
    "trials": 12
@@ -30034,6 +30189,7 @@
      "wall_ns_median": 431777770.5
     }
    ],
+   "run_artifact": "/tmp/fdu-streaming-parity/results/run-h86-sorted-child-promotion.json",
    "subject": "a319238d9c29:113794:9110fef5c406",
    "title": "Compact detached child topology with local promotion",
    "trials": 12
@@ -30313,6 +30469,7 @@
      "wall_ns_median": 193939833.5
     }
    ],
+   "run_artifact": "docs/project/experiments/evidence/exp-102/run.json",
    "subject": "a319238d9c29:97587:7ec24464a1b5",
    "title": "Point lookup for public mutation preflight",
    "trials": 12
@@ -30655,6 +30812,7 @@
    "primary_metric": "wall_ns",
    "reason": "The pre-registered Linux floor gates fail on the index tier: default-tree wall is 2.60x the parfloor syscall floor against a 1.4x gate and its peak RSS 6.59x arena_spike against a 3x gate (cold-scan-index 4.86x and 5.03x). Both floor cells are stable (max/min 1.204 and 1.391), so the ratios reject rather than abstain, even though the relative gates pass: default-tree wall -31.70% [-34.31%, -29.15%], cold-scan-index -18.16% [-24.25%, -13.72%], paired peak RSS -35.05% and -49.16%.",
    "reference_tools": [],
+   "run_artifact": "/home/user/perf/results/run-h86-linux-immediate.json",
    "subject": "65b45ec72356:450001:e6da049852a2",
    "title": "H86 Linux evidence stage: relative gates pass, floor gates fail",
    "trials": 12
@@ -30808,6 +30966,7 @@
    "primary_metric": "wall_ns",
    "reason": "Mechanism confirmed, effect absent: instructions -1.69% on the decisive subject and -3.18% on a small dense one, but wall +0.05% [-0.82%, +0.86%] over 40 pairs. On this virtualized Linux host the warm content open is not instruction-bound.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-104-rollup-byte-hash.json",
    "subject": "951be6806409:102318:1a63921c7b9d",
    "title": "Hash the content roll-up map by path bytes instead of components",
    "trials": 40
@@ -31057,6 +31216,7 @@
      "wall_ns_median": 175672687.5
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-105-post-010-uncontrolled-baseline.json",
    "subject": "36ce9b22af9a:77132:b839b65efbc7",
    "title": "Post-0.1.0 uncontrolled baseline on the rustup store",
    "trials": 12
@@ -31207,6 +31367,7 @@
      "wall_ns_median": 406136521
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-106-h107-gitignore-default-on.json",
    "subject": "a319238d9c29:145931:41a1e8457142",
    "title": "Default gitignore observation versus no-controls on metabrowser",
    "trials": 12
@@ -31285,6 +31446,7 @@
    "primary_metric": "wall_ns",
    "reason": "H108 confirmed: all 12 second runs stayed cold scan; wall -0.63% [-4.97%, +4.05%], median inside 3%. No engine change.",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-107-h108-cli-default-tree.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Installed CLI metadata one-shot stays cold scan on frameworks",
    "trials": 12
@@ -31438,6 +31600,7 @@
    "primary_metric": "wall_ns",
    "reason": "install_controls is 7.2 percent of the profile on 146k entries, down from 19 percent on 3k; Path rewrite is not justified",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-108-h109-content-cache-hit-profile.json",
    "subject": "a319238d9c29:145931:aaf1e17d6383",
    "title": "Deciding-scale content-cache-hit profile on metabrowser",
    "trials": 12
@@ -31591,6 +31754,7 @@
    "primary_metric": "wall_ns",
    "reason": "apply dominates restore (timers 63 percent, sample 54 percent of load_content); parse is about 10 percent; wall non-inferior so timers stay",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-109-sidecar-restore-stage-split.json",
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Sidecar restore stage split on metabrowser",
    "trials": 12
@@ -31744,6 +31908,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall -7.59 percent but interval includes zero; shortcut reverted",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-110-cache-only-completeness-count.json",
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Cache-only completeness by file count on metabrowser",
    "trials": 12
@@ -31897,6 +32062,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall -0.56 percent but interval includes zero; type-id alloc trim reverted",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-111-rollup-typeid-get-mut.json",
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Type-id get-mut on roll-up add on metabrowser",
    "trials": 12
@@ -32050,6 +32216,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall -9.69 percent [-26.02%, -7.13%]; user CPU confirms the apply cut; restore-only rebuild kept",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-112-bottom-up-rollup-after-restore.json",
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Bottom-up roll-up after sidecar restore",
    "trials": 12
@@ -32205,6 +32372,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall +8.70 percent [-19.33%, +63.90%]; user CPU moved; engine reverted",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-114-h116-restore-path-lookup.json",
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Restore path lookup without analysis_candidates HashMap",
    "trials": 12
@@ -32345,6 +32513,7 @@
    "primary_metric": "component_ns",
    "reason": "component -2.60 percent [-12.00%, +23.86%]; file I/O hid ancestor walk; engine reverted",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-115-h118-first-pass-insert-rebuild.json",
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "First-pass analyze insert-then-rebuild on metabrowser",
    "trials": 12
@@ -32596,6 +32765,7 @@
      "wall_ns_median": 2660713562.5
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-116-h117-opened-second-report.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Opened-root second report versus one-shot on frameworks",
    "trials": 12
@@ -32749,6 +32919,7 @@
    "primary_metric": "peak_rss_bytes",
    "reason": "peak RSS -10.13 percent [-10.49%, -10.03%]; wall non-inferior; streaming restore kept",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-117-h120-stream-sidecar-parse-into-apply.json",
    "subject": "a319238d9c29:145931:3fbfed48354e",
    "title": "Stream sidecar parse-into-apply on metabrowser",
    "trials": 12
@@ -32899,6 +33070,7 @@
      "wall_ns_median": 1797495333
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-118-h122-metadata-walk-profile.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Deciding-scale metadata walk profile after current engine",
    "trials": 12
@@ -33150,6 +33322,7 @@
      "wall_ns_median": 2124797020.5
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-119-h123-index-second-report.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Product Index.report versus one-shot on frameworks",
    "trials": 12
@@ -33303,6 +33476,7 @@
    "primary_metric": "wall_ns",
    "reason": "apply 43 percent of restore after H115+H120, candidates 48 percent; no stage at 50 percent; no apply cut",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-120-h121-cache-hit-reprofile.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Cache-hit restore mix after H115 and H120 on metabrowser",
    "trials": 12
@@ -33441,6 +33615,7 @@
    "primary_metric": "wall_ns",
    "reason": "every admitted open is required for lines; skippable share under 1% wall; read calls already one data chunk per file; no engine change",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-121-h124-first-pass-analyze-io.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "First-pass analyze I/O type/size gate or read-ahead on metabrowser",
    "trials": 12
@@ -33591,6 +33766,7 @@
      "wall_ns_median": 2114015042
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-122-tighter-walk-profile.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Tighter metadata walk leftover after H122",
    "trials": 12
@@ -33744,6 +33920,7 @@
    "primary_metric": "wall_ns",
    "reason": "completeness walk still 16 percent of content_open after H115+H120; H113 stays open; shortcut not compiled",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-123-h113-leftover-profile.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "H113 completeness leftover after H115 and H120",
    "trials": 12
@@ -33897,6 +34074,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall -8.03 percent [-10.79%, -7.79%]; restore-count completeness kept; H113 superseded",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-124-h125-restore-candidate-count.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Cache-only completeness from restore candidate count on metabrowser",
    "trials": 12
@@ -34050,6 +34228,7 @@
    "primary_metric": "wall_ns",
    "reason": "completeness walk gone after H125; first candidates walk remains; no new cut",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-125-h126-post-h125-leftover-profile.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H125 cache-hit leftover after restore-count completeness",
    "trials": 12
@@ -34289,6 +34468,7 @@
    "primary_metric": "wall_ns",
    "reason": "opened-discovery 8.8x first-pass component; read_dir+fstatat vs getattrlistbulk; journal clones remain; no smallest cut",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-126-h127-first-pass-vs-opened-discovery.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "First-pass walk versus opened-discovery I/O on metabrowser",
    "trials": 12
@@ -34427,6 +34607,7 @@
    "primary_metric": "wall_ns",
    "reason": "walk still the job on file-heavy metabrowser (93% of component); 1.952 getattrlistbulk/dir; snapshot not loaded; no new cut",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-127-h128-default-tree-leftover-metabrowser.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Default-tree leftover on file-heavy metabrowser after H122",
    "trials": 12
@@ -34580,6 +34761,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall -13.11% [-20.22%, -12.67%] on frozen metabrowser-clone; digest identical; classify skip kept",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-128-h129-restore-omit-classify.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Cache-only restore omits classify on metabrowser",
    "trials": 12
@@ -34733,6 +34915,7 @@
    "primary_metric": "wall_ns",
    "reason": "restore classify gone after H129; path_of 11.85 percent of content_open; no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-129-h130-post-h129-leftover.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H129 cache-hit leftover after restore-without-classify",
    "trials": 12
@@ -34886,6 +35069,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall -4.07% [-4.54%, -3.28%] on frozen metabrowser-clone; digest identical; parent-path join kept",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-130-h131-restore-parent-path-join.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Restore DFS joins parent path on metabrowser",
    "trials": 12
@@ -35039,6 +35223,7 @@
    "primary_metric": "wall_ns",
    "reason": "restore-walk path_of gone after H131; leftover snapshot path_of 9.89 percent of content_open discarded on one-shot serving=None; no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-131-h132-post-h131-leftover.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H131 cache-hit leftover after restore parent-path join",
    "trials": 12
@@ -35192,6 +35377,7 @@
    "primary_metric": "wall_ns",
    "reason": "wall -6.37% [-18.23%, -5.66%] on frozen metabrowser-clone; digest identical; unused snapshot path skip kept",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-132-h133-skip-unused-snapshot-path-of.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Skip unused snapshot path reconstruction on metabrowser",
    "trials": 12
@@ -35345,6 +35531,7 @@
    "primary_metric": "wall_ns",
    "reason": "snapshot path_of gone after H133; remaining leftover is already-rejected or already-landed restore and control stages; no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-133-h134-post-h133-leftover.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H133 cache-hit leftover after unused snapshot path skip",
    "trials": 12
@@ -35483,6 +35670,7 @@
    "primary_metric": "wall_ns",
    "reason": "first-pass leftover after H124 is still I/O (read 58.87%, open 16.09%); classify_with 2.02% of process; commit_record 0.59%; no new skippable 3% wall cut; no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-134-h135-post-h124-content-basic-leftover.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H124 first-pass content-basic leftover",
    "trials": 12
@@ -35621,6 +35809,7 @@
    "primary_metric": "wall_ns",
    "reason": "first-run leftover after H128 is still the walk (83-88%); isolated snapshot save 45ms (~11-16% of first-run) is >=3% but not skippable (H100/H78/H92/fsync); no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-135-h136-default-tree-first-leftover.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H128 first-run default-tree leftover",
    "trials": 12
@@ -35759,6 +35948,7 @@
    "primary_metric": "wall_ns",
    "reason": "content-query leftover is every_entry path-join FileRow walks (~278ms per four-view report); unfiltered Types/Families/Languages/Documents each walk independently; no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-136-h137-content-query-leftover.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Post-H123 content-query leftover",
    "trials": 12
@@ -35897,6 +36087,7 @@
    "primary_metric": "wall_ns",
    "reason": "content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone; component -24.61%; engine kept; report identity is from crate tests, not the benchmark digest",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-137-h138-share-every-entry.json",
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Share one every_entry across unfiltered metric views",
    "trials": 12
@@ -36050,6 +36241,7 @@
    "primary_metric": "wall_ns",
    "reason": "same on Linux: content-cache-hit wall -22.48% [-23.46%, -21.39%] quiet on reconstructible linux-v6.12; RSS -10.24%; digest identical; no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-138-h139-linux-cache-hit-stack.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux cache-hit stack same versus #91 control",
    "trials": 12
@@ -36188,6 +36380,7 @@
    "primary_metric": "wall_ns",
    "reason": "walk still 95.7-96.1% of default-tree component; leftover is getdents64+statx floor; no userspace cut; do not retry H71",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-139-h140-linux-walk-leftover-uncontrolled.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux walk leftover is still the getdents64 plus statx floor",
    "trials": 12
@@ -36326,6 +36519,7 @@
    "primary_metric": "wall_ns",
    "reason": "same on Linux: content-query wall -17.60% [-18.07%, -17.17%] uncontrolled on reconstructible linux-v6.12; digest identical; no engine patch",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-140-h141-linux-content-query.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux content-query stack same versus #91 control",
    "trials": 12
@@ -36466,6 +36660,7 @@
    "primary_metric": "wall_ns",
    "reason": "H111 floor/RSS gates fail: 450k index 1.78x parfloor vs 1.4x; RSS 5.20x arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-141-h111-linux-floor-companion.json",
    "subject": "b3459e945151:450001:b77ebb296d34",
    "title": "H111 Linux floor and RSS gates fail on current engine",
    "trials": 12
@@ -36615,6 +36810,7 @@
      "wall_ns_median": 564313578.5
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-142-h143-450k-index-leftover.json",
    "subject": "b3459e945151:450001:b77ebb296d34",
    "title": "Linux H111 leftover is still walk floor plus retained-index RSS",
    "trials": 12
@@ -36753,6 +36949,7 @@
    "primary_metric": "wall_ns",
    "reason": "first-pass leftover is still file I/O (86634 opens, 184057 reads, ~2.12/file); no skippable 3% userspace cut; do not retry H124",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-143-h142-linux-content-basic-leftover-uncontrolled.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux first-pass content-basic leftover is still file I/O",
    "trials": 12
@@ -36906,6 +37103,7 @@
    "primary_metric": "wall_ns",
    "reason": "same leftover identity as Darwin H134: apply ~80ms / parse+candidates ~27ms each; no new userspace cut; do not retry H125/H129/H131/H133",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-144-h144-linux-cache-hit-leftover.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux cache-hit leftover after landed stack is already-landed restore work",
    "trials": 12
@@ -37055,6 +37253,7 @@
      "wall_ns_median": 86316399.5
     }
    ],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-145-h145-linux-opened-discovery-leftover-uncontrolled.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux opened-discovery leftover is still journal clones plus live roll-ups",
    "trials": 12
@@ -37294,6 +37493,7 @@
    "primary_metric": "wall_ns",
    "reason": "unlock silent at ~2us/entry; named jobs --threads 8 no 3% win (aggregate +1.75% regression, index +0.25%); --no-controls is a warm sign not a shipped PORTABLE constant",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-146-h84-linux-threads-8.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win",
    "trials": 12
@@ -37432,6 +37632,7 @@
    "primary_metric": "wall_ns",
    "reason": "same leftover identity as Darwin H136: walk 93% of first-run; isolated save ~24ms is >=3% and not skippable; do not retry H100",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-147-h146-linux-first-run-leftover-quiet.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux first-run leftover is still the walk; snapshot write not skippable",
    "trials": 12
@@ -37570,6 +37771,7 @@
    "primary_metric": "wall_ns",
    "reason": "confirmatory --no-controls sign on nominated /usr: -10.06% quiet; still not a shipped PORTABLE constant; minor_faults inferior",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-148-h84-usr-summary-nocontrols-threads-8-quiet.json",
    "subject": "894d731f69bb:208411:44de521b2e23",
    "title": "Linux H84 --no-controls --threads 8 sign transfers to nominated /usr",
    "trials": 12
@@ -37708,6 +37910,7 @@
    "primary_metric": "wall_ns",
    "reason": "default gitignore-on /usr aggregate --threads 8 is +7.12% [+3.72%, +11.30%] quiet regression; do not lower unlock or ship PORTABLE from this host",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-149-h84-usr-default-threads-8-quiet.json",
    "subject": "894d731f69bb:208411:44de521b2e23",
    "title": "Linux default /usr aggregate --threads 8 regresses; do not lower unlock",
    "trials": 12
@@ -37848,6 +38051,7 @@
    "primary_metric": "wall_ns",
    "reason": "recycle does not capture mimalloc 20%: quiet linux-v6.12 -4.98% [-5.92%, -4.33%]; 450k screening -11.31% n=7; RSS flat; do not lower H85; 3% keep is H147",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-150-h85-recycle-v612.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux H85 recycle misses the 20% mimalloc bar",
    "trials": 12
@@ -37986,6 +38190,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 --no-controls aggregate -4.98% [-5.92%, -4.33%]; RSS flat; default gitignore-on placebo +0.91% includes zero; H85 20% missed so this is the 3% keep",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-150-h85-recycle-v612.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux transient batch recycle clears 3% after H85 misses 20%",
    "trials": 12
@@ -38124,6 +38329,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 --no-controls aggregate -1.63% [-3.33%, -0.72%]; under 3%; stats 92474 to 86644; RSS flat; directory-heavy keep is exp-153",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-152-h72-v612.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux H72 d_type skip misses 3% on source-tree v6.12",
    "trials": 12
@@ -38262,6 +38468,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet nominated /usr --no-controls aggregate -9.01% [-12.52%, -6.30%]; 22% skippable dirs+symlinks; RSS flat; v6.12 companion -1.63% noninferior (exp-152)",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-152-h72-usr.json",
    "subject": "894d731f69bb:208411:b7e4da004476",
    "title": "Linux H72 d_type skip clears 3% on symlink-heavy /usr",
    "trials": 12
@@ -38501,6 +38708,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 cold-scan-index -8.35% [-10.35%, -6.92%] and warm-revalidate -8.15% [-8.64%, -7.07%]; RSS no worse; revalidate component flat so that wall win is spawn; Cargo.toml unchanged (profdata is host-specific)",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-154-h148-pgo.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux PGO screen clears 3% on cold-scan-index and warm-revalidate",
    "trials": 12
@@ -38654,6 +38862,7 @@
    "primary_metric": "wall_ns",
    "reason": "same leftover identity as H144: apply 60-62% of restore after timer expansion is H116 HashMap now in-bucket; no new compileable cut; do not retry H116",
    "reference_tools": [],
+   "run_artifact": "/tmp/fdu-realtree/results/run-exp-155-h149-linux-cache-hit-timer-mix.json",
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux cache-hit restore mix after leftover apply-timer expansion",
    "trials": 12
@@ -39425,6 +39634,7 @@
      "wall_ns_median": 1843166750
     }
    ],
+   "run_artifact": "/private/tmp/fdu-prog/perf/results/run-exp-156-progress-no-handle-vs-main.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Progress indicator without a handle against main",
    "trials": 20
@@ -39563,6 +39773,7 @@
    "primary_metric": "wall_ns",
    "reason": "default-tree wall +5.75% [-5.34%, +10.91%]: upper bound past the +3% gate, lower bound below it, so neither noninferiority nor a cost is established; uncontrolled cell at 100% to 72% busy, user CPU -0.63%; needs a quiet re-run",
    "reference_tools": [],
+   "run_artifact": "/private/tmp/fdu-prog/perf/results/run-exp-157-progress-handle-attached.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Progress handle attached against no handle",
    "trials": 12
@@ -39703,6 +39914,7 @@
    "primary_metric": "wall_ns",
    "reason": "same-binary attachment +1.02% [0.05%, 15.62%] is uncontrolled host noise; exact report oracle landed and current code inspection named four repeated per-file metric resolutions for H153",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-158/run.json",
    "subject": "a319238d9c29:137085:0eed491edf9b",
    "title": "Current content-query oracle and leftover",
    "trials": 12
@@ -39843,6 +40055,7 @@
    "primary_metric": "wall_ns",
    "reason": "one-pass shared metric resolution cut the exploratory 100-report probe wall 47.01% [45.23%, 47.49%] with exact report identity; candidate retained provisionally because the predeclared major-fault non-regression gate and quiet-host confirmation remain open",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-159/run.json",
    "subject": "a319238d9c29:137085:0eed491edf9b",
    "title": "Share content metric resolution across views",
    "trials": 12
@@ -40183,6 +40396,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet balanced-1m default-tree -3.19% [-4.88%, -1.79%]; cold-scan-index placebo +0.00% [-2.24%, +2.15%]; product CLI --cache off indexed tree -4.31% [-5.99%, -3.25%] in the paired tool harness",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-160/run.json",
    "subject": "f63cd4609c1b:1000001:3b1ec31b0900",
    "title": "Linux one-shot index release off the answer path clears 3% on default-tree",
    "trials": 12
@@ -40422,6 +40636,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet balanced-1m cold-scan-index -2.22% [-4.04%, +0.04%], component -4.12% [-7.40%, +1.25%]; allocations 7.03M to 4.28M; product CLI job -3.71% [-4.71%, -1.97%] is a lead for fdu-o6um, not a keep",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-161/run.json",
    "subject": "f63cd4609c1b:1000001:3b1ec31b0900",
    "title": "Linux direct file fold and owned names miss 3% on cold-scan-index",
    "trials": 12
@@ -40661,6 +40876,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet balanced-1m cold-scan-index +0.88% [-0.17%, +1.94%]; futex calls 105,732 to 17,938",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-162/run.json",
    "subject": "f63cd4609c1b:1000001:3b1ec31b0900",
    "title": "Linux detached leaf-listing hold cuts futex wakes but not wall",
    "trials": 12
@@ -41001,6 +41217,7 @@
    "primary_metric": "wall_ns",
    "reason": "default-tree -13.81% [-15.99%, -10.65%]; placebo cold-scan-index includes zero",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-163/run.json",
    "subject": "f63cd4609c1b:1000001:3b1ec31b0900",
    "title": "Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree",
    "trials": 12
@@ -41341,6 +41558,7 @@
    "primary_metric": "wall_ns",
    "reason": "uncontrolled macOS balanced-1m default-tree -1.00% [-5.13%, +6.11%], first run +0.16% [-5.12%, +4.01%], placebo cold-scan-index +2.09% [-0.72%, +3.62%]: no wall change and no median past the +3% regression line; ships on the Linux accept (exp-160)",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-164/run.json",
    "subject": "8069cdcb1ddc:1000001:b38a1acc3a93",
    "title": "macOS one-shot index release shows no wall change and no regression",
    "trials": 12
@@ -41681,6 +41899,7 @@
    "primary_metric": "wall_ns",
    "reason": "uncontrolled macOS balanced-1m default-tree -3.09% [-6.75%, +2.00%] misses the accept rule; peak RSS -26.29% [-26.34%, -26.23%] and user CPU -9.65%; first run -2.98% [-7.12%, +5.12%]; placebo -0.44%; ships on the Linux accept (exp-163)",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-164/run.json",
    "subject": "8069cdcb1ddc:1000001:b38a1acc3a93",
    "title": "macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall",
    "trials": 12
@@ -41932,6 +42151,7 @@
      "wall_ns_median": 2497256187.5
     }
    ],
+   "run_artifact": "docs/project/experiments/evidence/exp-166/run.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat",
    "trials": 12
@@ -42183,6 +42403,7 @@
      "wall_ns_median": 2654230375
     }
    ],
+   "run_artifact": "docs/project/experiments/evidence/exp-167/run.json",
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux",
    "trials": 12
@@ -42323,6 +42544,7 @@
    "primary_metric": "peak_rss_bytes",
    "reason": "Pre-registered primary peak RSS -69.12% [-71.09%, -68.71%], past the 50% bar; wall -4.28% [-11.33%, -0.21%], non-inferior; placebo --no-controls on both arms includes zero on wall and RSS. Uncontrolled host; the Linux wall cell is pending.",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-170/run.json",
    "subject": "a319238d9c29:137085:0eed491edf9b",
    "title": "macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout",
    "trials": 12
@@ -42463,6 +42685,7 @@
    "primary_metric": "peak_rss_bytes",
    "reason": "Pre-registered primary peak RSS -57.86% [-58.98%, -53.96%], past the 50% bar; wall -3.87% [-10.86%, +0.01%], non-inferior; user CPU -32.25%; placebo --no-controls on both arms includes zero. Uncontrolled host; the Linux wall cell is pending.",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-171/run.json",
    "subject": "36ce9b22af9a:77159:b2e3920a7009",
    "title": "macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore",
    "trials": 12
@@ -42601,6 +42824,7 @@
    "primary_metric": "peak_rss_bytes",
    "reason": "Peak RSS -17.07% [-21.27%, -12.09%] (25 to 21 MiB, against 10 MiB without controls) fails the pre-registered 50% bar: holding whole listings sizes batches by the widest listing. Superseded by 060bbfe6, which sends at batch_size and probes the directory control when a batch fills first (exp-171).",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-172/run.json",
    "subject": "36ce9b22af9a:77159:b2e3920a7009",
    "title": "macOS whole-listing hold keeps only 17% RSS saving on wide directories",
    "trials": 12
@@ -42840,6 +43064,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 aggregate-summary -47.02% [-52.43%, -44.35%], default-tree -46.19%; no-controls and no-gitignore placebos include zero; allocations 7.2M to 402k",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-173/run.json",
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H162 allocation-free gitignore matching halves the default summary on a source tree",
    "trials": 12
@@ -43064,6 +43289,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 aggregate-summary -36.43% [-38.58%, -28.98%], default-tree -35.86%; no-controls placebo includes zero",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-174/run.json",
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H163 per-listing control chains cut another third from the default summary",
    "trials": 12
@@ -43286,6 +43512,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet four-arm A/A of e5a71c8a on linux-v6.12: default-tree 181.9 ms (blind 89.9), aggregate-summary 149.5 ms (blind 77.8); default-tree A/A -1.12% [-3.79%, +3.12%] includes zero, aggregate-summary A/A -3.74% [-12.33%, -0.59%] would read as an accept",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-175/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary",
    "trials": 12
@@ -43508,6 +43735,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet four-arm A/A of e5a71c8a on node-modules-dense: default-tree 84.0 ms, aggregate-summary 76.6 ms; A/A +3.86% [-4.28%, +7.86%] and -0.27% [-5.97%, +2.25%] include zero",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-176/run.json.gz",
    "subject": "db6d49b68990:79957:11c4122bec53",
    "title": "Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu",
    "trials": 12
@@ -43730,6 +43958,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet four-arm A/A of e5a71c8a on linux-balanced-1m: default-tree 1,358.6 ms, aggregate-summary 1,234.3 ms; A/A +1.55% [-0.36%, +2.83%] and +0.67% [-3.63%, +5.60%] include zero",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-177/run.json.gz",
    "subject": "2aace7bc8aee:1000001:91cca62204a7",
    "title": "Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s",
    "trials": 12
@@ -43954,6 +44183,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair linux-v6.12 default-tree -29.62% [-33.58%, -26.11%], aggregate-summary -25.45% [-28.15%, -21.74%]; placebos (--no-controls both arms; balanced-1m) include zero; glob evaluations 110 -> 0.0019 per entry; answers identical to the base and to git check-ignore",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-178/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12",
    "trials": 20
@@ -44178,6 +44408,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair linux-v6.12 default-tree -3.31% [-7.43%, -0.84%] stacked on H171, as predicted; aggregate-summary +1.83% [-0.64%, +4.39%] unchanged as predicted; --no-controls placebo includes zero; answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-178/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H175 derived control chains take another 3% off the default tree",
    "trials": 20
@@ -44388,6 +44619,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair linux-v6.12 default-tree -13.48% [-18.85%, -6.31%] and node-modules-dense -10.30% [-15.09%, -7.20%] (exp-181); summary and cold-scan-index placebos include zero; balanced-1m screen -3.20% wall, peak RSS -79%; answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-180/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12",
    "trials": 20
@@ -44612,6 +44844,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair node-modules-dense default-tree -10.30% [-15.09%, -7.20%]; cold-scan-index placebo -1.90% [-5.18%, +2.25%] includes zero",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-181/run.json.gz",
    "subject": "db6d49b68990:79957:11c4122bec53",
    "title": "Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense",
    "trials": 20
@@ -44735,6 +44968,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 12-pair screen on the H172 head: --threads 3 regresses +10.25% [+5.94%, +14.08%] on linux-v6.12 and +21.95% on node-modules-dense; 6 and 8 walkers do not clear on both real subjects; PORTABLE unchanged",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-182/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux walker count after H172: three walkers regress, six and eight do not clear on both trees",
    "trials": 12
@@ -44944,6 +45178,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair node-modules-dense aggregate-summary -8.68% [-11.49%, -4.66%]; --no-controls -1.12% n.s.; default-tree placebos include zero; walker instructions -33% (callgrind); answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-183/run.json.gz",
    "subject": "db6d49b68990:79957:11c4122bec53",
    "title": "Linux H180 summary walker trims cut the default summary 9% on node-modules-dense",
    "trials": 20
@@ -45153,6 +45388,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair linux-v6.12 aggregate-summary -5.63% [-15.15%, -2.75%], --no-controls -12.76% [-15.71%, -10.09%]; default-tree placebos include zero",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-184/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12",
    "trials": 20
@@ -45362,6 +45598,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair node-modules-dense aggregate-summary --no-controls -6.25% [-14.02%, -1.23%], short of the predicted -8% to -12% but clearing the rule; default summary -9.66%; default-tree with controls on -4.29% [-8.81%, -0.90%], while the default-tree result recorded here is the --no-controls pair, -1.67%; serial-portable placebo +0.10% includes zero; fstat 5,773 -> 4 in an strace of linux-v6.12; answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-185/run.json.gz",
    "subject": "db6d49b68990:79957:11c4122bec53",
    "title": "Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense",
    "trials": 20
@@ -45571,6 +45808,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair linux-v6.12 aggregate-summary --no-controls -7.90% [-9.55%, -4.74%], narrowly short of the predicted -8% to -12% but clearing the rule; default summary -9.39%; default-tree with controls on -2.06% [-7.38%, +1.83%] does not clear (co-secondary), nor does the --no-controls pair recorded here, -1.79%; serial-portable placebo -0.29% includes zero",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-186/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear",
    "trials": 20
@@ -45709,6 +45947,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 wall -6.93% [-11.29%, -0.17%], placebos include zero; peak RSS -22.86% misses the 50% bar there, balanced-1m -19.27% wall and -97% RSS",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-187/run.json",
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore",
    "trials": 12
@@ -45948,6 +46187,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 default-tree -2.19% [-4.50%, +1.08%] where gitignore classification was about 85% of the job; screening balanced-1m -10.63% [-13.00%, -8.23%], product contract main +10%",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-188/run.json",
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree",
    "trials": 12
@@ -46187,6 +46427,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet linux-v6.12 default-tree +2.26% [-5.33%, +12.96%], cold-scan-index +3.22% [+1.21%, +12.87%] regression interval; the recycle helps only the directory-dense generated tree",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-189/run.json",
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H159 rejected again on linux-v6.12 after H162 and H163",
    "trials": 12
@@ -46426,6 +46667,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet node-modules-dense (8.5 entries per directory) default-tree -8.61% [-19.47%, -5.04%], cold-scan-index -6.79%, peak RSS -6.89%; the per-directory saving the mechanism predicts, absent on sparse linux-v6.12",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-190/run.json",
    "subject": "1523f67ca225:79953:d854e8b38414",
    "title": "Linux H159 listing recycle clears 3 percent on a real directory-dense tree",
    "trials": 12
@@ -46665,6 +46907,7 @@
    "primary_metric": "wall_ns",
    "reason": "pre-registered primary, the product indexed-tree contract: control +3% [-1%, +10%] on linux-v6.12 and +1% [-3%, +6%] on balanced-1m; probe cold-scan-index -5.51% [-12.12%, -1.29%] secondary; allocations -40%",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-191/run.json",
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H157 file fold cuts allocations but misses on the product job after H159",
    "trials": 12
@@ -46875,6 +47118,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair bundle cell: default-tree +0.20% [-2.04%, +1.91%] on linux-v6.12 and -1.40% [-7.42%, +3.42%] on node-modules-dense; queue futex wakes 1,426 -> 3-10 and consumer instructions -3% are real but below the wall bar",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-192/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time",
    "trials": 20
@@ -47084,6 +47328,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair linux-v6.12 default-tree -7.62% [-10.41%, -5.28%]; --no-controls and node-modules-dense placebos include zero; consumer instructions 436M -> 238M; answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-193/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12",
    "trials": 20
@@ -47291,6 +47536,7 @@
    "primary_metric": "wall_ns",
    "reason": "Confirms the round's accepted changes in one paired cell against the Q0 engine; no decision rests on it.",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-194/run.json.gz",
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12",
    "trials": 20
@@ -47498,6 +47744,7 @@
    "primary_metric": "wall_ns",
    "reason": "Confirms the round's accepted changes on the dense tree in one paired cell against the Q0 engine; no decision rests on it.",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-195/run.json.gz",
    "subject": "db6d49b68990:79957:11c4122bec53",
    "title": "Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense",
    "trials": 20
@@ -47823,6 +48070,7 @@
    "primary_metric": "wall_ns",
    "reason": "not a speed decision: the non-regression screen of a correctness change (fdu-d2fn) that ships regardless, quiet 20 pairs on linux-v6.12: warm-revalidate -2.74% [-3.96%, +0.28%], its reconciliation component -3.56%; opened-discovery wall +1.19% [+0.56%, +3.51%] with its discovery component +0.06% non-inferior; default-tree +0.42% within noise; the serial walk, exp-185's placebo arm, -5.14% [-6.63%, -2.44%] against the control's serial walk; fstat 5,773 -> 4 on every moved route; every tree-entry statx carries AT_NO_AUTOMOUNT on every route",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-196/run.json.gz",
    "subject": "4ffe9d749fe6:92474:e9ca9ca97136",
    "title": "Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger",
    "trials": 20
@@ -48133,6 +48381,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the --no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%; placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25% [-4.46%, +0.25%] off, not resolvable, no regression on the --no-controls arm and the controls-on arm too wide to bound; statx 79,961 -> 70,416 and 92,836 -> 87,006; answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-197/run.json.gz",
    "subject": "db6d49b68990:79957:11c4122bec53",
    "title": "Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense",
    "trials": 20
@@ -48343,6 +48592,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair linux-v6.12 aggregate-summary -6.15% [-7.94%, -1.80%], within the -5% to -9% predicted; the --no-controls arms there and both jobs on node-modules-dense include zero; summary consumer instructions 361.7M -> 202.7M; read 1,261 -> 729; answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-198/run.json.gz",
    "subject": "4ffe9d749fe6:92474:e9ca9ca97136",
    "title": "Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12",
    "trials": 20
@@ -48552,6 +48802,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair node-modules-dense default-tree -4.91% [-6.94%, -2.86%], the --no-controls replicate -0.93% [-3.60%, +3.07%] putting the effect near the top of the predicted -2.5% to -4%; placebos include zero; linux-v6.12 -1.24% [-6.47%, +1.45%], in the predicted range, not resolvable, no regression; answers identical",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-199/run.json.gz",
    "subject": "db6d49b68990:79957:11c4122bec53",
    "title": "Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense",
    "trials": 20
@@ -48862,6 +49113,7 @@
    "primary_metric": "wall_ns",
    "reason": "quiet 20-pair default-tree -0.35% [-3.61%, +2.19%] on linux-v6.12 and +0.64% [-2.38%, +3.46%] on node-modules-dense against -3% to -5% and -2% to -4% predicted; replicates agree; placebos at zero; cold-scan-index non-inferior; consumer instructions -20% and -38% with identical answers did not reach wall",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-200/run.json.gz",
    "subject": "4ffe9d749fe6:92474:e9ca9ca97136",
    "title": "Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change",
    "trials": 20
@@ -49074,6 +49326,7 @@
    "primary_metric": "wall_ns",
    "reason": "Confirms the track's accepted changes in one paired cell per tree against the round's final head, with pdu default, pdu --max-depth 2 and diskus paired with the shipped head in the same run; no decision rests on it.",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-201/run.json.gz",
    "subject": "4ffe9d749fe6:92474:e9ca9ca97136",
    "title": "Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees",
    "trials": 20
@@ -49281,6 +49534,7 @@
    "primary_metric": "wall_ns",
    "reason": "The release engine end to end on every subject this host has: against 0.2.1 in one paired probe cell per tree, and against pdu default, pdu --max-depth 2, diskus and the 0.2.1 CLI in one interleaved tool cell per tree with the release CLI as anchor; no decision rests on it.",
    "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-202/run.json.gz",
    "subject": "4ffe9d749fe6:92474:e9ca9ca97136",
    "title": "Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees",
    "trials": 20

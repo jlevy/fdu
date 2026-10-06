@@ -3910,6 +3910,27 @@ mod tests {
             shares(&beside_tree),
             ["note: percentages are shares of code lines (LANGUAGES)"]
         );
+
+        // Sections sharing a denominator are listed under it once, in first-seen order,
+        // even when another denominator's section sits between them.
+        let mut interleaved =
+            fixture(&[ViewSpec::Languages, ViewSpec::Documents, ViewSpec::Families]);
+        for (section, metric) in interleaved.sections.iter_mut().zip([
+            ShareMetric::CodeLines,
+            ShareMetric::DocumentWords,
+            ShareMetric::CodeLines,
+        ]) {
+            let Section::Metrics { summary, .. } = section else {
+                panic!("languages, documents, and families should be metric sections");
+            };
+            summary.share_metric = metric;
+        }
+        assert_eq!(
+            shares(&interleaved),
+            ["note: percentages are shares of code lines (LANGUAGES, FAMILIES), document words \
+                 (DOCUMENTS)"],
+            "a shared denominator is named once"
+        );
     }
 
     #[test]

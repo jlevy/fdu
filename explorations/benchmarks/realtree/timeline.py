@@ -332,6 +332,9 @@ def project(experiments: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
                 "anchored": BASELINE_COMMIT in control_text,
                 "jobs": jobs,
                 "reference_tools": experiment.get("reference_tools") or [],
+                # Experiments that shared one session share its run artifact, and with it
+                # every measurement taken in it, so runs are counted by this, not by id.
+                "run_artifact": experiment["method"].get("run_artifact"),
                 "path": Path(str(experiment["_path"])).name,
             }
         )
@@ -426,6 +429,9 @@ def _calibration(records: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     mean: on the 60k subject `dust` itself ranges from 210 ms to 327 ms across runs of
     the same unchanged binary, which is the clearest available statement of why a
     single-run before-and-after comparison would have been worthless.
+
+    A row is one experiment's reading, and `run` names the session it came from, so two
+    experiments measured in one session count as one run, not two.
     """
     rows: List[Dict[str, Any]] = []
     for record in records:
@@ -433,6 +439,7 @@ def _calibration(records: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
             rows.append(
                 {
                     "id": record["id"],
+                    "run": record.get("run_artifact"),
                     "subject": record["subject"],
                     "platform": record["platform"],
                     "entries": record["entries"],

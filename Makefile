@@ -290,9 +290,9 @@ golden-invocations:
 	$(NODE) scripts/check-golden-invocations.mjs
 
 # The restore-patterns test imports `yaml`, so this target needs the locked node_modules.
+# The test list lives once, in the npm script CI runs, so neither can drop a test.
 golden-observability: $(NODE_INSTALL_STAMP)
-	$(NODE) --test scripts/check-golden-observability.test.mjs scripts/golden-restore-patterns.test.mjs
-	$(NODE) scripts/check-golden-observability.mjs
+	$(NPM) run check:golden-observability
 
 # cli-animate (packages/cli-animate), the terminal-recording tool: typecheck and unit tests,
 # which need no external programs. Its end-to-end test drives asciinema, Chromium, and

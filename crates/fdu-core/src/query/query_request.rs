@@ -1109,6 +1109,9 @@ impl ScopeAxis {
 ///
 /// Non-exhaustive, so a later refusal is an additive change: a match outside this crate
 /// names the refusals it acts on and renders the rest with [`Self::message`].
+/// [`Self::AnalyzerNamedAsView`], [`Self::ViewNeedsAnalyzer`], [`Self::SortNeedsAnalyzer`],
+/// and [`Self::WatchContent`] are non-exhaustive too, so a field one of them gains later
+/// is additive as well: a match outside this crate reads them with `..`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RequestError {
@@ -1122,6 +1125,7 @@ pub enum RequestError {
         expected: String,
     },
     /// An analyzer name was supplied where a report view was expected.
+    #[non_exhaustive]
     AnalyzerNamedAsView {
         /// The rejected token in the caller's spelling.
         value: String,
@@ -1135,6 +1139,7 @@ pub enum RequestError {
     /// Only a basis the request did not build can raise this -- a retained index, an opened
     /// root, or one supplied whole -- because [`Request::build`] enables what its views
     /// imply, and a read never widens what a holder was opened with.
+    #[non_exhaustive]
     ViewNeedsAnalyzer {
         /// The view the read named.
         view: ViewSpec,
@@ -1147,6 +1152,7 @@ pub enum RequestError {
     ///
     /// Unlike a content view, a sort implies nothing: it orders rows and never says what a
     /// report is about, so the analyzer must be named.
+    #[non_exhaustive]
     SortNeedsAnalyzer {
         /// The metric, as the sort axis spells it.
         metric: &'static str,
@@ -1186,6 +1192,7 @@ pub enum RequestError {
     ///
     /// Names every axis that enabled analysis, so a caller who drops one is not refused
     /// again for the other.
+    #[non_exhaustive]
     WatchContent {
         /// The analyzers the caller named, or that a basis supplied whole holds; `none`
         /// when every analyzer was implied by a view.

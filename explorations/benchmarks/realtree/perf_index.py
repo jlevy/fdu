@@ -367,7 +367,7 @@ def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) 
                 "common_weight": round(sum(weights[name] for name in common), 6),
                 "titles": {name: titles[name] for name in ratios},
                 "builds": rows,
-                # The combined index weights every platform; one measured alone is its own
+                # The full index weights every platform; one measured alone is its own
                 # platform's score, and the page names what the combination still lacks.
                 "unmeasured_platforms": {
                     name: weight
