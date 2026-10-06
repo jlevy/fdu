@@ -138,7 +138,8 @@ macro_rules! docs_guide {
 document counts, for the command line, Python, and Rust.
 
   For every directory in a tree at once, fdu reports its size, file count,
-  recency, and file kinds, and on request its lines of code and prose volume.
+  recency, and file kinds, and on request lines of code by language and words
+  by document type.
   It walks the tree on several threads through each platform's native
   directory interface, and on a generated million-entry tree (875,000 files)
   it finished ahead of du and the seven other disk-usage tools measured on
