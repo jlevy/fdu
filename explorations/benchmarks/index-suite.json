@@ -1,0 +1,162 @@
+{
+  "schema": "fdu-performance-index-suite/1",
+  "version": 1,
+  "spec": "docs/project/specs/active/plan-2026-10-05-fdu-performance-index.md",
+  "reference_build": "v0.3.0",
+  "platform_weights": {
+    "macOS": 0.5,
+    "Linux": 0.5
+  },
+  "trees": {
+    "K": {
+      "title": "the Linux v6.12 source tree",
+      "provenance": "git clone --depth 1 --branch v6.12 https://github.com/torvalds/linux"
+    },
+    "G": {
+      "title": "the generated 1M-entry tree",
+      "provenance": "python -m benchmarks.generate create --recipe balanced --entries 1000000"
+    }
+  },
+  "components": [
+    {
+      "id": "cold-cache",
+      "title": "Cold cache",
+      "weight": 0.15,
+      "tree": "K",
+      "command": "fdu PATH",
+      "cache_state": "fdu's caches empty for every sample",
+      "measures": "wall"
+    },
+    {
+      "id": "warm-content-code",
+      "title": "Warm-cache content: code",
+      "weight": 0.1,
+      "tree": "K",
+      "command": "fdu --view code PATH",
+      "cache_state": "content cache filled by an untimed run of the same build just before",
+      "measures": "wall"
+    },
+    {
+      "id": "warm-content-documents",
+      "title": "Warm-cache content: documents",
+      "weight": 0.1,
+      "tree": "K",
+      "command": "fdu --view documents PATH",
+      "cache_state": "content cache filled by an untimed run of the same build just before",
+      "measures": "wall"
+    },
+    {
+      "id": "default-tree",
+      "title": "Default tree view",
+      "weight": 0.15,
+      "tree": "K",
+      "command": "fdu PATH",
+      "cache_state": "default cache policy, steady state after the warm-ups",
+      "measures": "wall"
+    },
+    {
+      "id": "summary",
+      "title": "Summary view",
+      "weight": 0.075,
+      "tree": "K",
+      "command": "fdu --view summary PATH",
+      "cache_state": "default cache policy, steady state after the warm-ups",
+      "measures": "wall"
+    },
+    {
+      "id": "code",
+      "title": "Code view",
+      "weight": 0.075,
+      "tree": "K",
+      "command": "fdu --view code PATH",
+      "cache_state": "fdu's caches empty for every sample",
+      "measures": "wall"
+    },
+    {
+      "id": "documents",
+      "title": "Documents view",
+      "weight": 0.075,
+      "tree": "K",
+      "command": "fdu --view documents PATH",
+      "cache_state": "fdu's caches empty for every sample",
+      "measures": "wall"
+    },
+    {
+      "id": "warm-metadata",
+      "title": "Warm metadata cache",
+      "weight": 0.075,
+      "tree": "K",
+      "command": "fdu --cache on PATH",
+      "cache_state": "snapshot written by an untimed run of the same build just before",
+      "measures": "wall"
+    },
+    {
+      "id": "multi-view",
+      "title": "Multi-view content report",
+      "weight": 0.05,
+      "tree": "K",
+      "command": "fdu --view code,documents,languages PATH",
+      "cache_state": "fdu's caches empty for every sample",
+      "measures": "wall"
+    },
+    {
+      "id": "opened-root",
+      "title": "Opened root",
+      "weight": 0.05,
+      "tree": "K",
+      "command": "perf_probe opened-second-report",
+      "cache_state": "the library's open, then a second report",
+      "measures": "wall"
+    },
+    {
+      "id": "scale",
+      "title": "Scale",
+      "weight": 0.05,
+      "tree": "G",
+      "command": "fdu PATH",
+      "cache_state": "fdu's caches empty for every sample",
+      "measures": "wall"
+    },
+    {
+      "id": "memory",
+      "title": "Memory",
+      "weight": 0.05,
+      "tree": "K,G",
+      "command": "peak RSS of the cold-cache and scale components",
+      "cache_state": "as those components",
+      "measures": "peak_rss",
+      "from_components": ["cold-cache", "scale"]
+    }
+  ],
+  "job_components": {
+    "cold-scan-index": "cold-cache",
+    "cold-scan-producer": "cold-cache",
+    "adaptive-scan-index": "cold-cache",
+    "default-tree-first": "cold-cache",
+    "content-disabled": "cold-cache",
+    "default-tree": "default-tree",
+    "cli-default-tree": "default-tree",
+    "aggregate-summary": "summary",
+    "rich-summary-report": "summary",
+    "rich-summary-open-pipeline": "summary",
+    "rich-summary-shared-openers": "summary",
+    "selected-allocated-total": "summary",
+    "content-basic": "code",
+    "code-sloc": "code",
+    "markdown-prose": "documents",
+    "text-prose": "documents",
+    "content-cache-hit": "warm-content-code",
+    "code-sloc-cache-hit": "warm-content-code",
+    "document-cache-hit": "warm-content-documents",
+    "content-query": "multi-view",
+    "warm-revalidate": "warm-metadata",
+    "warm-snapshot-load": "warm-metadata",
+    "cold-snapshot-save": "warm-metadata",
+    "cold-open-save": "warm-metadata",
+    "opened-discovery": "opened-root",
+    "opened-second-report": "opened-root",
+    "index-second-report": "opened-root",
+    "delta-apply-large": "opened-root",
+    "delta-apply-batched": "opened-root"
+  }
+}
