@@ -54,15 +54,18 @@ headers use the uppercase canonical view name.
 Metric labels belong in table columns or in a note naming the percentage’s denominator,
 so document-word percentages cannot be mistaken for byte percentages.
 A single view’s note names the measure alone; beside other views it names every non-byte
-denominator with its section, the code table’s included, so no table borrows another’s,
-and a section it does not name shares bytes:
+denominator with its sections, the code table’s included, so no table borrows another’s,
+and a section it does not name shares bytes.
+Sections that share a denominator are listed under it once, in first-seen order
+(`code lines (CODE, LANGUAGES)`):
 
 ```text
 note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ```
 
 Display-limit notes name their section the same way (`2 rows below min share in TYPES`),
-so equal counts in different views stay distinct.
+but each section keeps its own entry, so equal counts in different views stay distinct
+and are not read as one sum.
 See the [analysis mapping](../../usage.md#measurements-views-and-headers).
 The mapping reads both ways for the two views with no metadata meaning: `code` and
 `documents` each request their analyzer, so `--view code,documents` is the one-flag form
