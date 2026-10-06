@@ -330,7 +330,10 @@ request, with one cache sidecar and one answer.
 An explicit `--view` always wins.
 If it displays no content metric, fdu still performs the requested analysis and names
 the view that would show it: `fdu . --analyze=code --view=summary` ends with
-`note: code analysis not shown by summary` and `tip: show it: --view code`.
+`note: code analysis not shown by summary` and `tip: show it: --view code`. If it
+displays some of the analysis and not the rest, the note names the rest, and the tip
+keeps your views: `fdu . --analyze=code --view=documents` ends with
+`note: code analysis not shown by documents` and `tip: show it: --view documents,code`.
 
 ### Measurements, Views, and Headers
 

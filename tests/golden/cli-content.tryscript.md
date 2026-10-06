@@ -734,7 +734,7 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
 ! note: totals include hidden languages
 ! note: ranked by code lines
 ! note: 15 languages analyzed
-! note: display limits: 8 languages below min share
+! note: display limits: 8 rows below min share
 ! tip: show more: --min-share=0%
 ! perf: took [PERF_TIME] to walk 15 files (1.4 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
@@ -815,7 +815,7 @@ LANGUAGES
 
 SUMMARY
       38 B  1 file, 1 directory
-! note: percentages are shares of code lines
+! note: percentages are shares of code lines (CODE), code lines (LANGUAGES)
 ! note: 1 language analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
@@ -903,7 +903,7 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
 DOCUMENTS
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
-! note: percentages are shares of document words
+! note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ! note: 2 languages analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
@@ -930,6 +930,21 @@ $ fdu --cache off --color never --size apparent --analyze all --view tree conten
 █░░░░░░░░░     9%        22 B      settings.json
 ! note: code and words analysis not shown by tree
 ! tip: show it: --view code,documents
+! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
+? 0
+```
+
+Analysis that one selected view shows and another does not is named too, analyzer by
+analyzer. `documents` implies words and shows it, so the code analysis `--analyze code`
+asked for is what goes unshown, and the tip keeps the view the caller chose.
+
+```console
+$ fdu --cache off --color never --size apparent --analyze code --view documents content-project
+      42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+      35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+! note: percentages are shares of document words
+! note: code analysis not shown by documents
+! tip: show it: --view documents,code
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -974,7 +989,7 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
 DOCUMENTS
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
-! note: percentages are shares of document words
+! note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ! note: 2 languages analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
@@ -985,6 +1000,18 @@ An analyzer’s name is not a view, and is refused with the view that shows it.
 ```console
 $ fdu --cache off --view words content-project
 ! fdu: invalid --view "words": words is an analyzer; its view is documents
+? 2
+```
+
+## A Watch Refuses the Analysis a Content View Implies
+
+A watch cannot keep content analysis current, so a content view is refused under
+`--watch` as `--analyze` is, before anything is scanned, naming the view the caller
+wrote rather than an analyzer they never typed.
+
+```console
+$ fdu --watch --view code content-project
+! fdu: --view code needs code analysis, which --watch cannot keep current; use a one-shot report
 ? 2
 ```
 
@@ -1037,6 +1064,56 @@ RECENT  (2 of 7)
 ? 0
 ```
 
+Under one analyzer, `full` omits the content view whose analyzer did not run and names
+that analyzer. `documents` needs words, so `--analyze code` leaves it out, and the tip
+names the value that keeps the code analysis already chosen.
+
+```console
+$ fdu --cache off --color never --size apparent --analyze code --view full --limit 2 content-project
+SUMMARY
+     256 B  7 files, 4 directories
+
+TREE
+██████████   100%       256 B  . 7 files
+████░░░░░░    38%        98 B    assets/ 2 files
+██████░░░░    62%       158 B    … and 5 more files
+
+FAMILIES  (2 of 4)
+      80 B   31.2%  binary             1 file, 1 binary
+      77 B   30.1%  code               2 files, 7 lines (4 code, 1 comment, 2 blank)
+
+TYPES  (2 of 6)
+      80 B   31.2%  image              1 file, 1 binary
+      42 B   16.4%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 1 documentation
+
+EXTENSIONS  (2 of 6)
+      80 B  .png         1 file
+      42 B  .md          1 file
+
+CODE
+Code lines   Share  Comments  Blank  Analyzed files  Language
+         3   75.0%         0      1             1/1  Rust     (0 gitignored)
+         1   25.0%         1      1             1/1  Python   (0 gitignored)
+         4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
+
+LARGEST  (2 of 7)
+80 B  assets[SEP]logo.png
+42 B  docs[SEP]guide.md
+
+RECENT  (2 of 7)
+[RFC3339]  assets[SEP]late.bin.txt
+[RFC3339]  docs[SEP]notes.txt
+! note: totals include descendants
+! note: percentages are shares of code lines (CODE)
+! note: 2 languages analyzed
+! note: display limits: row limit 2
+! note: full omits documents without words analysis
+! tip: show more: --limit=all
+! tip: include them: --analyze all
+! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
+? 0
+```
+
 With every analyzer enabled nothing is omitted, and no note appears.
 
 ```console
@@ -1079,7 +1156,7 @@ RECENT  (2 of 7)
 [RFC3339]  assets[SEP]late.bin.txt
 [RFC3339]  docs[SEP]notes.txt
 ! note: totals include descendants
-! note: percentages are shares of document words
+! note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ! note: 2 languages analyzed
 ! note: display limits: row limit 2
 ! tip: show more: --limit=all

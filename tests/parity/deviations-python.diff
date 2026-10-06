@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 63 sessions differ, and every one of them has a named cause.
+# 66 sessions differ, and every one of them has a named cause.
 #
-#  22  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  23  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
 #      platform separator. The Python replay prints the sandbox root and a literal
 #      separator. Only the exact fixture root and otherwise identical lines match;
@@ -56,7 +56,7 @@
 #      Only the four setter and value pairs the shared report renderer emits, in its
 #      fixed order, are accepted; every other line remains identical.
 #
-#  24  Each surface names its own parameter  [surface-label]
+#  25  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -82,6 +82,15 @@
 #      --version is the deliberate one, and it is load-bearing: the shim names itself so
 #      it can never be mistaken for the binary, which is what keeps this artifact
 #      non-empty. An empty artifact would mean the shim never ran.
+#
+#   1  A Python watch reads an index, which a content view never widens  [held-basis-watch]
+#      The command line has no index to watch: --watch builds its own basis, so a content
+#      view enables its analyzer and the watch refuses the analysis it cannot keep current.
+#      The package watches only an index, fdu.open(...).watch(...), and a read never widens
+#      what an index was opened with, so the same view is refused by the index first,
+#      naming how it was opened. Both refuse before reporting anything, with one exit status;
+#      which of two true rules speaks first follows the route. Pinned whole: one line on
+#      each side, the same view and analyzer, and an index opened with no analyzer.
 #
 # An unexplained difference fails the run rather than landing here, so this list is
 # what is known, not what was tolerated.
@@ -952,7 +961,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  note: totals include hidden languages
  note: ranked by code lines
  note: 15 languages analyzed
- note: display limits: 8 languages below min share
+ note: display limits: 8 rows below min share
 -tip: show more: --min-share=0%
 +tip: show more: min_share=0%
   ✗ Code Totals Survive Bounds and Unsupported Languages
@@ -993,6 +1002,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  note: code and words analysis not shown by tree
 -tip: show it: --view code,documents
 +tip: show it: view code,documents
+  ✗ The Analyzer Set Chooses the View
+    stderr:
+@@ -1,3 +1,3 @@
+ note: percentages are shares of document words
+ note: code analysis not shown by documents
+-tip: show it: --view documents,code
++tip: show it: view documents,code
   ✓ The View Chooses the Analyzer Set
   ✓ The View Chooses the Analyzer Set
   ✓ The View Chooses the Analyzer Set
@@ -1001,6 +1017,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "words": words is an analyzer; its view is documents
 +fdu: invalid view "words": words is an analyzer; its view is documents
+  ✗ A Watch Refuses the Analysis a Content View Implies
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: --view code needs code analysis, which --watch cannot keep current; use a one-shot report
++fdu: view code needs code analysis; this index was opened with analyze none
   ✗ Every View One Walk Can Answer
 @@ -22,10 +22,10 @@
        39 B   50.6%  Python  1 file
@@ -1025,6 +1046,30 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
+@@ -24,10 +24,10 @@
+          1   25.0%         1      1             1/1  Python   (0 gitignored)
+          4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
+ LARGEST  (2 of 7)
+-80 B  assets[SEP]logo.png
+-42 B  docs[SEP]guide.md
++80 B  assets/logo.png
++42 B  docs/guide.md
+ RECENT  (2 of 7)
+-[RFC3339]  assets[SEP]late.bin.txt
+-[RFC3339]  docs[SEP]notes.txt
++[RFC3339]  assets/late.bin.txt
++[RFC3339]  docs/notes.txt
+    stderr:
+@@ -2,6 +2,6 @@
+ note: percentages are shares of code lines (CODE)
+ note: 2 languages analyzed
+ note: display limits: row limit 2
+ note: full omits documents without words analysis
+-tip: show more: --limit=all
+-tip: include them: --analyze all
++tip: show more: limit=all
++tip: include them: analyze all
+  ✗ Every View One Walk Can Answer
 @@ -28,10 +28,10 @@
        42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
        35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
@@ -1041,7 +1086,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
     stderr:
 @@ -1,5 +1,5 @@
  note: totals include descendants
- note: percentages are shares of document words
+ note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
  note: 2 languages analyzed
  note: display limits: row limit 2
 -tip: show more: --limit=all

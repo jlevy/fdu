@@ -636,11 +636,15 @@ def main() -> None:
     # An opened root runs no analyzer, so a view that needs one has no answer here: it is
     # refused, not reported with zero words, and never read for -- a read does not widen
     # what a holder was opened with. The whole read fails, because the request's own shape
-    # is what is wrong (fdu-cevv).
+    # is what is wrong (fdu-cevv). The remedy is one this route can reach: `OpenedIndex.open`
+    # takes no analyzer, so the refusal points at a one-shot report or an analyzed index.
     try:
         opened.read(ReportProjection(query=Query(views=(View.DOCUMENTS,))))
     except ValueError as error:
-        assert "view documents needs words analysis" in str(error), error
+        assert str(error) == (
+            "view documents needs words analysis, which an opened root never runs; use a "
+            "one-shot report, or an index opened with analyze words"
+        ), error
     else:
         raise AssertionError("an opened documents read must be refused")
 

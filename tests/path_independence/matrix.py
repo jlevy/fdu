@@ -189,7 +189,9 @@ IMPLIED: tuple[tuple[str, str], ...] = (
 # A warmer's spec and the cache policy its own run uses. A metadata warmer exists to
 # leave a snapshot of its scope, which a one-shot report does only under `on`; analysis
 # warmers leave theirs under `auto`, which is the path they cover. `W_auto` is the default
-# command's own history, which leaves nothing.
+# command's own history, which leaves nothing. The view warmers write the content sidecar
+# through the analyzer a content view implies, with no `--analyze` at all, so a history can
+# start from a sidecar a view wrote as well as from one an analyzer named.
 WARMERS: dict[str, tuple[Spec, str]] = {
     "W_default": (spec(), "on"),
     "W_nogi": (spec(no_gitignore=True), "on"),
@@ -197,6 +199,8 @@ WARMERS: dict[str, tuple[Spec, str]] = {
     "W_code": (spec(analyze="code"), "auto"),
     "W_lines": (spec(analyze="lines"), "auto"),
     "W_words": (spec(analyze="words"), "auto"),
+    "W_view_code": (spec(views=["code"]), "auto"),
+    "W_view_documents": (spec(views=["documents"]), "auto"),
     "W_budget1k": (spec(budget="1KiB"), "on"),
     "W_summary": (spec(views=["summary"]), "on"),
     "W_scandepth1": (spec(scan_depth=1), "on"),
@@ -336,7 +340,18 @@ FULL = Tier(
     warmers=tuple(WARMERS),
     selfwarm=True,
     mutations=tuple(MUTATIONS),
-    mutation_warmers=("W_default", "W_all", "W_code", "W_nogi", "W_budget1k"),
+    mutation_warmers=(
+        "W_default",
+        "W_all",
+        "W_code",
+        "W_nogi",
+        "W_budget1k",
+        "W_view_code",
+        "W_view_documents",
+    ),
+    # No view warmer here: a cross history also warms through `fdu.open`, whose index a
+    # content view never widens, so on that route a view warmer is refused and warms
+    # nothing.
     cross_warmers=("W_default", "W_all", "W_lines", "W_summary"),
 )
 
@@ -366,7 +381,7 @@ SUBSET = Tier(
         "a_all_nogi",
         "onefs",
     ),
-    warmers=("W_default", "W_nogi", "W_all", "W_code", "W_words"),
+    warmers=("W_default", "W_nogi", "W_all", "W_code", "W_words", "W_view_code"),
     selfwarm=False,
     # One mutation per way a change can be detected: a visible mtime, content alone,
     # entries added and removed, a rule change, a link retarget, and an unlistable tree.
@@ -379,7 +394,9 @@ SUBSET = Tier(
         "symlink",
         "unreadable",
     ),
-    mutation_warmers=("W_default", "W_all", "W_code"),
+    # `W_view_documents` writes the words sidecar through the view alone, so each mutation
+    # is also detected from a sidecar no `--analyze` named.
+    mutation_warmers=("W_default", "W_all", "W_code", "W_view_documents"),
     cross_warmers=("W_default", "W_all"),
 )
 

@@ -220,6 +220,36 @@ test("the stale-answer warning accepts only its exact option translation", () =>
   );
 });
 
+test("a watched content view accepts only the held-index refusal of the same view", () => {
+  const cli = (view, analyzer) =>
+    `! fdu: --view ${view} needs ${analyzer} analysis, which --watch cannot keep current; use a one-shot report`;
+  const api = (view, analyzer, held = "none") =>
+    `! fdu: view ${view} needs ${analyzer} analysis; this index was opened with analyze ${held}`;
+  assert.equal(classify(session([cli("code", "code")], [api("code", "code")]))?.id, "held-basis-watch");
+  assert.equal(
+    classify(session([cli("documents", "words")], [api("documents", "words")]))?.id,
+    "held-basis-watch",
+  );
+  for (const added of [
+    api("documents", "code"),
+    api("code", "words"),
+    api("code", "code", "lines"),
+    `${api("code", "code")} now`,
+    "! fdu: analyze is not yet supported with watch; use a one-shot report",
+  ]) {
+    assert.equal(classify(session([cli("code", "code")], [added])), null, added);
+  }
+  // A multi-view refusal, or one that also names an analyzer, is not this difference.
+  const both =
+    "! fdu: --analyze words and --view code need words and code analysis, which --watch cannot keep current; use a one-shot report";
+  assert.equal(classify(session([both], [api("code", "code", "words")])), null);
+  assert.equal(
+    classify(session([cli("code", "code"), "total 100"], [api("code", "code"), "total 999"])),
+    null,
+    "an extra changed line is never absorbed",
+  );
+});
+
 // A class that cannot fail is worse than no class: the summary then reports a clean
 // surface while a real difference goes unread. Each class gets a fixture it would
 // otherwise match, polluted with one genuinely changed line.

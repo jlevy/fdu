@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Rust: `ViewSpec::implies` and `ViewSpec::shows`, the analyzers a view requests and the
+  ones it displays; `AnalysisSet::union`, `named`, and `request_label`;
+  `Request::implied_by`; `Request::read_opened`, a read of an opened root that refuses
+  in its words; and `query::BasisHolder`, which the analysis refusals carry.
+
 ### Changed
 
 - **Breaking:** a content view requests the analysis it shows.
@@ -23,10 +30,49 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refused on a held index.
   `request.analyze` in structured output is the enabled set, named or implied; the
   report schema is unchanged.
+- **Breaking:** `--view=documents` beside `--analyze=lines` or `--analyze=code` now runs
+  words analysis as well, because `documents` implies it.
+  `--analyze=lines --view=documents --format=json` reports
+  `request.analyze: ["lines", "words"]` and `share_metric: "document_words"` where it
+  reported `["lines"]` and `raw_words`; a script that read raw-word shares by document
+  type reads `document_words` instead.
+- **Breaking:** `--view=full` under `--analyze=lines` or `--analyze=code` no longer
+  includes DOCUMENTS, which needs words analysis: the report lists it in `omitted_views`
+  and says `note: full omits documents without words analysis` with
+  `tip: include them: --analyze all`. A script that read the DOCUMENTS section of such a
+  report adds `words` to `--analyze`.
+- **Breaking:** `fdu_core::query::Request` gains a private field recording which
+  analyzers the caller named and which views implied the rest.
+  Rust code outside the engine crate builds a request with `Request::new`,
+  `Request::read`, or `Request::build` rather than a struct literal, and cannot
+  destructure it exhaustively; its public fields `basis`, `query`, and `now` are
+  unchanged. `Request::implied_by()` returns the views that implied analysis.
+- **Breaking:** `fdu_core::query::RequestError` is now `#[non_exhaustive]`, so a later
+  refusal is an additive change; code that matches it exhaustively adds a wildcard arm,
+  and code that renders it with `message` or `Display` is unaffected.
+- **Breaking:** `RequestError`’s analysis refusals change shape.
+  `ViewNeedsContent(ViewSpec)` and `NeedsAnalyzer { item, analyzer }` are removed: a
+  view the basis cannot answer is `ViewNeedsAnalyzer { view, held, holder }`, and a
+  metric sort without its analyzer is
+  `SortNeedsAnalyzer { metric, analyzer, held, holder }`, where `analyzer` and `held`
+  are `AnalysisSet` values and `holder` is the new `BasisHolder`: whether a request it
+  built, a basis supplied whole, a retained index, or an opened root fixed the
+  analyzers. `WatchContent` becomes `WatchContent { named, views }`, the analyzers the
+  caller named and the views that implied the rest; match it as `WatchContent { .. }`.
+  `AnalyzerNamedAsView::suggested_view` is a `ViewSpec` rather than a `&'static str`;
+  `suggested_view.label()` is the old string.
 - The messages around analysis name the exact remedy:
   `note: code analysis not shown by summary` with `tip: show it: --view code`, and
   `note: full omits code, documents without analysis` with
-  `tip: include them: --analyze all`.
+  `tip: include them: --analyze all`. Analysis that some selected view shows and some
+  does not is named too: `--analyze=code --view=documents` says
+  `note: code analysis not shown by documents` with
+  `tip: show it: --view documents,code`. A refusal for missing analysis names a remedy
+  its route accepts: an index names what it was opened with, an opened root says it runs
+  no analyzer, and only a request that can add an analyzer is told to.
+  A refused watch names every axis that enabled analysis:
+  `fdu . --watch --analyze=words --view=code` says
+  `--analyze words and --view code need words and code analysis`.
 - Human reports hold only the result: rows, column headings, and multi-view section
   headers. Every explanation is a `note:` or `tip:` line on stderr after it, including
   what used to sit inside the result: the percentage denominator
@@ -37,7 +83,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   display limit that hid something (`note: display limits: below 1% of root, depth 5`),
   and one runnable tip that lifts them all
   (`tip: show more: --min-share=0% --depth=all`; in Python, `min_share=0%, depth=all`).
-  The flat-format notes are shorter (`note: result stale, incomplete`).
+  Beside other views, a note names the section it is about
+  (`note: percentages are shares of code lines (CODE), document words (DOCUMENTS)`;
+  `2 rows below min share in TYPES`). The flat-format notes are shorter
+  (`note: result stale, incomplete`).
+- **Breaking:** `fdu_core::query::AxisNames` gains a public field, `setting_separator`,
+  that joins several settings in one suggestion (`" "` for flags, `", "` for keyword
+  arguments).
 
 ### Fixed
 

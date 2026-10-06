@@ -36,7 +36,9 @@
 //! See `docs/project/architecture/fdu-output-design.md` for examples and test coverage.
 
 use crate::content::CoverageReason;
-use crate::query::{IgnoredEntries, Report, ReportSource, Section, SizeMetric, TreeOmissionReason};
+use crate::query::{
+    IgnoredEntries, Report, ReportSource, Section, SizeMetric, TreeOmissionReason, ViewSpec,
+};
 
 /// Human diagnostics retain categories rather than parsing rendered text.
 #[derive(Clone, Debug, Default)]
@@ -191,13 +193,13 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
             Section::Extensions { rows, share_omitted, .. } => {
                 ignored_subset_shown |=
                     rows.iter().any(|row| row.ignored.is_some_and(|share| share.files > 0));
-                share_hidden(&mut limits_hit, &mut reason, *share_omitted, "extensions");
+                share_hidden(&mut limits_hit, &mut reason, *share_omitted, section, single);
             }
             Section::Summary(row) => {
                 ignored_subset_shown |= row.ignored.is_some_and(|share| share.files > 0);
             }
             Section::Metrics { view, summary } => {
-                share_hidden(&mut limits_hit, &mut reason, summary.share_omitted, "groups");
+                share_hidden(&mut limits_hit, &mut reason, summary.share_omitted, section, single);
                 if let Some(label) = super::share_metric_label(summary.share_metric) {
                     share_labels.push((label, super::view_header(*view)));
                 }
@@ -205,7 +207,12 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
             Section::Code(overview) => {
                 code_rows_hidden |= overview.share_omitted > 0
                     || overview.languages.len() < overview.total_languages;
-                share_hidden(&mut limits_hit, &mut reason, overview.share_omitted, "languages");
+                share_hidden(&mut limits_hit, &mut reason, overview.share_omitted, section, single);
+                // Alone, the table's `Code lines` heading names its share; beside other
+                // views, the note must say which section each denominator belongs to.
+                if !single {
+                    share_labels.push(("code lines", super::view_header(ViewSpec::Code)));
+                }
                 code_coverage(&mut coverage, overview);
             }
             Section::Files { .. } => {}
@@ -224,9 +231,11 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     if !includes.is_empty() {
         notes.push(format!("note: totals include {}", includes.join(" and ")));
     }
+    // A single view needs no section name; beside other views, every non-byte denominator
+    // names its section, so no table borrows another's (fdu-gda7 review A1).
     match share_labels.as_slice() {
         [] => {}
-        [(label, _)] => notes.push(format!("note: percentages are shares of {label}")),
+        [(label, _)] if single => notes.push(format!("note: percentages are shares of {label}")),
         labels => notes.push(format!(
             "note: percentages are shares of {}",
             labels
@@ -262,9 +271,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     .map(|(_, axis, value)| format!("{axis}={value}"))
     .collect::<Vec<_>>();
     if !flags.is_empty() {
-        // Flags read as one command line; keyword arguments as one call's arguments.
-        let separator = if report.axes.limit.starts_with('-') { " " } else { ", " };
-        tips.push(format!("tip: show more: {}", flags.join(separator)));
+        tips.push(format!("tip: show more: {}", flags.join(report.axes.setting_separator)));
     }
     for tip in &report.tips {
         unique(&mut tips, tip.clone());
@@ -272,18 +279,25 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     (notes, tips)
 }
 
-/// Record rows a share floor hid in a grouped section.
+/// Record rows a share floor hid in a grouped section, naming the section beside others
+/// so equal counts in different views stay distinct.
 fn share_hidden(
     limits_hit: &mut Vec<String>,
     reason: &mut impl FnMut(TreeOmissionReason),
     omitted: usize,
-    noun: &str,
+    section: &Section,
+    single: bool,
 ) {
     if omitted > 0 {
         reason(TreeOmissionReason::Share);
+        let rows = format!(
+            "{} {} below min share",
+            super::human_count(omitted as u64),
+            if omitted == 1 { "row" } else { "rows" }
+        );
         unique(
             limits_hit,
-            format!("{} {noun} below min share", super::human_count(omitted as u64)),
+            if single { rows } else { format!("{rows} in {}", super::view_header(section.view())) },
         );
     }
 }

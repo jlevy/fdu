@@ -299,6 +299,17 @@ def is_python(invocation: Invocation) -> bool:
     return invocation.route in matrix.PY_ROUTES
 
 
+def content_tier_source(invocation: Invocation) -> str | None:
+    """How the content tier of an answer was produced: `scanned`, `revalidated`, ...
+
+    The report-level source says only how the entries were produced, so a content
+    request whose files were all read again still reports `warm_revalidate` once any
+    snapshot exists. Whether the sidecar was reused is this tier's answer.
+    """
+    provenance = (invocation.answer or {}).get("provenance") or {}
+    return ((provenance.get("tiers") or {}).get("content") or {}).get("source")
+
+
 def is_cache_miss(invocation: Invocation) -> bool:
     """Whether a failure is the named cache-only miss rather than a crash or other error."""
     if invocation.answer is not None or invocation.exit != 1:
@@ -709,6 +720,11 @@ class MatrixRun:
         after a complete `--cache on` run of one, `--stale-ok` must answer the other from
         the cache on every cache-reading route. Equal numbers alone could come from two
         separate sidecars; serving across the pair is what shows they share one basis.
+
+        The default delivery too: after an `auto` run of one, an `auto` run of the other
+        must equal the cold answer and report its content tier `revalidated`, the sidecar
+        verified and reused rather than every file read again. `--stale-ok` serves without
+        verifying, so it alone cannot show that the verified path reuses the pair's sidecar.
         """
         pairs = [
             (view, analyzer)
@@ -750,13 +766,47 @@ class MatrixRun:
             finally:
                 self.ws.discard(xdg)
 
+        def reused(case: tuple[str, str]) -> list[CaseResult]:
+            seed_id, reader_id = case
+            oracle = self.cold[reader_id]
+            xdg = self.ws.fresh(f"implied-auto-{seed_id}-{reader_id}")
+            try:
+                seed = run_cli(
+                    self.surfaces, self.facts.root, matrix.REQUESTS[seed_id], "auto", xdg
+                )
+                key = case_key(
+                    "implied", matrix.CLI_ROUTE, "auto", f"auto:{seed_id}", "-", reader_id
+                )
+                if seed.outcome != "complete":
+                    verdict = Verdict("outcome_class", ("<auto:not-complete>",))
+                    return [CaseResult(key, verdict, oracle, seed)]
+                measured = run_cli(
+                    self.surfaces, self.facts.root, matrix.REQUESTS[reader_id], "auto", xdg
+                )
+                verdict = compare(oracle, measured, policy="auto")
+                source = content_tier_source(measured)
+                if verdict.kind == "same" and source != "revalidated":
+                    verdict = Verdict(
+                        "differs",
+                        ("provenance.tiers.content.source",),
+                        (f"expected revalidated, got {source}",),
+                    )
+                return [CaseResult(key, verdict, oracle, measured, (seed.command,))]
+            finally:
+                self.ws.discard(xdg)
+
         cases = [
             (seed, reader, route)
             for view, analyzer in pairs
             for seed, reader in ((analyzer, view), (view, analyzer))
             for route in routes
         ]
-        return results + _parallel(one, cases)
+        histories = [
+            (seed, reader)
+            for view, analyzer in pairs
+            for seed, reader in ((analyzer, view), (view, analyzer))
+        ]
+        return results + _parallel(one, cases) + _parallel(reused, histories)
 
     def phase_mutation(self) -> list[CaseResult]:
         """Warm, change the tree, then ask every request under every policy."""
