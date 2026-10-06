@@ -500,10 +500,12 @@ def figure_end_to_end(dataset: Mapping[str, Any], platform: str = "Linux") -> st
 
 # ---------------------------------------------------------------- figure: iterations
 
-#: Accepted records that measure earlier changes again rather than adding one, with the
-#: reason. A record's fields cannot tell these apart: checkpoints record changed lines,
-#: and real changes sometimes record none (exp-015, exp-187, exp-190), so the list is
-#: explicit. Drawing them as kept changes counted campaign 1 four times over.
+#: Accepted records that measure a change already counted, with the reason, so each kept
+#: change counts once: cumulative checkpoints, validations after a merge or on another
+#: platform, the same candidate measured on a second tree, and determinations. The first
+#: record of a change keeps it. A record's fields cannot tell these apart (checkpoints
+#: record changed lines, and real changes sometimes record none, exp-015 and exp-190), so
+#: the list is explicit; a test ties every entry to a committed record.
 REMEASUREMENTS = {
     "exp-006": "a cumulative checkpoint against the pre-work binary",
     "exp-023": "a cumulative checkpoint against the pre-work binary",
@@ -522,6 +524,11 @@ REMEASUREMENTS = {
     "exp-140": "macOS changes validated on Linux",
     "exp-148": "a screen that kept neither arm",
     "exp-154": "a PGO screen whose kept arm is the control",
+    "exp-171": "exp-170's change measured on a second tree",
+    "exp-181": "exp-180's change measured on a second tree",
+    "exp-184": "exp-183's change measured on a second tree",
+    "exp-186": "exp-185's change measured on a second tree",
+    "exp-187": "exp-170's change validated on Linux",
 }
 
 
@@ -559,7 +566,7 @@ def _chronological(dataset: Mapping[str, Any]) -> List[Mapping[str, Any]]:
 def figure_timeline(dataset: Mapping[str, Any]) -> str:
     """Two stacked panels on one experiment axis, in the order the experiments ran.
 
-    The top panel is total runtime on one fixed benchmark, measured for every milestone
+    The top panel is total runtime on fixed benchmarks, measured for every milestone
     build in one interleaved session, so its steps compare directly. The bottom panel is
     every experiment's paired change on its own primary job, green where a change was
     kept, red where it was tried and dropped, grey for re-measurements and other verdicts.
@@ -665,7 +672,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 f'<text class="point-label" x="{x:.1f}" y="{label_y}" text-anchor="middle">'
                 f"{number}</text>"
             )
-        series = ("series-mac", "series-linux", "series-mac", "series-linux")
+        series = ("series-cell-a", "series-cell-b", "series-cell-a", "series-cell-b")
         for number, (cell, placed) in enumerate(cells):
             css = series[number % len(series)]
             first = placed[0]["wall_ms"]
@@ -760,7 +767,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
 
     counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
     cell_keys = [
-        (("key-mac", "key-linux")[number % 2], f"{cell.get('title') or cell['subject']}, "
+        (("key-cell-a", "key-cell-b")[number % 2], f"{cell.get('title') or cell['subject']}, "
          f"{fmt_ms(placed[0]['wall_ms'] * 1e6)} to {fmt_ms(placed[-1]['wall_ms'] * 1e6)}")
         for number, (cell, placed) in enumerate(cells)
     ]
@@ -774,14 +781,13 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     if cells:
         described = "; ".join(
             f"{esc(cell.get('title') or cell['subject'])} ({cell['entries']:,} entries, "
-            f"{cell['trials']} paired rounds)"
+            f"{cell['trials']} paired rounds, {esc(cell['cpu'])}, {esc(cell['storage'])}, "
+            f"{esc(cell['regime'])} host)"
             for cell, _ in cells
         )
-        first_cell = cells[0][0]
         caption = (
             f"Top: on each benchmark, every milestone build timed in one interleaved "
-            f"session: {described}; {esc(first_cell['cpu'])}, {esc(first_cell['storage'])}, "
-            f"{esc(first_cell['regime'])} host. Builds before 0.1.0 do not read .gitignore, "
+            f"session: {described}. Builds before 0.1.0 do not read .gitignore, "
             f"so on a repository they do less work. Hover a point for what each build added. "
         )
         named = {}
@@ -1182,6 +1188,8 @@ STYLE = """
   --before: hsl(215 12% 62%);
   --after: hsl(211 72% 42%);
   --drift: hsl(215 15% 91%);
+  --cell-b: hsl(268 52% 52%);
+  color-scheme: light;
   /* The system stack, and nothing else. A webfont would be a network dependency inside a
      committed document, in a repository that pins everything else it depends on, and this
      file has to render from a file:// URL on a machine that has never opened it before.
@@ -1210,6 +1218,8 @@ STYLE = """
     --before: hsl(215 10% 45%);
     --after: hsl(211 86% 62%);
     --drift: hsl(216 14% 17%);
+    --cell-b: hsl(268 70% 74%);
+    color-scheme: dark;
   }
 }
 :root[data-theme='dark'] {
@@ -1228,6 +1238,8 @@ STYLE = """
   --before: hsl(215 10% 45%);
   --after: hsl(211 86% 62%);
   --drift: hsl(216 14% 17%);
+  --cell-b: hsl(268 70% 74%);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -1293,6 +1305,8 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .key-bad { background: var(--bad); }
 .key-mac { background: var(--after); }
 .key-linux { background: var(--warn); }
+.key-cell-a { background: var(--after); }
+.key-cell-b { background: var(--cell-b); }
 .key-flat { background: var(--muted); }
 .key-synth { background: transparent; outline: 1px dashed var(--muted); }
 .pt-mid { fill-opacity: 0.55; }
@@ -1325,6 +1339,8 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .whisker-bad { stroke: var(--bad-soft); }
 .series-mac { stroke: var(--after); fill: var(--after); }
 .series-linux { stroke: var(--warn); fill: var(--warn); }
+.series-cell-a { stroke: var(--after); fill: var(--after); }
+.series-cell-b { stroke: var(--cell-b); fill: var(--cell-b); }
 .series-line { fill: none; stroke-width: 1.5; }
 .point-label { font: 10px var(--mono); fill: var(--muted); }
 .gutter { font: 9.5px var(--mono); fill: var(--muted); opacity: 0.75; }
@@ -1490,12 +1506,12 @@ SETTINGS = """
 <button type="button" id="gear" aria-label="Settings" aria-expanded="false" aria-controls="menu">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
 </button>
-<div id="menu" role="menu" hidden>
+<div id="menu" role="group" aria-label="Theme" hidden>
 <div class="menu-label">Theme</div>
 <div class="chooser" role="group" aria-label="Theme">
-<button type="button" class="seg" role="menuitemradio" data-theme-choice="system" aria-checked="false" title="System theme" aria-label="System theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></button>
-<button type="button" class="seg" role="menuitemradio" data-theme-choice="light" aria-checked="false" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
-<button type="button" class="seg" role="menuitemradio" data-theme-choice="dark" aria-checked="false" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg></button>
+<button type="button" class="seg" data-theme-choice="system" aria-pressed="false" title="System theme" aria-label="System theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></button>
+<button type="button" class="seg" data-theme-choice="light" aria-pressed="false" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+<button type="button" class="seg" data-theme-choice="dark" aria-pressed="false" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg></button>
 </div>
 </div>
 </span></div>
@@ -1518,7 +1534,7 @@ THEME_STYLE = """
   padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .seg:hover, .seg:focus-visible { color: var(--text); background: var(--panel); }
 .seg svg { width: 16px; height: 16px; }
-.seg[aria-checked='true'] { color: var(--accent); background: var(--panel); }
+.seg[aria-pressed='true'] { color: var(--accent); background: var(--panel); }
 """
 
 THEME_SCRIPT = """
@@ -1533,7 +1549,7 @@ THEME_SCRIPT = """
     if (choice === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', choice);
     buttons.forEach(function (button) {
-      button.setAttribute('aria-checked', String(button.getAttribute('data-theme-choice') === choice));
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-theme-choice') === choice));
     });
     if (persist) {
       try { localStorage.setItem('fdu.report.themeMode', choice); } catch (_error) {}
@@ -1741,9 +1757,9 @@ def _section_platforms(dataset: Mapping[str, Any]) -> str:
                 f"<td class='n'>{esc(fmt_pct(paired['change_pct']))}</td>"
                 f"<td class='n muted'>{esc(interval)}</td></tr>"
             )
-        noun = "improvement" if len(rows) == 1 else "improvements"
+        noun = "accepted run" if len(rows) == 1 else "accepted runs"
         sections.append(
-            f"<h3>{esc(platform)}: {len(rows)} {noun} kept</h3>"
+            f"<h3>{esc(platform)}: {len(rows)} {noun} that improved</h3>"
             f"<p>Decided on a generated tree: {on_generated} of {len(rows)}. The loop treats "
             "a generated tree as screening rather than as a sample of ordinary work.</p>"
             '<div class="scroll"><table>'
@@ -1768,8 +1784,10 @@ tree measured in several states.</p>
 <tbody>{"".join(summary)}</tbody></table></div>
 <p>Below, per platform: accepted changes still in the product whose deciding run measured
 an improvement on its primary metric, oldest first, with that run's two arms on its own
-subject. A validation on a second subject appears as its own row. Rejected and
-noninferiority verdicts are in the full table at the end.</p>
+subject. These count runs, not changes: a validation on a second subject or platform is
+its own row, so the sections total more than the kept changes in the header, which count
+each change once. Rejected and noninferiority verdicts are in the full table at the
+end.</p>
 {"".join(sections)}
 """
 
@@ -2183,7 +2201,7 @@ def _section_absolute(dataset: Mapping[str, Any]) -> str:
     linux = ""
     if end_to_end:
         linux = f"""
-<h3>Linux, end to end</h3>
+<h4>Linux, end to end</h4>
 <p>The later Linux work was measured the same way at its milestones: one engine against a
 later one in a single interleaved cell. The release cell is the comparison to quote for
 0.3.0; the development cells before it each ran in their own session.</p>
@@ -2194,7 +2212,7 @@ later one in a single interleaved cell. The release cell is the comparison to qu
 <h3>Wall time, in milliseconds</h3>
 <p>The campaign's own summaries are all percentages, and a percentage cannot say whether
 a scan takes half a second or half a minute. These are the measured medians.</p>
-<h3>macOS, campaign 1</h3>
+<h4>macOS, campaign 1</h4>
 {figure_absolute(dataset)}
 {linux}
 """

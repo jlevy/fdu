@@ -1362,13 +1362,16 @@ An earlier cell, on the external USB SSD, is kept under `history/superseded/`: t
 kernel and USB path set the wall time after campaign 1.
 
 The bottom panel is every experiment’s paired change on its own primary metric: green
-for the 57 changes kept at least 3% better (51 on wall time, 4 on peak memory, 2 on a
-pre-registered component timer), red for changes tried and not kept, and grey for
-everything else. Grey includes 17 accepted records that re-measure work already counted,
-listed with reasons as `REMEASUREMENTS` in `report_html.py`: cumulative checkpoints,
-post-merge and transfer validations, leftover determinations, and screens that kept no
-arm. The effects are not multiplied into a runtime: each was measured on its own job and
-tree, and compounding the 51 kept wall-time changes would claim over 50,000×.
+for the 52 changes kept at least 3% better, each counted once (47 on wall time, 3 on
+peak memory, 2 on a pre-registered component timer), red for changes tried and not kept,
+and grey for everything else.
+Grey includes 22 accepted records that measure a change already counted, listed with
+reasons as `REMEASUREMENTS` in `report_html.py`: cumulative checkpoints, post-merge and
+transfer validations, the same candidate measured on a second tree or platform, a
+rewrite measured against its own regression, leftover determinations, and screens that
+kept no arm or kept the control.
+The effects are not multiplied into a runtime: each was measured on its own job and
+tree, and compounding the 47 kept wall-time changes would claim about 7,700×.
 
 **Absolute.** Wall time at five cumulative checkpoints on one 60k-entry macOS tree, each
 re-measuring the original binary against the code of the day in one interleaved run:
