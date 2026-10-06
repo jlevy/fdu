@@ -313,7 +313,7 @@ time, each measured against the code it came from, kept only if it paid. This pa
 generated from the record of all 200 of those experiments, including
 the 61 that did not pay.</p>
 <div class="headline">
-  <div><span class="n good">1.7&times; better</span><span class="k">unified score, macOS, 0.2.0 to 0.3.0 [1.7&times;, 1.7&times;]; 12 of 12 components</span></div><div><span class="n good">4.7&times; better</span><span class="k">partial score, macOS, start to 0.3.0 [4.6&times;, 4.9&times;]; 4 of 12 components</span></div><div><span class="n">209 ms <span class="muted">&rarr;</span> <span class="good">110 ms</span></span><span class="k">Linux default tree, 0.2.1 to 0.3.0</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
+  <div><span class="n good">1.71&times; better</span><span class="k">unified score, macOS, 0.2.0 to 0.3.0 [1.68&times;, 1.74&times;]; 12 of 12 components</span></div><div><span class="n good">4.73&times; better</span><span class="k">partial score, macOS, start to 0.3.0 [4.60&times;, 4.87&times;]; 4 of 12 components</span></div><div><span class="n">209 ms <span class="muted">&rarr;</span> <span class="good">110 ms</span></span><span class="k">Linux default tree, 0.2.1 to 0.3.0</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
   <div><span class="n tnum">200</span>
     <span class="k">experiments</span></div>
   <div><span class="n tnum good">52</span>
@@ -328,12 +328,17 @@ against other tools is in the comparisons
 <a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>.</p>
 
 <h2 id="iterations">Over time</h2>
-<h3>Total runtime, and every experiment that changed it</h3>
-<p>The top panel is fdu&rsquo;s total runtime on two fixed benchmarks, a generated
-million-entry tree and the Linux kernel source with its <code>.gitignore</code> files. Each
-milestone build was timed side by side in one session per benchmark, on a busy desktop, so
-the steps are measured accumulated improvement, and differences of about 10% between
-adjacent builds are within the noise. The bottom panel is every experiment in the order it
+<h3>The performance score, and every experiment that changed it</h3>
+<p>The top panel is fdu&rsquo;s unified performance score: a weighted combination of every
+scenario fdu is optimized for, from a first run with empty caches to warm content
+analysis, an opened root, a million-entry tree, and peak memory
+(<a href="../../specs/active/plan-2026-10-05-fdu-performance-index.md">the index
+spec</a>). Each milestone build was timed side by side with 0.3.0 in one session per
+component, on a busy desktop, so the steps are measured accumulated improvement, and
+differences of about 10% between adjacent builds are within the noise. The solid line is
+the full score, from the first build that has every component; the dashed line is the
+partial score over the components the first build already had. The chooser shows any
+single component. The bottom panel is every experiment in the order it
 ran, each on its own primary metric: green bars are changes that were kept, red bars were
 tried and dropped, and grey bars are checkpoints, validations, and other measurements of
 work already counted. Most ideas moved their job by less than the 3% a change must

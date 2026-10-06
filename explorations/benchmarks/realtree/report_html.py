@@ -2355,11 +2355,11 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
         first, last = builds[0][key], builds[-1][key]
         speedup, low, high = score_ratio(first, last)
         figures.append(
-            f'<div><span class="n good">{speedup:.1f}&times; better</span>'
+            f'<div><span class="n good">{speedup:.2f}&times; better</span>'
             f'<span class="k">{what}, {esc(projected["platform"])}, '
             f'{esc(builds[0].get("short") or builds[0]["label"])} to '
             f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
-            f"[{low:.1f}&times;, {high:.1f}&times;]; "
+            f"[{low:.2f}&times;, {high:.2f}&times;]; "
             f"{len(components)} of {total} components</span></div>"
         )
     return "".join(figures)
@@ -2431,12 +2431,17 @@ against other tools is in the comparisons
 def _section_iterations(dataset: Mapping[str, Any]) -> str:
     return f"""
 <h2 id="iterations">Over time</h2>
-<h3>Total runtime, and every experiment that changed it</h3>
-<p>The top panel is fdu&rsquo;s total runtime on two fixed benchmarks, a generated
-million-entry tree and the Linux kernel source with its <code>.gitignore</code> files. Each
-milestone build was timed side by side in one session per benchmark, on a busy desktop, so
-the steps are measured accumulated improvement, and differences of about 10% between
-adjacent builds are within the noise. The bottom panel is every experiment in the order it
+<h3>The performance score, and every experiment that changed it</h3>
+<p>The top panel is fdu&rsquo;s unified performance score: a weighted combination of every
+scenario fdu is optimized for, from a first run with empty caches to warm content
+analysis, an opened root, a million-entry tree, and peak memory
+(<a href="../../specs/active/plan-2026-10-05-fdu-performance-index.md">the index
+spec</a>). Each milestone build was timed side by side with 0.3.0 in one session per
+component, on a busy desktop, so the steps are measured accumulated improvement, and
+differences of about 10% between adjacent builds are within the noise. The solid line is
+the full score, from the first build that has every component; the dashed line is the
+partial score over the components the first build already had. The chooser shows any
+single component. The bottom panel is every experiment in the order it
 ran, each on its own primary metric: green bars are changes that were kept, red bars were
 tried and dropped, and grey bars are checkpoints, validations, and other measurements of
 work already counted. Most ideas moved their job by less than the 3% a change must
