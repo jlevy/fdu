@@ -40,8 +40,8 @@ function commandEnv(scenario: Scenario): NodeJS.ProcessEnv {
   };
 }
 
-/** Run hidden setup commands; their output never reaches the recording. */
-function runHidden(scenario: Scenario, commands: string[]): void {
+/** Run hidden commands; their output never reaches the recording. */
+export function runHidden(scenario: Scenario, commands: string[]): void {
   for (const command of commands) {
     const result = spawnSync(scenario.shell, ['-c', command], {
       cwd: scenario.resolvedCwd,
@@ -54,15 +54,20 @@ function runHidden(scenario: Scenario, commands: string[]): void {
   }
 }
 
-/** Type `text` on an absolute schedule, so sleep overhead never accumulates. */
-async function typeText(text: string, rng: Rng, profile: TypingProfile): Promise<void> {
+/**
+ * Type `text` on an absolute schedule, so sleep overhead never accumulates.
+ *
+ * `open` (a style code) rides with the first key: written alone it would be an event that
+ * changes no pixel, which `verify` rightly refuses.
+ */
+async function typeText(text: string, rng: Rng, profile: TypingProfile, open = ''): Promise<void> {
   const intervals = keyIntervals(text, rng, profile);
   let due = performance.now();
   for (const [index, ch] of [...text].entries()) {
     due += intervals[index]! * 1000;
     const wait = due - performance.now();
     if (wait > 0) await sleep(wait);
-    write(ch);
+    write(index === 0 ? open + ch : ch);
   }
 }
 
@@ -101,15 +106,30 @@ async function runStep(scenario: Scenario, step: Step & { run: string }, label: 
   };
 }
 
+/**
+ * Opening and closing codes for a style, written whole around typed text so that no style
+ * code is ever typed key by key.
+ */
+function styleCodes(style: (text: string) => string): [string, string] {
+  const [open = '', close = ''] = style('\u0000').split('\u0000');
+  return [open, close];
+}
+
 export async function drive(scenarioFile: string, sidecar: string): Promise<void> {
   const scenario = loadScenario(scenarioFile);
   const rng = new Rng(scenario.typing.seed);
   const profile: TypingProfile = { ...DEFAULT_PROFILE, wpm: scenario.typing.wpm };
   const colors = pc.createColors(true);
   const prompt = `${colors.bold(colors.green('❯'))} `;
+  // Commands are what a viewer copies, so they are bold. Comments narrate, so they are
+  // italic in a hue command output rarely uses (magenta), never the gray a program uses
+  // for its own diagnostics: a comment must not read as output, nor output as a comment.
+  const [commandOpen, commandClose] = styleCodes((text) => colors.bold(text));
+  const [commentOpen, commentClose] = styleCodes((text) => colors.italic(colors.magenta(text)));
   const timings: StepTiming[] = [];
 
-  runHidden(scenario, scenario.setup);
+  // `setup` already ran, before the recording started (`record`), so however long it
+  // took is not in the cast.
   await sleep(scenario.lead_in * 1000);
   // As in a shell, the next prompt appears the moment a command exits, so the
   // recording shows when each command finished; the hold follows the prompt.
@@ -123,16 +143,15 @@ export async function drive(scenarioFile: string, sidecar: string): Promise<void
       promptShown = false;
     }
     if (!promptShown) write(prompt);
+    // Style codes ride with visible output, the opening one with the first key and the
+    // closing one with the line end.
     if (step.comment !== undefined) {
-      // Style codes are written whole around the typed text, never typed key by key.
-      const [dimOpen, dimClose] = colors.dim('\u0000').split('\u0000');
-      write(dimOpen ?? '');
-      await typeText(step.comment, rng, profile);
-      write(`${dimClose ?? ''}\r\n`);
+      await typeText(step.comment, rng, profile, commentOpen);
+      write(`${commentClose}\r\n`);
     } else if (step.run !== undefined) {
-      await typeText(step.run, rng, profile);
+      await typeText(step.run, rng, profile, commandOpen);
       await sleep(enterPause(rng) * 1000);
-      write('\r\n');
+      write(`${commandClose}\r\n`);
       timings.push(await runStep(scenario, { ...step, run: step.run }, label));
     }
     write(prompt);

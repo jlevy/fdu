@@ -134,7 +134,8 @@ steps:
 Step fields: `run` or `comment`, `label`, `clear`, `before`, `hold` (seconds to wait
 after the next prompt appears), `stop_after` (seconds, then SIGINT, for long-running
 commands), and `during` (`{ at, run }` background actions while the command runs).
-Top-level fields also include `shell`, `setup`, `lead_in`, and `tail`. Set
+Top-level fields also include `shell`, `setup` (hidden commands run before recording
+starts, so their time is not in the cast), `lead_in`, and `tail`. Set
 `terminal.font_size` (CSS pixels, default 22) with `cols` so the widest line fits: a
 terminal that wraps a report’s lines hides its columns.
 The fdu demos are in `examples/fdu/`, `build-tree.yaml` and `linux.yaml` being the
@@ -142,6 +143,8 @@ simplest.
 
 As in a shell, the next prompt is printed the moment a command exits, so how long a
 command takes is visible in the recording.
+Typed commands are bold, and `comment` steps are italic magenta, a hue distinct from the
+gray most programs use for their own diagnostics, so narration never reads as output.
 Typing comes in bursts, as people type commands: fast runs within a word and irregular
 pauses between words, with an occasional longer think pause.
 It averages 220 WPM by default (`src/typing.ts` documents the model); set `typing.wpm`
