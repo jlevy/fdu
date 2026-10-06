@@ -3913,8 +3913,9 @@ mod tests {
 
         // Sections sharing a denominator are listed under it once, in first-seen order,
         // even when another denominator's section sits between them.
-        let mut shared = fixture(&[ViewSpec::Languages, ViewSpec::Documents, ViewSpec::Families]);
-        for (section, metric) in shared.sections.iter_mut().zip([
+        let mut interleaved =
+            fixture(&[ViewSpec::Languages, ViewSpec::Documents, ViewSpec::Families]);
+        for (section, metric) in interleaved.sections.iter_mut().zip([
             ShareMetric::CodeLines,
             ShareMetric::DocumentWords,
             ShareMetric::CodeLines,
@@ -3925,7 +3926,7 @@ mod tests {
             summary.share_metric = metric;
         }
         assert_eq!(
-            shares(&shared),
+            shares(&interleaved),
             ["note: percentages are shares of code lines (LANGUAGES, FAMILIES), document words \
                  (DOCUMENTS)"],
             "a shared denominator is named once"
