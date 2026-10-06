@@ -904,11 +904,14 @@ pub enum MetricGroup {
 }
 
 /// Exact share represented as an integer fraction.
+///
+/// A grouped section's rows partition its denominator: with no share filter or row bound,
+/// their numerators sum to it exactly.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct MetricShare {
-    /// Selected size contributed by this row.
+    /// This row's value in the section's share metric.
     pub numerator: u64,
-    /// Selected size across every row before display truncation.
+    /// Sum of every row's numerator before the share filter and display truncation.
     pub denominator: u64,
 }
 
@@ -1099,6 +1102,10 @@ pub struct MetricSummary {
     /// Grouping dimension.
     pub group: MetricGroup,
     /// Totals across every row before display truncation.
+    ///
+    /// Logical, visible logical, and document words are derived from the pooled
+    /// statistics, so they can differ from the sum of the rows' values. The total's share
+    /// is the rows' sum over itself, the denominator every row's share uses.
     pub total: MetricRow,
     /// Sorted, display-bounded rows.
     pub rows: Vec<MetricRow>,
@@ -2554,9 +2561,9 @@ impl MetricAccumulator {
                 unreachable!("only grouped views reach metric_summary")
             }
         };
-        let denominator = share_value(&total, share_metric);
-        total.share = MetricShare { numerator: denominator, denominator };
         let mut rows = grouped.into_values().collect::<Vec<_>>();
+        let denominator = share_denominator(&rows, share_metric);
+        total.share = MetricShare { numerator: denominator, denominator };
         for row in &mut rows {
             row.share = MetricShare { numerator: share_value(row, share_metric), denominator };
         }
@@ -2744,6 +2751,19 @@ fn merge_coverage(total: &mut BTreeMap<CoverageReason, u64>, row: &BTreeMap<Cove
     for (reason, count) in row {
         *total.entry(*reason).or_default() += count;
     }
+}
+
+/// The denominator every row of a grouped section shares: the sum of all its rows'
+/// numerators, taken before the share filter and the row bound.
+///
+/// It is the rows' sum rather than the total row's own value because the two differ for
+/// document words. Logical words are derived from pooled statistics
+/// ([`LogicalWordStats::logical_words`]), whose regime the pool decides, so a section
+/// mixing long-token and ordinary prose formats has a total below the sum of its rows.
+/// Dividing by that total made the rows' shares sum past 100% (fdu-ij5n). For bytes,
+/// code lines, and raw words the two are equal, so this rule changes nothing there.
+fn share_denominator(rows: &[MetricRow], metric: ShareMetric) -> u64 {
+    rows.iter().fold(0_u64, |sum, row| sum.saturating_add(share_value(row, metric)))
 }
 
 fn share_value(row: &MetricRow, metric: ShareMetric) -> u64 {

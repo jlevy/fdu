@@ -95,6 +95,8 @@ When code analysis is shown by language, it shows code-line share instead.
 In `documents`, it shows document-word share.
 Text output labels those two non-byte denominators; machine output always carries the
 exact `share_metric`, numerator, and denominator.
+The denominator is the sum of every row’s value before display bounds, so unbounded rows
+add up to 100%.
 
 ## Choose a Format
 

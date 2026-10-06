@@ -551,6 +551,37 @@ reports:
 ? 0
 ```
 
+## Document Shares Divide by the Rows’ Sum
+
+Logical words are derived from statistics pooled before rounding, so a section mixing
+ordinary prose with long tokens has a total below the sum of its rows: pooled, the
+thirty-character tokens pull the whole section into the characters-per-six regime.
+Each row’s share divides the words it shows by the rows’ sum, so unbounded rows add up
+to 100%, and the total keeps its own pooled document words.
+
+```console
+$ node -e "const fs=require('node:fs'); fs.mkdirSync('mixed-documents'); fs.writeFileSync('mixed-documents/guide.md', 'This prose has four words. '.repeat(25)); fs.writeFileSync('mixed-documents/tokens.txt', 'abcdefghijklmnopqrstuvwxyz0123 '.repeat(10)); console.log('mixed documents prepared')"
+mixed documents prepared
+? 0
+```
+
+```console
+$ fdu --cache off --view documents --size apparent mixed-documents
+     675 B   71.4%  markdown           1 file, 1 lines (1 nonblank, 0 blank), 125 words (0.5 pages)
+     310 B   28.6%  text               1 file, 1 lines (1 nonblank, 0 blank), 50 words (0.2 pages)
+! note: percentages are shares of document words
+! perf: took [PERF_TIME] to walk 2 files (985 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 985 B at [BYTE_RATE]; analysis 2 fresh at [FILE_RATE], 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --view documents --format jsonl --size apparent mixed-documents
+{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 2, "bytes": 985, "allocated": [ALLOCATED], "share": {"numerator": 175, "denominator": 175}, "metrics": {"physical_lines": 2, "blank_lines": 0, "nonblank_lines": 2, "raw_words": 135, "logical_words": 142, "paragraphs": 2, "visible_words": 125, "visible_logical_words": 125, "document_words": 142}, "coverage": {"lines": {"analyzed": 2}, "words": {"analyzed": 2}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 142, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 675, "allocated": [ALLOCATED], "share": {"numerator": 125, "denominator": 175}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 125, "logical_words": 125, "paragraphs": 1, "visible_words": 125, "visible_logical_words": 125, "document_words": 125}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 125, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 1, "bytes": 310, "allocated": [ALLOCATED], "share": {"numerator": 50, "denominator": 175}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 10, "logical_words": 50, "paragraphs": 1, "visible_words": 0, "visible_logical_words": 0, "document_words": 50}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 50, "words_per_page": 250}}]}}
+! note: percentages are shares of document words
+? 0
+```
+
 ## Analysis Reads Every Eligible File Completely
 
 Content analysis streams every eligible file through EOF. The content tier does not
