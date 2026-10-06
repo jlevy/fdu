@@ -3,9 +3,9 @@ type: is
 id: is-01m47831pcsbtvygctgzqfvzc8
 title: "Spec: views imply the analysis they need (--view/--analyze redesign)"
 kind: epic
-status: open
+status: closed
 priority: 2
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-10-05-fdu-view-analyze-redesign.md
 labels: []
 dependencies: []
@@ -18,6 +18,10 @@ child_order_hints:
   - is-01m47850vtykg7fwyg5zx1mf39
   - is-01m47851e1mnk9xpfh9jyee6rx
 created_at: 2026-10-05T23:58:52.099Z
-updated_at: 2026-10-05T23:59:57.376Z
+updated_at: 2026-10-06T06:26:46.986Z
+closed_at: 2026-10-06T06:26:46.985Z
+close_reason: "All implementation beads closed; PR stacked on #174"
+resolution: null
+duplicate_of: null
 ---
 A content view (code, documents) is a request for the analysis it shows: a fresh basis (CLI, fdu.report, Request::build) enables the analyzers the views imply in union with --analyze; a held basis is never widened and refuses with the analyzer named; analyzers alone still choose their default view; --analyze remains the control axis. Demo command becomes fdu linux --view code,documents --limit 6. Full design, options rejected, before/after, and validation plan are in the spec.
