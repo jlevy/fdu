@@ -10,7 +10,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Rust: `ViewSpec::implies` and `ViewSpec::shows`, the analyzers a view requests and the
-  ones it displays; `AnalysisSet::union`, `named`, and `request_label`;
+  ones it displays; `ViewSpec::defaults_for`, the views a request shows its analysis in
+  when the caller named none; `AnalysisSet::union`, `named`, and `request_label`;
   `Request::implied_by`; `Request::read_opened`, a read of an opened root that refuses
   in its words; and `query::BasisHolder`, which the analysis refusals carry.
 
@@ -40,7 +41,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   includes DOCUMENTS, which needs words analysis: the report lists it in `omitted_views`
   and says `note: full omits documents without words analysis` with
   `tip: include them: --analyze all`. A script that read the DOCUMENTS section of such a
-  report adds `words` to `--analyze`.
+  report adds `words` to `--analyze`. In Rust, `ViewSpec::full_report` partitions the
+  same way, keeping a view only when the analyzers include everything it implies:
+  `full_report(AnalysisSet::LINES_ONLY)` and `full_report(AnalysisSet::CODE_ONLY)` now
+  return `Documents` among the omitted views rather than the shown ones.
 - **Breaking:** `fdu_core::query::Request` gains a private field recording which
   analyzers the caller named and which views implied the rest.
   Rust code outside the engine crate builds a request with `Request::new`,
@@ -58,9 +62,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are `AnalysisSet` values and `holder` is the new `BasisHolder`: whether a request it
   built, a basis supplied whole, a retained index, or an opened root fixed the
   analyzers. `WatchContent` becomes `WatchContent { named, views }`, the analyzers the
-  caller named and the views that implied the rest; match it as `WatchContent { .. }`.
+  caller named and the views that implied the rest.
   `AnalyzerNamedAsView::suggested_view` is a `ViewSpec` rather than a `&'static str`;
   `suggested_view.label()` is the old string.
+  `ViewNeedsAnalyzer`, `SortNeedsAnalyzer`, `WatchContent`, and `AnalyzerNamedAsView`
+  are each `#[non_exhaustive]`, so a field one gains later is an additive change: code
+  outside the engine crate matches them with `..`, as in
+  `ViewNeedsAnalyzer { view, holder, .. }` or `WatchContent { .. }`, and cannot
+  construct them.
 - The messages around analysis name the exact remedy:
   `note: code analysis not shown by summary` with `tip: show it: --view code`, and
   `note: full omits code, documents without analysis` with
@@ -70,6 +79,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tip: show it: --view documents,code`. A refusal for missing analysis names a remedy
   its route accepts: an index names what it was opened with, an opened root says it runs
   no analyzer, and only a request that can add an analyzer is told to.
+  A watch is the exception for now, because it checks a metric sort, and in Python a
+  content view, before it refuses analysis: `fdu . --watch --sort=code_lines` says
+  `add --analyze code`, and `Index.watch()` names the analyzers its index was opened
+  with, remedies a watch then refuses.
   A refused watch names every axis that enabled analysis:
   `fdu . --watch --analyze=words --view=code` says
   `--analyze words and --view code need words and code analysis`.
