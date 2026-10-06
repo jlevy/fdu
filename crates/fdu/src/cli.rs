@@ -350,8 +350,11 @@ OUTPUT AND AUTOMATION
   Metric rows include detection source, confidence, origin flags, and coverage.
   Tree remainder totals are shared by every format: recursive files, apparent and
   allocated bytes, and applicable reasons. Null means nothing hidden; unknown counts
-  or sizes stay null. Text shows one root-level line: ... and SIZE (N files) more.
-  Human diagnostics use note:, warn:, tip:, and perf: on stderr, in that order.
+  or sizes stay null. Text shows one root-level row, `… and N more files`, with the
+  hidden share and size in the tree's columns.
+  Text results hold only rows, column headings, and multi-view headers. Human
+  diagnostics use note:, warn:, tip:, and perf: on stderr, in that order; one
+  `tip: show more:` names the flags that lift every display limit that hid rows.
   One-shot text reports end with gray perf: on stderr; machine formats omit it.
   It counts ignore files and accepted rules, including repeated governing sources.
   Total files/s and binary GiB/s use the displayed elapsed duration. GiB/s represents
