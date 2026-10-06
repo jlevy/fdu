@@ -54,6 +54,14 @@ A component's command, cache state, and timing can be overridden for one cell
 (``--command``, ``--cache-state``, ``--timing``, with ``--override-note`` saying why);
 the cell records the manifest's definition and the override side by side.
 
+**The definition digest.** Every cell carries ``component``, ``job`` (the harness job,
+or the component itself for a command-line component), ``manifest_version``,
+``platform``, and ``component_digest`` (``perf_index.component_digest`` of the
+manifest's component), which the projection matches against the manifest. The digest is
+stamped only when every build runs exactly what the manifest's definition asks of it,
+timed command and untimed setup alike; otherwise the cell is refused, before timing for
+a new run and before writing for ``--from-run``.
+
 See ``docs/project/specs/active/plan-2026-10-05-fdu-performance-index.md``.
 """
 
@@ -74,7 +82,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple, Union
 
 from benchmarks.atomic_write import write_text_atomic
-from benchmarks.realtree import compare_tools, ledger, measure, tree
+from benchmarks.realtree import compare_tools, ledger, measure, perf_index, tree
 
 MANIFEST = Path(__file__).resolve().parents[1] / "index-suite.json"
 SUMMARY_SCHEMA = "fdu-history-summary-v1"
@@ -135,12 +143,14 @@ def component(manifest: Mapping[str, Any], component_id: str) -> Dict[str, Any]:
     """The manifest's entry for one timed component."""
     for entry in manifest["components"]:
         if entry["id"] == component_id:
-            if entry.get("from_components"):
+            if entry.get("from_components") or entry.get("measures") == "peak_rss":
                 raise HistoryError(
-                    f"component {component_id!r} is derived from "
-                    f"{', '.join(entry['from_components'])} and is not timed on its own"
+                    f"component {component_id!r} is derived from other components' cells "
+                    "and is not timed on its own"
                 )
-            if entry.get("cache_state") not in CACHE_STATES:
+            # A component of harness jobs takes each job's own start state; its cache
+            # state is a description, recorded but not interpreted.
+            if not entry.get("jobs") and entry.get("cache_state") not in CACHE_STATES:
                 raise HistoryError(
                     f"component {component_id!r} has cache state "
                     f"{entry.get('cache_state')!r}, which this driver does not implement"
@@ -407,6 +417,16 @@ def _totals_argv(caps: Capabilities, cache_off: Tuple[str, ...]) -> Tuple[str, .
     return ("{binary}", *cache_off, *middle, "--color", "never", "{root}")
 
 
+def component_request(entry: Mapping[str, Any]) -> Request:
+    """What a component asks for: its ``jobs`` list if it has one, else its command."""
+    if entry.get("jobs"):
+        return Request(
+            program="perf_probe",
+            probe_jobs=tuple(resolve_probe_job(job) for job in entry["jobs"]),
+        )
+    return parse_command(entry["command"])
+
+
 def select_job(request: Request, job: Optional[str]) -> str:
     """The one harness job a cell times, out of the component's."""
     if job is None:
@@ -432,10 +452,11 @@ def shape_for(
 
     ``probe_check`` answers, for a harness job, why this build's perf_probe cannot run
     it, or None; it is absent when no probe was supplied for the build. ``job`` picks
-    one job of a probe component that has several.
+    one job of a probe component that has several. A component with a ``jobs`` list is
+    those harness jobs, whatever its ``command`` says in prose.
     """
-    state = CACHE_STATES[entry["cache_state"]]
-    request = parse_command(entry["command"])
+    request = component_request(entry)
+    state = "job" if request.probe_jobs else CACHE_STATES[entry["cache_state"]]
     cache_off = caps.cache_off()
     if request.probe_jobs:
         job_id = select_job(request, job)
@@ -593,6 +614,76 @@ def map_builds(
         probe = build.probe
         check = (lambda job_id, probe=probe: probe_support(probe, job_id)) if probe else None
         build.shape = shape_for(entry, build.caps, probe_check=check, job=job)
+
+
+Ran = Dict[str, Optional[Tuple[List[str], List[str]]]]
+
+
+def definition_shapes(
+    builds: Sequence[Build], defined: Mapping[str, Any], *, job: Optional[str] = None
+) -> Dict[str, Union[Shape, Unsupported]]:
+    """Each build's shape under the manifest's own definition of the component.
+
+    It reuses what each build already said it accepts, so it asks nothing new of a
+    command-line build; a probe build is asked about the definition's jobs.
+    """
+    shapes: Dict[str, Union[Shape, Unsupported]] = {}
+    for build in builds:
+        assert build.caps is not None
+        probe = build.probe
+        check = (lambda job_id, probe=probe: probe_support(probe, job_id)) if probe else None
+        shapes[build.label] = shape_for(defined, build.caps, probe_check=check, job=job)
+    return shapes
+
+
+def planned_commands(builds: Sequence[Build]) -> Ran:
+    """The timed and setup command each build is about to run, or None if it runs none."""
+    return {
+        build.label: (list(build.shape.argv), list(build.shape.setup_argv))
+        if isinstance(build.shape, Shape)
+        else None
+        for build in builds
+    }
+
+
+def ran_commands(document: Mapping[str, Any], builds: Sequence[Build]) -> Ran:
+    """The timed and setup command each build ran, as the run artifact records them."""
+    ran: Ran = {}
+    for build in builds:
+        tool = document["tools"].get(build.label)
+        ran[build.label] = (
+            None if tool is None else (list(tool["command"]), list(tool.get("setup_command") or []))
+        )
+    return ran
+
+
+def definition_problems(ran: Ran, expected: Mapping[str, Union[Shape, Unsupported]]) -> List[str]:
+    """Where the commands the builds ran are not what the definition asks of them.
+
+    A cell is stamped with its component's definition digest only when every build ran
+    exactly the definition's request (timed command and untimed setup) and every build
+    the definition cannot run ran nothing.
+    """
+    problems = []
+    for label, shape in expected.items():
+        wanted = (list(shape.argv), list(shape.setup_argv)) if isinstance(shape, Shape) else None
+        if ran.get(label) != wanted:
+            problems.append(
+                f"{label} ran {ran.get(label)}, where the manifest's definition asks for {wanted}"
+            )
+    return problems
+
+
+def stamp_digest(
+    defined: Mapping[str, Any], ran: Ran, expected: Mapping[str, Union[Shape, Unsupported]]
+) -> str:
+    """The definition digest a cell may carry, or a refusal saying why it may not."""
+    problems = definition_problems(ran, expected)
+    if problems:
+        raise HistoryError(
+            f"refusing to stamp {defined['id']} with its definition digest: " + "; ".join(problems)
+        )
+    return perf_index.component_digest(defined)
 
 
 def probe_output_reader(
@@ -997,13 +1088,15 @@ def build_cell(
     run_artifact: str,
     manifest_entry: Optional[Mapping[str, Any]] = None,
     override_note: Optional[str] = None,
+    component_digest: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Summarize one compare_tools run as a history cell.
 
     Every comparison is on the cell's timed metric: the process's wall time, or the
     probe's ``component_ns`` for a component-timed probe job. ``wall_ms`` is always the
     process's wall time; a component-timed cell adds ``component_ms`` and keeps the wall
-    comparison beside the timed one.
+    comparison beside the timed one. ``component_digest`` is the definition digest
+    ``stamp_digest`` allowed, which the projection matches against the manifest.
     """
     samples = [s for s in document["samples"] if not s["warmup"] and s["valid"]]
     supported = [build.label for build in builds if build.supported]
@@ -1314,11 +1407,15 @@ def build_cell(
         if overridden
         else None,
         "timed_metric": metric,
-        "job": jobs[0] if jobs else None,
+        # The job a cell times: the harness job for a probe component, the component
+        # itself for a single command-line job, as the projection keys cells.
+        "job": jobs[0] if jobs else entry["id"],
+        "component_digest": component_digest,
         "tree_key": entry["tree"],
         "platform": _platform(document["host"]),
         "reference_build": reference,
         "run_artifact": run_artifact,
+        "driver": "benchmarks.realtree.history",
         "harness": {
             "module": "benchmarks.realtree.history, timing through benchmarks.realtree."
             "compare_tools with per-build command contracts",
@@ -1393,25 +1490,31 @@ def rebuild_cell(
     summary_revision: Optional[str],
     manifest_entry: Optional[Mapping[str, Any]] = None,
     override_note: Optional[str] = None,
+    expected: Optional[Mapping[str, Union[Shape, Unsupported]]] = None,
 ) -> Path:
     """Summarize a stored run again, so a cell gains new fields without new timing.
 
     The run artifact, the answer check, and the earlier cell (for the storage check and
     the timing harness's revision) are read from ``output_dir``. Every build must map to
-    exactly the command the run timed, or the summary would describe another cell.
+    exactly the command the run timed, or the summary would describe another cell; and
+    the cell is stamped with the definition digest only if those commands are what the
+    manifest's definition (``expected``, each build's shape under it) asks for.
     """
     document = json.loads((output_dir / f"run-{name}.json").read_text(encoding="utf-8"))
     answer_check = json.loads(
         (output_dir / f"answer-check-{name}.json").read_text(encoding="utf-8")
     )
     earlier = json.loads((output_dir / f"{name}.json").read_text(encoding="utf-8"))
-    for build in builds:
-        recorded = (document["tools"].get(build.label) or {}).get("command")
-        mapped = list(build.shape.argv) if isinstance(build.shape, Shape) else None
-        if recorded != mapped:
-            raise HistoryError(
-                f"build {build.label} maps to {mapped}, but the run timed {recorded}"
-            )
+    ran = ran_commands(document, builds)
+    mapped = {build.label: build.shape for build in builds if build.shape is not None}
+    mismatched = definition_problems(ran, mapped)
+    if mismatched:
+        raise HistoryError(
+            "the builds no longer map to what the run timed: " + "; ".join(mismatched)
+        )
+    digest = stamp_digest(
+        manifest_entry or entry, ran, expected if expected is not None else mapped
+    )
     locations = (earlier.get("subject") or {}).get("storage_check") or {}
     cell = build_cell(
         document,
@@ -1426,6 +1529,7 @@ def rebuild_cell(
         run_artifact=f"{name}.run.json.gz",
         manifest_entry=manifest_entry,
         override_note=override_note,
+        component_digest=digest,
     )
     cell["harness"]["summary_revision"] = summary_revision
     cell_path = output_dir / f"{name}.json"
@@ -1560,6 +1664,13 @@ def main(argv: Sequence[str]) -> int:
             print(line, file=sys.stderr)
         if arguments.plan:
             return 0
+        # What the manifest's own definition asks of each build: the cell carries the
+        # definition digest only if the builds run exactly that.
+        expected = (
+            {build.label: build.shape for build in builds if build.shape is not None}
+            if entry == defined
+            else definition_shapes(builds, defined, job=arguments.job)
+        )
         if arguments.from_run:
             cell_path = rebuild_cell(
                 arguments.output_dir,
@@ -1574,9 +1685,12 @@ def main(argv: Sequence[str]) -> int:
                 summary_revision=arguments.harness_revision or _harness_revision(),
                 manifest_entry=defined,
                 override_note=arguments.override_note,
+                expected=expected,
             )
             print(f"wrote {cell_path}", file=sys.stderr)
             return 0
+        # Refuse before timing anything a cell that could not be stamped afterwards.
+        digest = stamp_digest(defined, planned_commands(builds), expected)
         if len([b for b in builds if b.supported]) < 2:
             raise HistoryError("a cell needs the reference and at least one other build")
         compare_tools._require_external_output(arguments.root, arguments.output_dir)
@@ -1694,6 +1808,7 @@ def main(argv: Sequence[str]) -> int:
         run_artifact=stored.name,
         manifest_entry=defined,
         override_note=arguments.override_note,
+        component_digest=digest,
     )
     cell_path = arguments.output_dir / f"{arguments.name}.json"
     write_text_atomic(cell_path, json.dumps(cell, indent=2) + "\n")

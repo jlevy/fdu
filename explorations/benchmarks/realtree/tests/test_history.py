@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 from unittest import mock
 
-from benchmarks.realtree import compare_tools, history
+from benchmarks.realtree import compare_tools, history, perf_index
 
 # Help excerpts as each era printed them, wrapping included: the parser reads the
 # options the suite needs and nothing else.
@@ -100,6 +100,15 @@ def entry(component_id: str) -> Dict[str, Any]:
 
 def shape(component_id: str, caps: history.Capabilities, **kwargs: Any) -> Any:
     return history.shape_for(entry(component_id), caps, **kwargs)
+
+
+def command_entry(component_id: str, command: str, cache_state: str = "") -> Dict[str, Any]:
+    """A component defined by a command, as an override or an earlier manifest had it."""
+    item = {key: value for key, value in entry(component_id).items() if key != "jobs"}
+    item["command"] = command
+    if cache_state:
+        item["cache_state"] = cache_state
+    return item
 
 
 class CapabilityTests(unittest.TestCase):
@@ -204,9 +213,11 @@ class CommandTests(unittest.TestCase):
         for item in MANIFEST["components"]:
             if item.get("from_components"):
                 continue
-            with self.subTest(component=item["id"]):
-                mapped = history.shape_for(item, V030, probe_check=lambda job: None)
-                self.assertIsInstance(mapped, history.Shape)
+            for job in item.get("jobs") or [None]:
+                with self.subTest(component=item["id"], job=job):
+                    mapped = history.shape_for(item, V030, probe_check=lambda _: None, job=job)
+                    self.assertIsInstance(mapped, history.Shape)
+                    self.assertEqual(mapped.job, job)
 
     def test_a_cell_that_overrides_the_manifest_must_say_why(self) -> None:
         errors = io.StringIO()
@@ -303,29 +314,36 @@ class ShapeTests(unittest.TestCase):
         )
         self.assertEqual(shape("warm-content-code", V010), history.Unsupported("no code view"))
 
-    def test_warm_metadata_spells_the_persisting_policy_per_era(self) -> None:
-        self.assertEqual(
-            shape("warm-metadata", PREWORK).argv, ("{binary}", "--color", "never", "{root}")
+    def test_a_persisting_cache_policy_is_spelled_per_era(self) -> None:
+        # The first definition of warm metadata, `fdu --cache on PATH`.
+        persisting = command_entry(
+            "warm-metadata",
+            "fdu --cache on PATH",
+            "snapshot written by an untimed run of the same build just before",
         )
-        self.assertEqual(shape("warm-metadata", EXP101).argv[1:3], ("--cache", "auto"))
-        self.assertEqual(shape("warm-metadata", V030).argv[1:3], ("--cache", "on"))
+        self.assertEqual(
+            history.shape_for(persisting, PREWORK).argv, ("{binary}", "--color", "never", "{root}")
+        )
+        self.assertEqual(history.shape_for(persisting, EXP101).argv[1:3], ("--cache", "auto"))
+        self.assertEqual(history.shape_for(persisting, V030).argv[1:3], ("--cache", "on"))
         for caps in (PREWORK, EXP101, V030):
-            mapped = shape("warm-metadata", caps)
+            mapped = history.shape_for(persisting, caps)
             self.assertEqual(mapped.setup_argv, mapped.argv)
             self.assertEqual(mapped.cache_scope, "sample")
         neither = history.Capabilities(version="x", cache_policies=frozenset({"auto", "off"}))
-        self.assertIsInstance(shape("warm-metadata", neither), history.Unsupported)
+        self.assertIsInstance(history.shape_for(persisting, neither), history.Unsupported)
 
     def test_the_opened_root_needs_a_probe_with_the_job(self) -> None:
+        job = "opened-second-report"
         self.assertEqual(
-            shape("opened-root", V030),
+            shape("opened-root", V030, job=job),
             history.Unsupported("no perf_probe build was supplied for this milestone"),
         )
         self.assertEqual(
-            shape("opened-root", V030, probe_check=lambda job: f"no {job} mode"),
+            shape("opened-root", V030, probe_check=lambda job: f"no {job} mode", job=job),
             history.Unsupported("no opened-second-report mode"),
         )
-        mapped = shape("opened-root", PREWORK, probe_check=lambda job: None)
+        mapped = shape("opened-root", PREWORK, probe_check=lambda job: None, job=job)
         self.assertTrue(mapped.uses_probe)
         self.assertEqual(mapped.job, "opened-second-report")
         # The harness's own job command, oracle included: every sample is checked.
@@ -334,11 +352,9 @@ class ShapeTests(unittest.TestCase):
         self.assertEqual(mapped.setup_argv, ())
 
     def test_a_component_of_several_jobs_times_the_one_it_is_asked_for(self) -> None:
-        two = {
-            **entry("opened-root"),
-            "command": "perf_probe opened-second-report delta-apply-large",
-            "cache_state": "the library's open, then a second report and an applied change",
-        }
+        # The manifest's own opened root: a `jobs` list beside a prose command.
+        two = entry("opened-root")
+        self.assertEqual(two["jobs"], ["opened-second-report", "delta-apply-large"])
         with self.assertRaisesRegex(history.HistoryError, "choose one with --job"):
             history.shape_for(two, V030, probe_check=lambda job: None)
         with self.assertRaisesRegex(history.HistoryError, "not one of"):
@@ -350,12 +366,9 @@ class ShapeTests(unittest.TestCase):
         )
 
     def test_a_snapshot_job_is_set_up_by_the_same_probe_into_the_sample_directory(self) -> None:
-        warm = {
-            **entry("warm-metadata"),
-            "command": "perf_probe warm-revalidate",
-            "cache_state": "snapshot written by an untimed run of the same build just before",
-        }
-        mapped = history.shape_for(warm, PREWORK, probe_check=lambda job: None)
+        mapped = shape(
+            "warm-metadata", PREWORK, probe_check=lambda job: None, job="warm-revalidate"
+        )
         self.assertEqual(
             mapped.setup_argv,
             ("{binary}", "snapshot-save", "--root", "{root}", "--snapshot", "{cache}/snapshot.fdu"),
@@ -369,15 +382,15 @@ class ShapeTests(unittest.TestCase):
 
     def test_each_job_of_a_probe_component_keeps_its_own_start_state(self) -> None:
         # Warm metadata as review B defines it: a timed first run that scans and writes the
-        # snapshot, and a timed revalidation of one an untimed run wrote just before.
-        warm = {
-            **entry("warm-metadata"),
-            "command": "perf_probe cold-open-save; perf_probe revalidate",
-            "cache_state": (
-                "a first run that scans and writes the snapshot; then a run that loads and "
-                "revalidates a snapshot written by an untimed run of the same build just before"
-            ),
-        }
+        # snapshot, and a timed revalidation of one an untimed run wrote just before. The
+        # command form (`perf_probe a; perf_probe b`, a mode name for the second) is how
+        # the cells were overridden before the manifest gave the jobs as a list.
+        warm = command_entry(
+            "warm-metadata",
+            "perf_probe cold-open-save; perf_probe revalidate",
+            "a first run that scans and writes the snapshot; then a run that loads and "
+            "revalidates a snapshot written by an untimed run of the same build just before",
+        )
         first = history.shape_for(warm, V030, probe_check=lambda job: None, job="cold-open-save")
         self.assertEqual(first.setup_argv, ())
         self.assertEqual(first.state, "empty")
@@ -492,7 +505,9 @@ class ShapeTests(unittest.TestCase):
             history.contract_for("code", entry("code"), shape("code", V030), timing="component")
 
     def test_a_probe_contract_reads_the_component_timer_and_the_oracle(self) -> None:
-        mapped = shape("opened-root", V030, probe_check=lambda job: None)
+        mapped = shape(
+            "opened-root", V030, probe_check=lambda job: None, job="opened-second-report"
+        )
         contract = history.contract_for(
             "opened-root", entry("opened-root"), mapped, timing="component"
         )
@@ -583,27 +598,24 @@ class AnswerCheckTests(unittest.TestCase):
 
     def test_the_probe_answer_is_the_jobs_own_oracle_on_the_checked_run(self) -> None:
         agrees = mock.Mock(return_value=None)
+        job = "opened-second-report"
         with mock.patch.dict(history.measure._ORACLES, {"index-digest": agrees}):
-            record, calls = self.run_check(V030, "opened-root", probe_check=lambda job: None)
+            record, calls = self.run_check(V030, "opened-root", probe_check=lambda _: None, job=job)
         self.assertEqual(len(calls), 1)
         self.assertIsNone(record["oracle_error"])
         self.assertEqual(record["component_ns"], 1234)
         agrees.assert_called_once()
         disagrees = mock.Mock(return_value="probe engine_digest disagrees")
         with mock.patch.dict(history.measure._ORACLES, {"index-digest": disagrees}):
-            record, _ = self.run_check(V030, "opened-root", probe_check=lambda job: None)
+            record, _ = self.run_check(V030, "opened-root", probe_check=lambda _: None, job=job)
         self.assertIn("disagrees", record["oracle_error"])
         groups = history.answer_groups([record], self.FINGERPRINT)
         self.assertIn("disagrees", " ".join(history.answer_problems(groups)))
 
     def test_a_snapshot_job_checks_the_snapshot_its_own_setup_wrote(self) -> None:
-        warm = {
-            **entry("warm-metadata"),
-            "command": "perf_probe warm-revalidate",
-        }
         with mock.patch.dict(history.measure._ORACLES, {"index-digest": lambda f, s: None}):
             record, calls = self.run_check(
-                V030, "warm-metadata", definition=warm, probe_check=lambda job: None
+                V030, "warm-metadata", probe_check=lambda _: None, job="warm-revalidate"
             )
         (setup, setup_home), (timed, timed_home) = calls
         self.assertEqual(setup_home, timed_home)
@@ -752,6 +764,7 @@ class CellTests(unittest.TestCase):
         component_id: str = "summary",
         timing: str = "wall",
         capture: Dict[str, Any] | None = None,
+        job: str | None = None,
     ) -> Dict[str, Any]:
         """Time a fixture cell and summarize it; ``capture`` receives what it was made of."""
         walls = {self.FIRST: 3_000_000, "v0.3.0": 1_000_000}
@@ -766,9 +779,8 @@ class CellTests(unittest.TestCase):
                 build.shape = shape(
                     component_id,
                     build.caps,
-                    probe_check=lambda job, label=label: (
-                        "no mode" if label == self.SKIPPED else None
-                    ),
+                    probe_check=lambda _, label=label: "no mode" if label == self.SKIPPED else None,
+                    job=job,
                 )
                 builds.append(build)
             tools = {
@@ -901,7 +913,9 @@ class CellTests(unittest.TestCase):
             original = moved.shape
             moved.shape = shape("default-tree", V030)
             try:
-                with self.assertRaisesRegex(history.HistoryError, "but the run timed"):
+                with self.assertRaisesRegex(
+                    history.HistoryError, "no longer map to what the run timed"
+                ):
                     history.rebuild_cell(
                         directory,
                         "cell",
@@ -914,6 +928,61 @@ class CellTests(unittest.TestCase):
                     )
             finally:
                 moved.shape = original
+
+    def test_a_cell_is_stamped_with_its_definition_only_if_it_ran_that_definition(self) -> None:
+        parts: Dict[str, Any] = {}
+        earlier = self.make_cell(capture=parts)
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            (directory / "run-cell.json").write_text(json.dumps(parts["document"]))
+            (directory / "answer-check-cell.json").write_text(json.dumps(parts["answer_check"]))
+            (directory / "cell.json").write_text(json.dumps(earlier))
+
+            def rebuild(**kwargs: Any) -> Dict[str, Any]:
+                path = history.rebuild_cell(
+                    directory,
+                    "cell",
+                    builds=parts["builds"],
+                    entry=entry("summary"),
+                    manifest=MANIFEST,
+                    reference="v0.3.0",
+                    metadata_source=parts["source"],
+                    summary_revision="def",
+                    **kwargs,
+                )
+                return json.loads(path.read_text())
+
+            stamped = rebuild()
+            self.assertEqual(
+                stamped["component_digest"], perf_index.component_digest(entry("summary"))
+            )
+            # A single command-line job is keyed by the component itself.
+            self.assertEqual(stamped["job"], "summary")
+            self.assertEqual(stamped["manifest_version"], 1)
+            self.assertEqual(stamped["platform"], "macOS")
+            # A definition that asks the builds for something else is refused a stamp,
+            # here a summary with the cache off where the run used the default policy.
+            other = command_entry(
+                "summary",
+                "fdu --cache off --view summary PATH",
+                "fdu's caches empty for every sample",
+            )
+            expected = {
+                build.label: history.shape_for(other, build.caps) for build in parts["builds"]
+            }
+            with self.assertRaisesRegex(history.HistoryError, "refusing to stamp summary"):
+                rebuild(manifest_entry=other, expected=expected)
+            # The same check runs before timing, on the commands a cell is about to run.
+            with self.assertRaisesRegex(history.HistoryError, "refusing to stamp"):
+                history.stamp_digest(other, history.planned_commands(parts["builds"]), expected)
+            self.assertEqual(
+                history.stamp_digest(
+                    entry("summary"),
+                    history.planned_commands(parts["builds"]),
+                    {build.label: build.shape for build in parts["builds"]},
+                ),
+                perf_index.component_digest(entry("summary")),
+            )
 
     def test_the_cell_names_its_component_manifest_and_platform(self) -> None:
         cell = self.make_cell()
@@ -963,7 +1032,7 @@ class CellTests(unittest.TestCase):
     def test_a_probe_cell_times_the_whole_process_and_keeps_the_component_beside_it(
         self,
     ) -> None:
-        cell = self.make_cell("opened-root", timing="wall")
+        cell = self.make_cell("opened-root", timing="wall", job="opened-second-report")
         self.assertEqual(cell["timed_metric"], "wall_ns")
         self.assertEqual(cell["job"], "opened-second-report")
         first = cell["milestones"][0]
@@ -976,7 +1045,7 @@ class CellTests(unittest.TestCase):
         self.assertAlmostEqual(cell["headline"]["paired_speedup_x"], 3.0, places=1)
 
     def test_a_component_timed_cell_compares_the_probes_own_timer(self) -> None:
-        cell = self.make_cell("opened-root", timing="component")
+        cell = self.make_cell("opened-root", timing="component", job="opened-second-report")
         self.assertEqual(cell["timed_metric"], "component_ns")
         self.assertEqual(cell["job"], "opened-second-report")
         first, anchor = cell["milestones"][0], cell["milestones"][2]
