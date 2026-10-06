@@ -1056,19 +1056,29 @@ def cache_contract(
     scope: str = "comparison",
     setup: tuple = (),
     anchor: bool = True,
+    argv: tuple = ("{binary}", "timed", "{root}"),
+    stdout_metrics=None,
+    primary_metric: str = "wall_ns",
 ) -> compare_tools.ToolContract:
     return compare_tools.ToolContract(
         name=name,
         work_class="fixture",
         description="fixture",
-        argv=("{binary}", "timed", "{root}"),
+        argv=argv,
         version_argv=(),
         writes_cache=True,
         measures="fixture",
         cache_scope=scope,
         setup_argv=setup,
         fdu_anchor=anchor,
+        stdout_metrics=stdout_metrics,
+        primary_metric=primary_metric,
     )
+
+
+def read_component(stdout: bytes, fingerprint: dict) -> tuple:
+    """A probe-like output reader: the timer from the output, no complaints."""
+    return {"component_ns": json.loads(stdout)["component_ns"]}, []
 
 
 class CacheScopeTests(unittest.TestCase):
@@ -1110,7 +1120,7 @@ class CacheScopeTests(unittest.TestCase):
                 "exit_code": 1 if setup and fail_setup else 0,
                 "timed_out": False,
                 "wall_ns": 1_000_000 + len(calls),
-                "stdout": b"",
+                "stdout": json.dumps({"component_ns": 1_000 + len(calls)}).encode(),
                 "stderr": "",
                 "resources": {field: 1 for field in compare_tools.measure._RESOURCE_FIELDS},
             }
@@ -1223,6 +1233,55 @@ class CacheScopeTests(unittest.TestCase):
             self.run_cell(cache_contract("a", scope="forever"), cache_contract("b"))
         with self.assertRaisesRegex(compare_tools.ComparisonError, "must use an fdu contract"):
             self.run_cell(cache_contract("a", anchor=False), cache_contract("b"))
+
+    def test_a_cache_placeholder_names_each_samples_own_directory(self) -> None:
+        snapshot = "{cache}/snapshot.fdu"
+        contract = cache_contract(
+            "a",
+            scope="sample",
+            argv=("{binary}", "timed", snapshot),
+            setup=("{binary}", "setup", snapshot),
+        )
+        _document, calls = self.run_cell(contract, contract)
+
+        for setup_call, timed_call in zip(calls[::2], calls[1::2]):
+            self.assertEqual(setup_call["argv"][2], f"{setup_call['home']}/snapshot.fdu")
+            self.assertEqual(timed_call["argv"][2], setup_call["argv"][2])
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "names the cache directory"):
+            compare_tools._expand(("{cache}/x",), Path("fdu"), Path("tree"))
+
+    def test_output_metrics_are_recorded_compared_and_summarized(self) -> None:
+        contract = cache_contract(
+            "a", stdout_metrics=read_component, primary_metric="component_ns"
+        )
+        document, _calls = self.run_cell(contract, contract)
+
+        sample = next(s for s in document["samples"] if not s["warmup"])
+        self.assertIsNotNone(sample["metrics"]["component_ns"])
+        self.assertIn("component_ns", document["overall"]["anchor"]["metrics"])
+        self.assertEqual(
+            document["statistics"]["other"]["competitor_vs_fdu"]["component_ns"]["pairs"], 3
+        )
+        self.assertEqual(document["tools"]["anchor"]["primary_metric"], "component_ns")
+
+    def test_output_reasons_invalidate_and_a_plain_run_keeps_its_shape(self) -> None:
+        refusing = cache_contract(
+            "a", stdout_metrics=lambda out, fingerprint: ({"component_ns": 5}, ["oracle disagrees"])
+        )
+        document, _ = self.run_cell(refusing, refusing)
+        self.assertEqual(document["invalid_samples"], 6)
+        self.assertIsNone(document["samples"][0]["metrics"]["component_ns"])
+
+        plain, _ = self.run_cell(cache_contract("a"), cache_contract("b"))
+        self.assertNotIn("component_ns", plain["overall"]["anchor"]["metrics"])
+        self.assertNotIn("primary_metric", plain["tools"]["anchor"])
+
+    def test_a_timed_metric_needs_a_reader_and_one_metric_per_run(self) -> None:
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "reads no output"):
+            self.run_cell(cache_contract("a", primary_metric="component_ns"), cache_contract("b"))
+        component = cache_contract("a", stdout_metrics=read_component, primary_metric="component_ns")
+        with self.assertRaisesRegex(compare_tools.ComparisonError, "the same metric"):
+            self.run_cell(component, cache_contract("b"))
 
 
 if __name__ == "__main__":

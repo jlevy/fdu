@@ -21,7 +21,18 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree import installed_command, measure, provenance, tree
@@ -81,6 +92,16 @@ class ToolContract:
     #: other (``benchmarks.realtree.history``) declares its own contracts this way rather
     #: than editing the table.
     fdu_anchor: bool = False
+    #: Reads a timed process's stdout, given the run's fingerprint, and returns metrics
+    #: to record beside the process's own (such as a probe's ``component_ns``) and
+    #: reasons that invalidate the sample (such as an oracle disagreement). None for a
+    #: contract whose output carries neither.
+    stdout_metrics: Optional[
+        Callable[[bytes, Mapping[str, Any]], Tuple[Dict[str, Optional[int]], List[str]]]
+    ] = None
+    #: The metric the contract's timing claim is about: the process's ``wall_ns``, or a
+    #: metric its ``stdout_metrics`` reports, such as a probe's ``component_ns``.
+    primary_metric: str = "wall_ns"
 
 
 #: The cache scopes a contract may declare; see ``ToolContract.cache_scope``.
@@ -644,6 +665,13 @@ def run(
                 f"contract {tool.contract.name} declares unknown cache scope "
                 f"{tool.contract.cache_scope!r}; choose from {', '.join(CACHE_SCOPES)}"
             )
+        if tool.contract.primary_metric != "wall_ns" and tool.contract.stdout_metrics is None:
+            raise ComparisonError(
+                f"contract {tool.contract.name} times {tool.contract.primary_metric}, "
+                "which only its output can report, but reads no output"
+            )
+    if len({tool.contract.primary_metric for tool in (anchor, *competitors)}) != 1:
+        raise ComparisonError("every tool in a comparison must time the same metric")
     if not competitors:
         raise ComparisonError("at least one competitor is required")
     mismatched = [
@@ -1025,7 +1053,7 @@ def _run_setup(
     if not tool.contract.setup_argv:
         return None, []
     result = measure._spawn(
-        _expand(tool.contract.setup_argv, tool.binary, root),
+        _expand(tool.contract.setup_argv, tool.binary, root, cache=_cache_of(overrides)),
         timeout_seconds=timeout_seconds,
         environment_overrides=dict(overrides) or None,
     )
@@ -1049,7 +1077,12 @@ def _run_one(
     timeout_seconds: float,
     cache_home: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    argv = _expand(tool.contract.argv, tool.binary, root)
+    argv = _expand(
+        tool.contract.argv,
+        tool.binary,
+        root,
+        cache=cache_home if tool.contract.writes_cache else None,
+    )
     requires_scan_diagnostics = tool.contract.name in FDU_SUMMARY_CONTRACTS
     overrides: Dict[str, str] = {}
     if requires_scan_diagnostics:
@@ -1085,6 +1118,10 @@ def _run_one(
     if result["exit_code"] != 0:
         reasons.append(f"command exited with {result['exit_code']}")
     reasons.extend(measure._host_pressure_reasons(host_regime, pressure_before, pressure_after))
+    if tool.contract.stdout_metrics is not None:
+        reported, output_reasons = tool.contract.stdout_metrics(result["stdout"], summary_oracle)
+        metrics.update(reported)
+        reasons.extend(output_reasons)
     semantic_sha256: Optional[str] = None
     semantic_total_bytes: Optional[int] = None
     summary_oracle_error: Optional[str] = None
@@ -1298,11 +1335,29 @@ def _summary_oracle_error(summary: Mapping[str, Any], oracle: Mapping[str, Any])
     return None
 
 
+def _reported_metrics(samples: Sequence[Mapping[str, Any]]) -> List[str]:
+    """The metrics a run summarizes.
+
+    ``blocked_ns`` never: a parallel tool's off-CPU time is not wall minus CPU.
+    ``component_ns`` only where some sample carries one, which a contract's
+    ``stdout_metrics`` reports, so a run of process-timed tools keeps its old shape.
+    """
+    has_component = any(
+        (sample.get("metrics") or {}).get("component_ns") is not None for sample in samples
+    )
+    return [
+        metric
+        for metric in measure.LOWER_IS_BETTER
+        if metric != "blocked_ns" and (metric != "component_ns" or has_component)
+    ]
+
+
 def _statistics(document: Mapping[str, Any]) -> Dict[str, Any]:
     anchor = str(document["anchor"])
     samples = list(document["samples"])
     conditions = document.get("conditions")
     conditions = conditions if isinstance(conditions, Mapping) else {}
+    reported = _reported_metrics(samples)
     statistics_document: Dict[str, Any] = {}
     for competitor in document["competitor_order"]:
         per_tool: Dict[str, Any] = {}
@@ -1333,8 +1388,7 @@ def _statistics(document: Mapping[str, Any]) -> Dict[str, Any]:
                             if sample["metrics"].get(metric) is not None
                         ]
                     )
-                    for metric in measure.LOWER_IS_BETTER
-                    if metric != "component_ns" and metric != "blocked_ns"
+                    for metric in reported
                 },
             }
         statistics_document[competitor] = {
@@ -1386,6 +1440,7 @@ def _censored_peak_rss(samples: Sequence[Mapping[str, Any]]) -> Optional[int]:
 def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
     """Summarize each executable once; fdu includes every adjacent anchor sample."""
     result: Dict[str, Any] = {}
+    reported = _reported_metrics(document["samples"])
     for name in [document["anchor"], *document["competitor_order"]]:
         selected = [
             sample
@@ -1411,8 +1466,7 @@ def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
                         if sample["metrics"].get(metric) is not None
                     ]
                 )
-                for metric in measure.LOWER_IS_BETTER
-                if metric != "component_ns" and metric != "blocked_ns"
+                for metric in reported
             },
             "peak_rss_at_most_bytes": _censored_peak_rss(selected),
         }
@@ -1931,6 +1985,8 @@ def _identity(tool: Tool) -> Dict[str, Any]:
         start_state["cache_scope"] = tool.contract.cache_scope
     if tool.contract.setup_argv:
         start_state["setup_command"] = list(tool.contract.setup_argv)
+    if tool.contract.primary_metric != "wall_ns":
+        start_state["primary_metric"] = tool.contract.primary_metric
     return {
         "name": tool.name,
         "contract": tool.contract.name,
@@ -1958,11 +2014,36 @@ def _version(tool: Tool) -> str:
     return " ".join(text.split())[:300]
 
 
-def _expand(template: Sequence[str], binary: Path, root: Path) -> List[str]:
-    return [
-        str(binary) if item == "{binary}" else str(root) if item == "{root}" else item
-        for item in template
-    ]
+def _expand(
+    template: Sequence[str], binary: Path, root: Path, *, cache: Optional[Path] = None
+) -> List[str]:
+    """Fill a command template.
+
+    ``{binary}`` and ``{root}`` are whole arguments. ``{cache}`` may appear inside one,
+    such as ``{cache}/snapshot.fdu``, and names the process's isolated cache directory,
+    so a contract can hand a build a file that lives and dies with that directory.
+    """
+    expanded = []
+    for item in template:
+        if item == "{binary}":
+            expanded.append(str(binary))
+        elif item == "{root}":
+            expanded.append(str(root))
+        elif "{cache}" in item:
+            if cache is None:
+                raise ComparisonError(
+                    f"argument {item!r} names the cache directory, which only a "
+                    "cache-writing contract is given"
+                )
+            expanded.append(item.replace("{cache}", str(cache)))
+        else:
+            expanded.append(item)
+    return expanded
+
+
+def _cache_of(overrides: Mapping[str, str]) -> Optional[Path]:
+    home = overrides.get("XDG_CACHE_HOME")
+    return Path(home) if home else None
 
 
 def _load_baseline(path: Optional[Path]) -> Optional[Mapping[str, Any]]:

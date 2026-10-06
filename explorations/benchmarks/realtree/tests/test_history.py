@@ -8,7 +8,9 @@ cell that looks complete and measures something else.
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import stat
 import tempfile
@@ -141,21 +143,29 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(caps.version, "fdu 0.3.0")
         self.assertEqual(caps, V030)
 
-    def test_a_probe_is_asked_for_its_mode_and_its_flags(self) -> None:
+    def test_a_probe_is_asked_for_its_modes_and_its_flags(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:
-            modern = fake_probe(Path(scratch) / "modern", modes=("opened-second-report",))
-            old = fake_probe(Path(scratch) / "old", modes=("scan-index",))
+            modern = fake_probe(
+                Path(scratch) / "modern",
+                modes=("opened-second-report", "revalidate", "snapshot-save"),
+            )
+            old = fake_probe(Path(scratch) / "old", modes=("scan-index", "revalidate"))
             strict = fake_probe(
-                Path(scratch) / "strict", modes=("opened-second-report",), flags=False
+                Path(scratch) / "strict", modes=("delta-apply-large",), reject="--operations"
             )
             self.assertIsNone(history.probe_support(modern, "opened-second-report"))
+            self.assertIsNone(history.probe_support(modern, "warm-revalidate"))
             self.assertIn(
                 "no opened-second-report mode",
                 history.probe_support(old, "opened-second-report") or "",
             )
+            # A job is only as available as the mode that prepares its snapshot.
             self.assertIn(
-                "does not accept --no-oracle",
-                history.probe_support(strict, "opened-second-report") or "",
+                "no snapshot-save mode", history.probe_support(old, "warm-revalidate") or ""
+            )
+            self.assertIn(
+                "does not accept the delta-apply-large flags",
+                history.probe_support(strict, "delta-apply-large") or "",
             )
 
 
@@ -168,10 +178,24 @@ class CommandTests(unittest.TestCase):
         )
         self.assertEqual(history.parse_command("fdu --cache on PATH").cache_policy, "on")
         self.assertEqual(
-            history.parse_command("perf_probe opened-second-report").probe_mode,
-            "opened-second-report",
+            history.parse_command("fdu --analyze code,words PATH").analyzers, ("code", "words")
         )
-        for bad in ("", "fdu", "fdu --depth 1 PATH", "du PATH", "perf_probe a b"):
+        self.assertEqual(
+            history.parse_command("perf_probe opened-second-report").probe_jobs,
+            ("opened-second-report",),
+        )
+        self.assertEqual(
+            history.parse_command("perf_probe opened-second-report delta-apply-large").probe_jobs,
+            ("opened-second-report", "delta-apply-large"),
+        )
+        for bad in (
+            "",
+            "fdu",
+            "fdu --depth 1 PATH",
+            "du PATH",
+            "perf_probe",
+            "perf_probe no-such-job",
+        ):
             with self.subTest(command=bad), self.assertRaises(history.HistoryError):
                 history.parse_command(bad)
 
@@ -181,8 +205,21 @@ class CommandTests(unittest.TestCase):
             if item.get("from_components"):
                 continue
             with self.subTest(component=item["id"]):
-                mapped = history.shape_for(item, V030, probe_check=lambda mode: None)
+                mapped = history.shape_for(item, V030, probe_check=lambda job: None)
                 self.assertIsInstance(mapped, history.Shape)
+
+    def test_a_cell_that_overrides_the_manifest_must_say_why(self) -> None:
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            code = history.main(
+                [
+                    *("--component", "warm-metadata", "--root", "missing", "--label", "x"),
+                    *("--build", "v0.3.0=missing", "--name", "cell"),
+                    *("--command", "perf_probe warm-revalidate"),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("needs --override-note", errors.getvalue())
 
     def test_derived_unknown_and_unimplemented_components_fail_closed(self) -> None:
         with self.assertRaisesRegex(history.HistoryError, "derived"):
@@ -279,22 +316,156 @@ class ShapeTests(unittest.TestCase):
         neither = history.Capabilities(version="x", cache_policies=frozenset({"auto", "off"}))
         self.assertIsInstance(shape("warm-metadata", neither), history.Unsupported)
 
-    def test_the_opened_root_needs_a_probe_with_the_mode(self) -> None:
+    def test_the_opened_root_needs_a_probe_with_the_job(self) -> None:
         self.assertEqual(
             shape("opened-root", V030),
             history.Unsupported("no perf_probe build was supplied for this milestone"),
         )
         self.assertEqual(
-            shape("opened-root", V030, probe_check=lambda mode: f"no {mode} mode"),
+            shape("opened-root", V030, probe_check=lambda job: f"no {job} mode"),
             history.Unsupported("no opened-second-report mode"),
         )
-        mapped = shape("opened-root", PREWORK, probe_check=lambda mode: None)
+        mapped = shape("opened-root", PREWORK, probe_check=lambda job: None)
         self.assertTrue(mapped.uses_probe)
+        self.assertEqual(mapped.job, "opened-second-report")
+        # The harness's own job command, oracle included: every sample is checked.
+        self.assertEqual(mapped.argv, ("{binary}", "opened-second-report", "--root", "{root}"))
+        self.assertEqual(mapped.cache_scope, "sample")
+        self.assertEqual(mapped.setup_argv, ())
+
+    def test_a_component_of_several_jobs_times_the_one_it_is_asked_for(self) -> None:
+        two = {
+            **entry("opened-root"),
+            "command": "perf_probe opened-second-report delta-apply-large",
+            "cache_state": "the library's open, then a second report and an applied change",
+        }
+        with self.assertRaisesRegex(history.HistoryError, "choose one with --job"):
+            history.shape_for(two, V030, probe_check=lambda job: None)
+        with self.assertRaisesRegex(history.HistoryError, "not one of"):
+            history.shape_for(two, V030, probe_check=lambda job: None, job="warm-revalidate")
+        mapped = history.shape_for(two, V030, probe_check=lambda job: None, job="delta-apply-large")
         self.assertEqual(
             mapped.argv,
-            ("{binary}", "opened-second-report", "--root", "{root}", "--no-oracle"),
+            ("{binary}", "delta-apply-large", "--root", "{root}", "--operations", "100000"),
+        )
+
+    def test_a_snapshot_job_is_set_up_by_the_same_probe_into_the_sample_directory(self) -> None:
+        warm = {
+            **entry("warm-metadata"),
+            "command": "perf_probe warm-revalidate",
+            "cache_state": "snapshot written by an untimed run of the same build just before",
+        }
+        mapped = history.shape_for(warm, PREWORK, probe_check=lambda job: None)
+        self.assertEqual(
+            mapped.setup_argv,
+            ("{binary}", "snapshot-save", "--root", "{root}", "--snapshot", "{cache}/snapshot.fdu"),
+        )
+        self.assertEqual(
+            mapped.argv,
+            ("{binary}", "revalidate", "--root", "{root}", "--snapshot", "{cache}/snapshot.fdu"),
         )
         self.assertEqual(mapped.cache_scope, "sample")
+        self.assertEqual(mapped.state, "filled")
+
+    def test_each_job_of_a_probe_component_keeps_its_own_start_state(self) -> None:
+        # Warm metadata as review B defines it: a timed first run that scans and writes the
+        # snapshot, and a timed revalidation of one an untimed run wrote just before.
+        warm = {
+            **entry("warm-metadata"),
+            "command": "perf_probe cold-open-save; perf_probe revalidate",
+            "cache_state": (
+                "a first run that scans and writes the snapshot; then a run that loads and "
+                "revalidates a snapshot written by an untimed run of the same build just before"
+            ),
+        }
+        first = history.shape_for(warm, V030, probe_check=lambda job: None, job="cold-open-save")
+        self.assertEqual(first.setup_argv, ())
+        self.assertEqual(first.state, "empty")
+        self.assertEqual(
+            first.argv,
+            (
+                "{binary}",
+                "cold-open-save",
+                "--root",
+                "{root}",
+                "--snapshot",
+                "{cache}/snapshot.fdu",
+            ),
+        )
+        # The mode name `revalidate` names the job that runs it.
+        second = history.shape_for(warm, V030, probe_check=lambda job: None, job="warm-revalidate")
+        self.assertEqual(second.job, "warm-revalidate")
+        self.assertEqual(second.setup_argv[1], "snapshot-save")
+        self.assertEqual(second.state, "filled")
+        # A probe start state never maps onto a command-line report.
+        with self.assertRaisesRegex(history.HistoryError, "needs a probe command"):
+            history.shape_for({**warm, "command": "fdu PATH"}, V030)
+
+    def test_probe_commands_name_jobs_or_the_modes_they_run(self) -> None:
+        self.assertEqual(history.resolve_probe_job("warm-revalidate"), "warm-revalidate")
+        self.assertEqual(history.resolve_probe_job("revalidate"), "warm-revalidate")
+        self.assertEqual(
+            history.parse_command(
+                "perf_probe opened-second-report; perf_probe delta-apply-large"
+            ).probe_jobs,
+            ("opened-second-report", "delta-apply-large"),
+        )
+        with self.assertRaisesRegex(history.HistoryError, "neither"):
+            history.resolve_probe_job("no-such-mode")
+        # A mode several jobs run is ambiguous; the job id has to be named.
+        shared = [
+            mode
+            for mode in {job.argv[1] for job in history.measure.PROBE_JOBS.values()}
+            if sum(job.argv[1] == mode for job in history.measure.PROBE_JOBS.values()) > 1
+            and mode not in history.measure.PROBE_JOBS
+        ]
+        for mode in shared[:1]:
+            with self.assertRaisesRegex(history.HistoryError, "name one of them"):
+                history.resolve_probe_job(mode)
+
+    def test_an_analyze_command_needs_the_view_that_shows_it(self) -> None:
+        code = {**entry("code"), "command": "fdu --analyze code PATH"}
+        mapped = history.shape_for(code, V030)
+        self.assertEqual(
+            mapped.argv,
+            ("{binary}", "--cache", "off", "--analyze", "code", "--color", "never", "{root}"),
+        )
+        self.assertEqual(history.shape_for(code, V010), history.Unsupported("no code view"))
+        uncovered = {**entry("documents"), "command": "fdu --view documents --analyze code PATH"}
+        with self.assertRaisesRegex(history.HistoryError, "does not analyze"):
+            history.shape_for(uncovered, V030)
+
+    def test_the_revised_manifest_commands_map_as_written(self) -> None:
+        # The command forms review B found the round-1 driver refusing (B2).
+        cold = {**entry("cold-cache"), "command": "fdu --cache off PATH"}
+        self.assertEqual(history.shape_for(cold, PREWORK).argv[1], "--no-cache")
+        self.assertEqual(history.shape_for(cold, V030).argv[1:3], ("--cache", "off"))
+        on = {**entry("cold-cache"), "command": "fdu --cache on PATH"}
+        with self.assertRaisesRegex(history.HistoryError, "cannot run --cache on"):
+            history.shape_for(on, V030)
+        code = {**entry("code"), "command": "fdu --view code --analyze code PATH"}
+        self.assertEqual(
+            history.shape_for(code, V030).argv[3:7], ("--analyze", "code", "--view", "code")
+        )
+        multi = {
+            **entry("multi-view"),
+            "command": "fdu --view code,documents,languages --analyze code,words PATH",
+        }
+        self.assertEqual(
+            history.shape_for(multi, V030).argv[3:7],
+            ("--analyze", "code,words", "--view", "code,documents,languages"),
+        )
+        everything = {**multi, "command": "fdu --view code,documents,languages --analyze all PATH"}
+        self.assertEqual(history.shape_for(everything, V030).argv[3:5], ("--analyze", "all"))
+        opened = {
+            **entry("opened-root"),
+            "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
+            "cache_state": "the library's open, then a second report; then an applied change",
+        }
+        for job_id in ("opened-second-report", "delta-apply-large"):
+            mapped = history.shape_for(opened, V030, probe_check=lambda job: None, job=job_id)
+            self.assertEqual(mapped.job, job_id)
+            self.assertEqual(mapped.setup_argv, ())
 
     def test_the_answer_check_reads_totals_in_each_eras_json(self) -> None:
         self.assertEqual(
@@ -315,6 +486,19 @@ class ShapeTests(unittest.TestCase):
         self.assertEqual(contract.setup_argv, mapped.argv)
         self.assertEqual(contract.measures, "fdu-index:warm-content-code")
         self.assertEqual(contract.name, "fdu-index/warm-content-code/default")
+        self.assertEqual(contract.primary_metric, "wall_ns")
+        self.assertIsNone(contract.stdout_metrics)
+        with self.assertRaisesRegex(history.HistoryError, "only a probe job"):
+            history.contract_for("code", entry("code"), shape("code", V030), timing="component")
+
+    def test_a_probe_contract_reads_the_component_timer_and_the_oracle(self) -> None:
+        mapped = shape("opened-root", V030, probe_check=lambda job: None)
+        contract = history.contract_for(
+            "opened-root", entry("opened-root"), mapped, timing="component"
+        )
+        self.assertEqual(contract.primary_metric, "component_ns")
+        self.assertIsNotNone(contract.stdout_metrics)
+        self.assertEqual(contract.version_argv, ())
 
 
 class AnswerCheckTests(unittest.TestCase):
@@ -344,12 +528,25 @@ class AnswerCheckTests(unittest.TestCase):
         with self.assertRaises(history.HistoryError):
             history.root_totals({"reports": []})
 
+    PROBE_OUTPUT = {
+        "schema": "fdu-perf-probe-v1",
+        "mode": "fixture",
+        "component_ns": 1234,
+        "oracle_enabled": True,
+        "summary": {"complete": True},
+    }
+
     def run_check(
-        self, caps: history.Capabilities, component_id: str, **kwargs: Any
+        self,
+        caps: history.Capabilities,
+        component_id: str,
+        *,
+        definition: Dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> Tuple[Dict[str, Any], List[Tuple[List[str], str]]]:
         build = history.Build(label="b", binary=Path("/bin/fdu"), probe=Path("/bin/probe"))
         build.caps = caps
-        build.shape = shape(component_id, caps, **kwargs)
+        build.shape = history.shape_for(definition or entry(component_id), caps, **kwargs)
         calls: List[Tuple[List[str], str]] = []
 
         def runner(argv: Sequence[str], overrides: Dict[str, str]) -> Tuple[int, bytes, bytes]:
@@ -358,8 +555,8 @@ class AnswerCheckTests(unittest.TestCase):
             Path(home, f"written-{len(calls)}").write_text("x")
             if "--json" in argv or "json" in argv:
                 return 0, json.dumps({"tree": self.SUMMARY, "complete": True}).encode(), b""
-            if "opened-second-report" in argv:
-                return 0, json.dumps({"summary": {}}).encode(), b""
+            if argv[0] == "/bin/probe":
+                return 0, json.dumps(self.PROBE_OUTPUT).encode(), b""
             line = "perf: took 1 ms; analysis 0 fresh, 5 cached (1 B); warm revalidation"
             return 0, b"", line.encode()
 
@@ -384,13 +581,82 @@ class AnswerCheckTests(unittest.TestCase):
         self.assertNotEqual(calls[2][1], calls[1][1])
         self.assertIn("off", calls[2][0])
 
-    def test_the_probe_answer_is_its_oracle_without_the_timed_flags(self) -> None:
-        with mock.patch.object(history.tree, "probe_agrees", return_value=None) as agrees:
-            record, calls = self.run_check(V030, "opened-root", probe_check=lambda mode: None)
-        self.assertIn("--no-oracle", calls[0][0])
-        self.assertNotIn("--no-oracle", calls[1][0])
+    def test_the_probe_answer_is_the_jobs_own_oracle_on_the_checked_run(self) -> None:
+        agrees = mock.Mock(return_value=None)
+        with mock.patch.dict(history.measure._ORACLES, {"index-digest": agrees}):
+            record, calls = self.run_check(V030, "opened-root", probe_check=lambda job: None)
+        self.assertEqual(len(calls), 1)
         self.assertIsNone(record["oracle_error"])
+        self.assertEqual(record["component_ns"], 1234)
         agrees.assert_called_once()
+        disagrees = mock.Mock(return_value="probe engine_digest disagrees")
+        with mock.patch.dict(history.measure._ORACLES, {"index-digest": disagrees}):
+            record, _ = self.run_check(V030, "opened-root", probe_check=lambda job: None)
+        self.assertIn("disagrees", record["oracle_error"])
+        groups = history.answer_groups([record], self.FINGERPRINT)
+        self.assertIn("disagrees", " ".join(history.answer_problems(groups)))
+
+    def test_a_snapshot_job_checks_the_snapshot_its_own_setup_wrote(self) -> None:
+        warm = {
+            **entry("warm-metadata"),
+            "command": "perf_probe warm-revalidate",
+        }
+        with mock.patch.dict(history.measure._ORACLES, {"index-digest": lambda f, s: None}):
+            record, calls = self.run_check(
+                V030, "warm-metadata", definition=warm, probe_check=lambda job: None
+            )
+        (setup, setup_home), (timed, timed_home) = calls
+        self.assertEqual(setup_home, timed_home)
+        self.assertEqual(setup[1], "snapshot-save")
+        self.assertEqual(timed[1], "revalidate")
+        # Both name the same snapshot, inside that sample's own cache directory.
+        self.assertEqual(setup[-1], f"{setup_home}/snapshot.fdu")
+        self.assertEqual(timed[-1], setup[-1])
+        self.assertEqual(record["exit_codes"], [0, 0])
+
+    def test_a_probe_output_without_a_component_timer_is_not_evidence(self) -> None:
+        read = history.probe_output_reader("opened-second-report")
+        with mock.patch.dict(history.measure._ORACLES, {"index-digest": lambda f, s: None}):
+            metrics, reasons = read(json.dumps(self.PROBE_OUTPUT).encode(), self.FINGERPRINT)
+            self.assertEqual((metrics, reasons), ({"component_ns": 1234}, []))
+            missing = {
+                key: value for key, value in self.PROBE_OUTPUT.items() if key != "component_ns"
+            }
+            metrics, reasons = read(json.dumps(missing).encode(), self.FINGERPRINT)
+        self.assertIsNone(metrics["component_ns"])
+        self.assertIn("probe reported no component_ns", reasons)
+        _metrics, reasons = read(b"", self.FINGERPRINT)
+        self.assertTrue(reasons)
+
+    def test_an_early_probe_without_the_newest_mtime_is_held_to_its_digest(self) -> None:
+        fingerprint = {
+            "counts": {"directories": 3, "total": 13, "files": 10, "other": 0, "symlinks": 0},
+            "sizes": {"apparent_bytes": 100, "allocated_bytes": 200},
+            "newest_file_mtime_ns": 7,
+            "engine_digest": "d",
+        }
+        summary = {
+            "complete": True,
+            "dirs": 3,
+            "entries": 13,
+            "files": 10,
+            "other": 0,
+            "symlinks": 0,
+            "apparent_bytes": 100,
+            "allocated_bytes": 200,
+            "engine_digest": "d",
+        }
+        read = history.probe_output_reader("warm-revalidate")
+
+        def output(**fields: Any) -> bytes:
+            return json.dumps({**self.PROBE_OUTPUT, "summary": {**summary, **fields}}).encode()
+
+        # The field is absent from the early schema: the digest stands in for it.
+        self.assertEqual(read(output(), fingerprint)[1], [])
+        # A wrong digest still fails, and so does a reported but wrong newest mtime.
+        self.assertTrue(read(output(engine_digest="x"), fingerprint)[1])
+        self.assertTrue(read(output(newest_file_mtime_ns=None), fingerprint)[1])
+        self.assertTrue(read(output(newest_file_mtime_ns=6), fingerprint)[1])
 
     def test_groups_split_on_ignore_reading_and_must_agree(self) -> None:
         def record(
@@ -481,21 +747,31 @@ class CellTests(unittest.TestCase):
     # Labels the committed cell describes, so their descriptions are copied over.
     FIRST, SKIPPED = "prework", "exp001"
 
-    def make_cell(self) -> Dict[str, Any]:
+    def make_cell(self, component_id: str = "summary", timing: str = "wall") -> Dict[str, Any]:
         walls = {self.FIRST: 3_000_000, "v0.3.0": 1_000_000}
+        # A probe's own timer, deliberately a different ratio from the process's.
+        components = {self.FIRST: 800_000, "v0.3.0": 400_000}
         builds = []
         with tempfile.TemporaryDirectory() as scratch:
             for label in (self.FIRST, self.SKIPPED, "v0.3.0"):
                 binary = fake_fdu(Path(scratch), V030_HELP, f"fdu {label}", name=f"fdu-{label}")
-                build = history.Build(label=label, binary=binary)
+                build = history.Build(label=label, binary=binary, probe=binary)
                 build.caps = PREWORK if label == self.SKIPPED else V030
-                build.shape = shape("summary", build.caps)
+                build.shape = shape(
+                    component_id,
+                    build.caps,
+                    probe_check=lambda job, label=label: (
+                        "no mode" if label == self.SKIPPED else None
+                    ),
+                )
                 builds.append(build)
             tools = {
                 build.label: compare_tools.Tool(
                     build.label,
-                    history.contract_for("summary", entry("summary"), build.shape),
-                    build.binary,
+                    history.contract_for(
+                        component_id, entry(component_id), build.shape, timing=timing
+                    ),
+                    build.timed_binary,
                 )
                 for build in builds
                 if build.supported
@@ -505,11 +781,16 @@ class CellTests(unittest.TestCase):
             def spawn(argv, *, timeout_seconds, environment_overrides=None):
                 counter[0] += 1
                 label = Path(argv[0]).name.removeprefix("fdu-")
+                output = {
+                    "schema": "fdu-perf-probe-v1",
+                    "component_ns": components[label] + counter[0] % 5,
+                    "summary": {"complete": True},
+                }
                 return {
                     "exit_code": 0,
                     "timed_out": False,
                     "wall_ns": walls[label] + counter[0] % 7,
-                    "stdout": b"",
+                    "stdout": json.dumps(output).encode(),
                     "stderr": "",
                     "resources": {field: 1 for field in compare_tools.measure._RESOURCE_FIELDS},
                 }
@@ -535,6 +816,7 @@ class CellTests(unittest.TestCase):
                     compare_tools.measure, "host_facts", return_value={"system": "Darwin"}
                 ),
                 mock.patch.object(compare_tools, "_progress"),
+                mock.patch.dict(history.measure._ORACLES, {"index-digest": lambda f, s: None}),
             ):
                 document = compare_tools.run(
                     root=root,
@@ -567,7 +849,7 @@ class CellTests(unittest.TestCase):
         return history.build_cell(
             document,
             builds=builds,
-            entry=entry("summary"),
+            entry=entry(component_id),
             manifest=MANIFEST,
             reference="v0.3.0",
             metadata_source=source,
@@ -622,6 +904,42 @@ class CellTests(unittest.TestCase):
         self.assertEqual(anchor["vs_previous_milestone_derived"]["previous"], self.FIRST)
         self.assertEqual(cell["headline"]["first_label"], self.FIRST)
         self.assertAlmostEqual(cell["headline"]["paired_speedup_x"], 3.0, places=1)
+        self.assertEqual(cell["timed_metric"], "wall_ns")
+        self.assertIsNone(cell["override"])
+
+    def test_a_probe_cell_times_the_whole_process_and_keeps_the_component_beside_it(
+        self,
+    ) -> None:
+        cell = self.make_cell("opened-root", timing="wall")
+        self.assertEqual(cell["timed_metric"], "wall_ns")
+        self.assertEqual(cell["job"], "opened-second-report")
+        first = cell["milestones"][0]
+        # Whole-process wall, discovery included: the 3x the process took.
+        self.assertAlmostEqual(first["vs_v0_3_0_paired_harness"]["median_change_pct"], 200, delta=2)
+        self.assertAlmostEqual(
+            first["vs_v0_3_0_paired_harness_component"]["median_change_pct"], 100, delta=2
+        )
+        self.assertAlmostEqual(first["component_ms"]["median"], 0.8, places=2)
+        self.assertAlmostEqual(cell["headline"]["paired_speedup_x"], 3.0, places=1)
+
+    def test_a_component_timed_cell_compares_the_probes_own_timer(self) -> None:
+        cell = self.make_cell("opened-root", timing="component")
+        self.assertEqual(cell["timed_metric"], "component_ns")
+        self.assertEqual(cell["job"], "opened-second-report")
+        first, anchor = cell["milestones"][0], cell["milestones"][2]
+        self.assertEqual(first["job"], "opened-second-report")
+        self.assertAlmostEqual(first["component_ms"]["median"], 0.8, places=2)
+        self.assertAlmostEqual(first["wall_ms"]["median"], 3.0, places=2)
+        # The comparison the index reads is on the component timer: 2x, not the 3x wall.
+        self.assertAlmostEqual(first["vs_v0_3_0_paired_harness"]["median_change_pct"], 100, delta=2)
+        self.assertAlmostEqual(
+            first["vs_v0_3_0_paired_harness_wall"]["median_change_pct"], 200, delta=2
+        )
+        self.assertIsNone(anchor["vs_v0_3_0_paired_harness_wall"])
+        self.assertAlmostEqual(cell["headline"]["paired_speedup_x"], 2.0, places=1)
+        # Memory is recorded for every component, probe-timed or not.
+        self.assertIsNotNone(first["peak_rss_mib"]["median"])
+        self.assertEqual(cell["milestones"][1]["unsupported_reason"], "no mode")
 
 
 def fake_fdu(directory: Path, help_text: str, version: str, *, name: str = "fdu") -> Path:
@@ -635,14 +953,14 @@ def fake_fdu(directory: Path, help_text: str, version: str, *, name: str = "fdu"
     return path
 
 
-def fake_probe(path: Path, *, modes: Sequence[str], flags: bool = True) -> Path:
+def fake_probe(path: Path, *, modes: Sequence[str], reject: str = "") -> Path:
+    """A probe that knows ``modes`` and, like the early probes, refuses ``reject`` first."""
     known = " ".join(modes)
     flag_check = (
-        ""
-        if flags
-        else (
-            'for a in "$@"; do [ "$a" = --no-oracle ] && { echo \'unknown argument "--no-oracle"\' >&2; exit 2; }; done\n'
-        )
+        f'for a in "$@"; do [ "$a" = {reject} ] && '
+        f"{{ echo 'unknown argument \"{reject}\"' >&2; exit 2; }}; done\n"
+        if reject
+        else ""
     )
     path.write_text(
         "#!/bin/sh\n"
