@@ -531,8 +531,9 @@ installing the skill does not install the command.
 The zero-install fallback follows uv’s `exclude-newer` policy; see the
 [installation note](../README.md#other-ways-to-install) if a just-published release is
 filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and later
-`uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
-The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
+`uv tool upgrade --no-build fdu`. `fdu --skill` prints the portable agent-facing
+contract. The skill names the build that wrote it, so re-run the installer after
+upgrading `fdu`.
 
 ## Quiet Diagnostics
 

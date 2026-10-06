@@ -46,7 +46,7 @@ The [Python package](https://pypi.org/project/fdu/) publishes wheels for GIL-ena
 CPython 3.12 and newer on Linux glibc (x86-64 and arm64), macOS (x86-64 and arm64), and
 Windows x86-64. No Python version is needed in normal use.
 If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`.
-`uv tool upgrade fdu` updates a persistent install.
+`uv tool upgrade --no-build fdu` updates a persistent install.
 
 To install the Rust crate from source, use Rust 1.85 or newer:
 
