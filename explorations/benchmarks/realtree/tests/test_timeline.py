@@ -559,7 +559,10 @@ class RenderTests(unittest.TestCase):
         figure = figure_timeline(dataset)
         self.assertIn("5.0x faster", figure)
         self.assertNotIn("lost", figure)
-        self.assertIn("150.0 s", figure)
+        # Milestone times are milliseconds; the formatter takes nanoseconds, and passing
+        # milliseconds printed every runtime as "0 ms".
+        self.assertIn(fmt_primary(150000.0 * 1e6, "wall_ns"), figure)
+        self.assertNotIn(" 0 ms", figure)
 
     def test_id_ranges_skip_unused_ids_but_not_recorded_ones(self) -> None:
         # exp-113 was never used, so it does not split exp-112 from exp-114; exp-104 is a

@@ -644,19 +644,23 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     if not records:
         return ""
     position = {record["id"]: index for index, record in enumerate(records)}
-    cell = history_cell(dataset)
-    milestones = [
-        item
-        for item in (cell or {}).get("milestones", [])
-        if item.get("wall_ms") and item.get("after_experiment") in position
-    ]
+    cells = []
+    for cell in dataset.get("history") or []:
+        placed = [
+            item
+            for item in cell.get("milestones", [])
+            if item.get("wall_ms") and item.get("after_experiment") in position
+        ]
+        if len(placed) >= 2:
+            cells.append((cell, placed))
+    milestones = [item for _, placed in cells for item in placed]
 
-    left, right = 64, 56
+    left, right = 64, 150
     width = 900
     plot = width - left - right
     step = plot / len(records)
     x_of = lambda index: left + (index + 0.5) * step
-    top_y0, top_h = 40, 190 if milestones else 0
+    top_y0, top_h = 70, 210 if milestones else 0
     gap = 64 if milestones else 0
     bottom_y0 = top_y0 + top_h + gap
     bottom_h = 220
@@ -664,9 +668,9 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     out = svg_open(
         width,
         height,
-        "Total runtime on a fixed benchmark above, every experiment's effect below",
-        "Top: measured runtime of each milestone build on one tree. Bottom: one bar per "
-        "experiment, green kept, red not kept, with the running count of kept changes.",
+        "Total runtime on fixed benchmarks above, every experiment's effect below",
+        "Top: measured runtime of each milestone build on each benchmark, as a share of "
+        "its first build. Bottom: one bar per experiment, green kept, red not kept.",
     )
 
     # Shared date ticks along the experiment axis: the first experiment of each date,
@@ -696,59 +700,81 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         f"order they ran</text>"
     )
 
-    if milestones:
-        peak = max(item["wall_ms"] for item in milestones)
-        ticks = axis_ticks(peak / 1000, count=3)
-        ceiling = ticks[-1]
-        y_of = lambda ms_value: top_y0 + top_h - (ms_value / 1000) / ceiling * top_h
-        for tick in ticks:
-            y = top_y0 + top_h - tick / ceiling * top_h
-            out.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}"/>')
-            out.append(
-                f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
-                f"{tick:,.0f} s</text>"
-            )
-        out.append(
-            f'<text class="tick axis-name" x="{left}" y="{top_y0 - 22}">total runtime, '
-            f"{esc(cell.get('title') or cell['subject'])}, seconds &mdash; lower is faster</text>"
-        )
-        points = [(x_of(position[item["after_experiment"]]), y_of(item["wall_ms"]), item) for item in milestones]
-        path = []
-        for index, (x, y, _) in enumerate(points):
-            if index:
-                path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
-            path.append(f"{x:.1f},{y:.1f}")
-        path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
-        out.append(f'<polyline class="track" points="{" ".join(path)}"/>')
-        first = milestones[0]["wall_ms"]
-        for index, (x, y, item) in enumerate(points):
-            final = index == len(points) - 1
-            ratio = first / item["wall_ms"]
-            out.append(
-                f'<circle class="{"dot-final" if final else "dot-step"}" cx="{x:.1f}" cy="{y:.1f}" r="4.5"/>'
-            )
-            out.append(
-                f'<rect class="hit" x="{x - 9:.1f}" y="{top_y0}" width="18" height="{top_h}" '
-                + tip(
-                    f"{item['version'] or item['label']} ({item['commit']}, {item['date']})\n"
-                    f"{item['includes']}\n"
-                    f"{fmt_ms(item['wall_ms'])} total, {ratio:.1f}x faster than the first build"
-                    + (f", peak {item['peak_rss_mib']:.0f} MiB" if item.get("peak_rss_mib") else "")
-                )
-                + "/>"
-            )
-            if index == 0 or final:
-                anchor = "start" if index == 0 else "end"
-                dx = 8 if index == 0 else -8
-                text = f"{item['wall_ms'] / 1000:.1f} s" + ("" if index == 0 else f", {ratio:.1f}x faster")
+    if cells:
+        # Log scale of runtime as a share of each benchmark's first build, so a tree
+        # timed in seconds and one timed in milliseconds read on one axis.
+        shares = [item["wall_ms"] / placed[0]["wall_ms"] for _, placed in cells for item in placed]
+        candidates = [tick for tick in (0.5, 0.2, 0.1, 0.05, 0.02, 0.01) if tick < min(shares)]
+        floor = candidates[0] if candidates else min(shares) * 0.9
+        ceiling = max(1.0, max(shares))
+        span = math.log10(ceiling) - math.log10(floor)
+        y_of = lambda share: top_y0 + (math.log10(ceiling) - math.log10(share)) / span * top_h
+        for tick in (1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01):
+            if floor <= tick <= ceiling:
+                y = y_of(tick)
+                out.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}"/>')
                 out.append(
-                    f'<text class="value-label" x="{x + dx:.1f}" y="{y - 10:.1f}" '
-                    f'text-anchor="{anchor}">{esc(text)}</text>'
+                    f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
+                    f"{tick * 100:g}%</text>"
                 )
-            short = item.get("short") or item["label"]
+        out.append(
+            f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">total runtime as a '
+            f"share of the first build, log scale &mdash; lower is faster; builds numbered</text>"
+        )
+        # Milestones numbered once along the top, staggered over three rows so builds
+        # that landed close together stay legible; the caption names them. Every cell
+        # times the same builds.
+        named = {}
+        for _, placed in cells:
+            for item in placed:
+                named.setdefault(item["after_experiment"], item.get("short") or item["label"])
+        for number, after in enumerate(named, start=1):
+            x = x_of(position[after])
+            label_y = top_y0 - 30 + (number - 1) % 3 * 10
             out.append(
-                f'<text class="point-label" x="{x:.1f}" y="{y + 16 + (index % 2) * 11:.1f}" '
-                f'text-anchor="middle">{esc(short)}</text>'
+                f'<line class="grid" x1="{x:.1f}" y1="{label_y + 3}" x2="{x:.1f}" '
+                f'y2="{top_y0 + top_h}"/>'
+            )
+            out.append(
+                f'<text class="point-label" x="{x:.1f}" y="{label_y}" text-anchor="middle">'
+                f"{number}</text>"
+            )
+        series = ("series-mac", "series-linux", "series-mac", "series-linux")
+        for number, (cell, placed) in enumerate(cells):
+            css = series[number % len(series)]
+            first = placed[0]["wall_ms"]
+            points = [(x_of(position[item["after_experiment"]]), y_of(item["wall_ms"] / first), item) for item in placed]
+            path = []
+            for index, (x, y, _) in enumerate(points):
+                if index:
+                    path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
+                path.append(f"{x:.1f},{y:.1f}")
+            path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
+            out.append(f'<polyline class="{css} series-line" points="{" ".join(path)}"/>')
+            title = cell.get("title") or cell["subject"]
+            for x, y, item in points:
+                out.append(f'<circle class="{css}" cx="{x:.1f}" cy="{y:.1f}" r="3.5"/>')
+                out.append(
+                    f'<rect class="hit" x="{x - 7:.1f}" y="{y - 7:.1f}" width="14" height="14" '
+                    + tip(
+                        f"{title}: {item.get('short') or item['label']} "
+                        f"({item['commit']}, {item['date']})\n"
+                        f"{item['includes']}\n"
+                        f"{fmt_ms(item['wall_ms'] * 1e6)}, {first / item['wall_ms']:.1f}x faster "
+                        f"than the first build"
+                        + (f", peak {item['peak_rss_mib']:.0f} MiB" if item.get("peak_rss_mib") else "")
+                    )
+                    + "/>"
+                )
+            last = placed[-1]
+            out.append(
+                f'<text class="value-label {css}" x="{width - right + 8:.1f}" '
+                f'y="{points[-1][1] + 4:.1f}" stroke="none">'
+                f"{first / last['wall_ms']:.1f}x faster</text>"
+            )
+            out.append(
+                f'<text class="point-label" x="{width - right + 8:.1f}" '
+                f'y="{points[-1][1] + 17:.1f}">{esc(title)}</text>'
             )
 
     # Bottom panel: every experiment, plus the running count of kept changes.
@@ -802,19 +828,39 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     out.append("</svg>")
 
     counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
+    cell_keys = [
+        (("key-mac", "key-linux")[number % 2], f"{cell.get('title') or cell['subject']}, "
+         f"{fmt_ms(placed[0]['wall_ms'] * 1e6)} to {fmt_ms(placed[-1]['wall_ms'] * 1e6)}")
+        for number, (cell, placed) in enumerate(cells)
+    ]
     keys = legend(
-        ("key-after-dot", "top: one timed build of fdu, labelled by milestone"),
+        *cell_keys,
         ("key-good", f"kept, at least 3% better ({counts['kept']})"),
         ("key-bad", f"tried, not kept ({counts['rejected']})"),
         ("key-flat", f"measurements and other verdicts ({counts['measured']})"),
     )
     caption = ""
-    if cell:
+    if cells:
+        described = "; ".join(
+            f"{esc(cell.get('title') or cell['subject'])} ({cell['entries']:,} entries, "
+            f"{cell['trials']} paired rounds)"
+            for cell, _ in cells
+        )
+        first_cell = cells[0][0]
         caption = (
-            f"Top: every milestone build timed in one interleaved session on "
-            f"{esc(cell.get('title') or cell['subject'])} ({cell['entries']:,} entries), {esc(cell['cpu'])}, "
-            f"{esc(cell['storage'])}, {cell['trials']} paired rounds, "
-            f"{esc(cell['regime'])} host. Hover a point for what each build added. "
+            f"Top: on each benchmark, every milestone build timed in one interleaved "
+            f"session: {described}; {esc(first_cell['cpu'])}, {esc(first_cell['storage'])}, "
+            f"{esc(first_cell['regime'])} host. Builds before 0.1.0 do not read .gitignore, "
+            f"so on a repository they do less work. Hover a point for what each build added. "
+        )
+        named = {}
+        for _, placed in cells:
+            for item in placed:
+                named.setdefault(item["after_experiment"], item.get("short") or item["label"])
+        caption += (
+            "Builds: "
+            + "; ".join(f"{number} {esc(short)}" for number, short in enumerate(named.values(), start=1))
+            + ". "
         )
     return (
         f'<figure class="fig">{"".join(out)}{keys}<figcaption>{caption}Bottom: bars beyond '
@@ -2104,20 +2150,23 @@ def _standing_figure(dataset: Mapping[str, Any]) -> str:
 
 
 def _history_figure(dataset: Mapping[str, Any]) -> str:
-    """The measured first-to-last speedup on the history cell's benchmark."""
-    cell = history_cell(dataset)
-    milestones = [item for item in (cell or {}).get("milestones", []) if item.get("wall_ms")]
-    if len(milestones) < 2:
-        return ""
-    first, last = milestones[0], milestones[-1]
-    # The ratio of the medians the chart draws, so the headline and the chart agree. The
-    # paired figure in the cell is higher and stays in the record.
-    speedup = first["wall_ms"] / last["wall_ms"]
-    return (
-        f'<div><span class="n good">{speedup:.1f}&times; faster</span>'
-        f'<span class="k">{esc(cell.get("title") or cell["subject"])}, first build to '
-        f'{esc(last["version"] or last["label"])}</span></div>'
-    )
+    """Each history cell's measured first-to-last speedup.
+
+    The ratio of the medians the chart draws, so the headline and the chart agree; the
+    paired figure stays in the record.
+    """
+    figures = []
+    for cell in dataset.get("history") or []:
+        milestones = [item for item in cell.get("milestones", []) if item.get("wall_ms")]
+        if len(milestones) < 2:
+            continue
+        first, last = milestones[0], milestones[-1]
+        figures.append(
+            f'<div><span class="n good">{first["wall_ms"] / last["wall_ms"]:.1f}&times; '
+            f'faster</span><span class="k">{esc(cell.get("title") or cell["subject"])}, '
+            f'first build to {esc(last.get("short") or last["label"])}</span></div>'
+        )
+    return "".join(figures)
 
 
 def _header(dataset: Mapping[str, Any]) -> str:
@@ -2155,9 +2204,10 @@ def _section_iterations(dataset: Mapping[str, Any]) -> str:
     return f"""
 <h2 id="iterations">Over time</h2>
 <h3>Total runtime, and every experiment that changed it</h3>
-<p>The top panel is fdu&rsquo;s total runtime on one fixed benchmark, measured for each
-milestone build side by side in one session, so its steps are the real accumulated
-improvement. The bottom panel is every experiment in the order it ran: green bars were
+<p>The top panel is fdu&rsquo;s total runtime on two fixed benchmarks, a generated
+million-entry tree and the Linux kernel source with its <code>.gitignore</code> files. Each
+milestone build was timed side by side in one session per benchmark, so the steps are the
+real accumulated improvement. The bottom panel is every experiment in the order it ran: green bars were
 kept, red bars were tried and dropped. Most
 ideas moved their job by less than the 3% a change must clear; the tall green bars are the
 changes that made fdu fast.</p>

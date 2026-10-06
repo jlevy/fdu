@@ -1336,13 +1336,28 @@ Grouped by topic; the order to run them in is
 The page shows every number; this report says what they mean.
 
 **Over time.** Two stacked panels on one axis of experiments in the order they ran.
-The top panel is total runtime on one fixed benchmark, measured for each milestone build
-side by side in one session (`history/`, a history cell), so its steps are the measured
-accumulated improvement: 152.8 s for the pre-work binary and 30.4 s for 0.3.0 on the
-generated 1M-entry tree, on this Mac’s external SSD, where the kernel and USB path set
-the wall time after campaign 1. The bottom panel is every experiment’s paired change on
-its own primary metric (green kept and at least 3% better, red tried and not kept, grey
-measurements) with the running count of kept changes.
+The top panel is total runtime on two fixed benchmarks, each from a history cell
+(`performance-evidence/history/`): thirteen milestone builds, from the pre-work binary
+`b565882b` through each major kept optimization to 0.3.0, timed interleaved in one
+session per benchmark on this Mac’s internal SSD (exploratory, uncontrolled host, no
+invalid samples). Lines are runtime as a share of the first build, on a log scale.
+
+- **The generated 1M-entry tree:** 70.4 s to 6.54 s, 10.8× (paired 10.76×, 95%
+  [8.88×, 11.65×]). The fall is H1 (5.3×) and bulk metadata (a further −48%). Every
+  later build is within noise of 6.5 s, because the macOS metadata calls set the time on
+  a tree four times the vnode limit.
+  The later work shows in peak RSS, 452 to 66 MiB, and user CPU, 2.4 to 1.0 s.
+- **The Linux v6.12 source tree:** 543 ms to 163 ms, 3.3× (paired 3.35×,
+  [3.24×, 3.39×]). Runtime rises to 430 ms at 0.1.0, when the default command starts
+  reading its 358 `.gitignore` files, then falls to 191 ms at 0.2.1 (H162, H163), 177 ms
+  at H171, and 163 ms at 0.3.0. Builds before 0.1.0 read no `.gitignore` and do less
+  work.
+
+An earlier cell, on the external USB SSD, is kept under `history/superseded/`: there the
+kernel and USB path set the wall time after campaign 1.
+
+The bottom panel is every experiment’s paired change on its own primary metric (green
+kept and at least 3% better, red tried and not kept, grey measurements).
 Its effects are not multiplied into a runtime: each was measured on its own job and
 tree, and compounding the 55 kept speed-ups would claim over 20,000×.
 
