@@ -717,7 +717,7 @@ class RenderTests(unittest.TestCase):
         page = render(dataset)
         self.assertIn("macOS score, 2 of 12 components", page)
         self.assertIn("exploratory, uncontrolled host", page)
-        self.assertIn("Linux not yet measured (50% of the combined index)", page)
+        self.assertIn("Linux not yet measured (50% of the full index)", page)
         self.assertNotIn("full score", page)
         self.assertNotIn("unified score,", page)
         figure = figure_timeline(dataset)
@@ -750,6 +750,57 @@ class RenderTests(unittest.TestCase):
         self.assertIn('<g class="metric" data-metric="cold-cache">', figure)
         self.assertIn('data-component="cold-cache" data-platform="macOS"', figure)
         self.assertIn('id="metric" data-platform="macOS"', figure)
+
+    def test_a_build_that_changed_the_work_is_annotated_where_it_is_drawn(self) -> None:
+        # The score rises at 0.1.0 because that build reads .gitignore by default, and
+        # without a note the step reads as a slowdown. The note follows the build: on the
+        # score and on each component that draws it, and absent when the build is.
+        import re
+
+        from benchmarks.realtree.report_html import BUILD_NOTES
+
+        cell = _index_cell("cold-cache", 150.0, 30.0)
+        release = dict(
+            cell["milestones"][0],
+            label="v0.1.0",
+            short="0.1.0",
+            after_experiment="exp-006",
+            wall_ms=90.0,
+            vs_latest_pct=200.0,
+            vs_latest_ci95_pct=[180.0, 220.0],
+        )
+        cell["milestones"].insert(1, release)
+        dataset = project([experiment("exp-000"), experiment("exp-006"), experiment("exp-032")])
+        suite = load_suite()
+        dataset["history"] = [cell]
+        dataset["index"] = project_index([cell], suite)
+        dataset["index_jobs"] = dict(suite["job_components"])
+        figure = figure_timeline(dataset)
+        groups = dict(
+            re.findall(r'<g class="metric[^"]*" data-metric="([^"]+)">(.*?)</g>', figure, re.S)
+        )
+        for metric in ("score", "cold-cache"):
+            self.assertEqual(groups[metric].count('class="tick build-note"'), 1, metric)
+            for text in BUILD_NOTES["v0.1.0"]:
+                self.assertIn(text, groups[metric], metric)
+        plain = figure_timeline(self._chart_dataset([_index_cell("cold-cache", 150.0, 30.0)]))
+        self.assertNotIn("build-note", plain)
+
+    def test_every_build_note_names_a_projected_build(self) -> None:
+        # The notes are keyed by hand; a label no projected build carries would never draw.
+        import json
+        from pathlib import Path
+
+        from benchmarks.realtree.report_html import BUILD_NOTES
+
+        committed = Path("docs/project/reports/performance-evidence/timeline.json")
+        labels = {
+            build["label"]
+            for projected in json.loads(committed.read_text(encoding="utf-8"))["index"]
+            for build in projected["builds"]
+        }
+        for label in BUILD_NOTES:
+            self.assertIn(label, labels)
 
     def test_a_line_that_ends_worse_says_so(self) -> None:
         # E10: a line that rose read "0.8x faster".

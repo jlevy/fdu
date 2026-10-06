@@ -5,8 +5,8 @@
 Charts are hand-written inline SVG. No chart library, for the same reason the report
 serializers in the Rust crate are hand-written: the shapes here are few and fully known,
 and a library would have to be pinned, audited, and carried for the rest of the project's
-life to draw four figures. Inline SVG also keeps the page self-contained, which is what
-lets it be opened from a file, committed, and published without an asset pipeline.
+life to draw a handful of figures. Inline SVG also keeps the page self-contained, so it
+can be opened from a file, committed, and published without an asset pipeline.
 
 The visual language is the tbd web design system's, reduced to what a static report
 needs: one neutral hue so every surface reads as one material, semantic colour families
@@ -66,8 +66,8 @@ def decision_label(record: Mapping[str, Any]) -> str:
 def compares(record: Mapping[str, Any]) -> bool:
     """Whether a record's two arms are different builds, so it has a change to show.
 
-    The projection states it (`compares`); a projection written before it did falls back
-    to the decision, which read every baseline as one build measured against itself.
+    The projection records it as `compares`. A projection without that field falls back
+    to the decision, which treats every baseline as one build measured against itself.
     """
     return bool(record.get("compares", record["decision"] != "baseline"))
 
@@ -101,8 +101,8 @@ def fmt_bytes(value: Optional[float]) -> str:
 def fmt_primary(value: Optional[float], metric: Optional[str]) -> str:
     """Format the verdict's primary metric in that metric's unit.
 
-    The table used to run every primary through [`fmt_ms`], so exp-117's peak RSS
-    (395,886,592 → 355,868,672 bytes) printed as `396 ms → 356 ms`.
+    A peak-RSS primary prints in MiB; formatting it with [`fmt_ms`] would print a byte
+    count as milliseconds.
     """
     unit = METRICS.get(metric or "wall_ns", "ns")
     if unit == "bytes":
@@ -112,9 +112,6 @@ def fmt_primary(value: Optional[float], metric: Optional[str]) -> str:
 
 def fmt_pct(value: Optional[float]) -> str:
     return "—" if value is None else f"{value:+.1f}%"
-
-
-# ---------------------------------------------------------------- svg primitives
 
 
 def axis_ticks(maximum: float, count: int = 4) -> List[float]:
@@ -131,9 +128,8 @@ def axis_ticks(maximum: float, count: int = 4) -> List[float]:
         step = magnitude * multiple
         if step >= raw:
             break
-    # The ladder has to *cover* the maximum, not stop below it. Stopping below was a
-    # real bug: the last tick became the scale's top, so a 1,219 ms bar was drawn against
-    # a 1,000 ms axis and ran 300 px past the plot into the value column.
+    # The ladder covers the maximum rather than stopping below it: the last tick is the
+    # scale's top, so a bar longer than it would run past the plot into the value column.
     ticks = []
     value = 0.0
     while True:
@@ -156,9 +152,8 @@ def svg_open(width: int, height: int, title: str, desc: str = "") -> List[str]:
 def legend(*items: Sequence[str]) -> str:
     """A key row.
 
-    Each entry is one flex item. Loose text between two keys becomes an anonymous flex
-    item of its own and drifts away from the swatch it belongs to, which is what the
-    first version did.
+    Each entry is one flex item. Loose text between two keys would become an anonymous
+    flex item of its own and drift away from the swatch it belongs to.
     """
     cells = "".join(
         f'<span class="legend-item"><span class="key {css}"></span>{esc(label)}</span>'
@@ -172,10 +167,9 @@ def legend(*items: Sequence[str]) -> str:
 def tip(text: str) -> str:
     """A `data-tip` attribute for the delegated tooltip.
 
-    Real newlines, not an escape sequence. An attribute value may contain them and the
-    parser preserves them, so the script can split on `\n` directly. The first attempt
-    stored a literal backslash-n and had to agree with the script about which of the two
-    it meant, which it did not, and the tooltip rendered as one long line with `\n` in it.
+    The text keeps real newlines rather than an escape sequence. An attribute value may
+    contain them and the parser preserves them, so the script splits on `\n` directly and
+    no second encoding has to agree with it.
     """
     return 'data-tip="' + esc(text) + '"'
 
@@ -184,7 +178,7 @@ def hover_row(x: float, y: float, width: float, height: float, text: str) -> str
     """An invisible full-width band that makes a whole chart row hoverable.
 
     Without it the only hover target is the marker itself, which on the effects figure is
-    a three-pixel dot in a nine-hundred-pixel row.
+    a dot a few pixels wide in a row the width of the chart.
     """
     return (
         f'<rect class="hit" x="{x:.1f}" y="{y - height / 2:.1f}" width="{width:.1f}" '
@@ -192,22 +186,18 @@ def hover_row(x: float, y: float, width: float, height: float, text: str) -> str
     )
 
 
-# ---------------------------------------------------------------- figure: absolute
-
-
 def figure_absolute(dataset: Mapping[str, Any]) -> str:
     """Before and after in real milliseconds, with the route between them.
 
     Each row is one job. The grey marker is the pre-work binary and the blue track is the
-    code of the day at each checkpoint, ending in the value that shipped.
+    build at each checkpoint, ending at the last checkpoint.
 
-    Its construction is why it can be trusted. Every checkpoint re-measured the *original*
-    binary against the current one, interleaved, on the same tree within minutes — so each
-    row's endpoints come from one run, not from one number taken on Tuesday set beside
-    another taken on Friday. The pale band behind each row is the full range those repeated
-    re-measurements of the *unchanged* binary covered. It is drawn rather than averaged
-    away because it is the scale any movement along the blue track has to be read against:
-    on the producer job it is 35% wide, which is wider than several of the steps.
+    Every checkpoint remeasured the *original* binary against the current one,
+    interleaved, on the same tree within minutes, so each checkpoint's pair comes from one
+    run rather than from two numbers taken days apart. The pale band behind each row is the
+    full range those remeasurements of the *unchanged* binary covered. It is drawn rather
+    than averaged away because it is the scale any movement along the blue track has to be
+    read against: on the producer job it is 35% wide, wider than several of the steps.
     """
     series = _flagship(dataset)
     if not series:
@@ -229,9 +219,9 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
         for value in (point["control_ns"], point["candidate_ns"])
         if value
     )
-    # Five intervals rather than four: the producer job's noisiest control run reaches
-    # 1,219 ms, and a four-interval ladder rounds the axis top to 1,500 and leaves a
-    # third of the plot empty.
+    # One interval more than the default: the producer job's noisiest control run reaches
+    # 1,219 ms, which the default ladder rounds up to a 1,500 ms axis, leaving the right
+    # fifth of the plot empty.
     ticks = axis_ticks(ms(maximum) or 0, count=5)
     top = ticks[-1]
 
@@ -249,8 +239,8 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
         width,
         height,
         "Wall time before and after, across five cumulative checkpoints",
-        "One row per job. Grey marks the pre-work binary; the blue track is the code of "
-        "the day at each checkpoint.",
+        "One row per job. Grey marks the pre-work binary; the blue track is the build at "
+        "each checkpoint.",
     )
     for tick in ticks:
         x = left + (tick / top) * plot
@@ -259,7 +249,7 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
             f'<text class="tick" x="{x:.1f}" y="{height - 14}" text-anchor="middle">{tick:,.0f}</text>'
         )
     out.append(
-        f'<text class="tick axis-name" x="{left}" y="18">milliseconds &mdash; lower is faster</text>'
+        f'<text class="tick axis-name" x="{left}" y="18">milliseconds, lower is faster</text>'
     )
 
     for index, (label, job) in enumerate(rows):
@@ -279,13 +269,12 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
                     row_height - 12,
                     f"{label}\n"
                     f"Grey: the pre-work binary, measured {len(controls_all)} times at "
-                    f"{fmt_ms(min(controls_all))} to {fmt_ms(max(controls_all))} - the same "
-                    f"code, so that range is the host's noise, not progress.\n"
-                    f"Band: that range drawn to scale.\n"
-                    f"Blue: the code of the day at each checkpoint, ending at "
+                    f"{fmt_ms(min(controls_all))} to {fmt_ms(max(controls_all))}. Its code "
+                    f"never changed, so that range is the host's noise.\n"
+                    f"Band: that range, to scale.\n"
+                    f"Blue: the build at each checkpoint, ending at "
                     f"{fmt_ms(finals[-1])}.\n"
-                    f"Each checkpoint measured both binaries in one interleaved run, so "
-                    f"every pair is a within-run comparison.",
+                    f"Each checkpoint timed both binaries in one interleaved run.",
                 )
             )
 
@@ -295,7 +284,7 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
             out.append(
                 f'<rect class="drift-band" x="{x1:.1f}" y="{y - 13}" '
                 f'width="{max(x2 - x1, 1.5):.1f}" height="26"><title>'
-                f"the same unchanged binary measured {fmt_ms(low)} to {fmt_ms(high)} "
+                f"the unchanged pre-work binary, {fmt_ms(low)} to {fmt_ms(high)} "
                 f"across the five runs</title></rect>"
             )
 
@@ -315,7 +304,7 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
                 )
             out.append(
                 f'<circle class="dot-before" cx="{x_before:.1f}" cy="{y}" r="5.5"><title>'
-                f"before: {fmt_ms(median_before)} (median of {len(controls)} re-measurements)"
+                f"before: {fmt_ms(median_before)} (median of {len(controls)} remeasurements)"
                 f"</title></circle>"
             )
 
@@ -340,9 +329,9 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
     out.append("</svg>")
 
     keys = legend(
-        ("key-before-dot", "the pre-work binary, median of five re-measurements"),
-        ("key-after-dot", "each checkpoint, ending in what shipped"),
-        ("key-drift", "range those five re-measurements covered"),
+        ("key-before-dot", "the pre-work binary, median of five remeasurements"),
+        ("key-after-dot", "the build at each checkpoint"),
+        ("key-drift", "range of those five remeasurements"),
     )
     checkpoints = "".join(
         f'<li><span class="mono">{esc(point["id"])}</span> {esc(point["title"])}</li>'
@@ -350,8 +339,9 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
     )
     return (
         f'<figure class="fig">{"".join(out)}{keys}'
-        f"<figcaption>One macOS tree of {series['entries_first']:,}–"
-        f"{series['entries_last']:,} entries, measured five times over three days. "
+        f"<figcaption>Campaign 1, the first optimization round, on one macOS tree of "
+        f"{series['entries_first']:,}–{series['entries_last']:,} entries, measured five "
+        f"times over three days. The pre-work binary is the code before any experiment. "
         f'The checkpoints, in order:<ol class="checkpoints">{checkpoints}</ol>'
         "</figcaption></figure>"
     )
@@ -361,8 +351,6 @@ def _flagship(dataset: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     series = dataset.get("anchors", {}).get("series") or []
     return series[0] if series else None
 
-
-# ---------------------------------------------------------------- figure: end to end
 
 #: The record the header states as the current standing: the latest release measured
 #: end to end against the release before it, both builds in one interleaved cell. Move
@@ -439,7 +427,7 @@ def figure_end_to_end(dataset: Mapping[str, Any], platform: str = "Linux") -> st
             f'<text class="tick" x="{x:.1f}" y="{height - 14}" text-anchor="middle">{tick:,.0f}</text>'
         )
     out.append(
-        f'<text class="tick axis-name" x="{left}" y="14">milliseconds &mdash; lower is faster</text>'
+        f'<text class="tick axis-name" x="{left}" y="14">milliseconds, lower is faster</text>'
     )
     for index, record in enumerate(cells):
         control, candidate = _wall_arms(record)
@@ -499,8 +487,6 @@ def figure_end_to_end(dataset: Mapping[str, Any], platform: str = "Linux") -> st
     )
 
 
-# ---------------------------------------------------------------- figure: iterations
-
 #: Accepted records that measure a change already counted, with the reason, so each kept
 #: change counts once: cumulative checkpoints, validations after a merge or on another
 #: platform, the same candidate measured on a second tree, and determinations. The first
@@ -536,7 +522,7 @@ REMEASUREMENTS = {
 def iteration_kind(record: Mapping[str, Any]) -> str:
     """How the iterations figure colours one experiment.
 
-    `kept` is an accepted change, not a re-measurement, whose primary metric improved by
+    `kept` is an accepted change, not a remeasurement, whose primary metric improved by
     at least the accept threshold and whose candidate stayed; `rejected` is a change
     tried and not kept; everything else (baselines, checkpoints, validations,
     determinations, noninferiority steps, unfinished work) is `measured`.
@@ -555,6 +541,14 @@ def iteration_kind(record: Mapping[str, Any]) -> str:
     return "measured"
 
 
+#: Builds that changed what a job does, not only how fast it does it, keyed by build
+#: label, each note in the lines it is drawn on. The top panel annotates the build on
+#: every metric that draws it, so a step there reads as more work rather than as a
+#: slowdown. A test ties every entry to a projected build.
+BUILD_NOTES = {
+    "v0.1.0": (".gitignore read by default:", "more work per entry on trees that have them"),
+}
+
 #: The iterations figure's vertical range, as percent faster. An effect beyond it is
 #: drawn at the edge, and its tooltip carries the real figure.
 ITERATION_CLAMP = (-30.0, 60.0)
@@ -566,8 +560,8 @@ def _chronological(dataset: Mapping[str, Any]) -> List[Mapping[str, Any]]:
 
 
 
-#: The platform the runtime panel draws, chosen by name: the projection sorts platforms
-#: by name, so taking the first would let Linux's cells silently replace macOS's chart.
+#: The platform the top panel draws, chosen by name: the projection sorts platforms by
+#: name, so taking the first would let Linux's cells silently replace macOS's chart.
 #: The headline states every platform's score.
 CHART_PLATFORM = "macOS"
 
@@ -600,9 +594,9 @@ def regime_note(projected: Mapping[str, Any]) -> str:
     """"exploratory, uncontrolled host, 12 rounds" when a score cannot be quoted.
 
     The loop's regime table limits an uncontrolled host to exploration and discovery, and
-    a quoted score needs 20 rounds, so a score short of either is labelled with each
-    reason wherever it is stated: the host when any cell's was not controlled, and the
-    fewest rounds when any cell ran fewer than 20. An exploratory stage on a controlled
+    a quoted score needs `QUOTABLE_ROUNDS` rounds, so a score short of either is labelled
+    with each reason wherever it is stated: the host when any cell's was not controlled,
+    and the fewest rounds when any cell ran short. An exploratory stage on a controlled
     host with enough rounds is just "exploratory".
     """
     if not projected.get("exploratory"):
@@ -619,13 +613,17 @@ def regime_note(projected: Mapping[str, Any]) -> str:
 
 
 def gate_note(projected: Mapping[str, Any]) -> str:
-    """The range of the score's cells' shares of sample boundaries above the quiet gate."""
+    """The range of the score's cells' shares of sample boundaries above the quiet gate.
+
+    Markup, not plain text: the term links to the loop section that defines it, since the
+    headline that states it comes before that definition.
+    """
     shares = projected.get("above_quiet_gate_range")
     if not shares:
         return ""
     low, high = (round(value * 100) for value in shares)
     span = f"{low}%" if low == high else f"{low}% to {high}%"
-    return f"{span} of each cell's sample boundaries above the quiet gate"
+    return f'{span} of each cell\'s sample boundaries above the <a href="#loop">quiet gate</a>'
 
 
 def metric_series(
@@ -652,6 +650,7 @@ def metric_series(
         return [
             {
                 "after_experiment": build["after_experiment"],
+                "label": build.get("label") or "",
                 "short": build.get("short") or build["label"],
                 "commit": build.get("commit") or "",
                 "date": build.get("date") or "",
@@ -827,12 +826,13 @@ def _describe_cells(cells: Sequence[Mapping[str, Any]]) -> str:
 def figure_timeline(dataset: Mapping[str, Any]) -> str:
     """Two stacked panels on one experiment axis, in the order the experiments ran.
 
-    The top panel is total runtime on fixed benchmarks, measured for every milestone
-    build in one interleaved session, so its steps compare directly. The bottom panel is
-    every experiment's paired change on its own primary job, green where a change was
-    kept, red where it was tried and dropped, grey for re-measurements and other verdicts.
-    The bottom panel's effects are not multiplied into a runtime: each was measured on
-    its own job and tree, and compounding them would claim a speed-up no build shows.
+    The top panel is the chosen metric, the platform's score or one component, for every
+    milestone build as a multiple of the reference build, each job timed in one
+    interleaved session, so its steps compare directly. The bottom panel is every
+    experiment's paired change on its own primary job, green where a change was kept, red
+    where it was tried and dropped, grey for remeasurements and other verdicts. The bottom
+    panel's effects are not multiplied into a runtime: each was measured on its own job
+    and tree, and compounding them would claim a speed-up no build shows.
     """
     records = _chronological(dataset)
     if not records:
@@ -864,9 +864,10 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     out = svg_open(
         width,
         height,
-        "Total runtime on fixed benchmarks above, every experiment's effect below",
-        "Top: measured runtime of each milestone build on each benchmark, as a share of "
-        "its first build. Bottom: one bar per experiment, green kept, red not kept.",
+        "Performance score by build above, every experiment's effect below",
+        "Top: the chosen metric for each milestone build, as a multiple of the reference "
+        "build's, on a log scale. Bottom: one bar per experiment, its paired change on its "
+        "own primary job; green kept, red not kept, grey other verdicts.",
     )
 
     # Shared date ticks along the experiment axis: the first experiment of each date,
@@ -916,12 +917,12 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         reference = (chart or {}).get("reference_build", "the reference build")
         out.append(
             f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">the chosen metric as a '
-            f"multiple of {esc(reference)}&rsquo;s, log scale &mdash; lower is better; "
+            f"multiple of {esc(reference)}&rsquo;s, log scale, lower is better; "
             f"builds numbered</text>"
         )
-        # Milestones numbered once along the top, staggered over three rows so builds
-        # that landed close together stay legible; the caption names them. Every cell
-        # times the same builds.
+        # Milestones numbered once along the top, staggered over rows so builds that
+        # landed close together stay legible; the caption names them. Every cell times
+        # the same builds.
         named = _numbered_builds(milestones, position)
         for number, after in enumerate(named, start=1):
             x = x_of(position[after])
@@ -957,7 +958,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                     group.append(
                         f'<rect class="hit" x="{x - 7:.1f}" y="{y - 7:.1f}" width="14" height="14" '
                         + tip(
-                            f"{item['title']}, {line['label']}: {point['short']} "
+                            f"{line['label']}: {point['short']} "
                             f"({point['commit']}, {point['date']})\n"
                             f"{point['includes']}\n"
                             # The score is an index, memory a peak, a component a time.
@@ -977,6 +978,27 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 group.append(
                     f'<text class="point-label" x="{x0 + 8:.1f}" y="{y0 + 14:.1f}">'
                     f"{esc(line['label'])}</text>"
+                )
+            # An annotated build is labelled once per metric that draws it, beside its
+            # numbered grid line just inside the panel's top: above every data point
+            # except a steep line's first, which sits at the far left.
+            noted = {
+                point["label"]: point["after_experiment"]
+                for line in item["lines"]
+                for point in line["points"]
+                if point["label"] in BUILD_NOTES
+            }
+            for label, after in noted.items():
+                x = x_of(position[after])
+                inward = x > left + plot / 2
+                anchor_x = x - 6 if inward else x + 6
+                rows = "".join(
+                    f'<tspan x="{anchor_x:.1f}" dy="{12 if row else 0}">{esc(text)}</tspan>'
+                    for row, text in enumerate(BUILD_NOTES[label])
+                )
+                group.append(
+                    f'<text class="tick build-note" y="{top_y0 + 10}" '
+                    f'text-anchor="{"end" if inward else "start"}">{rows}</text>'
                 )
             group.append("</g>")
             out.extend(group)
@@ -1022,14 +1044,14 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
             f'height="{max(y2 - y1, 1.0):.1f}" data-component="{esc(component)}" '
             f'data-platform="{esc(record.get("platform") or "")}"/>'
         )
-        label = {"kept": "kept, better", "rejected": "tried, not kept", "measured": "measured"}[kind]
+        label = {"kept": ", at least 3% better", "rejected": "", "measured": ""}[kind]
         counts_toward = titles.get(component) or component or "no component"
         out.append(
             f'<rect class="hit" x="{left + index * step:.1f}" y="{bottom_y0}" '
             f'width="{step:.1f}" height="{bottom_h}" '
             + tip(
                 f"{record['id']}: {record['title']}\n"
-                f"{decision_label(record)}, {label}: "
+                f"{decision_label(record)}{label}: "
                 f"{fmt_pct(change) if change is not None else 'no paired change'} "
                 f"on {record.get('primary_job') or 'its job'}"
                 + (f" ({metric})" if metric not in (None, "wall_ns") else "")
@@ -1050,15 +1072,14 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         ("key-cell-b", "a single component, when chosen"),
         ("key-good", f"kept, at least 3% better ({counts['kept']})"),
         ("key-bad", f"tried, not kept ({counts['rejected']})"),
-        ("key-flat", f"measurements and other verdicts ({counts['measured']})"),
+        ("key-flat", f"other verdicts and remeasurements ({counts['measured']})"),
     )
     caption = ""
     if cells:
         caption = (
-            f"Top: on each benchmark, every milestone build timed in one interleaved "
-            f"session: {_describe_cells([cell for cell, _ in cells])}. Builds before 0.1.0 "
-            f"do not read .gitignore, so on a repository they do less work. Hover a point "
-            f"for what each build added. "
+            f"Top: each cell timed every milestone build in one interleaved session, on "
+            f"{_describe_cells([cell for cell, _ in cells])}. Builds before 0.1.0 do not "
+            f"read .gitignore, so on a tree with .gitignore files they do less work. "
         )
         named = _numbered_builds(milestones, position)
         caption += (
@@ -1081,21 +1102,20 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         )
     return (
         f'<figure class="fig">{chooser}{"".join(out)}{keys}<figcaption>{caption}Bottom: bars beyond '
-        "the axis are drawn at its edge; hover one for its experiment and real figure. The "
-        "dashed line is the 3% accept threshold.</figcaption></figure>"
+        "the axis stop at its edge, and their tooltips give the real figure. The dashed line "
+        "is the 3% accept threshold.</figcaption></figure>"
     )
 
 def figure_effects(dataset: Mapping[str, Any]) -> str:
     """Every experiment's paired effect on its own primary job, with its interval.
 
-    This is the relative view, and it is the one the verdicts were actually made on. The
-    dot is the median paired change; the bar behind it is the 95% bootstrap interval. An
-    interval that crosses zero means the run could not tell the change from noise, which
-    is a different statement from "no effect" and is drawn differently from both wins and
-    regressions.
+    This is the relative view, the one the verdicts were made on. The dot is the median
+    paired change; the bar behind it is the 95% bootstrap interval. An interval that
+    crosses zero means the run could not tell the change from noise, which is a different
+    statement from "no effect" and is drawn differently from both wins and regressions.
 
-    The dashed line is the accept threshold. Everything to its right was, by rule, not
-    worth carrying — which is most of the chart, and the point of publishing it.
+    The dashed line is the accept threshold. Nothing to its right could be accepted as a
+    speed-up, and publishing those experiments is the point of the figure.
 
     A baseline that compares two builds is drawn too, since its change is what it
     measured: the end-to-end and release cells (exp-194, exp-195, exp-201, exp-202) are
@@ -1121,12 +1141,10 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
         )
         if value is not None
     ]
-    # The axis is sized to the data and nothing is clipped. An earlier draft clamped it
-    # to a comfortable window and marked the overflow with arrows, which quietly moved
-    # four of the largest measured regressions off the picture — including the 66% one
-    # that is the single most useful rejection in the record.
-    # Bounds snap to ten so the axis hugs the data; labels are drawn every twenty so the
-    # scale stays readable at one row per experiment.
+    # The axis is sized to the data so nothing is clipped: a fixed window would push the
+    # largest measured regressions, among the most useful rejections in the record, off
+    # the picture. Bounds snap to `step` so the axis hugs the data, and labels fall every
+    # `label_step` so the scale stays readable at one row per experiment.
     step, label_step = 10, 20
     low_limit = math.floor(min(bounds) / step) * step
     high_limit = math.ceil(max(bounds) / step) * step
@@ -1146,7 +1164,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
         width,
         height,
         "Paired effect of every experiment on its primary job, with 95% intervals",
-        "Horizontal dot and interval per experiment, sorted by effect.",
+        "One dot and interval per experiment, sorted by effect.",
     )
     # Anchored on zero rather than on the axis end, so the ladder stays regular and the
     # zero line is one of its rungs instead of an extra one crowding its neighbour.
@@ -1166,7 +1184,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
     )
     out.append(
         f'<text class="tick axis-name" x="{left}" y="18">'
-        "paired change on the primary job &mdash; left is faster</text>"
+        "paired change on the primary job, left is faster</text>"
     )
     out.append(
         f'<text class="tick" x="{threshold + 5:.1f}" y="{height - 34}">accept threshold</text>'
@@ -1183,7 +1201,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
         change = paired["change_pct"] or 0.0
         low_text, high_text = paired["ci95_low_pct"], paired["ci95_high_pct"]
         detail = [
-            f'{record["id"]} - {record["title"]}',
+            f'{record["id"]}: {record["title"]}',
             f'{decision_label(record).upper()}'
             f'  |  {record["primary_job"]}  |  {fmt_pct(change)}'
             + (
@@ -1198,7 +1216,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
             detail.append(f'Why: {record["reason"]}')
         detail.append(
             f'{record["entries"]:,} entries, {record["platform"]}'
-            f'  |  {record["trials"]} paired trials'
+            f'  |  {record["trials"]} paired rounds'
         )
         out.append(hover_row(left, y, plot, row, "\n".join(detail)))
         low, high = paired["ci95_low_pct"], paired["ci95_high_pct"]
@@ -1214,7 +1232,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
             f'{esc(record["id"])} {esc(record["title"])}: {fmt_pct(change)} on '
             f'{esc(record["primary_job"])}'
             + (f" [{low:+.1f}%, {high:+.1f}%]" if low is not None and high is not None else "")
-            + f' &mdash; {esc(decision_label(record))}</title></circle>'
+            + f"; {esc(decision_label(record))}</title></circle>"
         )
     out.append("</svg>")
 
@@ -1229,7 +1247,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
         + legend(
             ("key-good", "interval entirely below zero"),
             ("key-bad", "interval entirely above zero"),
-            ("key-flat", "interval crosses zero \u2014 the run could not tell"),
+            ("key-flat", "interval crosses zero: the run could not tell"),
         )
         + f"<figcaption>{len(records)} experiments, sorted by effect"
         + (
@@ -1238,10 +1256,10 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
             if baselines
             else ""
         )
-        + f"; {accepted} verdicts were accepted. "
-        f"{improved} have an interval entirely below zero, {unclear} cross it, and "
-        f"{regressed} are entirely above it. Nothing is clipped: the axis runs to the "
-        "widest interval measured. Hover any point for the experiment."
+        + f"; {accepted} were accepted. "
+        f"{improved} intervals lie entirely below zero, {unclear} cross zero, and "
+        f"{regressed} lie entirely above it. Nothing is clipped: the axis runs to the "
+        "widest interval measured."
         "</figcaption></figure>"
     )
 
@@ -1254,26 +1272,20 @@ def _primary(record: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     return job["metrics"].get(record["primary_metric"] or "wall_ns")
 
 
-# ---------------------------------------------------------------- figure: per entry
-
-
 def figure_per_entry(dataset: Mapping[str, Any]) -> str:
     """Cost per entry per subject, so trees three orders of magnitude apart can be compared.
 
     Milliseconds are only comparable against the tree that produced them, and this record
-    spans 307 entries to 1.01 million. Dividing by entry count is the one normalisation the
-    workload actually supports — a scan's cost is very nearly linear in what it must visit
-    — and it is what lets the campaign's central claim be checked rather than asserted: the
-    speed-up was not a small-tree artifact.
+    spans 307 entries to 1.01 million. A scan's cost grows roughly linearly with the
+    entries it visits, so dividing by entry count is the normalization the workload
+    supports, and it lets a reader check that the speed-up was not a small-tree artifact.
 
     Each row is one subject, largest first, showing the first cost measured on it and the
-    last. A first draft plotted every measurement against its date instead; with only six
-    days in the record the points collapsed into six vertical piles and the trend the
-    figure existed to show could not be read at all.
+    last. Plotting every measurement against its date would pile the points into one
+    column per day of the record, hiding the trend.
 
-    The synthetic subjects are drawn but held apart. The adversarial worker-policy tree
-    costs about four times what a real tree of the same week does — which is the point of
-    it, and would be a lie if averaged in with the rest.
+    The synthetic subjects are drawn but held apart. Some are built to be adversarial, so
+    averaging them in would misstate what a real tree costs.
     """
     subjects = {subject["key"]: subject for subject in dataset["subjects"]}
     grouped: Dict[str, List[Dict[str, Any]]] = {}
@@ -1281,12 +1293,10 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
         job = next((item for item in record["jobs"] if item["job"] == "cold-scan-index"), None)
         if not job:
             continue
-        # The arm that stayed in the product, not the arm that was tried. Using the
-        # candidate unconditionally made a subject's last point a *rejected* build: the
-        # 1.01M row read "7.7 → 8.0 µs" and appeared to have got slower, when what it
-        # actually recorded was a buffer change that was measured, disliked, and dropped.
-        # A record whose verdict says `kept: neither` names no arm, because its verdict
-        # decided a claim about code that ships regardless, so it has no point here.
+        # The arm that stayed in the product, not the arm that was tried, so a rejected
+        # candidate never appears as a subject's current cost. A record whose verdict says
+        # `kept: neither` names no arm, because its verdict decided a claim about code that
+        # ships regardless, so it has no point here.
         if record["kept"] is None:
             continue
         kept = job["per_entry_ns"][record["kept"]]
@@ -1344,7 +1354,7 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
         width,
         height,
         "Cold scan cost per entry, first and last measurement on each subject",
-        "One row per measured tree, largest first.",
+        "One row per measured tree: real trees largest first, then generated ones.",
     )
     for tick in ticks:
         x = left + (tick / top) * plot
@@ -1354,7 +1364,7 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
         )
     out.append(
         f'<text class="tick axis-name" x="{left}" y="18">'
-        "microseconds per entry &mdash; lower is faster</text>"
+        "microseconds per entry, lower is faster</text>"
     )
 
     for index, row in enumerate(rows):
@@ -1366,7 +1376,7 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
         out.append(
             f'<text class="row-label" x="{left - 14}" y="{y + 4}" text-anchor="end">'
             f'{esc(subject["platform"])} <tspan class="row-sub">&middot; {esc(size)}'
-            + (" &middot; synthetic" if subject["synthetic"] else "")
+            + (" &middot; generated" if subject["synthetic"] else "")
             + "</tspan></text>"
             # Two subjects can share a platform and a size and still be different trees,
             # so the tree's own name goes underneath rather than leaving two rows that
@@ -1381,13 +1391,12 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
                 y + (row_height - 8) / 2,
                 plot,
                 row_height - 8,
-                f'{subject["labels"][0]} - {subject["platform"]}, {entries:,} entries\n'
+                f'{subject["labels"][0]}: {subject["platform"]}, {entries:,} entries\n'
                 + ("A generated subject: screening evidence, held apart from the real "
                    "trees rather than averaged with them.\n" if subject["synthetic"] else "")
-                + f'First measured at {first["control"]:.2f} us per entry, latest '
-                f'{last["kept"]:.2f}, across {row["count"]} experiments.\n'
-                "Only the arm that stayed in the product is plotted, so a rejected "
-                "candidate never appears as the tree's current cost.",
+                + f'First measured at {first["control"]:.2f} µs per entry, latest '
+                f'{last["kept"]:.2f} µs, across {row["count"]} '
+                f'{"experiment" if row["count"] == 1 else "experiments"}.',
             )
         )
         opacity = ' opacity="0.45"' if subject["synthetic"] else ""
@@ -1430,23 +1439,20 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
             ("key-linux", "latest, Linux"),
             ("", "small dots are the measurements between"),
         )
-        + "<figcaption>Cold scan and index only, since it is the job every subject ran. "
-        f"The {len(finals)} real macOS subjects finish between {min(finals):.1f} and "
-        f"{max(finals):.1f} µs per entry despite differing in size by more than sixteen "
-        "times, which is the check that the normalisation is describing the workload and "
-        "not hiding a difference.</figcaption></figure>"
+        + "<figcaption>Cold scan and index only, the one job every subject ran. Each later "
+        "point is the arm its verdict kept, so a rejected candidate never appears as a "
+        f"tree's current cost. The {len(finals)} real macOS subjects finish between "
+        f"{min(finals):.1f} and {max(finals):.1f} µs per entry.</figcaption></figure>"
     )
 
 
-# ---------------------------------------------------------------- page
-
 #: The whole visual language, in tokens.
 #:
-#: Adapted from the tbd web design system. Its two load-bearing rules are kept: every
-#: colour is defined once here and referenced by name everywhere else, and each token's
-#: hue places it in a family — the neutrals all sit on 215° so surfaces, rules, and text
-#: read as one material, while the semantic families keep the hues they have elsewhere in
-#: the project's tooling. Dark holds hue and saturation and moves lightness only.
+#: Adapted from the tbd web design system, keeping two of its rules: every colour is
+#: defined once here and referenced by name everywhere else, and each token's hue places
+#: it in a family. The neutrals all sit on hue 215 so surfaces, rules, and text read as
+#: one material, while the semantic families keep the hues they have elsewhere in the
+#: project's tooling. Dark holds hue and saturation and moves lightness only.
 #:
 #: What is deliberately absent: shadows, gradients, rounded panels within panels,
 #: animation, and any second typeface. A report of measurements should look like the
@@ -1552,9 +1558,9 @@ a:hover { text-decoration: underline; }
 .mono { font-family: var(--mono); font-size: 0.92em; }
 .tnum { font-variant-numeric: tabular-nums; }
 
-/* Headline figures. Unboxed: the number is the point, a card around it is not. */
-/* Five figures, sized so they hold one row at the widths this page is read at and wrap
-   gracefully rather than stranding a single stat below the others. */
+/* Headline figures. Unboxed: the number is the point, a card around it is not. They
+   are sized to hold one row at the widths this page is read at, and wrap rather than
+   strand a single stat below the others. */
 .headline { display: flex; flex-wrap: wrap; gap: 14px 30px; margin: 28px 0 8px; }
 .headline div { min-width: 92px; }
 .headline .n {
@@ -1633,10 +1639,9 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .point-label { font: 10px var(--mono); fill: var(--muted); }
 .gutter { font: 9.5px var(--mono); fill: var(--muted); opacity: 0.75; }
 /* Every mark is inert to the pointer, so the only hover target inside a chart is the row
-   band underneath it. Two bugs came from not doing this: the marks are drawn above the
-   band, so moving the pointer across a dot left the band and re-entered it, which made
-   the tooltip flicker; and a mark that can be hovered also fires its own native `title`
-   bubble, so the reader got two tooltips at once saying different things. */
+   band underneath it. The marks are drawn above the band, so a hoverable dot would make
+   the pointer leave and re-enter the band, flickering the tooltip; and a hoverable mark
+   fires its own native `title` bubble, a second tooltip saying something different. */
 .chart circle, .chart polyline, .chart line, .chart text,
 .chart rect:not(.hit) { pointer-events: none; }
 
@@ -1647,12 +1652,11 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 
 #tip {
   /* `max-content` with a cap, rather than leaving it to shrink-to-fit. A fixed-position
-     box with no width is sized against the space left of the viewport edge, so it was
-     measured while still sitting at its previous position and wrapped into a 92px column
-     six hundred pixels tall. Sizing it from its own content makes the measurement the
-     placement code takes independent of where the box happens to be. The cap is in `ch`
-     rather than `vw`: viewport units are zero inside some embedded frames, which
-     collapsed the cap to nothing and wrapped the text to a two-character column. */
+     box with no width is sized against the space left before the viewport edge, so it
+     would be measured at its previous position and could wrap into a narrow column.
+     Sizing it from its own content makes the placement code's measurement independent
+     of where the box sits. The cap is in `ch` rather than `vw` because viewport units
+     are zero inside some embedded frames, which would collapse the cap to nothing. */
   position: fixed; z-index: 50; padding: 8px 10px;
   width: max-content; max-width: 52ch;
   background: var(--panel); color: var(--text);
@@ -1681,8 +1685,8 @@ tbody tr:hover { background: var(--panel); }
   margin: 20px 0; color: var(--muted); max-width: var(--measure);
 }
 .note strong { color: var(--text); }
-/* Disclosure rows. A marker and a hover tint are the whole affordance; the table has
-   sixty-four rows and anything heavier turns it into a wall of boxes. */
+/* Disclosure rows. A marker and a hover tint are the whole affordance; the table has a
+   row per experiment, and anything heavier turns it into a wall of boxes. */
 details > summary {
   cursor: pointer; list-style: none; font-weight: 500;
   padding: 1px 0; border-radius: 2px;
@@ -1730,8 +1734,8 @@ SCRIPT = """
     var pad = 10;
     var row = host.getBoundingClientRect();
     var box = tip.getBoundingClientRect();
-    // Some embeddings report a zero viewport. Clamping against that put every tooltip in
-    // the top-left corner, so a bound that is not believable is not applied.
+    // Some embeddings report a zero viewport. Clamping against that would put every
+    // tooltip in the top-left corner, so a zero bound is not applied.
     var vw = window.innerWidth || document.documentElement.clientWidth || 0;
     var vh = window.innerHeight || document.documentElement.clientHeight || 0;
     var x = row.left + pad;
@@ -1859,9 +1863,9 @@ THEME_SCRIPT = """
 })();
 """
 
-#: The metric chooser: shows the chosen series on the runtime panel and fades every
-#: experiment bar that does not count toward it. The unified score counts every
-#: component, so under it only bars from a platform the score does not yet cover fade.
+#: The metric chooser: shows the chosen series on the top panel and fades every
+#: experiment bar that does not count toward it. The score counts every component, so
+#: under it only bars from a platform the score does not cover fade.
 METRIC_SCRIPT = """
 (function () {
   var chooser = document.getElementById('metric');
@@ -1892,7 +1896,6 @@ def render(dataset: Mapping[str, Any]) -> str:
             _header(dataset),
             _section_iterations(dataset),
             _section_loop(dataset),
-            _section_details(dataset),
             _section_absolute(dataset),
             _section_relative(dataset),
             _section_scale(dataset),
@@ -1909,7 +1912,7 @@ def render(dataset: Mapping[str, Any]) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>fdu Performance Evidence</title>
-<meta name="description" content="Absolute milliseconds and paired effects across every fdu performance experiment, including the ones that were rejected.">
+<meta name="description" content="The fdu performance score by build, with the absolute times and paired effects of every fdu performance experiment, including rejected ones.">
 <script>{THEME_PREPAINT}</script>
 <style>{STYLE}{THEME_STYLE}</style>
 </head>
@@ -1920,11 +1923,10 @@ def render(dataset: Mapping[str, Any]) -> str:
 </body>
 </html>
 """
-    # Belt and braces on encoding. The document declares UTF-8, and the bytes are also
-    # written as pure ASCII with numeric references for everything else, so it renders
-    # the same whether it is opened from disk, served by something that guesses a
-    # charset, or pasted into a host that supplies its own head. An earlier draft relied
-    # on the host's charset and every literal "µ" arrived as "Âµ".
+    # The document declares UTF-8 and is also written as pure ASCII, with numeric
+    # references for everything else, so it renders the same opened from disk, served by
+    # something that guesses a charset, or pasted into a host that supplies its own head,
+    # where a literal micro sign could otherwise arrive as two mojibake characters.
     return page.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
@@ -1933,18 +1935,17 @@ def _section_relative(dataset: Mapping[str, Any]) -> str:
     rejected = totals["decisions"].get("rejected", 0)
     return f"""
 <h2 id="relative">Relative</h2>
-<h3>What each experiment actually did</h3>
-<p>Milliseconds say how fast the tool is. They cannot say whether a particular change is
-why, because the host drifts: on this record the reference tool <span class="mono">dust</span>,
-whose binary never changed at all, measured anywhere from 210&nbsp;ms to 327&nbsp;ms on the
-same tree. So every experiment interleaved its two builds and compared them in pairs, and
-it is the paired figure below that each verdict rests on.</p>
+<h3>What each experiment did</h3>
+<p>Milliseconds say how fast the tool is, but not whether a particular change made it so,
+because the host's speed drifts: the peer tool <span class="mono">dust</span>, whose binary
+never changed, measured 210&nbsp;ms to 327&nbsp;ms on the same tree across eleven runs.
+Every experiment therefore interleaved its two builds and compared them in pairs, and each
+verdict rests on the paired change below.</p>
 {figure_effects(dataset)}
-<p>Most of the chart sits against the zero line. That is the ordinary shape of this work
-and the reason the threshold exists: an idea that seems obviously good usually turns out to
-be worth somewhere between nothing and two percent, and the interval is what says so before
-the code is carried for a year. The {rejected} rejections are the reusable part of the
-record &mdash; each one is a day the next person does not have to spend.</p>
+<p>A change that looks promising often measures within a few percent of zero, which is why
+a speed-up is accepted only when it clears the threshold with its interval below zero. The
+{rejected} rejections are the reusable part of the record: each is an idea the
+next person need not try again.</p>
 """
 
 
@@ -1959,11 +1960,10 @@ def _section_scale(dataset: Mapping[str, Any]) -> str:
     return f"""
 <h2 id="scale">Scale</h2>
 <h3>Does it hold on a bigger tree, and on another kernel?</h3>
-<p>The record contains {len(subjects)} fingerprinted subject states in
-{len(families)} subject families, from {min(entry_counts):,} to
-{max(entry_counts):,} entries, on macOS and Linux. Their milliseconds are not comparable,
-but their cost per entry is, because a scan's work is very nearly linear in what it has
-to visit.</p>
+<p>The record measured {len(subjects)} fingerprinted states of {len(families)} trees
+(subject families), from {min(entry_counts):,} to {max(entry_counts):,} entries, on macOS
+and Linux. Their milliseconds are not comparable. Cost per entry is closer to comparable,
+since a scan's work grows roughly linearly with the entries it visits.</p>
 {figure_per_entry(dataset)}
 """
 
@@ -1971,15 +1971,14 @@ to visit.</p>
 def kept_improvements(dataset: Mapping[str, Any], platform: str) -> List[Dict[str, Any]]:
     """Accepted changes still in the product whose deciding run measured an improvement.
 
-    Three filters, each for a reason the record has already paid for. The kept arm must be
-    the candidate, so an accepted screen the release never adopted (exp-154) and a verdict
-    that decided a claim rather than code (`kept: neither`) stay out. A cumulative
-    checkpoint or a whole pull request measured at once is left out because it would credit
-    one row with a dozen changes, the rule the mechanism table applies. And the primary
-    interval has to lie below zero, so instrumentation and leftover determinations, which
-    are accepted on noninferiority, are not presented as speed-ups.
+    The kept arm must be the candidate, so an accepted screen the release never adopted
+    (exp-154) and a verdict that decided a claim rather than code (`kept: neither`) stay
+    out. A cumulative checkpoint or a whole pull request measured at once is left out, as
+    in the mechanism table, because it would credit one row with a dozen changes. The
+    primary interval has to lie below zero, so instrumentation and leftover
+    determinations, which are accepted on noninferiority, are not presented as speed-ups.
 
-    A validation run on a second subject or platform is kept even though it wrote no code:
+    A validation run on a second subject or platform stays in although it wrote no code:
     it is the evidence this section exists to show.
     """
     rows = []
@@ -2073,10 +2072,9 @@ def _section_platforms(dataset: Mapping[str, Any]) -> str:
         noun = "accepted run" if len(rows) == 1 else "accepted runs"
         sections.append(
             f"<h3>{esc(platform)}: {len(rows)} {noun} that improved</h3>"
-            f"<p>Decided on a generated tree: {on_generated} of {len(rows)}. The loop treats "
-            "a generated tree as screening rather than as a sample of ordinary work.</p>"
+            f"<p>Decided on a generated tree: {on_generated} of {len(rows)}.</p>"
             '<div class="scroll"><table>'
-            '<thead><tr><th class="n">#</th><th>change</th><th>hypothesis</th>'
+            '<thead><tr><th class="n">#</th><th>experiment</th><th>hypothesis</th>'
             '<th>subject</th><th>primary job</th><th class="n">before</th>'
             '<th class="n">after</th><th class="n">change</th>'
             '<th class="n">95% interval</th></tr></thead>'
@@ -2084,23 +2082,23 @@ def _section_platforms(dataset: Mapping[str, Any]) -> str:
         )
 
     return f"""
-<h2 id="platforms">By platform</h2>
+<h2 id="platforms">By Platform</h2>
 <h3>What each platform's own runs decided</h3>
 <p>A result is evidence about the platform, host, and tree it was measured on. A change
 kept on one platform's evidence is inherited, not proven, on the other, and most
-hypotheses here were measured on one platform only. Subjects are counted as families: one
-tree measured in several states.</p>
+hypotheses here were measured on one platform only. Subjects are counted as families, one
+tree measured in several states, and the loop treats a generated tree as screening rather
+than as a sample of ordinary work.</p>
 <div class="scroll"><table>
 <thead><tr><th>platform</th><th class="n">experiments</th><th class="n">accepted</th>
 <th class="n">rejected</th><th class="n">other verdicts</th>
 <th class="n">real subjects</th><th class="n">generated subjects</th></tr></thead>
 <tbody>{"".join(summary)}</tbody></table></div>
-<p>Below, per platform: accepted changes still in the product whose deciding run measured
-an improvement on its primary metric, oldest first, with that run's two arms on its own
-subject. These count runs, not changes: a validation on a second subject or platform is
-its own row, so the sections total more than the kept changes in the header, which count
-each change once. Rejected and noninferiority verdicts are in the full table at the
-end.</p>
+<p>Each platform's table lists the accepted changes still in the product whose deciding
+run measured an improvement on its primary metric, oldest first, with that run's two arms
+on its own subject. A validation on a second subject or platform is its own row, so the
+tables count runs, not changes, and total more than the kept changes in the header.
+Rejected and noninferiority verdicts are in <a href="#every">the full table</a>.</p>
 {"".join(sections)}
 """
 
@@ -2125,21 +2123,19 @@ def _mismatch(dataset: Mapping[str, Any]) -> tuple:
 
 
 def _section_mechanisms(dataset: Mapping[str, Any]) -> str:
-    """What the big wins actually did, told by the CPU column rather than by intent.
+    """What the large wins did, read from total CPU rather than from intent.
 
-    Two mechanisms produced almost everything here, and wall time alone cannot tell them
-    apart. Making work happen at the same time as other work and removing the work
-    entirely both make the clock go down; only one of them makes the machine do less.
-    Total CPU separates them, and the record measured it every time, so the distinction is
-    read out of the evidence rather than asserted from what each change was trying to do.
+    Overlapping work with other work and removing it both shorten wall time; only removing
+    it makes the machine do less. Total CPU separates the two, so the mechanism is read
+    from the evidence rather than asserted from what each change was trying to do.
     """
     rows = []
     for record in dataset["experiments"]:
-        # Individual changes only, decided by two facts the artifacts already carry.
-        # `lines_changed == 0` marks an experiment that wrote no code and re-measured work
-        # already merged — every cumulative checkpoint and platform validation. A long
-        # hypothesis list marks a whole pull request measured at once, as exp-033's five
-        # do across 1,514 lines. Both would credit a single row with a dozen changes.
+        # Individual changes only, decided by two facts the artifacts carry.
+        # `lines_changed == 0` marks an experiment that wrote no code and remeasured
+        # merged work, such as a cumulative checkpoint or a platform validation. A long
+        # hypothesis list marks a whole pull request measured at once, as exp-033 lists
+        # five across 1,514 lines. Either would credit a single row with a dozen changes.
         if record["decision"] != "accepted" or record["anchored"]:
             continue
         if not record["complexity"].get("lines_changed") or len(record["hypotheses"]) > 2:
@@ -2177,81 +2173,74 @@ def _section_mechanisms(dataset: Mapping[str, Any]) -> str:
 <h2 id="mechanisms">Mechanism</h2>
 <h3>Two ways to make a clock go down</h3>
 <p>Work can be moved off the critical path, or it can stop happening. Both shorten wall
-time and only one makes the machine do less, so wall time alone cannot tell them apart.
-Total CPU can, and it was measured every time.</p>
+time, but only the second makes the machine do less, so wall time alone cannot tell them
+apart; total CPU can. The table lists each accepted single change that cut wall time by at
+least 5%.</p>
 <div class="scroll"><table>
 <thead><tr><th class="n">#</th><th>change</th><th>job</th><th class="n">wall</th>
-<th class="n">total cpu</th><th>what it did</th><th class="n">lines</th></tr></thead>
+<th class="n">total CPU</th><th>what it did</th><th class="n">lines</th></tr></thead>
 <tbody>{body}</tbody></table></div>
-<p>{removed} of these {len(rows)} deleted work outright. The rest bought their latency by
-spending more of the machine, which is a real gain for a person waiting on a scan and no
-gain at all for a laptop battery &mdash; a trade worth making knowingly rather than by
-accident.</p>
-<p class="note">The clearest pair sits at the two ends. Running the directory walk on four
-threads (exp&#8209;001) cut wall time in half and raised system CPU
-<strong>83%</strong>: the same syscalls, issued concurrently. Replacing those syscalls
-with one bulk call per directory (exp&#8209;022) cut wall time 30% and system CPU
-<strong>47%</strong>: fewer syscalls. The second kind is what let the first kind's cost be
-paid back later.</p>
+<p>{removed} of these {len(rows)} also cut total CPU: they removed work. The rest spent
+more CPU to finish sooner, a gain for a person waiting on a scan and a cost to a laptop
+battery.</p>
+<p class="note">The clearest pair: running the directory walk on four threads
+(exp&#8209;001) cut wall time in half and raised system CPU <strong>83%</strong>, the same
+syscalls issued concurrently. Replacing per-entry metadata calls with bulk calls per
+directory (exp&#8209;022) cut wall time 30% and system CPU <strong>47%</strong>, with
+fewer syscalls.</p>
 """
 
 
 def _section_reading(dataset: Mapping[str, Any]) -> str:
-    """The two caveats a reader needs before drawing a conclusion from either figure.
+    """The caveats a reader needs before drawing a conclusion from the figures.
 
-    Stated in the report rather than left in the harness because both are ways an honest
-    dataset can be read into a wrong answer, and the second one flatly contradicts what a
-    reader would otherwise assume from seeing both figures on one page.
+    Each is a way to read an honest dataset into a wrong answer, and the first contradicts
+    what a reader would assume from seeing the absolute and relative figures on one page,
+    so the page states them rather than leaving them in the harness.
     """
     improved_only, accepted_only = _mismatch(dataset)
     mismatch = (
-        f"{len(improved_only)} experiments measured a real improvement and were still not "
-        f"accepted &mdash; below the threshold, superseded, or not yet finished. "
-        f"{len(accepted_only)} experiment verdicts were accepted for reasons other than "
-        f"a measured improvement in primary wall time, such as noninferiority, "
-        f"instrumentation, or correctness evidence."
+        f"{len(improved_only)} experiments measured an improvement and were not accepted, "
+        f"for reasons such as falling below the threshold, being superseded, or being "
+        f"unfinished. {len(accepted_only)} were accepted without a measured improvement on "
+        f"their primary metric, on grounds such as noninferiority, instrumentation, or "
+        f"correctness evidence."
     )
     return f"""
-<h2 id="reading">Reading these numbers</h2>
+<h2 id="reading">Reading These Numbers</h2>
 <h3>The two figures do not divide into each other</h3>
-<p>It is tempting to take a row from the absolute figure, divide the endpoints, and expect
-the relative figure's percentage. That is wrong, and the record is careful about why. The
-absolute values are the median of each arm on its own. The relative value is the median of
-the <em>paired</em> differences &mdash; each candidate trial against the control trial
-interleaved beside it. When the host drifts mid-run the two diverge, and in this record
-they can differ by several percentage points and sometimes differ in sign.</p>
+<p>Dividing a row's endpoints in the absolute figure does not give the relative figure's
+percentage. The absolute values are each arm's median on its own; the relative value is
+the median of the <em>paired</em> changes, each candidate round against the control round
+beside it. When the host drifts during a run the two diverge, in this record by several
+percentage points and sometimes in sign.</p>
 <p class="note">exp&#8209;005's <span class="mono">cold-scan-index</span> reads
-<strong>+2.8%</strong> if you divide its medians and <strong>&minus;3.9%</strong> paired.
-The paired figure is the one that controls for drift, so it is the one the verdict used.
-Both are published; neither is derived from the other.</p>
+<strong>+2.8%</strong> from its medians and <strong>&minus;3.9%</strong> paired. The paired
+figure controls for drift, so verdicts use it. The page publishes both, and neither is
+derived from the other.</p>
 <h3>Accepted and faster are different questions</h3>
-<p>The two sets overlap, but both directions of the mismatch are worth knowing about.</p>
 <p>{mismatch}</p>
-<p class="note">Instrumentation is the clearest case. exp&#8209;052 and exp&#8209;053 were
+<p class="note">Instrumentation is the clearest case: exp&#8209;052 and exp&#8209;053 were
 accepted on intervals of <span class="mono">[&minus;3.3%, +3.8%]</span> and
-<span class="mono">[&minus;3.0%, +1.4%]</span> &mdash; neither is a speed-up, and neither
-was claimed as one. What they bought was the ability to see inside the engine at a cost
-the measurement could not detect, which is a different thing to want and was recorded as
-one.</p>
+<span class="mono">[&minus;3.0%, +1.4%]</span>. Neither was claimed as a speed-up; each
+made the engine observable at a cost the measurement could not detect.</p>
 <h3>What is not measured here</h3>
 <p>Every number comes from one Apple M1 Pro or a handful of virtualized 4-vCPU Linux
-guests; nothing is from bare-metal Linux, and Windows has never been benchmarked. The page
-cache was warm throughout because dropping it needs root, so nothing here describes a
-genuinely cold disk. A change measured on one platform is inherited, not proven, on the
-other, and tuning constants were fitted on the subjects shown.</p>
+guests; nothing is from bare-metal Linux, and Windows is not benchmarked. The page cache
+was warm throughout because dropping it needs root, so nothing here describes a cold disk.
+Tuning constants were fitted on the subjects shown.</p>
 """
 
 
 def _experiment_detail(record: Mapping[str, Any]) -> str:
     """Everything the artifacts say about one experiment, short of its body prose.
 
-    The first draft of this table showed a title and the verdict's one-line reason, which
-    left rows like "Borrowed path components" saying almost nothing about what was
-    actually done. Every field below is validated frontmatter the ledger already renders;
-    it was simply not reaching this page.
+    A title and the verdict's one-line reason leave a row like "Borrowed path components"
+    saying almost nothing about what was done, so every field below is shown; each is
+    validated frontmatter the ledger also renders.
 
     Body prose stays out. The frontmatter is the data path by design, and a report that
-    started scraping Markdown sections would be reading something no contract validates.
+    scraped Markdown sections would be reading something no contract validates.
     """
     complexity = record["complexity"] or {}
     rows = []
@@ -2283,7 +2272,7 @@ def _experiment_detail(record: Mapping[str, Any]) -> str:
     if record["reason"]:
         rows.append(("Verdict", esc(record["reason"])))
 
-    facts = [f'{record["trials"]} paired trials']
+    facts = [f'{record["trials"]} paired rounds']
     if record["interleaved"]:
         facts.append("interleaved")
     facts.append(f'{record["entries"]:,} entries, {esc(record["platform"])}')
@@ -2336,10 +2325,10 @@ def _section_table(dataset: Mapping[str, Any]) -> str:
             f"</tr>"
         )
     return f"""
-<h2 id="every">Every experiment</h2>
-<p>Open any row for what was compared, how it was built, what it cost to carry, and why it
-went that way. Absolute values are that experiment's own two arms on its own subject, so
-they are comparable across a row and not down a column. The change and interval are
+<h2 id="every">Every Experiment</h2>
+<p>Each row opens to show what was compared, how it was built, its cost to carry, and its
+verdict. Before and after are that experiment's own two arms on its own subject, so they
+are comparable across a row but not down a column. The change and interval are
 paired.</p>
 <div class="scroll"><table>
 <thead><tr><th class="n">#</th><th>experiment</th><th>primary job</th>
@@ -2358,14 +2347,14 @@ def _footer(dataset: Mapping[str, Any]) -> str:
     prepared = dataset.get("prepared") or "an unrecorded date"
     return f"""
 <footer>
-<p>Prepared {esc(prepared)} from {totals['experiments']} validated soft-schema artifacts in
-<span class="mono">docs/project/experiments/</span> by
-<span class="mono">make perf-report</span>. Every number is read back out of those
-artifacts, never retyped, so this page cannot drift from the record. Regenerate it rather
-than editing it.</p>
-<p>The individual experiment dates are deliberately absent: they say when someone happened
-to be at a keyboard, not anything about the evidence. What each result depends on is its
-subject, its machine, and its cache state, and those are recorded per experiment.</p>
+<p>Prepared {esc(prepared)} by <span class="mono">make perf-report</span> from
+{totals['experiments']} validated experiment records in
+<span class="mono">docs/project/experiments/</span>. Every number is read from those
+records, never retyped, and <span class="mono">make perf-report-check</span> fails when the
+page differs from what they produce, so regenerate it rather than editing it.</p>
+<p>The table leaves out experiment dates, which record when the work happened rather than
+anything about the evidence. What a result depends on is its subject, machine, and cache
+state, and each record states those.</p>
 </footer>
 """
 
@@ -2373,10 +2362,8 @@ subject, its machine, and its cache state, and those are recorded per experiment
 def _headline_figure(series: Optional[Mapping[str, Any]], job_id: str, label: str) -> str:
     """One before-and-after headline, or nothing if that job was not measured.
 
-    The first version indexed straight into the series for the two jobs it wanted and
-    raised `StopIteration` when either was absent, which made the whole report depend on
-    a particular subject having run a particular job. A headline is the least important
-    thing on the page; it should not be the thing that can stop the page existing.
+    A missing job yields no headline rather than an error, so the page never depends on a
+    particular subject having run a particular job.
     """
     if not series:
         return ""
@@ -2415,7 +2402,7 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
     """Each platform's score from its first build to its last, with its interval.
 
     The interval is the combined interval of the two index values, both relative to the
-    reference build, so it is the honest width of the ratio between them. Each figure
+    reference build, so it is the width of the ratio between them. Each figure
     names its platform and coverage (a platform's score is never the full index), says
     how the cells behind it were measured, and names any platform not yet measured.
     """
@@ -2429,7 +2416,7 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
             for part in (
                 f"{regime} ({gate})" if regime and gate else regime,
                 "; ".join(
-                    f"{esc(name)} not yet measured ({weight * 100:.0f}% of the combined index)"
+                    f"{esc(name)} not yet measured ({weight * 100:.0f}% of the full index)"
                     for name, weight in sorted((projected.get("unmeasured_platforms") or {}).items())
                 ),
             )
@@ -2510,18 +2497,18 @@ def _header(dataset: Mapping[str, Any]) -> str:
         _flagship(dataset), "cold-scan-index", "macOS cold scan, campaign 1"
     )
     return f"""
-<h1>Making fdu faster, one measured experiment at a time</h1>
+<h1>Making fdu Faster, One Measured Experiment at a Time</h1>
 <p class="lede"><a href="https://github.com/jlevy/fdu">fdu</a> is a disk-usage and file
-roll-up tool written in Rust. Its speed was earned by a research loop: one change at a
-time, each measured against the code it came from, kept only if it paid. This page is
-generated from the record of all {totals['experiments']} of those experiments, including
-the {decisions.get('rejected', 0)} that did not pay.</p>
+roll-up tool written in Rust. Its performance work is a loop of experiments, each testing
+one change against the code it came from, and a change is kept only if it passes
+<a href="#loop">the accept rule</a>. The record holds {totals['experiments']} experiments,
+including {decisions.get('rejected', 0)} rejected changes.</p>
 <div class="headline">
   {headlines}
   <div><span class="n tnum">{totals['experiments']}</span>
     <span class="k">experiments</span></div>
   <div><span class="n tnum good">{kept}</span>
-    <span class="k">changes kept, 3% or more better</span></div>
+    <span class="k">changes kept, at least 3% better</span></div>
   <div><span class="n tnum">{decisions.get('rejected', 0)}</span>
     <span class="k">tried, not kept</span></div>
 </div>
@@ -2535,48 +2522,45 @@ against other tools is in the comparisons
 
 def _section_iterations(dataset: Mapping[str, Any]) -> str:
     return f"""
-<h2 id="iterations">Over time</h2>
-<h3>The performance score, and every experiment that changed it</h3>
-<p>The top panel is fdu&rsquo;s unified performance score: a weighted combination of every
-scenario fdu is optimized for, from a first run with empty caches to warm content
-analysis, an opened root, a million-entry tree, and peak memory
+<h2 id="iterations">Over Time</h2>
+<h3>The performance score by build, and every experiment</h3>
+<p>The top panel is fdu&rsquo;s performance score
 (<a href="../../specs/active/plan-2026-10-05-fdu-performance-index.md">the index
-spec</a>). Each milestone build was timed side by side with 0.3.0 in one session per
-component, on a busy desktop, so the steps are measured accumulated improvement, and
-differences of about 10% between adjacent builds are within the noise. The solid line is
-the platform&rsquo;s score over every component, from the first build that has them all;
-the dashed line is the partial score over the components the first build already had. A
-platform&rsquo;s score is not the combined index, which also weights the platforms not yet
-measured, and the headline says how the cells behind it were measured. The chooser shows any
-single component. The bottom panel is every experiment in the order it
-ran, each on its own primary metric: green bars are changes that were kept, red bars were
-tried and dropped, and grey bars are checkpoints, validations, and other measurements of
-work already counted. Most ideas moved their job by less than the 3% a change must
-clear.</p>
+spec</a>): a weighted combination of benchmark components, including a run with
+fdu&rsquo;s caches empty, warm content analysis, an opened root, a million-entry tree, and
+peak memory. Every milestone build was timed against the reference build, 0.3.0, in one
+interleaved session per benchmark job, so each step is measured directly rather than
+compounded from the experiment effects below. Those sessions ran on a desktop in use, so
+differences of about 10% between adjacent builds are within the noise.</p>
+<p>The solid line is the platform&rsquo;s score over every component, from the first build
+that has them all; the dashed line is the partial score, over only the components every
+build has. A platform&rsquo;s score is not the full index, which weights every platform.
+The chooser shows any single component. The bottom panel is every
+experiment in the order it ran, each bar its paired change on its own primary job.</p>
 {figure_timeline(dataset)}
 """
 
 
 def _section_loop(dataset: Mapping[str, Any]) -> str:
     return """
-<h2 id="loop">The loop</h2>
-<p>One experiment is one question with one answer. It names a hypothesis and a predicted
-effect, builds exactly one change, checks that every answer is unchanged, and measures it
-against the code it came from &mdash; both binaries interleaved in one run on a tree pinned
-by content digest, at least twelve paired trials and twenty when the predicted effect is
-small. A controlled cell throws out any sample taken on a busy host; an exploratory cell
-on an uncontrolled host keeps them and says so. A change is kept when it is at
-least 3% faster with its 95% interval clear of zero. Each result, kept or not, is stored as
-a validated record, and this page is regenerated from those records.</p>
-"""
-
-
-def _section_details(dataset: Mapping[str, Any]) -> str:
-    return """
-<h2 id="details">The detail</h2>
-<p class="muted">Everything below is for checking the summary above: absolute timings,
-every effect with its interval, cost per entry across trees, per-platform results, and the
-full table.</p>
+<h2 id="loop">The Loop</h2>
+<p>An experiment names a hypothesis and a predicted effect, builds exactly one change,
+checks that every answer is unchanged, and times the change (the candidate) against the
+code it came from (the control): its two <strong>arms</strong>. Both binaries alternate in
+one interleaved session, a <strong>cell</strong>, on a tree pinned by content digest, for at
+least 12 paired rounds, or 20 when the predicted effect is small. The <strong>paired
+change</strong> is the median of each candidate round&rsquo;s change from the control round
+beside it, so drift in the host&rsquo;s speed reaches both arms alike; its 95% interval is a
+bootstrap of that median. A change is kept when it is at least 3% faster with its 95%
+interval below zero. Some are accepted instead on <strong>noninferiority</strong>, when
+the interval rules out a slowdown beyond a stated margin.</p>
+<p>The harness reads host CPU load before and after every sample. On a quiet host a sample
+with a reading above 25% busy, the <strong>quiet gate</strong>, is discarded; an
+uncontrolled host keeps every sample and records the load. A score is
+<strong>exploratory</strong>, for discovery rather than for quoting, when any cell behind
+it ran on an uncontrolled host, ran fewer than 20 rounds, or belongs to an exploratory
+stage (<a href="../../guides/performance-loop.md#host-pressure-regimes">host-pressure
+regimes</a>).</p>
 """
 
 
@@ -2586,16 +2570,16 @@ def _section_absolute(dataset: Mapping[str, Any]) -> str:
     if end_to_end:
         linux = f"""
 <h4>Linux, end to end</h4>
-<p>The later Linux work was measured the same way at its milestones: one engine against a
-later one in a single interleaved cell. The release cell is the comparison to quote for
-0.3.0; the development cells before it each ran in their own session.</p>
+<p>Later Linux work was measured the same way at its milestones: an older engine against a
+newer one in a single interleaved cell. The 0.3.0 release cell is the comparison to
+quote.</p>
 {end_to_end}
 """
     return f"""
 <h2 id="absolute">Absolute</h2>
 <h3>Wall time, in milliseconds</h3>
-<p>The campaign's own summaries are all percentages, and a percentage cannot say whether
-a scan takes half a second or half a minute. These are the measured medians.</p>
+<p>A percentage cannot say whether a scan takes half a second or half a minute. These are
+the measured medians.</p>
 <h4>macOS, campaign 1</h4>
 {figure_absolute(dataset)}
 {linux}

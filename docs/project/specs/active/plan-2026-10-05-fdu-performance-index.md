@@ -323,7 +323,7 @@ Both halves are in the score, so a platform-specific change shows too.
 ### Phase 2: Linux
 
 - [ ] Hand the same builds, manifest, and driver to a Linux host.
-  Run the Linux cells and project the combined index.
+  Run the Linux cells and project the full index.
 
 ## Testing Strategy
 
