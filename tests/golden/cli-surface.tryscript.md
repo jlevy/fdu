@@ -904,8 +904,8 @@ fdu 0.3.0[DEV_REVISION]
 ```console
 $ fdu --cache off --color never --size apparent .
 ░░░░░░░░░░      —         0 B  . 0 files
-! note: no size denominator: selected root size is zero
-! tip: show smaller entries: --min-share=0%
+! note: root size is zero, so shares are undefined
+! tip: show more: --min-share=0%
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```

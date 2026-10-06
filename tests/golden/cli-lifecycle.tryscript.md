@@ -71,7 +71,7 @@ reads one.
 ```console
 $ fdu --view summary --size apparent project
      269 B  7 files, 3 directories (128 B gitignored)
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -97,7 +97,7 @@ $ fdu --cache on --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -153,7 +153,7 @@ $ fdu --cache on --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -161,7 +161,7 @@ $ fdu --cache on --size apparent project
 ```console
 $ fdu --stale-ok --view summary --size apparent project
      269 B  7 files, 3 directories (128 B gitignored)
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cache only
 ? 0
@@ -452,7 +452,7 @@ $ fdu --cache on --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -488,7 +488,7 @@ $ fdu --cache on --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -631,7 +631,7 @@ $ fdu --cache on --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -671,7 +671,7 @@ $ fdu --cache on --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -713,7 +713,7 @@ $ fdu --cache on --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! note: gitignored sizes are included in row totals
+! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```

@@ -4443,11 +4443,9 @@ mod tests {
         assert!(root.children.iter().any(|child| !child.omissions.is_empty()));
         assert!(TreeRemainder::from_tree(Some(root), omissions).is_none());
         let diagnostics = crate::report_format::diagnostic_lines(&report);
-        assert!(!diagnostics.notes.iter().any(|note| note.contains("more covers")));
+        assert!(!diagnostics.notes.iter().any(|note| note.contains("… and more")));
         assert!(diagnostics.notes.iter().any(|note| note.contains("depth 1")));
-        assert!(
-            diagnostics.tips.contains(&format!("tip: expand deeper: {}=all", report.axes.depth))
-        );
+        assert!(diagnostics.tips.contains(&format!("tip: show more: {}=all", report.axes.depth)));
 
         let depth_zero = run(
             &index,
@@ -5372,7 +5370,7 @@ mod tests {
             assert!(
                 crate::report_format::report_notes(&report)
                     .iter()
-                    .all(|note| !note.contains("gitignored sizes are included"))
+                    .all(|note| !note.contains("include gitignored sizes"))
             );
         }
         let hidden_report = run(
@@ -5674,7 +5672,7 @@ mod tests {
             );
             let notes = crate::report_format::report_notes(&report);
             assert_eq!(
-                notes.iter().filter(|note| note.contains("gitignored sizes are included")).count(),
+                notes.iter().filter(|note| note.contains("include gitignored sizes")).count(),
                 expected,
                 "{population:?}: {notes:?}"
             );
@@ -5691,7 +5689,7 @@ mod tests {
         assert!(
             crate::report_format::report_notes(&blind)
                 .iter()
-                .all(|note| !note.contains("gitignored sizes are included"))
+                .all(|note| !note.contains("include gitignored sizes"))
         );
     }
 

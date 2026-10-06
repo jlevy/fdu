@@ -591,16 +591,14 @@ def check_reports_carry_the_ignored_share() -> None:
         raise SystemExit("oversized human tree bars must be rejected")
     except fdu.InvalidArgumentError as error:
         assert "4096" in str(error), error
-    assert report.notes.count("note: gitignored sizes are included in row totals") == 1, (
-        report.notes
-    )
+    assert report.notes.count("note: totals include gitignored sizes") == 1, report.notes
 
     kept_query = fdu.Query(
         views=(fdu.View.SUMMARY,),
         selection=fdu.Selection(size=apparent, ignored=fdu.IgnoredEntries.EXCLUDE),
     )
     kept_report = fdu.report(root, kept_query, cache=fdu.CachePolicy.OFF)
-    assert "note: gitignored sizes are included in row totals" not in kept_report.notes
+    assert "note: totals include gitignored sizes" not in kept_report.notes
     (kept,) = kept_report.sections
     assert isinstance(kept, fdu.SummarySection), kept
     assert (kept.summary.files, kept.summary.bytes) == (2, 18), kept
@@ -612,7 +610,7 @@ def check_reports_carry_the_ignored_share() -> None:
     blind_report = fdu.report(
         root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.OFF, scan=blind
     )
-    assert "note: gitignored sizes are included in row totals" not in blind_report.notes
+    assert "note: totals include gitignored sizes" not in blind_report.notes
     (unread,) = blind_report.sections
     assert isinstance(unread, fdu.SummarySection) and unread.summary.ignored is None, unread
     only_query = fdu.Query(selection=fdu.Selection(ignored=fdu.IgnoredEntries.ONLY))

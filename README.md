@@ -120,12 +120,8 @@ Code lines   Share  Comments   Blank  Analyzed files  Language
          2   <0.1%         4       1             1/1  TypeScript (0 gitignored)
          —       —         —       —             0/2  Make
    129,654  100.0%    15,416  12,513         308/310  TOTAL      (0 gitignored)
-15 analyzed languages (include population)
-36 selected files with unclassified type
-2 unsupported
 
 DOCUMENTS
-Percentage column: document words
    5.9 MiB   84.6%  markdown           317 files, 117,532 lines (104,000 nonblank, 13,532 blank), 507,111 words (2,028.4 pages), 4 generated, 288 documentation
    748 KiB   13.4%  text               58 files, 5,455 lines (5,339 nonblank, 116 blank), 80,121 words (320.4 pages), 2 documentation
    380 KiB    9.7%  html               1 file, 1,125 lines (1,110 nonblank, 15 blank), 58,222 words (232.8 pages), 1 documentation
@@ -183,7 +179,6 @@ fdu . --analyze=code --ignored=exclude --limit=5
 For example, the implementation at repository revision `7a499493` produced this stdout:
 
 ```text
-(5 of 16)
 Code lines   Share  Comments   Blank  Analyzed files  Language
     79,330   65.1%    12,681   6,700         101/101  Rust
     37,861   31.1%     1,513   4,696           95/95  Python
@@ -191,16 +186,17 @@ Code lines   Share  Comments   Blank  Analyzed files  Language
        403    0.3%        65      33             3/3  C
        249    0.2%        57      45             7/7  Shell
    121,858  100.0%    14,881  11,840         242/244  TOTAL
-15 analyzed languages (exclude population)
-22 selected files with unclassified type
-2 unsupported
 ```
 
-The note and suggestion appear once on stderr, followed by the run’s `perf:` summary:
+Notes and a suggestion follow on stderr, then the run’s `perf:` summary:
 
 ```text
-note: code totals include languages hidden by display limits
-tip: show more rows: --limit=all
+note: totals include hidden languages
+note: 15 languages analyzed, gitignored files excluded
+note: not analyzed: 2 unsupported
+note: 22 files with unclassified type
+note: display limits: 5 of 16 rows shown
+tip: show more: --limit=all
 ```
 
 The percentages and bold TOTAL row cover all measured code lines, including languages

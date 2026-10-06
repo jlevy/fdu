@@ -118,8 +118,8 @@ the human row.
 
 ```console
 $ fdu --cache off --analyze code --view languages --size apparent unsupported-project
-Percentage column: code lines
       15 B       —  Haskell  1 file, 1 lines (1 nonblank, 0 blank), 1 unsupported
+! note: percentages are shares of code lines
 ! perf: took [PERF_TIME] to walk 1 file (15 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 15 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -127,14 +127,13 @@ Percentage column: code lines
 ```console
 $ fdu --cache off --analyze code --view languages,documents --size apparent content-project
 LANGUAGES
-Percentage column: code lines
       38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank)
       39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank)
 
 DOCUMENTS
-Percentage column: raw words
       42 B   63.6%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 1 documentation
       35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 1 documentation, 1 binary
+! note: percentages are shares of code lines (LANGUAGES), raw words (DOCUMENTS)
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -432,7 +431,9 @@ $ fdu --cache off --analyze lines --view types,families --format json --size app
 $ fdu --cache off --analyze lines --view documents --format jsonl --size apparent --limit 1 content-project
 {"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-! tip: show more rows: --limit=all
+! note: percentages are shares of raw words
+! note: display limits: 1 of 2 rows shown
+! tip: show more: --limit=all
 ? 0
 ```
 
@@ -541,6 +542,7 @@ reports:
             confidence: {certain: 2}
             flags: {generated: 0, vendored: 0, documentation: 1}
           pages: {words: 3, words_per_page: 5}
+note: percentages are shares of document words
 ? 0
 ```
 
@@ -563,6 +565,7 @@ It does not make the operation partial.
 $ fdu --cache off --analyze code --view languages --format jsonl --size apparent unsupported-project
 {"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "code"], "size": "apparent", "sort_metric": null, "views": ["languages"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "code"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638154215206795666, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "code-sloc-v1", "version": 3}]}}
 {"view": "languages", "metrics": {"group": "type", "share_metric": "code_lines", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 1, "bytes": 15, "allocated": [ALLOCATED], "share": {"numerator": 0, "denominator": 0}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 4, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0}, "coverage": {"lines": {"analyzed": 1}, "code": {"unsupported": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}, "rows": [{"id": "haskell", "family": "code", "files": 1, "bytes": 15, "allocated": [ALLOCATED], "share": {"numerator": 0, "denominator": 0}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 4, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0}, "coverage": {"lines": {"analyzed": 1}, "code": {"unsupported": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
+note: percentages are shares of code lines
 ? 0
 ```
 
@@ -599,6 +602,7 @@ $ fdu --stale-ok --analyze lines --view types --size apparent cached-partial-pro
 $ fdu --analyze lines --view documents --format jsonl --size apparent content-project
 {"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
+note: percentages are shares of raw words
 ? 0
 ```
 
@@ -618,6 +622,7 @@ $ fdu --analyze lines --view summary --size apparent content-project
 $ fdu --stale-ok --analyze lines --view documents --format jsonl --size apparent content-project
 {"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
+! note: percentages are shares of raw words
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ? 0
 ```
@@ -649,7 +654,6 @@ comments.
 
 ```console
 $ fdu --cache off --analyze code --view languages --limit all --size apparent code-project
-Percentage column: code lines
       97 B   12.5%  Python      1 file, 7 lines (5 code, 1 comment, 1 blank)
      129 B   10.0%  Shell       1 file, 7 lines (4 code, 2 comment, 1 blank)
      104 B    7.5%  C++         1 file, 7 lines (3 code, 3 comment, 1 blank)
@@ -665,6 +669,7 @@ Percentage column: code lines
       84 B    5.0%  SQL         1 file, 7 lines (2 code, 4 comment, 1 blank)
       95 B    5.0%  Swift       1 file, 7 lines (2 code, 4 comment, 1 blank)
       97 B    5.0%  TypeScript  1 file, 7 lines (2 code, 4 comment, 1 blank)
+! note: percentages are shares of code lines
 ! perf: took [PERF_TIME] to walk 15 files (1.4 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -685,11 +690,12 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
          3    7.5%         4      0             1/1  PHP        (0 gitignored)
          4   10.0%         2      1             1/1  Shell      (0 gitignored)
          5   12.5%         1      1             1/1  Python     (0 gitignored)
-… 8 languages omitted (below share threshold)
         40  100.0%        53     12           15/15  TOTAL      (0 gitignored)
-15 analyzed languages (include population)
-! note: code totals include languages hidden by display limits
-! tip: show smaller entries: --min-share=0%
+! note: totals include hidden languages
+! note: ranked by code lines
+! note: 15 languages analyzed
+! note: display limits: 8 languages below min share
+! tip: show more: --min-share=0%
 ! perf: took [PERF_TIME] to walk 15 files (1.4 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -703,26 +709,26 @@ The stderr note makes clear why visible language rows need not add up to TOTAL.
 
 ```console
 $ fdu --cache off --analyze code --view code --limit 2 --size apparent code-project
-(2 of 15)
 Code lines   Share  Comments  Blank  Analyzed files  Language
          5   12.5%         1      1             1/1  Python   (0 gitignored)
          4   10.0%         2      1             1/1  Shell    (0 gitignored)
         40  100.0%        53     12           15/15  TOTAL    (0 gitignored)
-15 analyzed languages (include population)
-! note: code totals include languages hidden by display limits
-! tip: show more rows: --limit=all
+! note: totals include hidden languages
+! note: 15 languages analyzed
+! note: display limits: 2 of 15 rows shown
+! tip: show more: --limit=all
 ! perf: took [PERF_TIME] to walk 15 files (1.4 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
 
 ```console
 $ fdu --cache off --analyze code --view code --limit 0 --size apparent code-project
-(0 of 15)
 Code lines   Share  Comments  Blank  Analyzed files  Language
         40  100.0%        53     12           15/15  TOTAL    (0 gitignored)
-15 analyzed languages (include population)
-! note: code totals include languages hidden by display limits
-! tip: show more rows: --limit=all
+! note: totals include hidden languages
+! note: 15 languages analyzed
+! note: display limits: 0 of 15 rows shown
+! tip: show more: --limit=all
 ! perf: took [PERF_TIME] to walk 15 files (1.4 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -732,10 +738,8 @@ performance line from stderr.
 
 ```console
 $ fdu --cache off --quiet --analyze code --view code --limit 0 --size apparent code-project
-(0 of 15)
 Code lines   Share  Comments  Blank  Analyzed files  Language
         40  100.0%        53     12           15/15  TOTAL    (0 gitignored)
-15 analyzed languages (include population)
 ? 0
 ```
 
@@ -747,8 +751,8 @@ $ fdu --cache off --analyze code --view code --size apparent unsupported-project
 Code lines   Share  Comments  Blank  Analyzed files  Language
          —       —         —      —             0/1  Haskell
          —       —         —      —             0/1  TOTAL
-0 analyzed languages (include population)
-1 unsupported
+! note: 0 languages analyzed
+! note: not analyzed: 1 unsupported
 ! perf: took [PERF_TIME] to walk 1 file (15 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 15 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -765,14 +769,14 @@ CODE
 Code lines   Share  Comments  Blank  Analyzed files  Language
          3  100.0%         0      1             1/1  Rust     (0 gitignored)
          3  100.0%         0      1             1/1  TOTAL    (0 gitignored)
-1 analyzed language (include population)
 
 LANGUAGES
-Percentage column: code lines
       38 B  100.0%  Rust  1 file, 4 lines (3 code, 0 comment, 1 blank)
 
 SUMMARY
       38 B  1 file, 1 directory
+! note: percentages are shares of code lines
+! note: 1 language analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -825,16 +829,16 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
          3   75.0%         0      1             1/1  Rust     (0 gitignored)
          1   25.0%         1      1             1/1  Python   (0 gitignored)
          4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
-2 analyzed languages (include population)
+! note: 2 languages analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
 
 ```console
 $ fdu --cache off --color never --size apparent --analyze words content-project
-Percentage column: document words
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+! note: percentages are shares of document words
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -846,12 +850,12 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
          3   75.0%         0      1             1/1  Rust     (0 gitignored)
          1   25.0%         1      1             1/1  Python   (0 gitignored)
          4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
-2 analyzed languages (include population)
 
 DOCUMENTS
-Percentage column: document words
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+! note: percentages are shares of document words
+! note: 2 languages analyzed
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -920,10 +924,10 @@ LARGEST  (2 of 7)
 RECENT  (2 of 7)
 [RFC3339]  assets[SEP]late.bin.txt
 [RFC3339]  docs[SEP]notes.txt
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
 ! note: display limits: row limit 2
 ! note: omitted code, documents: content analysis required
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ! tip: include omitted views: add --analyze code
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -958,10 +962,8 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
          3   75.0%         0      1             1/1  Rust     (0 gitignored)
          1   25.0%         1      1             1/1  Python   (0 gitignored)
          4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
-2 analyzed languages (include population)
 
 DOCUMENTS
-Percentage column: document words
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
 
@@ -972,9 +974,11 @@ LARGEST  (2 of 7)
 RECENT  (2 of 7)
 [RFC3339]  assets[SEP]late.bin.txt
 [RFC3339]  docs[SEP]notes.txt
-! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: totals include descendants
+! note: percentages are shares of document words
+! note: 2 languages analyzed
 ! note: display limits: row limit 2
-! tip: show more rows: --limit=all
+! tip: show more: --limit=all
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```

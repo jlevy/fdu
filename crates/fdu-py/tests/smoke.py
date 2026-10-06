@@ -198,9 +198,9 @@ def main() -> None:
     # included in its directory row and does not enter a second remainder.
     assert cli_data["reports"][0]["remainder"] is None, cli_data
     assert sum(child["bytes"] for child in tree["children"]) == tree["bytes"], cli_data
-    assert cli_scan.stderr == (
-        "note: display limits: depth 1\ntip: expand deeper: --depth=all\n"
-    ), cli_scan.stderr
+    assert cli_scan.stderr == ("note: display limits: depth 1\ntip: show more: --depth=all\n"), (
+        cli_scan.stderr
+    )
 
     usage = subprocess.run(
         [entrypoint, "--definitely-not-an-option"],
