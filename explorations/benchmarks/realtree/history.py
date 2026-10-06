@@ -1943,6 +1943,17 @@ def check_cells(directory: Path) -> List[str]:
             continue
         for item in cell.get("milestones") or []:
             if item.get("supported") is False:
+                # A build that did not run states no figure, and its run timed no such tool.
+                stated = [
+                    key
+                    for key in ("wall_ms", "peak_rss_mib", "cpu_s_median", "component_ms")
+                    if item.get(key) is not None
+                ]
+                if stated or item["label"] in document["tools"]:
+                    problems.append(
+                        f"{path.name}: {item['label']} is unsupported but has figures "
+                        f"({', '.join(stated) or 'a timed tool in its run'})"
+                    )
                 continue
             derived = measured_fields(document, item["label"], reference)
             for key, value in derived.items():

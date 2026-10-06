@@ -1208,6 +1208,11 @@ class CellTests(unittest.TestCase):
             problems = history.check_cells(directory)
             self.assertEqual(len(problems), 2)
             self.assertIn("wall_ms", problems[0])
+            # A build that did not run cannot gain a figure either.
+            invented = copy.deepcopy(cell)
+            invented["milestones"][1]["wall_ms"] = {"median": 1.0}
+            (directory / "cell.json").write_text(json.dumps(invented))
+            self.assertIn("is unsupported but has figures", history.check_cells(directory)[0])
             (directory / "cell.run.json.gz").unlink()
             self.assertIn("is missing", history.check_cells(directory)[0])
 
