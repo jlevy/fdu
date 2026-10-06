@@ -1650,6 +1650,74 @@ mod tests {
     }
 
     #[test]
+    fn document_word_shares_sum_to_their_denominator_when_pooling_is_not_additive() {
+        // Ordinary prose counts its tokens; ten 30-character tokens are clamped up to
+        // characters / 6. Pooled, the long tokens pull the whole section into the
+        // characters / 6 regime, so the total's own document words (142) are below the
+        // rows' sum (125 + 50). Dividing by that total gave 88.0% + 35.2% (fdu-ij5n).
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("guide.md"), "This prose has four words. ".repeat(25))
+            .expect("write markdown");
+        fs::write(root.path().join("tokens.txt"), "abcdefghijklmnopqrstuvwxyz0123 ".repeat(10))
+            .expect("write text");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        analyze_index(
+            &mut index,
+            AnalysisRequest {
+                profile: super::super::AnalysisSet::NONE.with_words(),
+                ..AnalysisRequest::default()
+            },
+        );
+        let query = crate::query::Query {
+            views: vec![crate::query::ViewSpec::Documents],
+            ..crate::query::Query::default()
+        };
+        let rendered = crate::query::report(
+            &index,
+            &crate::test_support::read_of(&index, query),
+            std::time::UNIX_EPOCH,
+        )
+        .expect("report");
+        let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
+            panic!("expected document metrics")
+        };
+        assert_eq!(summary.share_metric, crate::query::ShareMetric::DocumentWords);
+        assert_eq!((summary.rows.len(), summary.total_rows, summary.share_omitted), (2, 2, 0));
+        let words = summary
+            .rows
+            .iter()
+            .map(|row| (row.id.as_str(), crate::query::document_words(row)))
+            .collect::<Vec<_>>();
+        assert_eq!(words, [("markdown", Some(125)), ("text", Some(50))]);
+        assert_eq!(
+            crate::query::document_words(&summary.total),
+            Some(142),
+            "the fixture must keep the pooled total below the rows' sum to test anything"
+        );
+
+        let denominator = summary.total.share.denominator;
+        assert_eq!((summary.total.share.numerator, denominator), (175, 175));
+        for row in &summary.rows {
+            assert_eq!(row.share.denominator, denominator, "{} shares one denominator", row.id);
+            assert_eq!(
+                Some(row.share.numerator),
+                crate::query::document_words(row),
+                "{} divides the words it shows",
+                row.id
+            );
+        }
+        let numerators =
+            summary.rows.iter().map(|row| row.share.numerator).fold(0_u64, u64::saturating_add);
+        assert_eq!(numerators, denominator, "unbounded rows partition the denominator");
+
+        let text =
+            crate::report_format::render(&rendered, crate::report_format::Format::Text, false)
+                .expect("compatible report format");
+        assert!(text.contains("71.4%") && text.contains("28.6%"), "{text}");
+    }
+
+    #[test]
     fn an_empty_analysis_still_retains_the_requested_identity() {
         let root = tempfile::tempdir().expect("tempdir");
         let (mut index, _) =

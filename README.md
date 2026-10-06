@@ -104,11 +104,11 @@ Lines of code by language and words by document type, from one scan:
 $ fdu . --view=code,documents
 CODE
 Code lines   Share  Comments   Blank  Analyzed files  Language
-    90,911   57.4%    15,531   7,465         102/102  Rust       (0 gitignored)
-    55,917   35.3%     2,169   6,775         160/160  Python     (0 gitignored)
-     6,119    3.9%       740     515           33/33  JavaScript (0 gitignored)
+    91,382   57.5%    15,689   7,486         102/102  Rust       (0 gitignored)
+    56,021   35.3%     2,192   6,780         160/160  Python     (0 gitignored)
+     6,182    3.9%       747     516           33/33  JavaScript (0 gitignored)
      2,709    1.7%       251     155           20/20  C          (0 gitignored)
-     1,931    1.2%       237     205           35/35  TypeScript (0 gitignored)
+     1,942    1.2%       252     206           35/35  TypeScript (0 gitignored)
        648    0.4%       124      64           18/18  Shell      (0 gitignored)
         13   <0.1%         4       1             2/2  Swift      (0 gitignored)
          6   <0.1%         4       1             2/2  C++        (0 gitignored)
@@ -120,13 +120,13 @@ Code lines   Share  Comments   Blank  Analyzed files  Language
          2   <0.1%         4       1             1/1  Ruby       (0 gitignored)
          2   <0.1%         4       1             1/1  SQL        (0 gitignored)
          —       —         —       —             0/2  Make
-   158,271  100.0%    19,087  15,186         379/381  TOTAL      (0 gitignored)
+   158,920  100.0%    19,290  15,214         379/381  TOTAL      (0 gitignored)
 
 DOCUMENTS
-   7.3 MiB   74.7%  markdown           379 files, 144,071 lines (128,125 nonblank, 15,946 blank), 636,944 words (2,547.7 pages), 8 generated, 344 documentation
-   1.6 MiB   24.5%  text               66 files, 31,754 lines (31,571 nonblank, 183 blank), 209,075 words (836.3 pages), 10 documentation
-   496 KiB    8.8%  html               2 files, 1,474 lines (1,448 nonblank, 26 blank), 75,380 words (301.5 pages), 1 documentation
-note: percentages are shares of document words
+   7.4 MiB   69.2%  markdown           379 files, 144,417 lines (128,421 nonblank, 15,996 blank), 638,871 words (2,555.4 pages), 8 generated, 344 documentation
+   1.6 MiB   22.6%  text               66 files, 31,754 lines (31,571 nonblank, 183 blank), 209,075 words (836.3 pages), 10 documentation
+   496 KiB    8.2%  html               2 files, 1,474 lines (1,448 nonblank, 26 blank), 75,380 words (301.5 pages), 1 documentation
+note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 note: 15 languages analyzed
 note: not analyzed: 2 unsupported
 note: 39 files with unclassified type

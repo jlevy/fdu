@@ -919,6 +919,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -tip: show more: --limit=all
 +tip: show more: limit=all
   ✓ YAML Derives Pages Only After Document Aggregation
+  ✓ Document Shares Divide by the Rows’ Sum
+  ✓ Document Shares Divide by the Rows’ Sum
+  ✓ Document Shares Divide by the Rows’ Sum
   ✓ Analysis Reads Every Eligible File Completely
   ✓ Analysis Reads Every Eligible File Completely
   ✓ Cached Coverage Exclusions Preserve Evidence

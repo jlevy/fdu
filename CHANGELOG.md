@@ -91,6 +91,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that joins several settings in one suggestion (`" "` for flags, `", "` for keyword
   arguments).
 
+### Fixed
+
+- `documents` percentages add up to 100%. Each row’s share divided its document words by
+  the total’s, but logical words are derived after pooling, so a tree mixing a
+  long-token format such as HTML with ordinary prose had a total below the sum of its
+  rows, and the shares summed past 100% (101.6% on the Linux kernel).
+  Shares in every grouped view now divide by the sum of the rows’ values, which is what
+  `share.denominator` and the total row’s `share` carry in structured output; the total
+  row’s own `document_words` and `pages` are still the pooled count.
+  Byte, code-line, and raw-word shares are unchanged, since their sums equal the total.
+
 ## [0.3.0] - 2026-09-30
 
 fdu 0.3.0 is a breaking release focused on Linux speed and stability.
