@@ -79,11 +79,13 @@ SELECTION
 VIEWS
       --view <LIST>         Views: list, tree, files, extensions, types, families, languages, code,
                             documents, largest, recent, summary, or full. Defaults to list with no
-                            analysis, otherwise to a view that displays the requested analysis
+                            analysis, otherwise to a view that displays the requested analysis. code
+                            and documents read file contents: each runs its analyzer
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
 CONTENT ANALYSIS
-      --analyze <LIST>  Analyzers to run: none, lines, code, words, or all [default: none]
+      --analyze <LIST>  Analyzers to run beyond what the views imply: none, lines, code, words, or
+                        all [default: none]
       --workers <N>     Content-analysis workers; zero selects available parallelism [default: 0]
 
 OUTPUT
@@ -133,7 +135,8 @@ Examples:
   fdu .                     directory sizes (metadata only)
   fdu . --ignored=exclude   omit entries covered by .gitignore
   fdu . --view=summary      one total for the tree
-  fdu . --analyze=code      standard lines of code by language
+  fdu . --view=code         standard lines of code by language
+  fdu . --view=documents    words and pages by document format
   fdu . --kind dir --include .venv --modified-before 7d --long
   fdu . --kind dir --include node_modules --modified-before 30d --long
   fdu . --kind dir --include target --modified-before 30d --format paths
@@ -182,11 +185,12 @@ fdu . --view=summary                       # one total with its ignored share
 fdu . --view=languages                     # detected language sizes; metadata only
 fdu . --view=families,types,extensions     # three file-kind breakdowns
 fdu . --view=recent --limit=10             # ten most recently modified files
-fdu . --analyze=lines                      # physical lines and raw words
-fdu . --analyze=lines --view=languages     # those metrics by language
-fdu . --analyze=code                       # code overview with population and coverage
-fdu . --analyze=code --ignored=exclude     # source overview without ignored content
-fdu . --analyze=words                      # prose volume by document type
+fdu . --view=code                          # code overview with population and coverage
+fdu . --view=code --ignored=exclude        # source overview without ignored content
+fdu . --view=documents                     # words and pages by document format
+fdu . --view=code,documents                # both, from one scan and one analysis pass
+fdu . --analyze=code --view=languages      # code lines in the language rows
+fdu . --analyze=lines --view=languages     # physical lines and raw words by language
 ```
 
 The default is `list` in `tree` format, in allocated bytes, largest first, to depth 5.
@@ -205,7 +209,9 @@ Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
 A parenthetical amount such as `(73 MiB gitignored)` is included in the row total.
 
-`--analyze` chooses what may be read and `--view` chooses what is printed.
+`--view` chooses what is printed, and `--analyze` adds what may be read beyond it.
+`code` and `documents` are the views that read file contents: they show nothing without
+analysis, so naming one runs its analyzer.
 The language commands differ only on the analysis axis: without code analysis
 percentages are byte shares; with it, the report adds code, comment, and blank-line
 metrics and uses code-line shares.
@@ -290,7 +296,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Axis | Question | Options |
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
-| Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
+| Content | Which file bodies are read beyond what the views imply? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
@@ -315,7 +321,8 @@ retain the reusable index.
 None of them reads regular-file contents.
 One-shot metadata reports under `auto` neither load a snapshot, which cannot avoid the
 current metadata walk, nor write one; `--cache on` writes one.
-Any `--analyze` value other than `none` opts into a separate content sidecar.
+Any analyzer, named by `--analyze` or implied by `--view code` or `--view documents`,
+opts into a separate content sidecar.
 fdu reads eligible files whose requested result is absent or stale; a compatible
 repeated run reuses unchanged records.
 Coverage is scoped to the analyzers too: an unsupported deeper analyzer leaves byte
@@ -334,8 +341,9 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view languages` for code-family rows and byte shares from path-only detection.
 - `--view code` for source-line totals, coverage, and a language breakdown with complete
   totals and explicit display omissions.
-  It requires `--analyze=code` and is the default view for that analyzer.
-- `--view documents` for prose metrics; it requires any enabled analyzer.
+  It runs code analysis itself and is the default view for that analyzer.
+- `--view documents` for words and pages by document format; it runs words analysis
+  itself and is the default view for that analyzer.
 - `--view largest` for the 20 largest regular files, and `--view recent` for the 20 most
   recently modified. Both are presets over `files`, not separate machinery: `largest` is
   `files --sort size --limit 20` and `recent` is `files --sort mtime --limit 20`, each
@@ -351,38 +359,46 @@ metadata visible but does not retain a separate lower-level metric record for th
 
 `--analyze` names a set of analyzers, comma-separated, from `lines`, `code`, and
 `words`; `none` and `all` are totals and cannot be combined with anything else.
-Anything but `none` may open eligible files and adds content work beyond the metadata
-walk. Compatible cached results prevent unchanged bodies from being reread.
+It runs in union with what the views imply, so `--analyze none --view code` still runs
+code analysis. Any analyzer may open eligible files and adds content work beyond the
+metadata walk. Compatible cached results prevent unchanged bodies from being reread.
 
 Add `--analyze lines` to stream physical, blank, and nonblank lines and raw word counts.
-Add `--analyze code` for standard LOC, comment, and code-blank partitions across
-supported common languages.
+`--view code`, or `--analyze code` with another view, gives standard LOC, comment, and
+code-blank partitions across supported common languages.
 The Code table aligns code, comment, and blank lines with analyzed-file coverage for
 each language and a bold TOTAL row.
 Totals include languages hidden by display bounds.
 Non-gitignored/gitignored contributions remain gray parenthetical details.
 Languages retains byte sizes and labels code-line shares when code analysis is enabled.
-Use `--analyze words` for normalized word volume, paragraphs, aggregate-derived pages,
-and reader-visible Markdown that excludes destinations and code.
+`--view documents`, or `--analyze words` with another view, gives normalized word
+volume, paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
+destinations and code.
 The `documents` percentage column is document-word share and is also labeled in text.
-`--analyze code,words` — or `all` — computes both in one streaming pass.
-Both include `lines`, so adding it explicitly changes neither the metrics nor the work.
-`lines` alone measures physical text volume without code counting or word normalization.
-Unsupported code languages still have physical-line metrics; their SLOC is unavailable.
+`--view code,documents` — like `--analyze code,words` or `all` — computes both in one
+streaming pass.
+Both include `lines`, so adding it explicitly changes neither the metrics
+nor the work. `lines` alone measures physical text volume without code counting or word
+normalization.
+Unsupported code languages still have physical-line metrics; their SLOC is
+unavailable.
 
 Requesting analysis without naming a view selects one that displays it: `code` selects
 `code`, `words` selects `documents`, and `lines` selects `families`. `code,words` or
-`all` selects both `code` and `documents`. Naming `--view` overrides that; a view never
-enables an analyzer.
+`all` selects both `code` and `documents`. Naming `--view` overrides that.
+The converse holds only for the two views with no metadata meaning: `--view code`
+implies `code` and `--view documents` implies `words`. Every other view, `full`
+included, never enables an analyzer: a display choice with a cheap meaning must not
+quietly authorize reading every file.
 Headers name views; columns name metrics.
 `words` is an analyzer, while `documents` is the prose/markup population.
 Use `--analyze=words --view=types` to include word metrics for other text types.
 Use `--analyze=lines --view=languages` for physical line counts across code languages.
-A view never authorizes body reads.
 
-A view that displays no requested content metric prints a note about the unused
-analysis. `--view full` includes Code only with code analysis and Documents with any
-analyzer, naming inapplicable views as skipped.
+A view that displays no requested content metric prints a note naming the view that
+would (`note: code analysis not shown by summary`, `tip: show it: --view code`).
+`--view full` includes Code only with code analysis and Documents only with words
+analysis, naming the views it skipped and `--analyze all` to include them.
 Use `--workers` to bound concurrent reads and `--words-per-page` to control page
 derivation. Analysis never truncates a file or excludes it because of size.
 One fixed bound changes a method: `words` counts a Markdown file over 64 MiB as plain
@@ -702,10 +718,11 @@ START HERE
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
-    fdu . --analyze=lines                      physical lines and raw words
-    fdu . --analyze=lines --view=languages     those metrics by language
-    fdu . --analyze=code                       standard lines of code by language
-    fdu . --analyze=words                      prose volume by document type
+    fdu . --view=code                          standard lines of code by language
+    fdu . --view=documents                     words and pages by document format
+    fdu . --view=code,documents                both, from one scan
+    fdu . --analyze=code --view=languages      code lines in the language rows
+    fdu . --analyze=lines --view=languages     physical lines and raw words by language
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size. Hidden
@@ -713,26 +730,30 @@ START HERE
 
 VIEWS AND ANALYSIS
   --view chooses the question the report answers. Several views share one scan
-    and one requested analysis; adding a view does not run a second scan.
-  --analyze opts into reading eligible file bodies. Without it, regular file
-    contents are not opened. Compatible cached results avoid rereading unchanged
-    bodies, so a repeated content analysis can be much cheaper.
+    and one analysis; adding a view does not run a second scan.
+  code and documents are the views that read file contents: they show nothing
+    without analysis, so naming one runs its analyzer, code or words. Every
+    other view, full included, opens no regular file on its own.
+  --analyze runs analyzers beyond what the views imply: code lines in the
+    languages rows, physical lines in families and types, or a run that only
+    warms the cache. Compatible cached results avoid rereading unchanged bodies,
+    so a repeated content analysis can be much cheaper.
 
-  Naming analyzers selects a view that displays them: code selects code, words
-  selects documents, code,words selects both, and lines selects families.
+  Naming analyzers alone selects a view that displays them: code selects code,
+  words selects documents, code,words selects both, and lines selects families.
   Name --view for a different projection; it always wins. Headers name views;
-  columns name measurements. words is an analyzer; documents selects prose/markup.
-  Use --analyze words for that report, or add --view types for all text types.
+  columns name measurements: words is an analyzer, and documents is its view of
+  prose and markup. --analyze words --view types counts words in every text type.
 
-  A view never turns on an analyzer, because choosing how to look at a result
-  should not quietly authorize reading every file in the tree. If a selected
-  view cannot display requested analysis, fdu still performs the analysis and
-  prints a note. --view=full names any view it had to skip.
+  A view with a metadata meaning never turns on an analyzer, because choosing how
+  to look at a result should not quietly authorize reading every file in the
+  tree. If a selected view cannot display requested analysis, fdu still performs
+  the analysis and prints a note. --view=full names any view it had to skip.
 
 MORE COMPOSITIONS
   fdu ~/Downloads --view=extensions
   fdu . --view=types,families --format=json
-  fdu . --analyze=words --view=documents
+  fdu . --analyze=words --view=types
   fdu PATH --view tree --full --format json                 complete recursive tree
   fdu PATH --kind dir --full --format json                  recursive directory totals
   fdu PATH --kind file --full --format paths                find/fd-style file inventory
@@ -791,6 +812,7 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
+                                                        beyond what the views imply
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --breadth, --min-share
   View       list,summary,tree,families,types,extensions,languages,code,documents,
@@ -800,7 +822,7 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Mode       --cache, --watch, --workers
 
 CONTENT ANALYSIS
-  none       metadata only; source files are never opened (default)
+  none       no analyzer beyond what the views imply (default)
   lines      physical, blank, and nonblank lines plus raw word counts
   code       standard SLOC from the versioned common-language analyzer
   words      normalized and reader-visible word volume
@@ -810,9 +832,9 @@ CONTENT ANALYSIS
   axis and cannot be combined. code and words already include lines; adding lines
   explicitly changes neither measurements nor work. lines alone measures physical
   text volume without language-specific code counting or word normalization.
-  languages is metadata-only by default; --view code requires --analyze code.
+  languages is metadata-only by default; --view code runs code analysis itself.
   Code reports show source lines, language shares, population columns, and coverage.
-  documents requires any enabled analyzer.
+  --view documents runs words analysis itself.
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --workers bounds content-analysis concurrency; directory scanning uses its own pool.
   --words-per-page changes only report-time page derivation.
@@ -830,7 +852,7 @@ CACHE BEHAVIOR
   Content analysis is where repeated-run caching pays most. The first run reads
   eligible file bodies. A compatible later run reuses results for unchanged files
   and reads only changed or newly eligible bodies; the performance footer reports
-  fresh and cached analysis separately. Repeat the same --analyze command to see it.
+  fresh and cached analysis separately. Repeat a --view=code run to see it.
 
   --stale-ok answers from the snapshot alone: it does no filesystem verification,
   requires a compatible snapshot and content sidecar for the requested analysis,

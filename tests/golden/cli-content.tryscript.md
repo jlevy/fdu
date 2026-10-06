@@ -82,10 +82,9 @@ $ fdu --cache off --analyze code --view types --sort count --limit all --size ap
 
 ## Human Summaries Separate Code and Documents
 
-The language view is a metadata report until analysis is requested; the document view
-has no metadata-only projection.
-Views never enable analyzers implicitly, and analyzed views do not present missing
-measurements as zero.
+The language view is a metadata report until analysis is requested, so it reads no file
+contents. The document view has no metadata-only projection, so naming it runs the words
+analyzer it shows. Analyzed views do not present missing measurements as zero.
 
 ```console
 $ fdu --cache off --view languages --size apparent content-project
@@ -97,9 +96,12 @@ $ fdu --cache off --view languages --size apparent content-project
 ```
 
 ```console
-$ fdu --cache off --view documents content-project
-! fdu: --view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly
-? 2
+$ fdu --cache off --view documents --size apparent content-project
+      42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+      35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+! note: percentages are shares of document words
+! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
+? 0
 ```
 
 An explicit analysis request remains visible even when there are no file records.
@@ -107,8 +109,8 @@ An explicit analysis request remains visible even when there are no file records
 ```console
 $ fdu --cache off --analyze lines --view summary empty-project
        0 B  0 files, 0 directories
-! note: requested analysis is not displayed by the selected views
-! tip: show analysis: --view families, languages, or full
+! note: lines analysis not shown by summary
+! tip: show it: --view families
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -127,13 +129,13 @@ $ fdu --cache off --analyze code --view languages --size apparent unsupported-pr
 ```console
 $ fdu --cache off --analyze code --view languages,documents --size apparent content-project
 LANGUAGES
-      38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank)
-      39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank)
+      38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank), 5 words (0.0 pages)
+      39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank), 5 words (0.0 pages)
 
 DOCUMENTS
-      42 B   63.6%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 1 documentation
-      35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 1 documentation, 1 binary
-! note: percentages are shares of code lines (LANGUAGES), raw words (DOCUMENTS)
+      42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+      35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+! note: percentages are shares of code lines (LANGUAGES), document words (DOCUMENTS)
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -427,11 +429,14 @@ $ fdu --cache off --analyze lines --view types,families --format json --size app
 
 ## JSONL Keeps the Envelope and Section Independently Parseable
 
+The envelope’s `request.analyze` is the set the request enabled: here the words analyzer
+the document view implies, with no `--analyze` named.
+
 ```console
-$ fdu --cache off --analyze lines --view documents --format jsonl --size apparent --limit 1 content-project
-{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
-{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-! note: percentages are shares of raw words
+$ fdu --cache off --view documents --format jsonl --size apparent --limit 1 content-project
+{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}]}}
+! note: percentages are shares of document words
 ! note: display limits: 1 of 2 rows shown
 ! tip: show more: --limit=all
 ? 0
@@ -598,11 +603,15 @@ $ fdu --stale-ok --analyze lines --view types --size apparent cached-partial-pro
 
 ## Content Cache Hits Preserve the Same Tallies
 
+The document view implies the words analyzer, and naming `--analyze words` instead asks
+for the same basis, so the later runs restore every record from the sidecar the first
+one wrote.
+
 ```console
-$ fdu --analyze lines --view documents --format jsonl --size apparent content-project
-{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
-{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-note: percentages are shares of raw words
+$ fdu --view documents --format jsonl --size apparent content-project
+{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 3, "denominator": 9}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4, "logical_words": 3, "paragraphs": 2, "visible_words": 0, "visible_logical_words": 0, "document_words": 3}, "coverage": {"lines": {"analyzed": 1, "binary": 1}, "words": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 3, "words_per_page": 250}}]}}
+note: percentages are shares of document words
 ? 0
 ```
 
@@ -610,19 +619,19 @@ The text footer separates the revalidation walk from content records restored fr
 sidecar.
 
 ```console
-$ fdu --analyze lines --view summary --size apparent content-project
+$ fdu --analyze words --view summary --size apparent content-project
      256 B  7 files, 4 directories
-! note: requested analysis is not displayed by the selected views
-! tip: show analysis: --view families, languages, or full
+! note: words analysis not shown by summary
+! tip: show it: --view documents
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 7 cached (256 B); warm revalidation
 ? 0
 ```
 
 ```console
-$ fdu --stale-ok --analyze lines --view documents --format jsonl --size apparent content-project
-{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
-{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-! note: percentages are shares of raw words
+$ fdu --stale-ok --view documents --format jsonl --size apparent content-project
+{"schema": "fdu.report/10", "generator": "fdu 0.3.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 3, "denominator": 9}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4, "logical_words": 3, "paragraphs": 2, "visible_words": 0, "visible_logical_words": 0, "document_words": 3}, "coverage": {"lines": {"analyzed": 1, "binary": 1}, "words": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 3, "words_per_page": 250}}]}}
+! note: percentages are shares of document words
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ? 0
 ```
@@ -631,11 +640,11 @@ A cache-only report states that it did no filesystem walk, and warns that its an
 stale.
 
 ```console
-$ fdu --stale-ok --analyze lines --view summary --size apparent content-project
+$ fdu --stale-ok --analyze words --view summary --size apparent content-project
      256 B  7 files, 4 directories
-! note: requested analysis is not displayed by the selected views
+! note: words analysis not shown by summary
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
-! tip: show analysis: --view families, languages, or full
+! tip: show it: --view documents
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 7 cached (256 B); cache only
 ? 0
 ```
@@ -789,6 +798,15 @@ fdu: invalid --sort "code_lines": extensions cannot sort by content metrics; use
 ? 2
 ```
 
+A sort orders rows and never says what the report is about, so unlike a content view it
+implies no analyzer and is refused without one.
+
+```console
+$ fdu missing-review-root --cache off --view files --sort code_lines
+fdu: --sort code_lines needs code analysis: add --analyze code
+? 2
+```
+
 ## The Analyzer Set Chooses the View
 
 The defect this axis exists to fix: without this, every command below printed the same
@@ -879,17 +897,72 @@ $ fdu --cache off --color never --size apparent --analyze all --view tree conten
 █░░░░░░░░░     7%        17 B      notes.txt
 █░░░░░░░░░     9%        22 B    data/ 1 file
 █░░░░░░░░░     9%        22 B      settings.json
-! note: requested analysis is not displayed by the selected views
-! tip: show analysis: --view families, languages, or full
+! note: code and words analysis not shown by tree
+! tip: show it: --view code,documents
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
+```
+
+## The View Chooses the Analyzer Set
+
+The converse, for the two views with no metadata meaning: `code` and `documents` show
+nothing without analysis, so naming one is the request for its analyzer.
+Each run below names no `--analyze` and prints exactly what the analyzer run above it
+printed, from one scan and one analysis pass.
+Views with a metadata meaning imply nothing: `--view languages` above and `--view full`
+below read no file contents.
+
+```console
+$ fdu --cache off --color never --size apparent --view code content-project
+Code lines   Share  Comments  Blank  Analyzed files  Language
+         3   75.0%         0      1             1/1  Rust     (0 gitignored)
+         1   25.0%         1      1             1/1  Python   (0 gitignored)
+         4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
+! note: 2 languages analyzed
+! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --view documents content-project
+      42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+      35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+! note: percentages are shares of document words
+! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --view code,documents content-project
+CODE
+Code lines   Share  Comments  Blank  Analyzed files  Language
+         3   75.0%         0      1             1/1  Rust     (0 gitignored)
+         1   25.0%         1      1             1/1  Python   (0 gitignored)
+         4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
+
+DOCUMENTS
+      42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+      35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+! note: percentages are shares of document words
+! note: 2 languages analyzed
+! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
+? 0
+```
+
+An analyzer’s name is not a view, and is refused with the view that shows it.
+
+```console
+$ fdu --cache off --view words content-project
+! fdu: invalid --view "words": words is an analyzer; its view is documents
+? 2
 ```
 
 ## Every View One Walk Can Answer
 
 `--view full` renders what the requested analyzers support and names what it had to
-skip. `documents` is the only view with no metadata-only projection, so it is the only
-one that can be skipped.
+skip. It implies no analyzer, so `code` and `documents`, the views with no metadata-only
+projection, are the ones it can skip, and its tip names the analyzer value that includes
+them.
 
 ```console
 $ fdu --cache off --color never --size apparent --view full --limit 2 content-project
@@ -926,14 +999,14 @@ RECENT  (2 of 7)
 [RFC3339]  docs[SEP]notes.txt
 ! note: totals include descendants
 ! note: display limits: row limit 2
-! note: omitted code, documents: content analysis required
+! note: full omits code, documents without analysis
 ! tip: show more: --limit=all
-! tip: include omitted views: add --analyze code
+! tip: include them: --analyze all
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
-With analysis enabled nothing is omitted, and no note appears.
+With every analyzer enabled nothing is omitted, and no note appears.
 
 ```console
 $ fdu --cache off --color never --size apparent --analyze all --view full --limit 2 content-project
@@ -1035,8 +1108,8 @@ suggestion, performance line, and progress indicator are suppressed.
 ```console
 $ fdu --cache off --analyze lines --view summary --size apparent content-project
      256 B  7 files, 4 directories
-! note: requested analysis is not displayed by the selected views
-! tip: show analysis: --view families, languages, or full
+! note: lines analysis not shown by summary
+! tip: show it: --view families
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```

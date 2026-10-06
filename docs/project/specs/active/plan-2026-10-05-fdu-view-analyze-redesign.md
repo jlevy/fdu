@@ -441,7 +441,8 @@ One phase, one draft pull request, landed after or merged with the epilogue work
 - [x] Notes and tips: the not-displayed tip names the default view; the omitted-views
   tip names the implied union; the `--view words` refusal; wording settled with
   `fdu-wzpx`.
-- [ ] Goldens, parity class, Python tests, and the path-independence matrix.
+- [x] Goldens, parity class, Python tests, and the path-independence matrix (the parity
+  artifact itself awaits CI’s Linux recording).
 - [x] Help, `--docs`, skill, usage guide, README, machine-output reference, output
   design, surface architecture, design principles.
 - [ ] Demo scripts and the cli-animate README.

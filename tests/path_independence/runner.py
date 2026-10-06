@@ -54,6 +54,8 @@ CACHE_MISS = "snapshot is not usable"
 # error, 2 for a refused request (ValueError), and 3 for anything else, which is never
 # a named failure.
 PY_FDU_ERROR, PY_REFUSED, PY_UNEXPECTED = 1, 2, 3
+# The routes that open an index and then read it, which hold their analyzers fixed.
+INDEX_ROUTES = ("py-open", "py-scan")
 VerdictKind = Literal["same", "stale", "refused", "differs", "outcome_class"]
 ALLOWED: frozenset[str] = frozenset({"same", "stale", "refused"})
 
@@ -340,15 +342,32 @@ def watch_can_serve(request: matrix.Spec, policy: str) -> bool:
     """Compare watch answers only where Request::validate_delivery permits a watch.
 
     Unsupported deliveries have explicit refusal tests in the core and CLI corpus;
-    they are not history-dependent differences from a one-shot answer.
+    they are not history-dependent differences from a one-shot answer. A content view
+    is analysis as much as `--analyze` is, so a watch refuses it too.
     """
     scope = request.get("scope", {})
     return (
         policy != matrix.STALE_OK
         and request.get("analyze", "none") == "none"
+        and not matrix.CONTENT_VIEWS.intersection(request.get("views", []))
         and "scan_depth" not in scope
         and not scope.get("one_fs", False)
     )
+
+
+def held_spec(request: matrix.Spec, oracle: Invocation) -> matrix.Spec:
+    """The request an index must be opened with to answer `request` as a one-shot does.
+
+    A one-shot report enables the analyzers its content views imply; an index holds only
+    the analyzers `fdu.open` or `fdu.scan` named, and a read never widens them. So the
+    index routes are opened with the analyzers the cold answer says the request enabled,
+    `request.analyze`, which is the engine's own statement of that set rather than a copy
+    of its view table kept here. A request whose cold run refused is asked unchanged.
+    """
+    enabled = (oracle.answer or {}).get("request", {}).get("analyze")
+    if not isinstance(enabled, list):
+        return request
+    return {**request, "analyze": ",".join(enabled) or "none"}
 
 
 def run_cli_watch_initial(
@@ -559,6 +578,7 @@ class MatrixRun:
         result.cold_answers = sum(1 for inv in self.cold.values() if inv.outcome != "failure")
         result.cases += self.phase_warm()
         result.cases += self.phase_cache_contract()
+        result.cases += self.phase_implied()
         if self.tier.selfwarm:
             result.cases += self.phase_selfwarm()
         result.cases += self.phase_mutation()
@@ -682,6 +702,62 @@ class MatrixRun:
 
         return _parallel(one, ((request, route) for request in requests for route in routes))
 
+    def phase_implied(self) -> list[CaseResult]:
+        """A content view and the analyzer it implies are one request.
+
+        Cold, the two answers are equal, request included. And each serves the other:
+        after a complete `--cache on` run of one, `--stale-ok` must answer the other from
+        the cache on every cache-reading route. Equal numbers alone could come from two
+        separate sidecars; serving across the pair is what shows they share one basis.
+        """
+        pairs = [
+            (view, analyzer)
+            for view, analyzer in matrix.IMPLIED
+            if view in self.tier.requests and analyzer in self.tier.requests
+        ]
+        routes = [matrix.CLI_ROUTE]
+        if self.surfaces.python is not None:
+            routes += ["py-report", "py-open"]
+        results: list[CaseResult] = []
+        for view, analyzer in pairs:
+            oracle, measured = self.cold[analyzer], self.cold[view]
+            # Two identical refusals would compare equal and prove nothing.
+            verdict = (
+                Verdict("outcome_class", (f"<implied:{oracle.outcome}>{measured.outcome}>",))
+                if "failure" in (oracle.outcome, measured.outcome)
+                else compare(oracle, measured, policy="off")
+            )
+            key = case_key("implied", matrix.CLI_ROUTE, "off", analyzer, "-", view)
+            results.append(CaseResult(key, verdict, oracle, measured))
+
+        def one(case: tuple[str, str, str]) -> list[CaseResult]:
+            seed_id, reader_id, route = case
+            reader = matrix.REQUESTS[reader_id]
+            oracle = self.cold[reader_id]
+            xdg = self.ws.fresh(f"implied-{seed_id}-{reader_id}-{route}")
+            try:
+                seed = run_cli(self.surfaces, self.facts.root, matrix.REQUESTS[seed_id], "on", xdg)
+                key = case_key("implied", route, matrix.STALE_OK, f"on:{seed_id}", "-", reader_id)
+                if seed.outcome != "complete":
+                    verdict = Verdict("outcome_class", ("<on:not-complete>",))
+                    return [CaseResult(key, verdict, oracle, seed)]
+                asked = held_spec(reader, oracle) if route in INDEX_ROUTES else reader
+                measured = run_route(
+                    self.surfaces, route, self.facts.root, asked, matrix.STALE_OK, xdg
+                )
+                verdict = compare(oracle, measured, policy=matrix.STALE_OK, must_serve=True)
+                return [CaseResult(key, verdict, oracle, measured, (seed.command,))]
+            finally:
+                self.ws.discard(xdg)
+
+        cases = [
+            (seed, reader, route)
+            for view, analyzer in pairs
+            for seed, reader in ((analyzer, view), (view, analyzer))
+            for route in routes
+        ]
+        return results + _parallel(one, cases)
+
     def phase_mutation(self) -> list[CaseResult]:
         """Warm, change the tree, then ask every request under every policy."""
         pairs = [
@@ -786,9 +862,8 @@ class MatrixRun:
                     history: tuple[str, ...] = ()
                     if warmer is not None and warm_route is not None:
                         history = (self._warm(self.facts.root, warmer, xdg, warm_route),)
-                    measured = run_route(
-                        self.surfaces, route, self.facts.root, request, policy, xdg
-                    )
+                    asked = held_spec(request, oracle) if route in INDEX_ROUTES else request
+                    measured = run_route(self.surfaces, route, self.facts.root, asked, policy, xdg)
                     self.ws.discard(xdg)
                     outcomes[policy][route] = measured.outcome
                     key = case_key("cross", route, policy, history_id, "-", request_id)

@@ -55,8 +55,6 @@ SIGKILL_EXIT_CODES = frozenset({137, -9})
 WATCH_OK_EXIT_CODES = frozenset({0, 130, -2})
 # Exit 2 is a documented partial/TCC result.
 LARGE_OK_EXIT_CODES = frozenset({0, 2})
-# `--view=documents` without `--analyze` is a usage error, not a crash.
-DOCUMENTS_WITHOUT_ANALYZE_EXIT = 2
 
 # Defaults match the playbook's time-boxes: medium metadata may take minutes; Library
 # steps must fail closed rather than hang.
@@ -503,7 +501,8 @@ def phase_views(runner: Runner, tree: Path, cache_home: Path) -> None:
         ("families", [root, "--view=families"], None),
         ("types", [root, "--view=types"], None),
         ("extensions", [root, "--view=extensions"], None),
-        ("documents-no-analyze", [root, "--view=documents"], {DOCUMENTS_WITHOUT_ANALYZE_EXIT}),
+        # A content view runs the analyzer it shows, so this reads file contents.
+        ("documents", [root, "--view=documents"], None),
         ("recent", [root, "--view=recent", "--limit=10"], None),
         ("largest", [root, "--view=largest"], None),
         ("files", [root, "--view=files", "--limit=10"], None),

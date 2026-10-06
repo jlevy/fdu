@@ -2194,8 +2194,8 @@ mod tests {
             assert!(by_analyzer.implied_by.is_empty(), "{analyzer} implied nothing");
         }
 
-        // `full` is resolved against the union, so a content view never reaches it, and the
-        // metadata digest stays a metadata report.
+        // `full` implies nothing, so alone it enables no analyzer: the metadata digest stays
+        // a metadata report and names the content views it skipped.
         let full = built(&reading(ReadSpec { views: Some("full"), ..ReadSpec::new() }));
         assert_eq!(full.query.omitted_views, [ViewSpec::Code, ViewSpec::Documents]);
     }

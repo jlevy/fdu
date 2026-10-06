@@ -23,14 +23,18 @@ kind of outcome.
 | `cold` | None, under `auto` on an empty cache |
 | `warm` | One warming request, then `auto`, `on`, and `--stale-ok` |
 | `serves` | A complete `--cache on` run of the identical request, then `--stale-ok` through the command line and both cache-reading Python routes |
+| `implied` | A content view and the analyzer it implies (`--view code` and `--analyze code`): equal cold answers, then a complete `--cache on` run of either and `--stale-ok` of the other on every cache-reading route, which must serve from the shared sidecar |
 | `selfwarm` | The request itself, then `auto`, `on`, and `--stale-ok` in turn |
 | `mutation` | A warming request, then a file change: rewrite, touch, add, delete, `.gitignore` edits, a symlink retarget, or an unreadable directory |
 | `cross` | Cold and warm, read through `fdu.report`, `fdu.open`, and `fdu.scan`, one-shot CLI reports, and the complete initial CLI watch report |
 
 [`matrix.py`](matrix.py) defines the requests, warmers, mutations, and the two tiers.
-The watch route participates only where its delivery is supported: metadata analysis, a
-full scan scope, and any delivery but `--stale-ok`. Core request tests and the CLI
-golden corpus separately pin the named refusals for unsupported watch deliveries.
+The watch route participates only where its delivery is supported: metadata analysis
+with no content view, a full scan scope, and any delivery but `--stale-ok`. Core request
+tests and the CLI golden corpus separately pin the named refusals for unsupported watch
+deliveries. The index routes, `fdu.open` and `fdu.scan`, are opened with the analyzers
+the cold answer’s `request.analyze` says the request enabled, because an index holds
+only what it was opened with and a content view never widens it.
 The subset runs in `make check` and in CI on every pull request.
 It includes code-only warming before mutations, so a later lines request exercises the
 unsupported-language history that once changed the answer.

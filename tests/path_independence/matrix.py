@@ -128,8 +128,11 @@ REQUESTS: dict[str, Spec] = {
     "v_recent": spec(views=["recent"]),
     "v_files": spec(views=["files"]),
     "v_full": spec(views=["full"]),
-    "v_documents": spec(views=["documents"]),
     "v_summary_types": spec(views=["summary", "types"]),
+    # content views, which imply the analysis they show
+    "v_code": spec(views=["code"]),
+    "v_documents": spec(views=["documents"]),
+    "v_code_documents": spec(views=["code", "documents"]),
     # analysis with implied views
     "a_none": spec(analyze="none"),
     "a_lines": spec(analyze="lines"),
@@ -168,6 +171,20 @@ REQUESTS: dict[str, Spec] = {
     "v_summary_a_all": spec(views=["summary"], analyze="all"),
     "v_summary_a_lines": spec(views=["summary"], analyze="lines"),
 }
+
+# The views with no metadata meaning. Naming one requests the analyzer it shows, so a
+# request that names one is a content request on every delivery: a watch refuses it as it
+# refuses `--analyze`. The engine's table is `ViewSpec::implies`.
+CONTENT_VIEWS = frozenset({"code", "documents"})
+
+# A request built from content views alone, and the analyzer request it implies. The two
+# are one basis -- one content sidecar and one answer -- whichever axis named the
+# analyzer, so each must equal the other cold and serve the other from the cache.
+IMPLIED: tuple[tuple[str, str], ...] = (
+    ("v_code", "a_code"),
+    ("v_documents", "a_words"),
+    ("v_code_documents", "a_all"),
+)
 
 # A warmer's spec and the cache policy its own run uses. A metadata warmer exists to
 # leave a snapshot of its scope, which a one-shot report does only under `on`; analysis
@@ -340,6 +357,9 @@ SUBSET = Tier(
         "a_words",
         "a_all",
         "a_lines_v_documents",
+        "v_code",
+        "v_documents",
+        "v_code_documents",
         "a_code_langs_name_lim1",
         "a_code_metric_rev",
         "v_tree_bounds",

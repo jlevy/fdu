@@ -58,10 +58,31 @@ class WatchEligibilityTests(unittest.TestCase):
         for request, policy in (
             (matrix.spec(), matrix.STALE_OK),
             (matrix.spec(analyze="lines"), "auto"),
+            (matrix.spec(views=["code"]), "auto"),
+            (matrix.spec(views=["summary", "documents"]), "auto"),
             (matrix.spec(scan_depth=1), "auto"),
             (matrix.spec(one_fs=True), "auto"),
         ):
             self.assertFalse(watch_can_serve(request, policy))
+        self.assertTrue(watch_can_serve(matrix.spec(views=["languages", "full"]), "auto"))
+
+
+class HeldSpecTests(unittest.TestCase):
+    """An index route is opened with the analyzers the one-shot request enabled."""
+
+    def test_the_cold_answer_names_the_analyzers_an_index_needs(self) -> None:
+        import matrix
+        from runner import held_spec
+
+        request = matrix.spec(views=["code"])
+        enabled = cli(answer(request={"analyze": ["lines", "code"], "views": ["code"]}))
+        self.assertEqual(held_spec(request, enabled)["analyze"], "lines,code")
+        self.assertEqual(held_spec(request, enabled)["views"], ["code"])
+        self.assertNotIn("analyze", request, "the request itself is unchanged")
+        nothing = cli(answer(request={"analyze": [], "views": ["summary"]}))
+        self.assertEqual(held_spec(matrix.spec(), nothing)["analyze"], "none")
+        refused = cli(None, exit=2, stderr="fdu: invalid --view")
+        self.assertIs(held_spec(request, refused), request)
 
 
 class CompareTests(unittest.TestCase):
@@ -282,6 +303,50 @@ class CompareTests(unittest.TestCase):
                 measured.assert_not_called()
             self.assertEqual(len(unseeded), len(healthy))
             self.assertTrue(all(not case.verdict.allowed for case in unseeded))
+
+    def test_implied_phase_requires_equal_answers_and_serving_across_each_pair(self) -> None:
+        import matrix
+        from fixture import FixtureFacts
+        from runner import MatrixRun, Surfaces, Workspace
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = MatrixRun(
+                matrix.SUBSET,
+                Surfaces(Path("unused-fdu"), Path("unused-python")),
+                Workspace(base),
+                FixtureFacts(base / "tree", False, False),
+            )
+            run.cold = {request: cli(answer()) for request in matrix.SUBSET.requests}
+            cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
+            miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
+            with patch("runner.run_cli", return_value=cli(answer())):
+                with patch("runner.run_route", return_value=cached):
+                    healthy = run.phase_implied()
+                with patch("runner.run_route", return_value=miss):
+                    broken = run.phase_implied()
+            pairs = len(matrix.IMPLIED)
+            # One cold comparison per pair, then each direction on three routes.
+            self.assertEqual(len(healthy), pairs + pairs * 2 * 3)
+            self.assertTrue(all(case.verdict.allowed for case in healthy))
+            self.assertEqual(sum(not case.verdict.allowed for case in broken), pairs * 2 * 3)
+
+            # A pair whose two cold runs differ, or both refuse, fails its cold case.
+            run.cold["v_code"] = cli(answer(reports=[]))
+            with (
+                patch("runner.run_cli", return_value=cli(answer())),
+                patch("runner.run_route", return_value=cached),
+            ):
+                differing = run.phase_implied()
+            self.assertFalse(differing[0].verdict.allowed)
+            refused = cli(None, exit=2, stderr="fdu: refused")
+            run.cold["v_code"] = run.cold["a_code"] = refused
+            with (
+                patch("runner.run_cli", return_value=cli(answer())),
+                patch("runner.run_route", return_value=cached),
+            ):
+                vacuous = run.phase_implied()
+            self.assertEqual(vacuous[0].verdict.kind, "outcome_class")
 
     def test_an_answer_where_cold_refused_is_an_outcome_difference(self) -> None:
         refused = cli(None, exit=2, stderr="fdu: requires content analysis")
