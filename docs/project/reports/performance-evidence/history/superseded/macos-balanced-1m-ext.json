@@ -1,6 +1,7 @@
 {
  "schema": "fdu-history-summary-v1",
- "run_artifact": "run-macos-balanced-1m-ext-fdu-history.json(.gz)",
+ "run_artifact": "macos-balanced-1m-ext.run.json.gz",
+ "driver": "a scratch driver around benchmarks.realtree.compare_tools; it moves into the harness as benchmarks.realtree.history",
  "harness": {
   "module": "benchmarks.realtree.compare_tools (unmodified, via drive_history.py registering two argv contracts)",
   "harness_revision": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",

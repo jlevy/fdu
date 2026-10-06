@@ -22,10 +22,18 @@ from benchmarks.realtree.report_html import (
     figure_per_entry,
     fmt_primary,
     iteration_kind,
-    id_ranges,
     kept_improvements,
-    phase_rows,
     render,
+)
+from benchmarks.realtree.perf_index import (
+    combine,
+    component_digest,
+    component_ratios,
+    memory_ratios,
+    load_suite,
+    project_index,
+    score_ratio,
+    unmapped_jobs,
 )
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
@@ -36,6 +44,53 @@ from benchmarks.realtree.timeline import (
     subject_family,
     subject_key,
 )
+
+
+def _index_cell(
+    component: str,
+    first_ms: float,
+    last_ms: float,
+    extra_after: str = "",
+    job: str = "",
+    digest: str = "",
+) -> Dict[str, Any]:
+    """A two-build history cell for one job of one index component, anchored on v0.3.0.
+
+    It carries the manifest's digest for the component unless a test passes another.
+    """
+    definition = next(item for item in load_suite()["components"] if item["id"] == component)
+    milestones = [
+        {"label": "prework", "short": "start", "commit": "aaaa", "date": "2026-08-10",
+         "includes": "start", "after_experiment": "exp-000", "wall_ms": first_ms,
+         "peak_rss_mib": 400.0, "vs_latest_pct": (first_ms / last_ms - 1) * 100,
+         "vs_latest_ci95_pct": [(first_ms / last_ms - 1) * 90, (first_ms / last_ms - 1) * 110],
+         "supported": True},
+        {"label": "v0.3.0", "short": "0.3.0", "commit": "bbbb", "date": "2026-09-30",
+         "includes": "end", "after_experiment": "exp-032", "wall_ms": last_ms,
+         "peak_rss_mib": 60.0, "vs_latest_pct": None, "vs_latest_ci95_pct": None,
+         "supported": True},
+    ]
+    if extra_after:
+        milestones.append(
+            {"label": "lost", "short": "unplaced-build", "commit": "cccc", "date": "2026-10-01",
+             "includes": "none", "after_experiment": extra_after, "wall_ms": 1000.0,
+             "vs_latest_pct": -96.7, "supported": True}
+        )
+    return {
+        "id": f"{component}-{job or component}",
+        "component": component,
+        "job": job or component,
+        "component_digest": digest or component_digest(definition),
+        "platform": "macOS",
+        "subject": "linux-v6.12",
+        "title": "the Linux v6.12 source tree",
+        "entries": 92460,
+        "cpu": "M1",
+        "storage": "internal SSD",
+        "trials": 12,
+        "regime": "uncontrolled",
+        "milestones": milestones,
+    }
 
 
 def metric(
@@ -497,22 +552,69 @@ class RenderTests(unittest.TestCase):
         # A projection without the release record still renders, without the figure.
         self.assertNotIn("0.2.1 to 0.3.0", render(project([experiment("exp-001")])))
 
-    def test_every_experiment_falls_in_a_phase_or_the_trailing_row(self) -> None:
-        # A record added after the phases were named must still be counted, not dropped.
+    def test_every_remeasurement_names_a_record_that_would_otherwise_count(self) -> None:
+        # The list is hand-maintained; an id with no record, or a record that would not
+        # count as kept anyway, means the list and the record have drifted apart.
+        import json
+        from pathlib import Path
+
+        from benchmarks.realtree.report_html import REMEASUREMENTS
+
+        committed = Path("docs/project/reports/performance-evidence/timeline.json")
+        records = {
+            record["id"]: record
+            for record in json.loads(committed.read_text(encoding="utf-8"))["experiments"]
+        }
+        for identifier in REMEASUREMENTS:
+            self.assertIn(identifier, records)
+            record = records[identifier]
+            self.assertEqual(record["decision"], "accepted", identifier)
+            self.assertLessEqual(record["change_pct"], -3, identifier)
+
+    def test_a_remeasurement_is_not_counted_as_a_kept_change(self) -> None:
+        # Cumulative checkpoints re-measure campaign 1; counting them as kept changes drew
+        # the same work four times as tall green bars.
         dataset = project(
             [
-                experiment("exp-001"),
-                experiment("exp-002", decision="rejected"),
-                experiment("exp-067", decision="baseline"),
-                experiment("exp-250"),
+                experiment("exp-032"),
+                experiment("exp-154", kept="control"),
+                experiment("exp-190"),
             ]
         )
-        rows = phase_rows(dataset)
-        self.assertEqual(sum(row["total"] for row in rows), 4)
-        self.assertEqual(rows[0]["counts"], {"accepted": 1, "rejected": 1, "other": 0})
-        self.assertEqual(rows[1]["counts"], {"accepted": 0, "rejected": 0, "other": 1})
-        self.assertEqual(rows[-1]["name"], "Not yet assigned a phase")
-        self.assertEqual(rows[-1]["ids"], "exp-250")
+        kinds = {record["id"]: iteration_kind(record) for record in dataset["experiments"]}
+        self.assertEqual(kinds["exp-032"], "measured")
+        self.assertEqual(kinds["exp-154"], "measured")
+        self.assertEqual(kinds["exp-190"], "kept")
+        self.assertIn("Not a new change: a cumulative checkpoint", figure_timeline(dataset))
+
+    def test_history_cells_load_in_display_order(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from benchmarks.realtree.timeline import load_history
+
+        with tempfile.TemporaryDirectory() as directory:
+            for name, order in (("a-cell", 2), ("b-cell", 1)):
+                Path(directory, f"{name}.json").write_text(
+                    json.dumps(
+                        {
+                            "display_order": order,
+                            "subject": {"label": name, "counts": {"total": 10}},
+                            "milestones": [{"label": "x", "wall_ms": {"median": 5.0}}],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            cells = load_history(Path(directory))
+        self.assertEqual([cell["id"] for cell in cells], ["b-cell", "a-cell"])
+        self.assertEqual(cells[0]["milestones"][0]["wall_ms"], 5.0)
+
+    def test_the_page_carries_the_theme_chooser(self) -> None:
+        page = render(project([experiment("exp-001")]))
+        for choice in ("system", "light", "dark"):
+            self.assertIn(f'data-theme-choice="{choice}"', page)
+        self.assertIn("fdu.report.themeMode", page)
 
     def test_the_iterations_figure_draws_every_experiment_once(self) -> None:
         # The figure is the page's record of every iteration; one silently dropped is a
@@ -538,38 +640,148 @@ class RenderTests(unittest.TestCase):
         # follows. A milestone naming an experiment the record lacks is left out rather
         # than drawn at an invented position.
         dataset = project([experiment("exp-000"), experiment("exp-032")])
-        dataset["history"] = [
-            {
-                "subject": "balanced-1m",
-                "entries": 1000001,
-                "cpu": "M1",
-                "storage": "ssd",
-                "trials": 12,
-                "regime": "uncontrolled",
-                "milestones": [
-                    {"label": "a", "version": "fdu 0.0.1", "commit": "aaaa", "date": "2026-08-10",
-                     "includes": "start", "after_experiment": "exp-000", "wall_ms": 150000.0},
-                    {"label": "b", "version": "fdu 0.3.0", "commit": "bbbb", "date": "2026-09-30",
-                     "includes": "end", "after_experiment": "exp-032", "wall_ms": 30000.0},
-                    {"label": "c", "version": "lost", "commit": "cccc", "date": "2026-10-01",
-                     "includes": "none", "after_experiment": "exp-999", "wall_ms": 1000.0},
-                ],
-            }
-        ]
+        dataset["history"] = [_index_cell("cold-cache", 150000.0, 30000.0, extra_after="exp-999")]
+        dataset["index"] = project_index(dataset["history"], load_suite())
         figure = figure_timeline(dataset)
+        self.assertIn("5.0x better", figure)
         self.assertIn("5.0x faster", figure)
-        self.assertNotIn("lost", figure)
-        # Milestone times are milliseconds; the formatter takes nanoseconds, and passing
-        # milliseconds printed every runtime as "0 ms".
-        self.assertIn(fmt_primary(150000.0 * 1e6, "wall_ns"), figure)
-        self.assertNotIn(" 0 ms", figure)
+        # The unplaced build's name would appear in its tooltip and the caption if drawn.
+        self.assertNotIn("unplaced-build", figure)
+        self.assertIn('data-metric="score"', figure)
+        self.assertIn('<option value="cold-cache"', figure)
+        # The header uses the same placement, so it cannot claim 150x for a build the
+        # chart leaves out.
+        page = render(dataset)
+        self.assertNotIn("150.0&times;", page)
+        # Milestone times are milliseconds; passing them to the nanosecond formatter
+        # printed every runtime as "0 ms".
+        self.assertNotIn(" 0 ms", page)
 
-    def test_id_ranges_skip_unused_ids_but_not_recorded_ones(self) -> None:
-        # exp-113 was never used, so it does not split exp-112 from exp-114; exp-104 is a
-        # record in another phase, so exp-103 and exp-105 stay separate ranges.
-        self.assertEqual(id_ranges([112, 114, 115], [112, 114, 115]), "exp-112\u2013115")
-        self.assertEqual(id_ranges([103, 105], [103, 104, 105]), "exp-103, exp-105")
-        self.assertEqual(id_ranges([66, 67, 68, 104]), "exp-066\u2013068, exp-104")
+    def test_the_score_is_a_weighted_sum_of_log_ratios(self) -> None:
+        # A 2x gain on one component and a 2x loss on another of equal weight cancel
+        # exactly; a sum of raw times or raw ratios would not.
+        result = combine(
+            {
+                "a": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+                "b": {"ratio": 0.5, "low": 0.5, "high": 0.5},
+            },
+            {"a": 0.25, "b": 0.25},
+        )
+        self.assertAlmostEqual(result["index"], 1.0)
+        # Weights renormalize over the components a build has.
+        alone = combine({"a": {"ratio": 4.0, "low": 3.0, "high": 5.0}}, {"a": 0.1})
+        self.assertAlmostEqual(alone["index"], 4.0)
+        self.assertLess(alone["low"], 4.0)
+        self.assertGreater(alone["high"], 4.0)
+
+    def test_every_recorded_job_maps_to_a_scored_component(self) -> None:
+        # The completeness rule: a job the loop measures but the score cannot see would
+        # let a kept change improve something no line shows.
+        suite = load_suite()
+        self.assertEqual(unmapped_jobs(project([experiment("exp-001")])["experiments"], suite), [])
+        stray = experiment("exp-002")
+        stray["results"][0]["job"] = "brand-new-job"
+        stray["verdict"]["primary_job"] = "brand-new-job"
+        self.assertEqual(unmapped_jobs(project([stray])["experiments"], suite), ["brand-new-job"])
+
+    def test_the_suite_weights_sum_to_one(self) -> None:
+        suite = load_suite()
+        self.assertAlmostEqual(sum(item["weight"] for item in suite["components"]), 1.0)
+
+    def test_a_cell_measured_under_another_definition_is_refused(self) -> None:
+        # Manifest v1 was once edited in place while cells kept claiming v1; the digest
+        # makes that a refusal instead of a silently wrong score.
+        stale = _index_cell("cold-cache", 300.0, 100.0, digest="0000000000000000")
+        with self.assertRaises(ValueError):
+            project_index([stale], load_suite())
+
+    def test_memory_follows_each_score_lines_components_and_counts_each_once(self) -> None:
+        # Restricting memory to the components every build has hid the content and
+        # summary memory wins from the full score; each line now averages its own mix,
+        # and a component with two jobs counts once, not twice.
+        def cell(peaks: Dict[str, float]) -> Dict[str, Any]:
+            return {"milestones": [{"label": label, "peak_rss_mib": peak} for label, peak in peaks.items()]}
+
+        by_job = {
+            ("cold-cache", "cold-cache"): cell({"prework": 400.0, "mid": 200.0, "v0.3.0": 100.0}),
+            ("code", "code"): cell({"mid": 50.0, "v0.3.0": 100.0}),
+            ("opened-root", "a"): cell({"mid": 400.0, "v0.3.0": 100.0}),
+            ("opened-root", "b"): cell({"mid": 400.0, "v0.3.0": 100.0}),
+        }
+        full = memory_ratios(by_job, "v0.3.0", ["cold-cache", "code", "opened-root"])
+        # mid: cold-cache 2x, code 0.5x, opened-root 4x, its two jobs counted once, gives
+        # (2 * 0.5 * 4) ** (1/3); counting opened-root twice would give exactly 2x.
+        self.assertAlmostEqual(full["mid"]["ratio"], 4 ** (1 / 3), places=6)
+        partial = memory_ratios(by_job, "v0.3.0", ["cold-cache"])
+        self.assertAlmostEqual(partial["mid"]["ratio"], 2.0, places=6)
+        self.assertAlmostEqual(partial["prework"]["ratio"], 4.0, places=6)
+        # A build with only one of a component's two jobs has no memory on it.
+        lopsided = dict(by_job)
+        lopsided[("opened-root", "b")] = cell({"v0.3.0": 100.0})
+        self.assertNotIn("mid", memory_ratios(lopsided, "v0.3.0", ["opened-root"]))
+
+    def test_the_partial_score_uses_its_own_memory_mix(self) -> None:
+        # project_index swaps the common-component memory into the partial score; without
+        # it, a build would be averaged over components the first build never had.
+        def milestone(label: str, wall: float, peak: float, change: float | None) -> Dict[str, Any]:
+            return {
+                "label": label, "short": label, "commit": label[:4], "date": "2026-09-01",
+                "includes": "", "after_experiment": "exp-001", "wall_ms": wall,
+                "peak_rss_mib": peak, "vs_latest_pct": change,
+                "vs_latest_ci95_pct": None if change is None else [change, change],
+                "supported": True,
+            }
+
+        suite = load_suite()
+        definitions = {item["id"]: item for item in suite["components"]}
+        cold = {
+            "id": "cold", "component": "cold-cache", "job": "cold-cache", "platform": "macOS",
+            "component_digest": component_digest(definitions["cold-cache"]),
+            "milestones": [
+                milestone("prework", 400.0, 400.0, 300.0),
+                milestone("mid", 200.0, 200.0, 100.0),
+                milestone("v0.3.0", 100.0, 100.0, None),
+            ],
+        }
+        code = {
+            "id": "code", "component": "code", "job": "code", "platform": "macOS",
+            "component_digest": component_digest(definitions["code"]),
+            "milestones": [milestone("mid", 100.0, 50.0, 0.0), milestone("v0.3.0", 100.0, 100.0, None)],
+        }
+        rows = {row["label"]: row for row in project_index([cold, code], suite)[0]["builds"]}
+        # mid's full memory mixes cold-cache 2x and code 0.5x to 1x; its partial memory,
+        # over the cold-cache component every build has, is 2x.
+        self.assertAlmostEqual(rows["mid"]["components"]["memory"], 1.0, places=6)
+        self.assertAlmostEqual(rows["mid"]["memory_common"], 2.0, places=6)
+        weights = {item["id"]: item["weight"] for item in suite["components"]}
+        expected = combine(
+            {
+                "cold-cache": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+                "memory": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+            },
+            weights,
+        )
+        self.assertAlmostEqual(rows["mid"]["common"]["index"], expected["index"], places=6)
+
+    def test_a_component_with_two_jobs_scores_their_geometric_mean(self) -> None:
+        # Warm metadata times cold-open-save and warm-revalidate; a 4x and a 1x job score
+        # 2x, and a build missing one job is not scored on the component at all.
+        cells = [
+            _index_cell("warm-metadata", 400.0, 100.0, job="cold-open-save"),
+            _index_cell("warm-metadata", 100.0, 100.0, job="warm-revalidate"),
+        ]
+        ratios = component_ratios(cells, load_suite(), "macOS")
+        self.assertAlmostEqual(ratios["warm-metadata"]["prework"]["ratio"], 2.0, places=6)
+        self.assertNotIn("warm-metadata", component_ratios(cells[:1], load_suite(), "macOS"))
+
+    def test_the_headline_interval_combines_errors_rather_than_extremes(self) -> None:
+        first = {"index": 4.0, "low": 3.0, "high": 5.0}
+        last = {"index": 1.0, "low": 0.8, "high": 1.25}
+        speedup, low, high = score_ratio(first, last)
+        self.assertAlmostEqual(speedup, 4.0)
+        # The worst-case bound would be [2.4, 6.25]; a combined interval is narrower.
+        self.assertGreater(low, 3.0 / 1.25)
+        self.assertLess(high, 5.0 / 0.8)
 
     def test_a_projection_without_the_field_reads_baselines_as_one_build(self) -> None:
         # A committed projection written before `compares` existed still renders.
@@ -736,8 +948,8 @@ class PlatformSectionTests(unittest.TestCase):
                 subject["synthetic"] = True
         page = render(dataset)
         self.assertIn('id="platforms"', page)
-        self.assertIn("Linux: 2 improvements kept", page)
-        self.assertIn("macOS: 1 improvement kept", page)
+        self.assertIn("Linux: 2 accepted runs that improved", page)
+        self.assertIn("macOS: 1 accepted run that improved", page)
         self.assertIn("Decided on a generated tree: 1 of 2.", page)
         self.assertIn("Decided on a generated tree: 0 of 1.", page)
         # The rejected Linux run is counted in the summary but never listed as kept.

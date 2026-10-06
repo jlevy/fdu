@@ -49288,10 +49288,14 @@
  ],
  "history": [
   {
+   "component": "scale",
+   "component_digest": "00cff7b322450d6d",
    "cpu": "Apple M1 Pro",
    "entries": 1000001,
    "id": "macos-balanced-1m-internal",
    "invalid_samples": 0,
+   "job": "scale",
+   "manifest_version": 1,
    "milestones": [
     {
      "after_experiment": "exp-000",
@@ -49302,6 +49306,7 @@
      "peak_rss_mib": 452.2,
      "role": "",
      "short": "start",
+     "supported": true,
      "system_s": 23.096,
      "user_s": 2.368,
      "version": "fdu 0.0.1",
@@ -49321,6 +49326,7 @@
      "peak_rss_mib": 455.1,
      "role": "",
      "short": "H1 producer",
+     "supported": true,
      "system_s": 30.163,
      "user_s": 2.784,
      "version": "fdu 0.0.1",
@@ -49340,6 +49346,7 @@
      "peak_rss_mib": 422.6,
      "role": "",
      "short": "bulk metadata",
+     "supported": true,
      "system_s": 35.655,
      "user_s": 1.856,
      "version": "fdu 0.0.1",
@@ -49359,6 +49366,7 @@
      "peak_rss_mib": 422.9,
      "role": "",
      "short": "parallel reconcile",
+     "supported": true,
      "system_s": 35.522,
      "user_s": 1.814,
      "version": "fdu 0.0.1",
@@ -49378,6 +49386,7 @@
      "peak_rss_mib": 285.5,
      "role": "",
      "short": "H86 compact index",
+     "supported": true,
      "system_s": 36.116,
      "user_s": 1.353,
      "version": "fdu 0.1.0-dev+g5d7b86fe6",
@@ -49397,6 +49406,7 @@
      "peak_rss_mib": 285.9,
      "role": "",
      "short": "0.1.0",
+     "supported": true,
      "system_s": 36.254,
      "user_s": 1.309,
      "version": "fdu 0.1.0",
@@ -49416,6 +49426,7 @@
      "peak_rss_mib": 286.4,
      "role": "",
      "short": "0.2.0",
+     "supported": true,
      "system_s": 35.453,
      "user_s": 1.241,
      "version": "fdu 0.2.0",
@@ -49435,6 +49446,7 @@
      "peak_rss_mib": 286.2,
      "role": "",
      "short": "0.2.1",
+     "supported": true,
      "system_s": 34.976,
      "user_s": 1.194,
      "version": "fdu 0.2.1",
@@ -49454,6 +49466,7 @@
      "peak_rss_mib": 286.6,
      "role": "",
      "short": "bucketed gitignore",
+     "supported": true,
      "system_s": 35.348,
      "user_s": 1.201,
      "version": "fdu 0.2.1-dev+g7c69e88a4",
@@ -49473,6 +49486,7 @@
      "peak_rss_mib": 66.6,
      "role": "",
      "short": "transient tree",
+     "supported": true,
      "system_s": 35.456,
      "user_s": 0.97,
      "version": "fdu 0.2.1-dev+g956659de3",
@@ -49492,6 +49506,7 @@
      "peak_rss_mib": 66.6,
      "role": "",
      "short": "overnight round",
+     "supported": true,
      "system_s": 35.472,
      "user_s": 1.012,
      "version": "fdu 0.2.1-dev+gebc06c784",
@@ -49511,6 +49526,7 @@
      "peak_rss_mib": 66.4,
      "role": "",
      "short": "pdu track",
+     "supported": true,
      "system_s": 36.27,
      "user_s": 1.019,
      "version": "fdu 0.2.1-dev+ga356d4565",
@@ -49530,6 +49546,7 @@
      "peak_rss_mib": 66.2,
      "role": "",
      "short": "0.3.0",
+     "supported": true,
      "system_s": 35.433,
      "user_s": 1.016,
      "version": "fdu 0.3.0",
@@ -49538,7 +49555,7 @@
      "wall_ms": 6536.98
     }
    ],
-   "platform": "Darwin",
+   "platform": "macOS",
    "regime": "uncontrolled",
    "speedup_x": 10.755,
    "speedup_x_ci95": [
@@ -49551,10 +49568,14 @@
    "trials": 12
   },
   {
+   "component": "cold-cache",
+   "component_digest": "58487def188c1b4f",
    "cpu": "Apple M1 Pro",
    "entries": 92460,
    "id": "macos-linux-v6.12-internal",
    "invalid_samples": 0,
+   "job": "cold-cache",
+   "manifest_version": 1,
    "milestones": [
     {
      "after_experiment": "exp-000",
@@ -49565,6 +49586,7 @@
      "peak_rss_mib": 41.9,
      "role": "",
      "short": "start",
+     "supported": true,
      "system_s": 0.376,
      "user_s": 0.159,
      "version": "fdu 0.0.1",
@@ -49584,6 +49606,7 @@
      "peak_rss_mib": 44.6,
      "role": "",
      "short": "H1 producer",
+     "supported": true,
      "system_s": 0.902,
      "user_s": 0.204,
      "version": "fdu 0.0.1",
@@ -49603,6 +49626,7 @@
      "peak_rss_mib": 43.2,
      "role": "",
      "short": "bulk metadata",
+     "supported": true,
      "system_s": 0.785,
      "user_s": 0.13,
      "version": "fdu 0.0.1",
@@ -49622,6 +49646,7 @@
      "peak_rss_mib": 43.3,
      "role": "",
      "short": "parallel reconcile",
+     "supported": true,
      "system_s": 0.769,
      "user_s": 0.132,
      "version": "fdu 0.0.1",
@@ -49641,6 +49666,7 @@
      "peak_rss_mib": 30.9,
      "role": "",
      "short": "H86 compact index",
+     "supported": true,
      "system_s": 0.804,
      "user_s": 0.082,
      "version": "fdu 0.1.0-dev+g5d7b86fe6",
@@ -49660,6 +49686,7 @@
      "peak_rss_mib": 38.7,
      "role": "",
      "short": "0.1.0",
+     "supported": true,
      "system_s": 0.835,
      "user_s": 0.442,
      "version": "fdu 0.1.0",
@@ -49679,6 +49706,7 @@
      "peak_rss_mib": 38.8,
      "role": "",
      "short": "0.2.0",
+     "supported": true,
      "system_s": 0.855,
      "user_s": 0.439,
      "version": "fdu 0.2.0",
@@ -49698,6 +49726,7 @@
      "peak_rss_mib": 34.4,
      "role": "",
      "short": "0.2.1",
+     "supported": true,
      "system_s": 0.814,
      "user_s": 0.193,
      "version": "fdu 0.2.1",
@@ -49717,6 +49746,7 @@
      "peak_rss_mib": 33.4,
      "role": "",
      "short": "bucketed gitignore",
+     "supported": true,
      "system_s": 0.847,
      "user_s": 0.123,
      "version": "fdu 0.2.1-dev+g7c69e88a4",
@@ -49736,6 +49766,7 @@
      "peak_rss_mib": 13.9,
      "role": "",
      "short": "transient tree",
+     "supported": true,
      "system_s": 0.846,
      "user_s": 0.097,
      "version": "fdu 0.2.1-dev+g956659de3",
@@ -49755,6 +49786,7 @@
      "peak_rss_mib": 14.0,
      "role": "",
      "short": "overnight round",
+     "supported": true,
      "system_s": 0.85,
      "user_s": 0.074,
      "version": "fdu 0.2.1-dev+gebc06c784",
@@ -49774,6 +49806,7 @@
      "peak_rss_mib": 13.8,
      "role": "",
      "short": "pdu track",
+     "supported": true,
      "system_s": 0.845,
      "user_s": 0.074,
      "version": "fdu 0.2.1-dev+ga356d4565",
@@ -49793,6 +49826,7 @@
      "peak_rss_mib": 13.9,
      "role": "",
      "short": "0.3.0",
+     "supported": true,
      "system_s": 0.856,
      "user_s": 0.075,
      "version": "fdu 0.3.0",
@@ -49801,7 +49835,7 @@
      "wall_ms": 162.81
     }
    ],
-   "platform": "Darwin",
+   "platform": "macOS",
    "regime": "uncontrolled",
    "speedup_x": 3.345,
    "speedup_x_ci95": [
@@ -49814,6 +49848,398 @@
    "trials": 20
   }
  ],
+ "index": [
+  {
+   "builds": [
+    {
+     "after_experiment": "exp-000",
+     "commit": "b565882b",
+     "common": {
+      "high": 4.628769871044088,
+      "index": 4.490586881060887,
+      "low": 4.3565290775208805
+     },
+     "components": {
+      "cold-cache": 3.34472,
+      "memory": 4.537701207443966,
+      "scale": 10.754749999999998
+     },
+     "coverage": 0.25,
+     "date": "2026-08-10",
+     "includes": "pre-work baseline: serial walker, no .gitignore support",
+     "label": "prework",
+     "measured_full": {
+      "high": 4.628769871044088,
+      "index": 4.490586881060887,
+      "low": 4.3565290775208805
+     },
+     "memory_common": 4.537701207443966,
+     "short": "start"
+    },
+    {
+     "after_experiment": "exp-001",
+     "commit": "a0cc981d",
+     "common": {
+      "high": 1.7870117649995079,
+      "index": 1.7310322717177993,
+      "low": 1.6768063783448621
+     },
+     "components": {
+      "cold-cache": 1.18114,
+      "memory": 4.696609500324614,
+      "scale": 2.00834
+     },
+     "coverage": 0.25,
+     "date": "2026-08-10",
+     "includes": "H1 bounded parallel directory producer",
+     "label": "exp001",
+     "measured_full": {
+      "high": 1.7870117649995079,
+      "index": 1.7310322717177993,
+      "low": 1.6768063783448621
+     },
+     "memory_common": 4.696609500324614,
+     "short": "H1 producer"
+    },
+    {
+     "after_experiment": "exp-022",
+     "commit": "b1227256",
+     "common": {
+      "high": 1.381122217607394,
+      "index": 1.3556676871789948,
+      "low": 1.3306822920024
+     },
+     "components": {
+      "cold-cache": 1.003,
+      "memory": 4.454205244340725,
+      "scale": 1.01881
+     },
+     "coverage": 0.25,
+     "date": "2026-08-12",
+     "includes": "H3+H26 macOS getattrlistbulk scan metadata",
+     "label": "exp022",
+     "measured_full": {
+      "high": 1.381122217607394,
+      "index": 1.3556676871789948,
+      "low": 1.3306822920024
+     },
+     "memory_common": 4.454205244340725,
+     "short": "bulk metadata"
+    },
+    {
+     "after_experiment": "exp-030",
+     "commit": "c9c91d95",
+     "common": {
+      "high": 1.4058123404209826,
+      "index": 1.3762666580054768,
+      "low": 1.3473419314062618
+     },
+     "components": {
+      "cold-cache": 1.02123,
+      "memory": 4.460940142960139,
+      "scale": 1.03924
+     },
+     "coverage": 0.25,
+     "date": "2026-08-12",
+     "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
+     "label": "exp030",
+     "measured_full": {
+      "high": 1.4058123404209826,
+      "index": 1.3762666580054768,
+      "low": 1.3473419314062618
+     },
+     "memory_common": 4.460940142960139,
+     "short": "parallel reconcile"
+    },
+    {
+     "after_experiment": "exp-101",
+     "commit": "5d7b86fe",
+     "common": {
+      "high": 1.2748641052355696,
+      "index": 1.2476664473732717,
+      "low": 1.2210490180938922
+     },
+     "components": {
+      "cold-cache": 0.99153,
+      "memory": 3.0963204502070107,
+      "scale": 1.00168
+     },
+     "coverage": 0.25,
+     "date": "2026-09-01",
+     "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
+     "label": "exp101",
+     "measured_full": {
+      "high": 1.2748641052355696,
+      "index": 1.2476664473732717,
+      "low": 1.2210490180938922
+     },
+     "memory_common": 3.0963204502070107,
+     "short": "H86 compact index"
+    },
+    {
+     "after_experiment": "exp-157",
+     "commit": "7cf7f1b4",
+     "common": {
+      "high": 2.3880271613865833,
+      "index": 2.327771006091952,
+      "low": 2.2690352707948818
+     },
+     "components": {
+      "cold-cache": 2.6747,
+      "memory": 3.4675774125774286,
+      "scale": 1.03003
+     },
+     "coverage": 0.25,
+     "date": "2026-09-25",
+     "includes": "release v0.1.0 (.gitignore read by default)",
+     "label": "v0.1.0",
+     "measured_full": {
+      "high": 2.3880271613865833,
+      "index": 2.327771006091952,
+      "low": 2.2690352707948818
+     },
+     "memory_common": 3.4675774125774286,
+     "short": "0.1.0"
+    },
+    {
+     "after_experiment": "exp-163",
+     "commit": "6ec77163",
+     "common": {
+      "high": 2.3614475889519126,
+      "index": 2.2919593491021986,
+      "low": 2.224515878528755
+     },
+     "components": {
+      "cold-cache": 2.64891,
+      "memory": 3.4750893444455464,
+      "scale": 0.97919
+     },
+     "coverage": 0.25,
+     "date": "2026-09-28",
+     "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
+     "label": "v0.2.0",
+     "measured_full": {
+      "high": 2.3614475889519126,
+      "index": 2.2919593491021986,
+      "low": 2.224515878528755
+     },
+     "memory_common": 3.4750893444455464,
+     "short": "0.2.0"
+    },
+    {
+     "after_experiment": "exp-191",
+     "commit": "c1644575",
+     "common": {
+      "high": 1.405967017844225,
+      "index": 1.3686370638406367,
+      "low": 1.3322982607305072
+     },
+     "components": {
+      "cold-cache": 1.13218,
+      "memory": 3.270978135579927,
+      "scale": 1.01162
+     },
+     "coverage": 0.25,
+     "date": "2026-09-28",
+     "includes": "H159, H161, H162, H163",
+     "label": "v0.2.1",
+     "measured_full": {
+      "high": 1.405967017844225,
+      "index": 1.3686370638406367,
+      "low": 1.3322982607305072
+     },
+     "memory_common": 3.270978135579927,
+     "short": "0.2.1"
+    },
+    {
+     "after_experiment": "exp-178",
+     "commit": "7c69e88a",
+     "common": {
+      "high": 1.374004882004499,
+      "index": 1.3362371689099766,
+      "low": 1.2995075890645216
+     },
+     "components": {
+      "cold-cache": 1.08508,
+      "memory": 3.225335759007098,
+      "scale": 1.03385
+     },
+     "coverage": 0.25,
+     "date": "2026-09-29",
+     "includes": "H171 bucketed .gitignore matching",
+     "label": "exp178",
+     "measured_full": {
+      "high": 1.374004882004499,
+      "index": 1.3362371689099766,
+      "low": 1.2995075890645216
+     },
+     "memory_common": 3.225335759007098,
+     "short": "bucketed gitignore"
+    },
+    {
+     "after_experiment": "exp-180",
+     "commit": "956659de",
+     "common": {
+      "high": 1.0690405660140456,
+      "index": 1.0437955687315263,
+      "low": 1.0191467227159048
+     },
+     "components": {
+      "cold-cache": 1.06333,
+      "memory": 1.0030165981041927,
+      "scale": 1.02746
+     },
+     "coverage": 0.25,
+     "date": "2026-09-29",
+     "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
+     "label": "exp180",
+     "measured_full": {
+      "high": 1.0690405660140456,
+      "index": 1.0437955687315263,
+      "low": 1.0191467227159048
+     },
+     "memory_common": 1.0030165981041927,
+     "short": "transient tree"
+    },
+    {
+     "after_experiment": "exp-195",
+     "commit": "ebc06c78",
+     "common": {
+      "high": 1.0773566083361783,
+      "index": 1.0490959099724906,
+      "low": 1.0215765326030062
+     },
+     "components": {
+      "cold-cache": 1.0762,
+      "memory": 1.0066181055557968,
+      "scale": 1.01282
+     },
+     "coverage": 0.25,
+     "date": "2026-09-29",
+     "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
+     "label": "ebc06c78",
+     "measured_full": {
+      "high": 1.0773566083361783,
+      "index": 1.0490959099724906,
+      "low": 1.0215765326030062
+     },
+     "memory_common": 1.0066181055557968,
+     "short": "overnight round"
+    },
+    {
+     "after_experiment": "exp-201",
+     "commit": "a356d456",
+     "common": {
+      "high": 1.0533266704241497,
+      "index": 1.0280222244830002,
+      "low": 1.0033256763596574
+     },
+     "components": {
+      "cold-cache": 1.03125,
+      "memory": 0.9979003800750748,
+      "scale": 1.04914
+     },
+     "coverage": 0.25,
+     "date": "2026-09-29",
+     "includes": "pdu track: H185, H186, H188, H189",
+     "label": "exp201",
+     "measured_full": {
+      "high": 1.0533266704241497,
+      "index": 1.0280222244830002,
+      "low": 1.0033256763596574
+     },
+     "memory_common": 0.9979003800750748,
+     "short": "pdu track"
+    },
+    {
+     "after_experiment": "exp-202",
+     "commit": "17b23c19",
+     "common": {
+      "high": 1.0,
+      "index": 1.0,
+      "low": 1.0
+     },
+     "components": {
+      "cold-cache": 1.0,
+      "memory": 1.0,
+      "scale": 1.0
+     },
+     "coverage": 0.25,
+     "date": "2026-09-30",
+     "includes": "release v0.3.0",
+     "label": "v0.3.0",
+     "measured_full": {
+      "high": 1.0,
+      "index": 1.0,
+      "low": 1.0
+     },
+     "memory_common": 1.0,
+     "short": "0.3.0"
+    }
+   ],
+   "common": [
+    "cold-cache",
+    "scale",
+    "memory"
+   ],
+   "common_weight": 0.25,
+   "manifest_version": 1,
+   "measured": [
+    "cold-cache",
+    "memory",
+    "scale"
+   ],
+   "missing": [
+    "code",
+    "default-tree",
+    "documents",
+    "multi-view",
+    "opened-root",
+    "summary",
+    "warm-content-code",
+    "warm-content-documents",
+    "warm-metadata"
+   ],
+   "platform": "macOS",
+   "reference_build": "v0.3.0",
+   "titles": {
+    "cold-cache": "Cold cache",
+    "memory": "Memory",
+    "scale": "Scale"
+   }
+  }
+ ],
+ "index_jobs": {
+  "adaptive-scan-index": "cold-cache",
+  "aggregate-summary": "summary",
+  "cli-default-tree": "default-tree",
+  "code-sloc": "code",
+  "code-sloc-cache-hit": "warm-content-code",
+  "cold-open-save": "warm-metadata",
+  "cold-scan-index": "cold-cache",
+  "cold-scan-producer": "cold-cache",
+  "cold-snapshot-save": "warm-metadata",
+  "content-basic": "code",
+  "content-cache-hit": "warm-content-code",
+  "content-disabled": "cold-cache",
+  "content-query": "multi-view",
+  "default-tree": "default-tree",
+  "default-tree-first": "cold-cache",
+  "delta-apply-batched": "opened-root",
+  "delta-apply-large": "opened-root",
+  "document-cache-hit": "warm-content-documents",
+  "index-second-report": "opened-root",
+  "markdown-prose": "documents",
+  "opened-discovery": "opened-root",
+  "opened-second-report": "opened-root",
+  "rich-summary-open-pipeline": "summary",
+  "rich-summary-report": "summary",
+  "rich-summary-shared-openers": "summary",
+  "selected-allocated-total": "summary",
+  "text-prose": "documents",
+  "warm-revalidate": "warm-metadata",
+  "warm-snapshot-load": "warm-metadata"
+ },
  "prepared": "2026-09-30",
  "subjects": [
   {

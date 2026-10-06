@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
+from benchmarks.realtree.perf_index import score_ratio
 from benchmarks.realtree.timeline import METRICS
 
 #: Jobs shown in the absolute figure, in the order the work happens: build the index
@@ -498,117 +499,56 @@ def figure_end_to_end(dataset: Mapping[str, Any], platform: str = "Linux") -> st
     )
 
 
-# ---------------------------------------------------------------- figure: phases
+# ---------------------------------------------------------------- figure: iterations
 
-#: The phases the loop has run in, by experiment number, each with the question it
-#: asked. The loop history report tells each one in full. A record in no phase is
-#: counted in a trailing row rather than dropped, so a new experiment can never vanish
-#: from the page before someone gives it a phase.
-PHASES = (
-    (
-        "Building the loop",
-        frozenset(range(0, 66)),
-        "Where does a cold scan and a warm open spend its time? The accept rule, paired "
-        "measurement, the record, and the counters were built here.",
-    ),
-    (
-        "A denominator and a strategy",
-        frozenset([*range(66, 71), 104]),
-        "How much is left? The syscall floor gave every tier a denominator, and the "
-        "default command was measured for the first time.",
-    ),
-    (
-        "Closing a rewrite's regression",
-        frozenset(range(71, 104)),
-        "What closes the streaming engine's gap without changing an answer? Then the H86 "
-        "structural composite, judged as one experiment.",
-    ),
-    (
-        "Unattended rounds",
-        frozenset(range(105, 156)),
-        "On the 0.1.0 engine, what is left in the default command and a warm content "
-        "open? Run overnight by an agent, first on macOS, then on Linux.",
-    ),
-    (
-        "Release-driven questions",
-        frozenset([*range(156, 175), *range(187, 192)]),
-        "Questions 0.2.0 raised, ending in the finding that .gitignore classification "
-        "was most of the Linux default command.",
-    ),
-    (
-        "Linux against its peers",
-        frozenset([*range(175, 187), *range(192, 203)]),
-        "Can the default command beat pdu on real trees with .gitignore on and no answer "
-        "changed? One unattended night, the pdu track, and the 0.3.0 release cell.",
-    ),
-)
-
-
-def id_ranges(numbers: Sequence[int], recorded: Optional[Sequence[int]] = None) -> str:
-    """Experiment numbers as id ranges: exp-066–070, exp-104.
-
-    A gap holding only unused ids (numbers no record carries) does not split a range, so
-    exp-113's absence leaves exp-105–155 whole. Without `recorded`, every gap splits.
-    """
-    spans: List[List[int]] = []
-    for number in sorted(numbers):
-        gap = range(spans[-1][1] + 1, number) if spans else range(0)
-        unused = recorded is not None and not any(item in recorded for item in gap)
-        if spans and (number == spans[-1][1] + 1 or unused):
-            spans[-1][1] = number
-        else:
-            spans.append([number, number])
-    return ", ".join(
-        f"exp-{low:03d}" if low == high else f"exp-{low:03d}\u2013{high:03d}"
-        for low, high in spans
-    )
-
-
-def phase_rows(dataset: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    """Each phase's verdict counts, id span, and platforms, read from the records."""
-    groups: List[tuple] = [(name, numbers, question) for name, numbers, question in PHASES]
-    assigned = set().union(*(numbers for _, numbers, _ in PHASES))
-    later = frozenset(
-        record["number"] for record in dataset["experiments"] if record["number"] not in assigned
-    )
-    if later:
-        groups.append(("Not yet assigned a phase", later, "Recorded after the phases above."))
-    rows = []
-    for name, numbers, question in groups:
-        records = [record for record in dataset["experiments"] if record["number"] in numbers]
-        if not records:
-            continue
-        counts = {
-            "accepted": sum(record["decision"] == "accepted" for record in records),
-            "rejected": sum(record["decision"] == "rejected" for record in records),
-        }
-        counts["other"] = len(records) - counts["accepted"] - counts["rejected"]
-        platforms = sorted({record["platform"] for record in records})
-        rows.append(
-            {
-                "name": name,
-                "question": question,
-                "total": len(records),
-                "counts": counts,
-                "platforms": platforms,
-                "ids": id_ranges(
-                    [record["number"] for record in records],
-                    [record["number"] for record in dataset["experiments"]],
-                ),
-            }
-        )
-    return rows
+#: Accepted records that measure a change already counted, with the reason, so each kept
+#: change counts once: cumulative checkpoints, validations after a merge or on another
+#: platform, the same candidate measured on a second tree, and determinations. The first
+#: record of a change keeps it. A record's fields cannot tell these apart (checkpoints
+#: record changed lines, and real changes sometimes record none, exp-015 and exp-190), so
+#: the list is explicit; a test ties every entry to a committed record.
+REMEASUREMENTS = {
+    "exp-006": "a cumulative checkpoint against the pre-work binary",
+    "exp-023": "a cumulative checkpoint against the pre-work binary",
+    "exp-027": "a cumulative checkpoint against the pre-work binary",
+    "exp-032": "a cumulative checkpoint against the pre-work binary",
+    "exp-033": "a validation after the composable command line merged",
+    "exp-034": "a validation after the composable command line merged",
+    "exp-035": "a validation after the composable command line merged",
+    "exp-054": "the Linux campaign's changes validated on macOS",
+    "exp-065": "exp-064's change validated on a second tree",
+    "exp-071": "a rewrite measured against its own regression",
+    "exp-126": "a leftover determination, no code change",
+    "exp-134": "a leftover determination, no code change",
+    "exp-136": "a leftover determination, no code change",
+    "exp-138": "macOS changes validated on Linux",
+    "exp-140": "macOS changes validated on Linux",
+    "exp-148": "a screen that kept neither arm",
+    "exp-154": "a PGO screen whose kept arm is the control",
+    "exp-171": "exp-170's change measured on a second tree",
+    "exp-181": "exp-180's change measured on a second tree",
+    "exp-184": "exp-183's change measured on a second tree",
+    "exp-186": "exp-185's change measured on a second tree",
+    "exp-187": "exp-170's change validated on Linux",
+}
 
 
 def iteration_kind(record: Mapping[str, Any]) -> str:
     """How the iterations figure colours one experiment.
 
-    `kept` is an accepted change whose primary metric improved by at least the accept
-    threshold; `rejected` is a change tried and not kept; everything else (baselines,
-    checkpoints, profiles, noninferiority steps, unfinished work) is `measured`.
+    `kept` is an accepted change, not a re-measurement, whose primary metric improved by
+    at least the accept threshold and whose candidate stayed; `rejected` is a change
+    tried and not kept; everything else (baselines, checkpoints, validations,
+    determinations, noninferiority steps, unfinished work) is `measured`.
     """
     change = record.get("change_pct")
-    if record["decision"] == "accepted" and change is not None and change <= -3:
+    if (
+        record["decision"] == "accepted"
+        and change is not None
+        and change <= -3
+        and record["id"] not in REMEASUREMENTS
+        and record.get("kept") != "control"
+    ):
         return "kept"
     if record["decision"] == "rejected":
         return "rejected"
@@ -624,19 +564,141 @@ def _chronological(dataset: Mapping[str, Any]) -> List[Mapping[str, Any]]:
     return sorted(dataset["experiments"], key=lambda record: (record.get("date") or "", record["number"]))
 
 
-def history_cell(dataset: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-    """The history cell the timeline draws: the first one recorded, if any."""
-    cells = dataset.get("history") or []
-    return cells[0] if cells else None
+
+
+def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> List[Dict[str, Any]]:
+    """The chooser's metrics: the unified score first, then every measured component.
+
+    Every value is relative to the reference build, so every line ends at 1.0 and lines
+    that start at different builds still compare: the score, a millisecond benchmark,
+    and peak memory read on one axis. The unified score has two lines: the full index,
+    solid, from the first build that has every measured component, and a partial score,
+    dashed, over the components every build has, labelled with its coverage.
+    """
+    platforms = dataset.get("index") or []
+    if not platforms:
+        return []
+    projected = platforms[0]
+    builds = [build for build in projected["builds"] if build.get("after_experiment") in position]
+    reference = projected["reference_build"]
+
+    def points(values: Sequence[tuple]) -> List[Dict[str, Any]]:
+        present = [(build, value, detail) for build, value, detail in values if value]
+        if len(present) < 2:
+            return []
+        return [
+            {
+                "after_experiment": build["after_experiment"],
+                "short": build.get("short") or build["label"],
+                "commit": build.get("commit") or "",
+                "date": build.get("date") or "",
+                "includes": build.get("includes") or "",
+                "share": value,
+                "detail": detail,
+            }
+            for build, value, detail in present
+        ]
+
+    measured = len(projected["measured"])
+    total = measured + len(projected["missing"])
+    measured_weight = sum(
+        build["coverage"] for build in builds[-1:]
+    ) if builds else 0.0
+    full_line = points(
+        [
+            (
+                build,
+                (build.get("measured_full") or {}).get("index"),
+                f"index {build['measured_full']['index']:.3f} of {reference}, all {measured} "
+                f"measured components" if build.get("measured_full") else "",
+            )
+            for build in builds
+        ]
+    )
+    partial_line = points(
+        [
+            (
+                build,
+                (build.get("common") or {}).get("index"),
+                f"index {build['common']['index']:.3f} of {reference}, "
+                f"{len(projected['common'])} components every build has"
+                if build.get("common")
+                else "",
+            )
+            for build in builds
+        ]
+    )
+    lines = []
+    if full_line:
+        lines.append(
+            {
+                "points": full_line,
+                "dashed": False,
+                "label": f"full score, {measured} of {total} components",
+            }
+        )
+    if partial_line and len(projected["common"]) < measured:
+        lines.append(
+            {
+                "points": partial_line,
+                "dashed": True,
+                "label": f"partial, {len(projected['common'])} of {total} components "
+                f"({projected['common_weight'] * 100:.0f}% of the weight)",
+            }
+        )
+    series = []
+    if lines:
+        coverage = (
+            "" if measured == total else f", {measured_weight * 100:.0f}% of the suite measured"
+        )
+        series.append(
+            {
+                "id": "score",
+                "title": f"Unified score ({projected['platform']}{coverage})",
+                "verb": "better",
+                "lines": lines,
+            }
+        )
+    for component in projected["measured"]:
+        # Memory's own line uses the mix every build has, so it compares builds over one
+        # set of components; the full score's memory reads every measured component.
+        key = "memory_common" if component == "memory" else None
+        values = points(
+            [
+                (
+                    build,
+                    build.get(key) if key else build["components"].get(component),
+                    (
+                        f"{build[key]:.3f} of {reference}, over components every build has"
+                        if key and build.get(key)
+                        else f"{build['components'][component]:.3f} of {reference}"
+                        if component in build["components"]
+                        else ""
+                    ),
+                )
+                for build in builds
+            ]
+        )
+        if values:
+            title = projected["titles"].get(component, component)
+            series.append(
+                {
+                    "id": component,
+                    "title": title,
+                    "verb": "less memory" if component == "memory" else "faster",
+                    "lines": [{"points": values, "dashed": False, "label": title.lower()}],
+                }
+            )
+    return series
 
 
 def figure_timeline(dataset: Mapping[str, Any]) -> str:
     """Two stacked panels on one experiment axis, in the order the experiments ran.
 
-    The top panel is total runtime on one fixed benchmark, measured for every milestone
+    The top panel is total runtime on fixed benchmarks, measured for every milestone
     build in one interleaved session, so its steps compare directly. The bottom panel is
     every experiment's paired change on its own primary job, green where a change was
-    kept, red where it was tried and dropped, with the running count of kept changes.
+    kept, red where it was tried and dropped, grey for re-measurements and other verdicts.
     The bottom panel's effects are not multiplied into a runtime: each was measured on
     its own job and tree, and compounding them would claim a speed-up no build shows.
     """
@@ -653,7 +715,8 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         ]
         if len(placed) >= 2:
             cells.append((cell, placed))
-    milestones = [item for _, placed in cells for item in placed]
+    series = metric_series(dataset, position)
+    milestones = [point for item in series for line in item["lines"] for point in line["points"]]
 
     left, right = 64, 150
     width = 900
@@ -700,34 +763,37 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         f"order they ran</text>"
     )
 
-    if cells:
-        # Log scale of runtime as a share of each benchmark's first build, so a tree
-        # timed in seconds and one timed in milliseconds read on one axis.
-        shares = [item["wall_ms"] / placed[0]["wall_ms"] for _, placed in cells for item in placed]
-        candidates = [tick for tick in (0.5, 0.2, 0.1, 0.05, 0.02, 0.01) if tick < min(shares)]
-        floor = candidates[0] if candidates else min(shares) * 0.9
-        ceiling = max(1.0, max(shares))
+    if series:
+        # Log scale of each metric relative to the reference build, so a tree timed in
+        # seconds, one timed in milliseconds, the score, and memory read on one axis,
+        # and every line ends at 1x.
+        values = [point["share"] for item in series for line in item["lines"] for point in line["points"]]
+        floor = min(1.0, min(values)) * 0.85
+        ceiling = max(1.0, max(values)) * 1.15
         span = math.log10(ceiling) - math.log10(floor)
         y_of = lambda share: top_y0 + (math.log10(ceiling) - math.log10(share)) / span * top_h
-        for tick in (1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01):
+        for tick in (0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0):
             if floor <= tick <= ceiling:
                 y = y_of(tick)
                 out.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}"/>')
                 out.append(
                     f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
-                    f"{tick * 100:g}%</text>"
+                    f"{tick:g}&times;</text>"
                 )
+        reference = (dataset.get("index") or [{}])[0].get("reference_build", "the reference build")
         out.append(
-            f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">total runtime as a '
-            f"share of the first build, log scale &mdash; lower is faster; builds numbered</text>"
+            f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">the chosen metric as a '
+            f"multiple of {esc(reference)}&rsquo;s, log scale &mdash; lower is better; "
+            f"builds numbered</text>"
         )
         # Milestones numbered once along the top, staggered over three rows so builds
         # that landed close together stay legible; the caption names them. Every cell
         # times the same builds.
         named = {}
-        for _, placed in cells:
-            for item in placed:
-                named.setdefault(item["after_experiment"], item.get("short") or item["label"])
+        for item in series:
+            for line in item["lines"]:
+                for point in line["points"]:
+                    named.setdefault(point["after_experiment"], point["short"])
         for number, after in enumerate(named, start=1):
             x = x_of(position[after])
             label_y = top_y0 - 30 + (number - 1) % 3 * 10
@@ -739,45 +805,52 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 f'<text class="point-label" x="{x:.1f}" y="{label_y}" text-anchor="middle">'
                 f"{number}</text>"
             )
-        series = ("series-mac", "series-linux", "series-mac", "series-linux")
-        for number, (cell, placed) in enumerate(cells):
-            css = series[number % len(series)]
-            first = placed[0]["wall_ms"]
-            points = [(x_of(position[item["after_experiment"]]), y_of(item["wall_ms"] / first), item) for item in placed]
-            path = []
-            for index, (x, y, _) in enumerate(points):
-                if index:
-                    path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
-                path.append(f"{x:.1f},{y:.1f}")
-            path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
-            out.append(f'<polyline class="{css} series-line" points="{" ".join(path)}"/>')
-            title = cell.get("title") or cell["subject"]
-            for x, y, item in points:
-                out.append(f'<circle class="{css}" cx="{x:.1f}" cy="{y:.1f}" r="3.5"/>')
-                out.append(
-                    f'<rect class="hit" x="{x - 7:.1f}" y="{y - 7:.1f}" width="14" height="14" '
-                    + tip(
-                        f"{title}: {item.get('short') or item['label']} "
-                        f"({item['commit']}, {item['date']})\n"
-                        f"{item['includes']}\n"
-                        f"{fmt_ms(item['wall_ms'] * 1e6)}, {first / item['wall_ms']:.1f}x faster "
-                        f"than the first build"
-                        + (f", peak {item['peak_rss_mib']:.0f} MiB" if item.get("peak_rss_mib") else "")
+        for item in series:
+            # Not the platform colours: every line here is one platform's metric.
+            css = "series-cell-a" if item["id"] == "score" else "series-cell-b"
+            group = [f'<g class="metric{" on" if item["id"] == "score" else ""}" data-metric="{esc(item["id"])}">']
+            for line in item["lines"]:
+                points = [
+                    (x_of(position[point["after_experiment"]]), y_of(point["share"]), point)
+                    for point in line["points"]
+                ]
+                path = []
+                for index, (x, y, _) in enumerate(points):
+                    if index:
+                        path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
+                    path.append(f"{x:.1f},{y:.1f}")
+                path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
+                dashed = " dashed" if line["dashed"] else ""
+                group.append(f'<polyline class="{css} series-line{dashed}" points="{" ".join(path)}"/>')
+                first, last = line["points"][0], line["points"][-1]
+                for x, y, point in points:
+                    group.append(f'<circle class="{css}" cx="{x:.1f}" cy="{y:.1f}" r="3.5"/>')
+                    group.append(
+                        f'<rect class="hit" x="{x - 7:.1f}" y="{y - 7:.1f}" width="14" height="14" '
+                        + tip(
+                            f"{item['title']}, {line['label']}: {point['short']} "
+                            f"({point['commit']}, {point['date']})\n"
+                            f"{point['includes']}\n"
+                            f"{point['share']:.2f}x the reference build's time"
+                            + (f"; {point['detail']}" if point.get("detail") else "")
+                        )
+                        + "/>"
                     )
-                    + "/>"
+                # Every line ends at the reference build, so each is labelled at its start.
+                x0, y0 = points[0][0], points[0][1]
+                group.append(
+                    f'<text class="value-label {css}" x="{x0 + 8:.1f}" y="{y0 - 8:.1f}" '
+                    f'stroke="none">{first["share"] / last["share"]:.1f}x {esc(item["verb"])} '
+                    f"since {esc(first['short'])}</text>"
                 )
-            last = placed[-1]
-            out.append(
-                f'<text class="value-label {css}" x="{width - right + 8:.1f}" '
-                f'y="{points[-1][1] + 4:.1f}" stroke="none">'
-                f"{first / last['wall_ms']:.1f}x faster</text>"
-            )
-            out.append(
-                f'<text class="point-label" x="{width - right + 8:.1f}" '
-                f'y="{points[-1][1] + 17:.1f}">{esc(title)}</text>'
-            )
+                group.append(
+                    f'<text class="point-label" x="{x0 + 8:.1f}" y="{y0 + 14:.1f}">'
+                    f"{esc(line['label'])}</text>"
+                )
+            group.append("</g>")
+            out.extend(group)
 
-    # Bottom panel: every experiment, plus the running count of kept changes.
+    # Bottom panel: every experiment, coloured by what it did.
     low, high = ITERATION_CLAMP
     y_of_change = lambda faster: bottom_y0 + (high - faster) / (high - low) * bottom_h
     zero = y_of_change(0.0)
@@ -800,6 +873,10 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     )
     css = {"kept": "dot-good", "rejected": "dot-bad", "measured": "dot-flat"}
     bar = max(min(step * 0.7, 6.0), 1.2)
+    jobs = dataset.get("index_jobs") or {}
+    titles = {}
+    for platform in dataset.get("index") or []:
+        titles.update(platform.get("titles") or {})
     for index, record in enumerate(records):
         change = record.get("change_pct")
         faster = -change if change is not None else 0.0
@@ -807,12 +884,15 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         x = left + index * step + (step - bar) / 2
         y1, y2 = sorted((zero, y_of_change(drawn)))
         kind = iteration_kind(record)
+        metric = record.get("primary_metric")
+        component = "memory" if metric == "peak_rss_bytes" else jobs.get(record.get("primary_job") or "", "")
         out.append(
-            f'<rect class="{css[kind]}" x="{x:.1f}" y="{y1:.1f}" width="{bar:.1f}" '
-            f'height="{max(y2 - y1, 1.0):.1f}"/>'
+            f'<rect class="{css[kind]} bar" x="{x:.1f}" y="{y1:.1f}" width="{bar:.1f}" '
+            f'height="{max(y2 - y1, 1.0):.1f}" data-component="{esc(component)}" '
+            f'data-platform="{esc(record.get("platform") or "")}"/>'
         )
         label = {"kept": "kept, better", "rejected": "tried, not kept", "measured": "measured"}[kind]
-        metric = record.get("primary_metric")
+        counts_toward = titles.get(component) or component or "no component"
         out.append(
             f'<rect class="hit" x="{left + index * step:.1f}" y="{bottom_y0}" '
             f'width="{step:.1f}" height="{bottom_h}" '
@@ -822,19 +902,21 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 f"{fmt_pct(change) if change is not None else 'no paired change'} "
                 f"on {record.get('primary_job') or 'its job'}"
                 + (f" ({metric})" if metric not in (None, "wall_ns") else "")
+                + f"\nCounts toward: {counts_toward}, {record.get('platform') or 'its platform'}"
+                + (
+                    f"\nNot a new change: {REMEASUREMENTS[record['id']]}"
+                    if record["id"] in REMEASUREMENTS
+                    else ""
+                )
             )
             + "/>"
         )
     out.append("</svg>")
 
     counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
-    cell_keys = [
-        (("key-mac", "key-linux")[number % 2], f"{cell.get('title') or cell['subject']}, "
-         f"{fmt_ms(placed[0]['wall_ms'] * 1e6)} to {fmt_ms(placed[-1]['wall_ms'] * 1e6)}")
-        for number, (cell, placed) in enumerate(cells)
-    ]
     keys = legend(
-        *cell_keys,
+        ("key-cell-a", "the unified score"),
+        ("key-cell-b", "a single component, when chosen"),
         ("key-good", f"kept, at least 3% better ({counts['kept']})"),
         ("key-bad", f"tried, not kept ({counts['rejected']})"),
         ("key-flat", f"measurements and other verdicts ({counts['measured']})"),
@@ -843,27 +925,38 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     if cells:
         described = "; ".join(
             f"{esc(cell.get('title') or cell['subject'])} ({cell['entries']:,} entries, "
-            f"{cell['trials']} paired rounds)"
+            f"{cell['trials']} paired rounds, {esc(cell['cpu'])}, {esc(cell['storage'])}, "
+            f"{esc(cell['regime'])} host)"
             for cell, _ in cells
         )
-        first_cell = cells[0][0]
         caption = (
             f"Top: on each benchmark, every milestone build timed in one interleaved "
-            f"session: {described}; {esc(first_cell['cpu'])}, {esc(first_cell['storage'])}, "
-            f"{esc(first_cell['regime'])} host. Builds before 0.1.0 do not read .gitignore, "
+            f"session: {described}. Builds before 0.1.0 do not read .gitignore, "
             f"so on a repository they do less work. Hover a point for what each build added. "
         )
         named = {}
-        for _, placed in cells:
-            for item in placed:
-                named.setdefault(item["after_experiment"], item.get("short") or item["label"])
+        for point in milestones:
+            named.setdefault(point["after_experiment"], point["short"])
         caption += (
             "Builds: "
             + "; ".join(f"{number} {esc(short)}" for number, short in enumerate(named.values(), start=1))
             + ". "
         )
+    chooser = ""
+    if series:
+        options = "".join(
+            f'<option value="{esc(item["id"])}"{" selected" if item["id"] == "score" else ""}>'
+            f"{esc(item['title'])}</option>"
+            for item in series
+        )
+        chooser = (
+            '<p class="metric-chooser"><label>Metric <select id="metric" '
+            f'data-platform="{esc((dataset.get("index") or [{}])[0].get("platform", ""))}">'
+            f"{options}</select></label> <span class=\"muted\">Bars that do not count "
+            "toward the chosen metric are faded.</span></p>"
+        )
     return (
-        f'<figure class="fig">{"".join(out)}{keys}<figcaption>{caption}Bottom: bars beyond '
+        f'<figure class="fig">{chooser}{"".join(out)}{keys}<figcaption>{caption}Bottom: bars beyond '
         "the axis are drawn at its edge; hover one for its experiment and real figure. The "
         "dashed line is the 3% accept threshold.</figcaption></figure>"
     )
@@ -1251,6 +1344,8 @@ STYLE = """
   --before: hsl(215 12% 62%);
   --after: hsl(211 72% 42%);
   --drift: hsl(215 15% 91%);
+  --cell-b: hsl(268 52% 52%);
+  color-scheme: light;
   /* The system stack, and nothing else. A webfont would be a network dependency inside a
      committed document, in a repository that pins everything else it depends on, and this
      file has to render from a file:// URL on a machine that has never opened it before.
@@ -1279,6 +1374,8 @@ STYLE = """
     --before: hsl(215 10% 45%);
     --after: hsl(211 86% 62%);
     --drift: hsl(216 14% 17%);
+    --cell-b: hsl(268 70% 74%);
+    color-scheme: dark;
   }
 }
 :root[data-theme='dark'] {
@@ -1297,6 +1394,8 @@ STYLE = """
   --before: hsl(215 10% 45%);
   --after: hsl(211 86% 62%);
   --drift: hsl(216 14% 17%);
+  --cell-b: hsl(268 70% 74%);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -1362,6 +1461,8 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .key-bad { background: var(--bad); }
 .key-mac { background: var(--after); }
 .key-linux { background: var(--warn); }
+.key-cell-a { background: var(--after); }
+.key-cell-b { background: var(--cell-b); }
 .key-flat { background: var(--muted); }
 .key-synth { background: transparent; outline: 1px dashed var(--muted); }
 .pt-mid { fill-opacity: 0.55; }
@@ -1382,6 +1483,12 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .dot-before { fill: var(--before); }
 .dot-step { fill: var(--after); opacity: 0.55; }
 .dot-final { fill: var(--after); }
+.metric { display: none; }
+.metric.on { display: inline; }
+.bar.faded { opacity: 0.15; }
+.metric-chooser { font-size: 13px; margin: 0 0 8px; max-width: none; }
+.metric-chooser select { font: inherit; margin-left: 6px; padding: 2px 4px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
 .value-label { font: 12px var(--mono); fill: var(--after); font-variant-numeric: tabular-nums; }
 .value-before { fill: var(--muted); }
 .value-arrow { fill: var(--border); }
@@ -1394,7 +1501,10 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .whisker-bad { stroke: var(--bad-soft); }
 .series-mac { stroke: var(--after); fill: var(--after); }
 .series-linux { stroke: var(--warn); fill: var(--warn); }
+.series-cell-a { stroke: var(--after); fill: var(--after); }
+.series-cell-b { stroke: var(--cell-b); fill: var(--cell-b); }
 .series-line { fill: none; stroke-width: 1.5; }
+.series-line.dashed { stroke-dasharray: 5 4; }
 .point-label { font: 10px var(--mono); fill: var(--muted); }
 .gutter { font: 9.5px var(--mono); fill: var(--muted); opacity: 0.75; }
 /* Every mark is inert to the pointer, so the only hover target inside a chart is the row
@@ -1559,12 +1669,12 @@ SETTINGS = """
 <button type="button" id="gear" aria-label="Settings" aria-expanded="false" aria-controls="menu">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>
 </button>
-<div id="menu" role="menu" hidden>
+<div id="menu" hidden>
 <div class="menu-label">Theme</div>
 <div class="chooser" role="group" aria-label="Theme">
-<button type="button" class="seg" role="menuitemradio" data-theme-choice="system" aria-checked="false" title="System theme" aria-label="System theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></button>
-<button type="button" class="seg" role="menuitemradio" data-theme-choice="light" aria-checked="false" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
-<button type="button" class="seg" role="menuitemradio" data-theme-choice="dark" aria-checked="false" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg></button>
+<button type="button" class="seg" data-theme-choice="system" aria-pressed="false" title="System theme" aria-label="System theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></button>
+<button type="button" class="seg" data-theme-choice="light" aria-pressed="false" title="Light theme" aria-label="Light theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+<button type="button" class="seg" data-theme-choice="dark" aria-pressed="false" title="Dark theme" aria-label="Dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg></button>
 </div>
 </div>
 </span></div>
@@ -1587,7 +1697,7 @@ THEME_STYLE = """
   padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .seg:hover, .seg:focus-visible { color: var(--text); background: var(--panel); }
 .seg svg { width: 16px; height: 16px; }
-.seg[aria-checked='true'] { color: var(--accent); background: var(--panel); }
+.seg[aria-pressed='true'] { color: var(--accent); background: var(--panel); }
 """
 
 THEME_SCRIPT = """
@@ -1602,7 +1712,7 @@ THEME_SCRIPT = """
     if (choice === 'system') root.removeAttribute('data-theme');
     else root.setAttribute('data-theme', choice);
     buttons.forEach(function (button) {
-      button.setAttribute('aria-checked', String(button.getAttribute('data-theme-choice') === choice));
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-theme-choice') === choice));
     });
     if (persist) {
       try { localStorage.setItem('fdu.report.themeMode', choice); } catch (_error) {}
@@ -1621,6 +1731,31 @@ THEME_SCRIPT = """
     button.addEventListener('click', function () { apply(mode(button.getAttribute('data-theme-choice')), true); });
   });
   apply(mode(root.getAttribute('data-theme-mode')), false);
+})();
+"""
+
+#: The metric chooser: shows the chosen series on the runtime panel and fades every
+#: experiment bar that does not count toward it. The unified score counts every
+#: component, so under it only bars from a platform the score does not yet cover fade.
+METRIC_SCRIPT = """
+(function () {
+  var chooser = document.getElementById('metric');
+  if (!chooser) return;
+  var platform = chooser.getAttribute('data-platform');
+  var groups = Array.prototype.slice.call(document.querySelectorAll('.metric'));
+  var bars = Array.prototype.slice.call(document.querySelectorAll('.bar'));
+  function show(metric) {
+    groups.forEach(function (group) {
+      group.classList.toggle('on', group.getAttribute('data-metric') === metric);
+    });
+    bars.forEach(function (bar) {
+      var counts = bar.getAttribute('data-platform') === platform &&
+        (metric === 'score' || bar.getAttribute('data-component') === metric);
+      bar.classList.toggle('faded', !counts);
+    });
+  }
+  chooser.addEventListener('change', function () { show(chooser.value); });
+  show(chooser.value);
 })();
 """
 
@@ -1656,7 +1791,7 @@ def render(dataset: Mapping[str, Any]) -> str:
 <body>
 <div class="wrap">{SETTINGS}{body}</div>
 <div id="tip" role="tooltip"></div>
-<script>{SCRIPT}{THEME_SCRIPT}</script>
+<script>{SCRIPT}{THEME_SCRIPT}{METRIC_SCRIPT}</script>
 </body>
 </html>
 """
@@ -1810,9 +1945,9 @@ def _section_platforms(dataset: Mapping[str, Any]) -> str:
                 f"<td class='n'>{esc(fmt_pct(paired['change_pct']))}</td>"
                 f"<td class='n muted'>{esc(interval)}</td></tr>"
             )
-        noun = "improvement" if len(rows) == 1 else "improvements"
+        noun = "accepted run" if len(rows) == 1 else "accepted runs"
         sections.append(
-            f"<h3>{esc(platform)}: {len(rows)} {noun} kept</h3>"
+            f"<h3>{esc(platform)}: {len(rows)} {noun} that improved</h3>"
             f"<p>Decided on a generated tree: {on_generated} of {len(rows)}. The loop treats "
             "a generated tree as screening rather than as a sample of ordinary work.</p>"
             '<div class="scroll"><table>'
@@ -1837,8 +1972,10 @@ tree measured in several states.</p>
 <tbody>{"".join(summary)}</tbody></table></div>
 <p>Below, per platform: accepted changes still in the product whose deciding run measured
 an improvement on its primary metric, oldest first, with that run's two arms on its own
-subject. A validation on a second subject appears as its own row. Rejected and
-noninferiority verdicts are in the full table at the end.</p>
+subject. These count runs, not changes: a validation on a second subject or platform is
+its own row, so the sections total more than the kept changes in the header, which count
+each change once. Rejected and noninferiority verdicts are in the full table at the
+end.</p>
 {"".join(sections)}
 """
 
@@ -2149,15 +2286,62 @@ def _standing_figure(dataset: Mapping[str, Any]) -> str:
     )
 
 
+def _score_figure(dataset: Mapping[str, Any]) -> str:
+    """The unified score from the first build to the last, with its interval.
+
+    The interval is the combined interval of the two index values, both relative to the
+    reference build, so it is the honest width of the ratio between them.
+    """
+    platforms = dataset.get("index") or []
+    if not platforms:
+        return ""
+    projected = platforms[0]
+    total = len(projected["measured"]) + len(projected["missing"])
+    figures = []
+    for key, components, what in (
+        ("measured_full", projected["measured"], "unified score"),
+        ("common", projected["common"], "partial score"),
+    ):
+        if key == "common" and len(projected["common"]) == len(projected["measured"]):
+            continue
+        # Only builds the chart can place, so the headline and the chart agree.
+        recorded = {record["id"] for record in dataset["experiments"]}
+        builds = [
+            build
+            for build in projected["builds"]
+            if build.get(key) and build.get("after_experiment") in recorded
+        ]
+        if len(builds) < 2:
+            continue
+        first, last = builds[0][key], builds[-1][key]
+        speedup, low, high = score_ratio(first, last)
+        figures.append(
+            f'<div><span class="n good">{speedup:.1f}&times; better</span>'
+            f'<span class="k">{what}, {esc(projected["platform"])}, '
+            f'{esc(builds[0].get("short") or builds[0]["label"])} to '
+            f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
+            f"[{low:.1f}&times;, {high:.1f}&times;]; "
+            f"{len(components)} of {total} components</span></div>"
+        )
+    return "".join(figures)
+
+
 def _history_figure(dataset: Mapping[str, Any]) -> str:
     """Each history cell's measured first-to-last speedup.
 
     The ratio of the medians the chart draws, so the headline and the chart agree; the
     paired figure stays in the record.
     """
-    figures = []
+    figures = [_score_figure(dataset)]
+    # The same builds the chart can place, so the headline never states a ratio between
+    # builds the chart does not draw.
+    recorded = {record["id"] for record in dataset["experiments"]}
     for cell in dataset.get("history") or []:
-        milestones = [item for item in cell.get("milestones", []) if item.get("wall_ms")]
+        milestones = [
+            item
+            for item in cell.get("milestones", [])
+            if item.get("wall_ms") and item.get("after_experiment") in recorded
+        ]
         if len(milestones) < 2:
             continue
         first, last = milestones[0], milestones[-1]
@@ -2188,7 +2372,7 @@ the {decisions.get('rejected', 0)} that did not pay.</p>
   <div><span class="n tnum">{totals['experiments']}</span>
     <span class="k">experiments</span></div>
   <div><span class="n tnum good">{kept}</span>
-    <span class="k">kept, and better</span></div>
+    <span class="k">changes kept, 3% or more better</span></div>
   <div><span class="n tnum">{decisions.get('rejected', 0)}</span>
     <span class="k">tried, not kept</span></div>
 </div>
@@ -2206,11 +2390,13 @@ def _section_iterations(dataset: Mapping[str, Any]) -> str:
 <h3>Total runtime, and every experiment that changed it</h3>
 <p>The top panel is fdu&rsquo;s total runtime on two fixed benchmarks, a generated
 million-entry tree and the Linux kernel source with its <code>.gitignore</code> files. Each
-milestone build was timed side by side in one session per benchmark, so the steps are the
-real accumulated improvement. The bottom panel is every experiment in the order it ran: green bars were
-kept, red bars were tried and dropped. Most
-ideas moved their job by less than the 3% a change must clear; the tall green bars are the
-changes that made fdu fast.</p>
+milestone build was timed side by side in one session per benchmark, on a busy desktop, so
+the steps are measured accumulated improvement, and differences of about 10% between
+adjacent builds are within the noise. The bottom panel is every experiment in the order it
+ran, each on its own primary metric: green bars are changes that were kept, red bars were
+tried and dropped, and grey bars are checkpoints, validations, and other measurements of
+work already counted. Most ideas moved their job by less than the 3% a change must
+clear.</p>
 {figure_timeline(dataset)}
 """
 
@@ -2222,7 +2408,8 @@ def _section_loop(dataset: Mapping[str, Any]) -> str:
 effect, builds exactly one change, checks that every answer is unchanged, and measures it
 against the code it came from &mdash; both binaries interleaved in one run on a tree pinned
 by content digest, at least twelve paired trials and twenty when the predicted effect is
-small, with any sample taken on a busy host thrown out. A change is kept when it is at
+small. A controlled cell throws out any sample taken on a busy host; an exploratory cell
+on an uncontrolled host keeps them and says so. A change is kept when it is at
 least 3% faster with its 95% interval clear of zero. Each result, kept or not, is stored as
 a validated record, and this page is regenerated from those records.</p>
 """
@@ -2242,7 +2429,7 @@ def _section_absolute(dataset: Mapping[str, Any]) -> str:
     linux = ""
     if end_to_end:
         linux = f"""
-<h3>Linux, end to end</h3>
+<h4>Linux, end to end</h4>
 <p>The later Linux work was measured the same way at its milestones: one engine against a
 later one in a single interleaved cell. The release cell is the comparison to quote for
 0.3.0; the development cells before it each ran in their own session.</p>
@@ -2253,7 +2440,7 @@ later one in a single interleaved cell. The release cell is the comparison to qu
 <h3>Wall time, in milliseconds</h3>
 <p>The campaign's own summaries are all percentages, and a percentage cannot say whether
 a scan takes half a second or half a minute. These are the measured medians.</p>
-<h3>macOS, campaign 1</h3>
+<h4>macOS, campaign 1</h4>
 {figure_absolute(dataset)}
 {linux}
 """
