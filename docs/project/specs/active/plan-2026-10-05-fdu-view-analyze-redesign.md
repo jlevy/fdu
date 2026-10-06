@@ -353,12 +353,21 @@ carries and a proposed spelling.
 | Situation | Today | Proposed |
 | --- | --- | --- |
 | `--view documents` without analysis | usage error, exit 2 | a report; no note |
-| `--analyze code --view summary` | `note: requested analysis is not displayed by the selected views` and `tip: show analysis: --view families, languages, or full` | `note: code analysis not shown by summary` and `tip: --view code`, naming the default view for the enabled set (`--view code,documents` under `all`) |
-| `--view full` without analysis | `note: omitted documents: content analysis required` and `tip: include omitted views: add --analyze lines` | `note: full omits code, documents without analysis` and `tip: --analyze all`, naming the union of the omitted views’ implied sets |
+| `--analyze code --view summary` | `note: requested analysis is not displayed by the selected views` and `tip: show analysis: --view families, languages, or full` | `note: code analysis not shown by summary` and `tip: show it: --view code`, naming the default view for the enabled set (`--view code,documents` under `all`) |
+| `--view full` without analysis | `note: omitted documents: content analysis required` and `tip: include omitted views: add --analyze lines` | `note: full omits code, documents without analysis` and `tip: include them: --analyze all`, naming the union of what ran and what the omitted views imply |
 | `--view words` | `invalid --view "words": words is an analyzer; use --analyze=words with --view=documents` | `invalid --view "words": words is an analyzer; its view is documents` |
 | held index, `views=code`, opened with `none` | `code view requires code analysis: add analyze code; views and sorts never enable analysis implicitly` | `view code needs code analysis; this index was opened with analyze none` |
 | `--watch --view code` | `--analyze is not yet supported with --watch; use a one-shot report` | `--view code needs code analysis, which --watch cannot keep current; use a one-shot report` |
 | `--sort code_lines` without code | unchanged refusal, shortened | `--sort code_lines needs code analysis: add --analyze code` |
+
+As implemented, two lines go further than the table’s first draft.
+Under one analyzer `full` names the one that is missing
+(`note: full omits documents without words analysis` after `--analyze code`), and its
+tip names the union of what ran and what the omitted views imply rather than the omitted
+views’ set alone, because `--analyze words` after `--analyze code --view full` would be
+a command that drops the code analysis it already had; in practice the tip is always
+`--analyze all`. And `--view lines`, whose view does not imply it, is refused as
+`its view is families, with --analyze lines`.
 
 The parity class `sameAnalysisTip` in `scripts/parity-classes.mjs` pins the
 omitted-views tip in both vocabularies and is updated to the new text; `KNOBS` already
@@ -426,10 +435,10 @@ One phase, one draft pull request, landed after or merged with the epilogue work
 (`fdu-cmr4`, `fdu-wzpx`), which edits `report_format.rs`, `report_epilogue.rs`,
 `query_report.rs`, and `cli.rs`. The order below is the dependency order of the beads.
 
-- [ ] Request model: `ViewSpec::implies`, the round-trip test, `Request::build` taking
+- [x] Request model: `ViewSpec::implies`, the round-trip test, `Request::build` taking
   the union, `check_views` as one containment test, the merged held-basis refusal.
-- [ ] Delivery refusal: `--watch` with implied content names the view.
-- [ ] Notes and tips: the not-displayed tip names the default view; the omitted-views
+- [x] Delivery refusal: `--watch` with implied content names the view.
+- [x] Notes and tips: the not-displayed tip names the default view; the omitted-views
   tip names the implied union; the `--view words` refusal; wording settled with
   `fdu-wzpx`.
 - [ ] Goldens, parity class, Python tests, and the path-independence matrix.

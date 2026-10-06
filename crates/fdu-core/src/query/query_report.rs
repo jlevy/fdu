@@ -196,12 +196,43 @@ impl ViewSpec {
         }
     }
 
+    /// The analyzers this view shows, and so requests when a request builds its own basis.
+    ///
+    /// Only a view with no metadata meaning implies anything. `code` and `documents`
+    /// display nothing without analysis, so naming one is asking for its analyzer, and
+    /// refusing it would only make the caller type the analyzer as well. `languages`,
+    /// `types`, and `families` gain metrics under an analyzer but are metadata reports
+    /// without one, and `full` is the metadata digest: none of them implies anything,
+    /// because a display choice with a cheap meaning must never turn into a read of every
+    /// file in the tree with nothing in the command to say so.
+    ///
+    /// A match over every view, so a new one forces this decision. A basis an index
+    /// already holds is never widened by it: a read refuses a view its basis cannot
+    /// answer ([`RequestError::ViewNeedsAnalyzer`](crate::query::RequestError)).
+    pub const fn implies(self) -> AnalysisSet {
+        match self {
+            Self::Code => AnalysisSet::CODE_ONLY,
+            Self::Documents => AnalysisSet::WORDS_ONLY,
+            Self::List
+            | Self::Tree
+            | Self::Types
+            | Self::Extensions
+            | Self::Families
+            | Self::Languages
+            | Self::Files
+            | Self::Largest
+            | Self::Recent
+            | Self::Summary => AnalysisSet::NONE,
+        }
+    }
+
     /// The view a request displays its analysis in when the caller named none.
     ///
-    /// A view may never enable an analyzer — that would let a display choice authorize
-    /// filesystem reads — but the reverse is free, because it re-projects state already
-    /// paid for. Without this, a request that reads every eligible file reports a
-    /// directory tree containing none of the results.
+    /// The converse of [`Self::implies`], and free for the same reason: it re-projects
+    /// state the request already pays for. Without it, a request that reads every
+    /// eligible file reports a directory tree containing none of the results. For each
+    /// view that implies an analyzer, this is that view, which a test pins so the two
+    /// tables cannot drift.
     pub const fn default_for(analysis: AnalysisSet) -> Self {
         match (analysis.includes_code(), analysis.includes_words()) {
             (true, _) => Self::Code,
@@ -239,45 +270,17 @@ impl ViewSpec {
         spec: Option<&str>,
         analysis: AnalysisSet,
     ) -> Result<(Vec<Self>, Vec<Self>), Rejection> {
-        let Some(spec) = spec else {
-            return Ok((
-                if analysis.includes_code() && analysis.includes_words() {
-                    vec![Self::Code, Self::Documents]
-                } else {
-                    vec![Self::default_for(analysis)]
-                },
-                Vec::new(),
-            ));
-        };
+        ViewList::parse(spec).map(|views| views.resolve(analysis))
+    }
 
-        let mut parsed: Vec<Self> = Vec::new();
-        let mut full_seen = false;
-        for raw in spec.split(',') {
-            let token = raw.trim();
-            if token.is_empty() {
-                return Err(Rejection::new(spec, "empty entry in the list"));
-            }
-            if token.eq_ignore_ascii_case("full") {
-                if full_seen || !parsed.is_empty() {
-                    return Err(Rejection::new("full", Self::FULL_IS_EXCLUSIVE));
-                }
-                full_seen = true;
-                continue;
-            }
-            if full_seen {
-                return Err(Rejection::new("full", Self::FULL_IS_EXCLUSIVE));
-            }
-            let view = Self::parse(token).map_err(|expected| Rejection::new(token, expected))?;
-            if parsed.contains(&view) {
-                return Err(Rejection::new(spec, format!("{token:?} appears more than once")));
-            }
-            parsed.push(view);
+    /// The views a request displays when its caller named none: the one
+    /// [`Self::default_for`] the analyzers, or both content views when both analyzers ran.
+    pub fn defaults_for(analysis: AnalysisSet) -> Vec<Self> {
+        if analysis.includes_code() && analysis.includes_words() {
+            vec![Self::Code, Self::Documents]
+        } else {
+            vec![Self::default_for(analysis)]
         }
-
-        if full_seen {
-            return Ok(Self::full_report(analysis));
-        }
-        Ok((parsed, Vec::new()))
     }
 
     /// Why `full` cannot appear beside another view.
@@ -292,7 +295,10 @@ impl ViewSpec {
     /// The summary views `full` expands to, given what the analyzers can answer.
     ///
     /// Returns the satisfiable views and those it had to skip, so a caller can report the
-    /// omission rather than drop it silently.
+    /// omission rather than drop it silently. A view is satisfiable when the analyzers
+    /// include everything it [`implies`](Self::implies), the same test a read applies to a
+    /// view its caller named: `full` implies nothing, so it never reads for a view it
+    /// contains.
     pub fn full_report(analysis: AnalysisSet) -> (Vec<Self>, Vec<Self>) {
         Self::ALL
             .into_iter()
@@ -300,10 +306,7 @@ impl ViewSpec {
                 view.is_summary_view()
                     && (!analysis.includes_code() || !matches!(view, Self::Languages))
             })
-            .partition(|view| {
-                (!matches!(view, Self::Documents) || analysis.is_enabled())
-                    && (!matches!(view, Self::Code) || analysis.includes_code())
-            })
+            .partition(|view| analysis.contains(view.implies()))
     }
 
     /// Whether this view belongs in `--view full`.
@@ -312,6 +315,84 @@ impl ViewSpec {
     /// one inside a digest destroys the digest.
     pub const fn is_summary_view(self) -> bool {
         !matches!(self, Self::List | Self::Files)
+    }
+}
+
+/// The view axis as its caller wrote it: parsed, and not yet resolved against the
+/// analyzers that will answer it.
+///
+/// Parsing and resolving are two steps because a request that builds its own basis needs
+/// what the named views imply before it can know its analyzers, and `full` and the default
+/// can only be resolved once it does. The grammar runs once either way, so a refusal is
+/// the same whichever step a caller stops at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ViewList {
+    /// The caller named no view, so the analyzers choose ([`ViewSpec::defaults_for`]).
+    Default,
+    /// `full`: every summary view the analyzers can answer.
+    Full,
+    /// The views named, in the caller's order.
+    Named(Vec<ViewSpec>),
+}
+
+impl ViewList {
+    /// Read a comma list of view names, or `full` alone.
+    pub(crate) fn parse(spec: Option<&str>) -> Result<Self, Rejection> {
+        let Some(spec) = spec else {
+            return Ok(Self::Default);
+        };
+        let mut parsed: Vec<ViewSpec> = Vec::new();
+        let mut full_seen = false;
+        for raw in spec.split(',') {
+            let token = raw.trim();
+            if token.is_empty() {
+                return Err(Rejection::new(spec, "empty entry in the list"));
+            }
+            if token.eq_ignore_ascii_case("full") {
+                if full_seen || !parsed.is_empty() {
+                    return Err(Rejection::new("full", ViewSpec::FULL_IS_EXCLUSIVE));
+                }
+                full_seen = true;
+                continue;
+            }
+            if full_seen {
+                return Err(Rejection::new("full", ViewSpec::FULL_IS_EXCLUSIVE));
+            }
+            let view =
+                ViewSpec::parse(token).map_err(|expected| Rejection::new(token, expected))?;
+            if parsed.contains(&view) {
+                return Err(Rejection::new(spec, format!("{token:?} appears more than once")));
+            }
+            parsed.push(view);
+        }
+        Ok(if full_seen { Self::Full } else { Self::Named(parsed) })
+    }
+
+    /// The named views that imply an analyzer, in the caller's order.
+    ///
+    /// Empty for `full` and for the default, which imply nothing: one is the metadata
+    /// digest and the other is chosen *by* the analyzers.
+    pub(crate) fn implying(&self) -> Vec<ViewSpec> {
+        match self {
+            Self::Named(views) => {
+                views.iter().copied().filter(|view| view.implies().is_enabled()).collect()
+            }
+            Self::Default | Self::Full => Vec::new(),
+        }
+    }
+
+    /// Every analyzer the named views imply.
+    pub(crate) fn implies(&self) -> AnalysisSet {
+        self.implying().into_iter().fold(AnalysisSet::NONE, |set, view| set.union(view.implies()))
+    }
+
+    /// The views to render and the ones `full` had to drop, given the analyzers.
+    pub(crate) fn resolve(self, analysis: AnalysisSet) -> (Vec<ViewSpec>, Vec<ViewSpec>) {
+        match self {
+            Self::Default => (ViewSpec::defaults_for(analysis), Vec::new()),
+            Self::Full => ViewSpec::full_report(analysis),
+            Self::Named(views) => (views, Vec::new()),
+        }
     }
 }
 
@@ -1302,25 +1383,74 @@ pub struct Report {
 
 /// Remarks a report makes about itself.
 ///
-/// Only what the request, the resolved views, and the index's coverage can establish. The
-/// CLI also prints a note quoting how many bytes analysis read, which is walk telemetry the
-/// report envelope does not carry, so that one stays with the performance footer where the
-/// rest of the run's telemetry lives.
+/// Only what the request, the analyzers its basis holds, the resolved views, and the
+/// index's coverage can establish. The CLI also prints a note quoting how many bytes
+/// analysis read, which is walk telemetry the report envelope does not carry, so that one
+/// stays with the performance footer where the rest of the run's telemetry lives.
+///
+/// Two remarks relate the analyzers to the views, one for each direction a request can
+/// leave them unmatched. `full` implies nothing, so it names the views it skipped and the
+/// one value of the analyzer axis that includes them alongside what already ran. And
+/// analysis no selected view displays -- warming the sidecar is a supported use, so this
+/// is a note rather than an error -- names the views [`ViewSpec::defaults_for`] the
+/// analyzers, which are where it would show.
 pub(crate) fn display_notes(
     query: &Query,
+    content: AnalysisSet,
     ignore_rules: &ControlCoverage,
 ) -> (Vec<String>, Vec<String>) {
     let mut notes = Vec::new();
     let mut tips = Vec::new();
+    let labels = |views: &[ViewSpec]| views.iter().map(|view| view.label()).collect::<Vec<_>>();
     if !query.omitted_views.is_empty() {
-        let names: Vec<&str> = query.omitted_views.iter().map(|view| view.label()).collect();
-        notes.push(format!("note: omitted {}: content analysis required", names.join(", ")));
-        let analysis = if query.omitted_views.contains(&ViewSpec::Code) { "code" } else { "lines" };
-        tips.push(format!("tip: include omitted views: add {} {analysis}", query.axes.analyze));
+        let needed = query
+            .omitted_views
+            .iter()
+            .fold(AnalysisSet::NONE, |set, view| set.union(view.implies()));
+        let held = content.labels();
+        let missing: Vec<&str> =
+            needed.named().into_iter().filter(|name| !held.contains(name)).collect();
+        let without = if content.is_enabled() {
+            format!("{} analysis", missing.join(" and "))
+        } else {
+            "analysis".to_owned()
+        };
+        notes.push(format!(
+            "note: full omits {} without {without}",
+            labels(&query.omitted_views).join(", ")
+        ));
+        tips.push(format!(
+            "tip: include them: {} {}",
+            query.axes.analyze,
+            content.union(needed).request_label()
+        ));
     }
     if let Some((note, tip)) = refused_controls_note(ignore_rules, query.axes) {
         notes.push(note);
         tips.extend(tip);
+    }
+    let displayed = query.views.iter().any(|view| {
+        matches!(
+            view,
+            ViewSpec::Types
+                | ViewSpec::Families
+                | ViewSpec::Languages
+                | ViewSpec::Code
+                | ViewSpec::Documents
+        )
+    });
+    let ranked = matches!(query.selection.sort, Some(SortKey::Metric(_)));
+    if content.is_enabled() && !displayed && !ranked {
+        notes.push(format!(
+            "note: {} analysis not shown by {}",
+            content.named().join(" and "),
+            labels(&query.views).join(", ")
+        ));
+        tips.push(format!(
+            "tip: show it: {} {}",
+            query.axes.view,
+            labels(&ViewSpec::defaults_for(content)).join(",")
+        ));
     }
     (notes, tips)
 }
@@ -1545,23 +1675,7 @@ pub(crate) fn report_in(
         }
     }
     let ignore_rules = index.control_coverage();
-    let (mut notes, mut tips) = display_notes(query, &ignore_rules);
-    if content.is_enabled()
-        && query.selection.sort.is_none_or(|sort| !matches!(sort, SortKey::Metric(_)))
-        && !query.views.iter().any(|view| {
-            matches!(
-                view,
-                ViewSpec::Types
-                    | ViewSpec::Families
-                    | ViewSpec::Languages
-                    | ViewSpec::Code
-                    | ViewSpec::Documents
-            )
-        })
-    {
-        notes.push("note: requested analysis is not displayed by the selected views".to_owned());
-        tips.push(format!("tip: show analysis: {} families, languages, or full", query.axes.view));
-    }
+    let (mut notes, mut tips) = display_notes(query, content, &ignore_rules);
     if content.includes_words() {
         // Of the files the report's views show, not of every record the index holds: a
         // selection that leaves a Markdown file out says nothing of it. Each metric view's
@@ -1662,7 +1776,7 @@ pub(crate) fn report_summary(
     provenance: ReportProvenance,
 ) -> Report {
     let query = &request.query;
-    let (mut notes, mut tips) = display_notes(query, &ignore_rules);
+    let (mut notes, mut tips) = display_notes(query, request.basis.content, &ignore_rules);
     tips.extend(retained_refusals_tip(query, &ignore_rules));
     if ignored_unverified {
         notes.push(UNVERIFIED_IGNORED_NOTE.to_owned());
@@ -3827,6 +3941,55 @@ mod tests {
         );
     }
 
+    /// The two directions between views and analyzers are one table read both ways: a view
+    /// that implies an analyzer set is the view that set defaults to, so `--view code` and
+    /// `--analyze code` cannot come to mean different reports.
+    #[test]
+    fn a_view_implies_exactly_the_analyzers_that_choose_it() {
+        for view in ViewSpec::ALL {
+            let implied = view.implies();
+            match view {
+                ViewSpec::Code | ViewSpec::Documents => {
+                    assert!(implied.is_enabled(), "{view:?} has no metadata meaning");
+                    assert_eq!(ViewSpec::default_for(implied), view, "{view:?}");
+                }
+                _ => assert_eq!(implied, AnalysisSet::NONE, "{view:?} has a metadata meaning"),
+            }
+        }
+        assert_eq!(ViewSpec::Code.implies(), AnalysisSet::CODE_ONLY);
+        assert_eq!(ViewSpec::Documents.implies(), AnalysisSet::WORDS_ONLY);
+    }
+
+    /// The list grammar parses before any analyzer is known, and only named views imply:
+    /// `full` is the metadata digest and the default is chosen by the analyzers.
+    #[test]
+    fn only_named_content_views_imply_analysis() {
+        let implied = |spec| ViewList::parse(spec).expect("parses").implies();
+        assert_eq!(implied(Some("code")), AnalysisSet::CODE_ONLY);
+        assert_eq!(implied(Some("documents")), AnalysisSet::WORDS_ONLY);
+        assert_eq!(implied(Some("tree,code,documents")), AnalysisSet::ALL);
+        for spec in [None, Some("full"), Some("languages"), Some("types,families,summary")] {
+            assert_eq!(implied(spec), AnalysisSet::NONE, "{spec:?}");
+        }
+        assert_eq!(
+            ViewList::parse(Some("summary,documents,code")).expect("parses").implying(),
+            [ViewSpec::Documents, ViewSpec::Code],
+            "the caller's order"
+        );
+    }
+
+    /// `full` keeps a view exactly when the analyzers include what it implies, the test a
+    /// read applies to a view its caller named.
+    #[test]
+    fn full_keeps_a_view_only_when_its_analyzers_ran() {
+        let omitted = |content| ViewSpec::full_report(content).1;
+        assert_eq!(omitted(AnalysisSet::NONE), [ViewSpec::Code, ViewSpec::Documents]);
+        assert_eq!(omitted(AnalysisSet::LINES_ONLY), [ViewSpec::Code, ViewSpec::Documents]);
+        assert_eq!(omitted(AnalysisSet::CODE_ONLY), [ViewSpec::Documents]);
+        assert_eq!(omitted(AnalysisSet::WORDS_ONLY), [ViewSpec::Code]);
+        assert!(omitted(AnalysisSet::ALL).is_empty());
+    }
+
     fn generated_at() -> std::time::SystemTime {
         UNIX_EPOCH + Duration::from_secs(1_001)
     }
@@ -4155,16 +4318,106 @@ mod tests {
         assert!(omitted.contains(&ViewSpec::Documents));
 
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
-        let (notes, _) = display_notes(&query, &ControlCoverage::NotObserved);
-        assert_eq!(notes.len(), 1, "{notes:?}");
-        assert!(notes[0].contains("code") && notes[0].contains("documents"), "{notes:?}");
+        let (notes, tips) = display_notes(&query, AnalysisSet::NONE, &ControlCoverage::NotObserved);
+        assert_eq!(notes, ["note: full omits code, documents without analysis"]);
+        assert_eq!(tips, ["tip: include them: analyze all"]);
 
         // Nothing dropped, nothing said.
         let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::ALL, "view")
             .expect("full resolves with analyzers");
         assert!(omitted.is_empty(), "every view is answerable with analysis enabled");
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
-        assert!(display_notes(&query, &ControlCoverage::NotObserved).0.is_empty());
+        assert!(
+            display_notes(&query, AnalysisSet::ALL, &ControlCoverage::NotObserved).0.is_empty()
+        );
+    }
+
+    /// `full` implies nothing, so under one analyzer it drops the view that needs the
+    /// other. The note names the analyzer that is missing, and the tip names the one value
+    /// that keeps what ran and adds what is missing -- naming only the missing analyzer
+    /// would be a command that loses the one already chosen.
+    #[test]
+    fn full_names_the_missing_analyzer_and_a_value_that_keeps_the_present_one() {
+        for (content, omitted, note) in [
+            (
+                AnalysisSet::LINES_ONLY,
+                "code, documents",
+                "note: full omits code, documents without code and words analysis",
+            ),
+            (
+                AnalysisSet::CODE_ONLY,
+                "documents",
+                "note: full omits documents without words analysis",
+            ),
+            (AnalysisSet::WORDS_ONLY, "code", "note: full omits code without code analysis"),
+        ] {
+            let (selected, dropped) =
+                ViewSpec::resolve(Some("full"), content, "view").expect("full resolves");
+            let labels: Vec<&str> = dropped.iter().map(|view| view.label()).collect();
+            assert_eq!(labels.join(", "), omitted, "{content:?}");
+            let query = Query {
+                views: selected,
+                omitted_views: dropped,
+                axes: &AxisNames::FLAGS,
+                ..Query::default()
+            };
+            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            assert_eq!(notes, [note], "{content:?}");
+            assert_eq!(tips, ["tip: include them: --analyze all"], "{content:?}");
+        }
+    }
+
+    /// Analysis no selected view displays is named with the views where it would show:
+    /// the default for the analyzers, which is the view each implies.
+    #[test]
+    fn analysis_no_view_shows_names_the_view_that_would_show_it() {
+        for (content, views, note, tip) in [
+            (
+                AnalysisSet::CODE_ONLY,
+                vec![ViewSpec::Summary],
+                "note: code analysis not shown by summary",
+                "tip: show it: --view code",
+            ),
+            (
+                AnalysisSet::ALL,
+                vec![ViewSpec::Tree],
+                "note: code and words analysis not shown by tree",
+                "tip: show it: --view code,documents",
+            ),
+            (
+                AnalysisSet::LINES_ONLY,
+                vec![ViewSpec::Summary, ViewSpec::Files],
+                "note: lines analysis not shown by summary, files",
+                "tip: show it: --view families",
+            ),
+            (
+                AnalysisSet::WORDS_ONLY,
+                vec![ViewSpec::List],
+                "note: words analysis not shown by list",
+                "tip: show it: --view documents",
+            ),
+        ] {
+            let query = Query { views, axes: &AxisNames::FLAGS, ..Query::default() };
+            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            assert_eq!((notes, tips), (vec![note.to_owned()], vec![tip.to_owned()]));
+        }
+
+        // A view that displays analysis, or a ranking by one of its metrics, says nothing.
+        let shown = Query { views: vec![ViewSpec::Languages], ..Query::default() };
+        let (notes, tips) =
+            display_notes(&shown, AnalysisSet::CODE_ONLY, &ControlCoverage::NotObserved);
+        assert!(notes.is_empty() && tips.is_empty(), "{notes:?} {tips:?}");
+        let ranked = Query {
+            views: vec![ViewSpec::Files],
+            selection: Selection {
+                sort: Some(SortKey::Metric("code_lines")),
+                ..Selection::default()
+            },
+            ..Query::default()
+        };
+        let (notes, _) =
+            display_notes(&ranked, AnalysisSet::CODE_ONLY, &ControlCoverage::NotObserved);
+        assert!(notes.is_empty(), "{notes:?}");
     }
 
     /// A rule belongs to the library; the words a caller can act on belong to their
@@ -4262,9 +4515,10 @@ mod tests {
             // Anchored on the whole phrase, because `--analyze` contains `analyze`: a bare
             // `contains` for the other surface's spelling matches its own. That is the same
             // tokenisation trap the watch-scope substitution had to avoid.
-            let note = display_notes(&query, &ControlCoverage::NotObserved).1.remove(0);
-            assert!(note.contains(&format!("add {mine} ")), "{note} must name {mine}");
-            assert!(!note.contains(&format!("add {theirs} ")), "{note} must not name {theirs}");
+            let tip =
+                display_notes(&query, AnalysisSet::NONE, &ControlCoverage::NotObserved).1.remove(0);
+            assert!(tip.contains(&format!(": {mine} ")), "{tip} must name {mine}");
+            assert!(!tip.contains(&format!(": {theirs} ")), "{tip} must not name {theirs}");
         }
 
         // The same for the hard error, which names the view axis as well. The rule is the
@@ -4272,12 +4526,15 @@ mod tests {
         for (axes, view, analyze) in
             [(&AxisNames::FLAGS, "--view", "--analyze"), (&AxisNames::FIELDS, "view", "analyze")]
         {
-            let error =
-                crate::query::RequestError::ViewNeedsContent(ViewSpec::Documents).message(axes);
+            let error = crate::query::RequestError::ViewNeedsAnalyzer {
+                view: ViewSpec::Documents,
+                held: AnalysisSet::NONE,
+            }
+            .message(axes);
             assert!(error.starts_with(&format!("{view} documents")), "{error}");
-            assert!(error.contains(&format!("add {analyze} ")), "{error}");
+            assert!(error.contains(&format!("with {analyze} ")), "{error}");
             let theirs = if analyze == "--analyze" { "analyze" } else { "--analyze" };
-            assert!(!error.contains(&format!("add {theirs} ")), "{error}");
+            assert!(!error.contains(&format!("with {theirs} ")), "{error}");
         }
     }
 

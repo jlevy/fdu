@@ -21,7 +21,7 @@ use crate::content::AnalysisSet;
 use crate::control::{ControlLimits, DEFAULT_CONTROL_BUDGET, DEFAULT_CONTROL_LINE_LIMIT};
 use crate::engine_contract::EntryKind;
 use crate::query::query_glob::Pattern;
-use crate::query::query_report::{AxisNames, Query, ViewSpec};
+use crate::query::query_report::{AxisNames, Query, ViewList, ViewSpec};
 use crate::query::query_selection::{
     Bound, IgnoredEntries, Selection, ShareThreshold, SizeMetric, SortKey,
 };
@@ -318,6 +318,14 @@ pub struct Request {
     /// Fixed when the request is built, so [`Selection::modified`] is absolute and a watch
     /// that builds its request once at start never slides its window.
     pub now: SystemTime,
+    /// The views whose analyzers [`Self::build`] added to the basis, in the caller's order.
+    ///
+    /// Provenance, not part of the answer: the basis's content already includes what they
+    /// imply, and the answer is the same whether a caller named `code` as a view or as an
+    /// analyzer. Kept for the one refusal that should name what the caller wrote:
+    /// [`RequestError::WatchContent`] names the view rather than an analyzer the caller
+    /// never typed. Empty for a read of a held basis, which implies nothing.
+    pub implied_by: Vec<ViewSpec>,
 }
 
 /// A request as a caller wrote it: raw values, before any grammar has read them.
@@ -459,9 +467,14 @@ impl<'a> RequestSpec<'a> {
 ///
 /// A watch has no view default of its own, and no field here for one. It is derived rather
 /// than declared because it is not a separate decision: [`RequestError::WatchContent`]
-/// refuses a watch that names an analyzer, so the content a watch serves is always none and
-/// its view is the report default for none. A field would have restated `tree` beside the
-/// rule that makes it true, which is the shape a default drifts out of.
+/// refuses a watch with any analyzer, named or implied by a view, so the content a watch
+/// serves is always none and its view is the report default for none. A field would have
+/// restated `tree` beside the rule that makes it true, which is the shape a default drifts
+/// out of.
+///
+/// Content is `none` beyond what the views imply: [`Request::build`] adds the analyzers a
+/// content view shows ([`ViewSpec::implies`]), so `none` names no analyzer of its own rather
+/// than forbidding one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RequestDefaults {
     /// The size metric.
@@ -508,8 +521,10 @@ impl Request {
     /// knows which rule applies -- [`Self::validate_read`] for a retained index,
     /// [`Self::validate`] for a request that is its own basis. [`Self::read`] is the
     /// constructor that parses and validates in one step.
+    ///
+    /// Nothing is implied: the basis is the caller's, whole.
     pub const fn new(basis: Basis, query: Query, now: SystemTime) -> Self {
-        Self { basis, query, now }
+        Self { basis, query, now, implied_by: Vec::new() }
     }
 
     /// One read of what `basis` holds, written in the value grammars.
@@ -519,6 +534,10 @@ impl Request {
     /// the analyzers the basis already holds, so a typed set never has to be spelled back
     /// into the grammar to find out what a request that read files displays, and no caller
     /// builds a request with a throw-away basis and overwrites it afterwards.
+    ///
+    /// A held basis is never widened: a view that implies an analyzer the holder was not
+    /// opened with is refused ([`RequestError::ViewNeedsAnalyzer`]) rather than read for,
+    /// because a read cannot add to what the holder paid for.
     ///
     /// # Errors
     ///
@@ -530,7 +549,8 @@ impl Request {
         now: SystemTime,
         axes: &'static AxisNames,
     ) -> Result<Self, RequestError> {
-        let mut query = build_query(basis.content, spec, now, axes)?;
+        let views = parse_views(spec.views, axes)?;
+        let mut query = build_query(basis.content, views, spec, now, axes)?;
         if spec.ignored.is_none() {
             query.selection.ignored = basis.scope.population;
         }
@@ -545,6 +565,13 @@ impl Request {
     /// query built here. Every value is parsed before any is checked against another, in
     /// the order the command line reads its flags: content, views, selection, the page
     /// denominator, then scope. Rules that relate axes are [`Self::validate`]'s.
+    ///
+    /// This request builds its own basis, so a view that shows analysis requests it: the
+    /// basis enables the analyzers `analyze` names together with the ones the named views
+    /// imply ([`ViewSpec::implies`]), and `full` and the default view are resolved against
+    /// that union. `--view code` and `--analyze code` therefore build one basis, and share
+    /// one sidecar and one answer. Only a view with no metadata meaning implies anything,
+    /// so no metadata report ever turns into a read of file bodies.
     pub fn build(
         spec: &RequestSpec<'_>,
         now: SystemTime,
@@ -553,12 +580,19 @@ impl Request {
         // The three steps in the order the command line reads its flags, which is the order
         // a refusal names when two axes are both wrong: content, then everything this read
         // supplies, then scope. `Basis::build` runs the first and the third together, for
-        // the callers that fix a basis and read it many times.
-        let content = parse_content(spec, axes)?;
-        let query = build_query(content, &spec.read, now, axes)?;
+        // the callers that fix a basis and read it many times; it implies nothing, because
+        // a holder's analyzers are what it was explicitly opened with.
+        let named = parse_content(spec, axes)?;
+        let views = parse_views(spec.read.views, axes)?;
+        let implied_by = views.implying();
+        let content = named.union(views.implies());
+        let query = build_query(content, views, &spec.read, now, axes)?;
         let mut scope = parse_scope(spec, axes)?;
         scope.population = query.selection.ignored;
-        Ok(Self::new(Basis { root: spec.root.to_path_buf(), scope, content }, query, now))
+        Ok(Self {
+            implied_by,
+            ..Self::new(Basis { root: spec.root.to_path_buf(), scope, content }, query, now)
+        })
     }
 
     /// Refuse a request no holder of its own basis could answer.
@@ -600,7 +634,8 @@ impl Request {
     ///   it filters the retained index rather than the scan.
     /// - Content analysis ([`RequestError::WatchContent`]): nothing re-reads a file the
     ///   watch sees change, so a session would go on reporting the metrics it started with
-    ///   as fresh.
+    ///   as fresh. Named or implied alike, and the refusal names the views that implied it
+    ///   ([`Self::implied_by`]), since those are what the caller wrote.
     /// - A snapshot nothing verified ([`RequestError::WatchCacheOnly`]): the window between
     ///   the snapshot and the session's start is never observed, so the first answer would
     ///   describe a tree that may have moved and every later one would build on it.
@@ -621,7 +656,7 @@ impl Request {
             return Err(RequestError::WatchScope);
         }
         if self.basis.content.is_enabled() {
-            return Err(RequestError::WatchContent);
+            return Err(RequestError::WatchContent { views: self.implied_by.clone() });
         }
         if delivery.stale_ok {
             return Err(RequestError::WatchCacheOnly);
@@ -678,15 +713,13 @@ impl Request {
                     "extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view",
                 ));
             }
+            // A sort orders rows; it never says what the report is about, so unlike a
+            // content view it implies nothing and is refused on every basis.
             if !basis.content.contains(metric.owner) {
-                let analyzer = if metric.owner.includes_code() {
-                    "code"
-                } else if metric.owner.includes_words() {
-                    "words"
-                } else {
-                    "lines"
-                };
-                return Err(RequestError::NeedsAnalyzer { item: metric.name, analyzer });
+                return Err(RequestError::SortNeedsAnalyzer {
+                    metric: metric.name,
+                    analyzer: metric.owner,
+                });
             }
         }
         let hierarchy = self.query.views.iter().any(|view| self.query.tree_for(*view));
@@ -782,33 +815,43 @@ fn parse_scope(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> Result<Scope
     })
 }
 
-/// The query one read supplies, parsed against the analyzers its basis holds.
+/// The view axis a read names, in its grammar, before any analyzer resolves it.
 ///
-/// `content` decides the view default and nothing else here: a request that paid to read
-/// files displays what it read. Every value is parsed before any is checked against
-/// another, in one order for every surface -- views, selection, then the page denominator.
+/// An analyzer's name in the view axis is refused with the view that shows it, because it
+/// is the one mistake the two vocabularies invite.
+fn parse_views(spec: Option<&str>, axes: &'static AxisNames) -> Result<ViewList, RequestError> {
+    ViewList::parse(spec).map_err(|rejection| {
+        let suggestion = match rejection.value().to_ascii_lowercase().as_str() {
+            "lines" => Some(("lines", ViewSpec::Families)),
+            "words" => Some(("words", ViewSpec::Documents)),
+            _ => None,
+        };
+        match suggestion {
+            Some((analyzer, suggested_view)) => RequestError::AnalyzerNamedAsView {
+                value: rejection.value().to_string(),
+                analyzer,
+                suggested_view,
+            },
+            None => rejection.on(axes.view),
+        }
+    })
+}
+
+/// The query one read supplies, with its views resolved against the analyzers its basis
+/// holds.
+///
+/// `content` decides `full` and the view default and nothing else here: a request that
+/// paid to read files displays what it read. Every value is parsed before any is checked
+/// against another, in one order for every surface -- views ([`parse_views`], which each
+/// caller runs first), selection, then the page denominator.
 fn build_query(
     content: AnalysisSet,
+    views: ViewList,
     spec: &ReadSpec<'_>,
     now: SystemTime,
     axes: &'static AxisNames,
 ) -> Result<Query, RequestError> {
-    let (views, omitted_views) =
-        ViewSpec::resolve_rejecting(spec.views, content).map_err(|rejection| {
-            let suggestion = match rejection.value().to_ascii_lowercase().as_str() {
-                "lines" => Some(("lines", "families")),
-                "words" => Some(("words", "documents")),
-                _ => None,
-            };
-            match suggestion {
-                Some((analyzer, suggested_view)) => RequestError::AnalyzerNamedAsView {
-                    value: rejection.value().to_string(),
-                    analyzer,
-                    suggested_view,
-                },
-                None => rejection.on(axes.view),
-            }
-        })?;
+    let (views, omitted_views) = views.resolve(content);
 
     let mut selection = Selection {
         depth: spec.depth.map(|value| parse_bound(value, axes.depth)).transpose()?,
@@ -934,19 +977,31 @@ pub enum RequestError {
     AnalyzerNamedAsView {
         /// The rejected token in the caller's spelling.
         value: String,
-        /// The analysis unit to request.
+        /// The analyzer the token names.
         analyzer: &'static str,
-        /// A canonical view of that analysis.
-        suggested_view: &'static str,
+        /// The view that shows that analyzer's results.
+        suggested_view: ViewSpec,
     },
-    /// A view has no metadata-only projection, and the request enables no analyzer.
-    ViewNeedsContent(ViewSpec),
-    /// A view or ordering key requires an analyzer the request did not enable.
-    NeedsAnalyzer {
-        /// Requested view or metric label.
-        item: &'static str,
-        /// Analysis unit to add.
-        analyzer: &'static str,
+    /// A view shows analysis the basis does not hold.
+    ///
+    /// Only a held basis -- a retained index or an opened root -- can raise this: a request
+    /// that builds its own basis enables what its views imply, and a read never widens what
+    /// a holder was opened with.
+    ViewNeedsAnalyzer {
+        /// The view the read named.
+        view: ViewSpec,
+        /// The analyzers the basis holds.
+        held: AnalysisSet,
+    },
+    /// A sort by a content metric whose analyzer the request did not enable.
+    ///
+    /// Unlike a content view, a sort implies nothing: it orders rows and never says what a
+    /// report is about, so the analyzer must be named.
+    SortNeedsAnalyzer {
+        /// The metric, as the sort axis spells it.
+        metric: &'static str,
+        /// The analyzers that measure it.
+        analyzer: AnalysisSet,
     },
     /// A selection by ignored state over a scan that observes no `.gitignore`.
     IgnoredWithoutObservation(IgnoredEntries),
@@ -974,7 +1029,11 @@ pub enum RequestError {
     /// A watch was asked to narrow its scan scope.
     WatchScope,
     /// A watch was asked to keep content analysis current.
-    WatchContent,
+    WatchContent {
+        /// The views that implied the analysis, in the caller's order; empty when the
+        /// caller named the analyzers, so the refusal names what the caller wrote.
+        views: Vec<ViewSpec>,
+    },
     /// A watch was asked to start from a snapshot nothing verifies.
     WatchCacheOnly,
     /// A stale answer was asked of a delivery that never reads the snapshot.
@@ -1010,20 +1069,34 @@ impl RequestError {
     pub fn message(&self, axes: &AxisNames) -> String {
         match self {
             Self::InvalidValue { axis, value, expected } => invalid_message(axis, value, expected),
-            Self::AnalyzerNamedAsView { value, analyzer, suggested_view } => format!(
-                "invalid {} {value:?}: {analyzer} is an analyzer; use {}={analyzer} with {}={suggested_view}",
-                axes.view, axes.analyze, axes.view
-            ),
-            Self::ViewNeedsContent(view) => format!(
-                "{} {} requires content analysis: add {} lines, code, words, or all; views never \
-                 enable content analysis implicitly",
+            // A view that implies its analyzer is the whole answer; one that does not needs
+            // the analyzer named beside it.
+            Self::AnalyzerNamedAsView { value, analyzer, suggested_view } => {
+                let shown = if suggested_view.implies().is_enabled() {
+                    String::new()
+                } else {
+                    format!(", with {} {analyzer}", axes.analyze)
+                };
+                format!(
+                    "invalid {} {value:?}: {analyzer} is an analyzer; its view is {}{shown}",
+                    axes.view,
+                    suggested_view.label()
+                )
+            }
+            Self::ViewNeedsAnalyzer { view, held } => format!(
+                "{} {} needs {} analysis; this index was opened with {} {}",
                 axes.view,
                 view.label(),
-                axes.analyze
+                view.implies().named().join(" and "),
+                axes.analyze,
+                held.request_label()
             ),
-            Self::NeedsAnalyzer { item, analyzer } => format!(
-                "{item} requires {analyzer} analysis: add {} {analyzer}; views and sorts never enable analysis implicitly",
-                axes.analyze
+            Self::SortNeedsAnalyzer { metric, analyzer } => format!(
+                "{} {metric} needs {} analysis: add {} {}",
+                axes.sort,
+                analyzer.named().join(" and "),
+                axes.analyze,
+                analyzer.request_label()
             ),
             Self::IgnoredWithoutObservation(ignored) => format!(
                 "{} needs .gitignore classification, and {} turned it off; drop one of them",
@@ -1065,9 +1138,20 @@ impl RequestError {
                 )
             }
             Self::DeliveryUnsupported { route, reason } => format!("{route}: {reason}"),
-            Self::WatchContent => format!(
+            Self::WatchContent { views } if views.is_empty() => format!(
                 "{} is not yet supported with {}; use a one-shot report",
                 axes.analyze, axes.watch
+            ),
+            Self::WatchContent { views } => format!(
+                "{} {} needs {} analysis, which {} cannot keep current; use a one-shot report",
+                axes.view,
+                views.iter().map(|view| view.label()).collect::<Vec<_>>().join(","),
+                views
+                    .iter()
+                    .fold(AnalysisSet::NONE, |set, view| set.union(view.implies()))
+                    .named()
+                    .join(" and "),
+                axes.watch
             ),
             Self::WatchCacheOnly => format!(
                 "{watch} cannot start from a {stale_ok} answer: nothing verifies what changed \
@@ -1133,34 +1217,17 @@ fn watch_scope_message(axes: &AxisNames) -> String {
         .collect()
 }
 
-/// Refuse a view that no enabled analyzer can answer.
+/// Refuse a view the basis's analyzers cannot answer.
 ///
-/// A match over every view rather than a list of the exceptions, so a new view forces a
-/// decision here about whether it needs content.
+/// One containment test, against the table [`ViewSpec::implies`] states, so which views
+/// need content is decided once, where a new view must decide it. A request that built its
+/// own basis enabled what its views imply and always passes; only a held basis, which a
+/// read never widens, can fail it.
 pub(crate) fn check_views(views: &[ViewSpec], content: AnalysisSet) -> Result<(), RequestError> {
-    for view in views {
-        match view {
-            ViewSpec::Code if !content.includes_code() => {
-                return Err(RequestError::NeedsAnalyzer { item: "code view", analyzer: "code" });
-            }
-            ViewSpec::Documents if !content.is_enabled() => {
-                return Err(RequestError::ViewNeedsContent(*view));
-            }
-            ViewSpec::List
-            | ViewSpec::Tree
-            | ViewSpec::Types
-            | ViewSpec::Extensions
-            | ViewSpec::Families
-            | ViewSpec::Languages
-            | ViewSpec::Code
-            | ViewSpec::Documents
-            | ViewSpec::Files
-            | ViewSpec::Largest
-            | ViewSpec::Recent
-            | ViewSpec::Summary => {}
-        }
+    match views.iter().find(|view| !content.contains(view.implies())) {
+        Some(view) => Err(RequestError::ViewNeedsAnalyzer { view: *view, held: content }),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Refuse a selection by ignored state when the scan observes no control state.
@@ -1528,11 +1595,45 @@ mod tests {
     fn every_refusal_renders_in_flag_and_field_wording() {
         let cases = [
             (
-                RequestError::ViewNeedsContent(ViewSpec::Documents),
-                "--view documents requires content analysis: add --analyze lines, code, words, \
-                 or all; views never enable content analysis implicitly",
-                "view documents requires content analysis: add analyze lines, code, words, or \
-                 all; views never enable content analysis implicitly",
+                RequestError::ViewNeedsAnalyzer { view: ViewSpec::Code, held: AnalysisSet::NONE },
+                "--view code needs code analysis; this index was opened with --analyze none",
+                "view code needs code analysis; this index was opened with analyze none",
+            ),
+            (
+                RequestError::ViewNeedsAnalyzer {
+                    view: ViewSpec::Documents,
+                    held: AnalysisSet::CODE_ONLY,
+                },
+                "--view documents needs words analysis; this index was opened with --analyze code",
+                "view documents needs words analysis; this index was opened with analyze code",
+            ),
+            (
+                RequestError::SortNeedsAnalyzer {
+                    metric: "code_lines",
+                    analyzer: AnalysisSet::CODE_ONLY,
+                },
+                "--sort code_lines needs code analysis: add --analyze code",
+                "sort code_lines needs code analysis: add analyze code",
+            ),
+            (
+                RequestError::AnalyzerNamedAsView {
+                    value: "words".to_owned(),
+                    analyzer: "words",
+                    suggested_view: ViewSpec::Documents,
+                },
+                "invalid --view \"words\": words is an analyzer; its view is documents",
+                "invalid view \"words\": words is an analyzer; its view is documents",
+            ),
+            (
+                RequestError::AnalyzerNamedAsView {
+                    value: "lines".to_owned(),
+                    analyzer: "lines",
+                    suggested_view: ViewSpec::Families,
+                },
+                "invalid --view \"lines\": lines is an analyzer; its view is families, with \
+                 --analyze lines",
+                "invalid view \"lines\": lines is an analyzer; its view is families, with \
+                 analyze lines",
             ),
             (
                 RequestError::IgnoredWithoutObservation(IgnoredEntries::Exclude),
@@ -1578,9 +1679,23 @@ mod tests {
                  and filesystem-boundary semantics",
             ),
             (
-                RequestError::WatchContent,
+                RequestError::WatchContent { views: Vec::new() },
                 "--analyze is not yet supported with --watch; use a one-shot report",
                 "analyze is not yet supported with watch; use a one-shot report",
+            ),
+            (
+                RequestError::WatchContent { views: vec![ViewSpec::Code] },
+                "--view code needs code analysis, which --watch cannot keep current; use a \
+                 one-shot report",
+                "view code needs code analysis, which watch cannot keep current; use a one-shot \
+                 report",
+            ),
+            (
+                RequestError::WatchContent { views: vec![ViewSpec::Documents, ViewSpec::Code] },
+                "--view documents,code needs code and words analysis, which --watch cannot keep \
+                 current; use a one-shot report",
+                "view documents,code needs code and words analysis, which watch cannot keep \
+                 current; use a one-shot report",
             ),
             (
                 RequestError::WatchCacheOnly,
@@ -1649,16 +1764,25 @@ mod tests {
         assert_eq!(rebuilt, source, "the flag wording must be the library's, knob names aside");
     }
 
+    /// Code needs the code analyzer and documents the words analyzer; every other view
+    /// answers from any basis. Lines alone answers neither: raw words by document format
+    /// were a cheaper approximation nobody asks for by name.
     #[test]
     fn documents_and_code_are_the_views_that_need_content() {
-        for content in [AnalysisSet::NONE, AnalysisSet::NONE.with_lines(), AnalysisSet::ALL] {
+        for content in [
+            AnalysisSet::NONE,
+            AnalysisSet::LINES_ONLY,
+            AnalysisSet::CODE_ONLY,
+            AnalysisSet::WORDS_ONLY,
+            AnalysisSet::ALL,
+        ] {
             for view in ViewSpec::ALL {
                 let refused = check_views(&[view], content).is_err();
                 assert_eq!(
                     refused,
-                    (view == ViewSpec::Documents && !content.is_enabled())
+                    (view == ViewSpec::Documents && !content.includes_words())
                         || (view == ViewSpec::Code && !content.includes_code()),
-                    "{view:?}"
+                    "{view:?} over {content:?}"
                 );
             }
         }
@@ -1989,22 +2113,29 @@ mod tests {
         }
     }
 
+    /// An analyzer's name in the view axis is refused with the view that shows it: alone
+    /// when that view implies the analyzer, and beside the analyzer when it does not.
     #[test]
     fn analyzer_names_in_view_axis_point_to_both_correct_axes() {
-        for (token, analyzer, view) in
-            [("LiNeS", "lines", "families"), ("words", "words", "documents")]
-        {
+        for (token, flags, fields) in [
+            (
+                "LiNeS",
+                "invalid --view \"LiNeS\": lines is an analyzer; its view is families, with \
+                 --analyze lines",
+                "invalid view \"LiNeS\": lines is an analyzer; its view is families, with analyze \
+                 lines",
+            ),
+            (
+                "words",
+                "invalid --view \"words\": words is an analyzer; its view is documents",
+                "invalid view \"words\": words is an analyzer; its view is documents",
+            ),
+        ] {
             let spec = reading(ReadSpec { views: Some(token), ..ReadSpec::new() });
-            for axes in [&AxisNames::FLAGS, &AxisNames::FIELDS] {
+            for (axes, expected) in [(&AxisNames::FLAGS, flags), (&AxisNames::FIELDS, fields)] {
                 let error = Request::build(&spec, instant(), axes).expect_err("not a view");
                 assert!(matches!(error, RequestError::AnalyzerNamedAsView { .. }));
-                assert_eq!(
-                    error.message(axes),
-                    format!(
-                        "invalid {} {token:?}: {analyzer} is an analyzer; use {}={analyzer} with {}={view}",
-                        axes.view, axes.analyze, axes.view
-                    )
-                );
+                assert_eq!(error.message(axes), expected);
             }
         }
         let combination = reading(ReadSpec { views: Some("full,words"), ..ReadSpec::new() });
@@ -2013,6 +2144,96 @@ mod tests {
             ViewSpec::resolve(Some("full,words"), AnalysisSet::NONE, "--view")
                 .expect_err("full is exclusive")
         );
+    }
+
+    /// A request that builds its own basis enables what its content views imply, in union
+    /// with what `analyze` names; a view with a metadata meaning implies nothing.
+    #[test]
+    fn a_built_basis_enables_the_analyzers_its_views_imply() {
+        /// `analyze`, `views`, the basis's analyzers, and the views that implied them.
+        type Case = (Option<&'static str>, Option<&'static str>, AnalysisSet, &'static [ViewSpec]);
+        let cases: [Case; 10] = [
+            (None, Some("code"), AnalysisSet::CODE_ONLY, &[ViewSpec::Code]),
+            (None, Some("documents"), AnalysisSet::WORDS_ONLY, &[ViewSpec::Documents]),
+            (
+                None,
+                Some("code,documents"),
+                AnalysisSet::ALL,
+                &[ViewSpec::Code, ViewSpec::Documents],
+            ),
+            (None, Some("full"), AnalysisSet::NONE, &[]),
+            (None, Some("languages"), AnalysisSet::NONE, &[]),
+            (None, Some("types,families,tree"), AnalysisSet::NONE, &[]),
+            (Some("lines"), Some("code"), AnalysisSet::CODE_ONLY, &[ViewSpec::Code]),
+            (Some("lines"), Some("documents"), AnalysisSet::WORDS_ONLY, &[ViewSpec::Documents]),
+            // `none` is the empty set, not a refusal: the views still imply.
+            (Some("none"), Some("code"), AnalysisSet::CODE_ONLY, &[ViewSpec::Code]),
+            (Some("words"), Some("summary,code"), AnalysisSet::ALL, &[ViewSpec::Code]),
+        ];
+        for (analyze, views, content, implied_by) in cases {
+            let spec = RequestSpec {
+                analyze,
+                read: ReadSpec { views, ..ReadSpec::new() },
+                ..RequestSpec::new(root())
+            };
+            let request = built(&spec);
+            assert_eq!(request.basis.content, content, "{analyze:?} {views:?}");
+            assert_eq!(request.implied_by, implied_by, "{analyze:?} {views:?}");
+            request.validate().expect("a built basis answers its own views");
+        }
+
+        // One basis whichever axis named the analyzer, so one sidecar and one answer.
+        for (view, analyzer) in
+            [("code", "code"), ("documents", "words"), ("code,documents", "all")]
+        {
+            let by_view = built(&reading(ReadSpec { views: Some(view), ..ReadSpec::new() }));
+            let by_analyzer =
+                built(&RequestSpec { analyze: Some(analyzer), ..RequestSpec::new(root()) });
+            assert_eq!(by_view.basis.content, by_analyzer.basis.content, "{view}");
+            assert_eq!(by_view.query.views, by_analyzer.query.views, "{view}");
+            assert!(by_analyzer.implied_by.is_empty(), "{analyzer} implied nothing");
+        }
+
+        // `full` is resolved against the union, so a content view never reaches it, and the
+        // metadata digest stays a metadata report.
+        let full = built(&reading(ReadSpec { views: Some("full"), ..ReadSpec::new() }));
+        assert_eq!(full.query.omitted_views, [ViewSpec::Code, ViewSpec::Documents]);
+    }
+
+    /// A read of a held basis is never widened: a view its analyzers cannot answer is
+    /// refused, naming the view, its analyzer, and what the holder was opened with, in each
+    /// surface's words.
+    #[test]
+    fn a_held_basis_refuses_a_view_it_cannot_answer() {
+        let read = |held, views| {
+            Request::read(
+                basis(held, true),
+                &ReadSpec { views: Some(views), ..ReadSpec::new() },
+                instant(),
+                &AxisNames::FIELDS,
+            )
+        };
+        let refused = read(AnalysisSet::NONE, "code").expect_err("nothing analyzed code");
+        assert_eq!(
+            refused,
+            RequestError::ViewNeedsAnalyzer { view: ViewSpec::Code, held: AnalysisSet::NONE }
+        );
+        assert_eq!(
+            refused.message(&AxisNames::FIELDS),
+            "view code needs code analysis; this index was opened with analyze none"
+        );
+        assert_eq!(
+            refused.message(&AxisNames::FLAGS),
+            "--view code needs code analysis; this index was opened with --analyze none"
+        );
+        let refused = read(AnalysisSet::LINES_ONLY, "summary,documents").expect_err("no words");
+        assert_eq!(
+            refused.message(&AxisNames::FIELDS),
+            "view documents needs words analysis; this index was opened with analyze lines"
+        );
+        let held = read(AnalysisSet::WORDS_ONLY, "documents").expect("words answers documents");
+        assert_eq!(held.basis.content, AnalysisSet::WORDS_ONLY, "a read never widens a basis");
+        assert!(held.implied_by.is_empty(), "a read implies nothing");
     }
 
     /// The order `build` names axes in, when more than one of them is wrong.
@@ -2122,16 +2343,20 @@ mod tests {
                 .expect("language grouping never requires content I/O");
         }
 
-        let documents = request_with(
-            &[ViewSpec::Documents],
-            Selection::default(),
-            basis(AnalysisSet::NONE, true),
-        );
-        assert_eq!(documents.validate(), Err(RequestError::ViewNeedsContent(ViewSpec::Documents)));
-        for content in enabled {
+        // A basis is never widened by a view: documents over a basis without words is
+        // refused, naming what the basis holds.
+        for held in [AnalysisSet::NONE, AnalysisSet::LINES_ONLY, AnalysisSet::CODE_ONLY] {
+            let documents =
+                request_with(&[ViewSpec::Documents], Selection::default(), basis(held, true));
+            assert_eq!(
+                documents.validate(),
+                Err(RequestError::ViewNeedsAnalyzer { view: ViewSpec::Documents, held })
+            );
+        }
+        for content in [AnalysisSet::WORDS_ONLY, AnalysisSet::ALL] {
             request_with(&[ViewSpec::Documents], Selection::default(), basis(content, true))
                 .validate()
-                .expect("every enabled profile includes the basic document metrics");
+                .expect("a basis with words answers the document view");
         }
 
         request_with(
@@ -2149,14 +2374,17 @@ mod tests {
         let code = request_with(&[ViewSpec::Code], Selection::default(), plain.clone());
         assert_eq!(
             code.validate(),
-            Err(RequestError::NeedsAnalyzer { item: "code view", analyzer: "code" })
+            Err(RequestError::ViewNeedsAnalyzer { view: ViewSpec::Code, held: AnalysisSet::NONE })
         );
         let selection =
             Selection { sort: Some(SortKey::Metric("code_lines")), ..Selection::default() };
         let files = request_with(&[ViewSpec::Files], selection.clone(), plain);
         assert_eq!(
             files.validate(),
-            Err(RequestError::NeedsAnalyzer { item: "code_lines", analyzer: "code" })
+            Err(RequestError::SortNeedsAnalyzer {
+                metric: "code_lines",
+                analyzer: AnalysisSet::CODE_ONLY
+            })
         );
         request_with(&[ViewSpec::Files], selection, basis(AnalysisSet::NONE.with_code(), true))
             .validate()
@@ -2360,14 +2588,57 @@ mod tests {
             ),
             (
                 RequestSpec { analyze: Some("lines"), ..RequestSpec::new(root()) },
-                RequestError::WatchContent,
+                RequestError::WatchContent { views: Vec::new() },
+            ),
+            // Analysis a view implied is refused the same way, naming the view the caller
+            // wrote rather than an analyzer they never typed.
+            (
+                reading(ReadSpec { views: Some("summary,code"), ..ReadSpec::new() }),
+                RequestError::WatchContent { views: vec![ViewSpec::Code] },
+            ),
+            (
+                RequestSpec {
+                    analyze: Some("lines"),
+                    read: ReadSpec { views: Some("documents"), ..ReadSpec::new() },
+                    ..RequestSpec::new(root())
+                },
+                RequestError::WatchContent { views: vec![ViewSpec::Documents] },
             ),
         ];
         for (spec, expected) in cases {
             let request = built(&spec);
             assert_eq!(request.validate_delivery(&watching), Err(expected));
-            request.validate_delivery(&one_shot).expect("a one-shot delivers all three");
+            request.validate_delivery(&one_shot).expect("a one-shot delivers every one");
         }
+        assert_eq!(
+            built(&reading(ReadSpec { views: Some("code"), ..ReadSpec::new() }))
+                .validate_delivery(&watching)
+                .map_err(|error| error.message(&AxisNames::FLAGS)),
+            Err("--view code needs code analysis, which --watch cannot keep current; use a \
+                 one-shot report"
+                .to_owned())
+        );
+        // `full` and the default imply nothing, so a request whose views were chosen by its
+        // analyzers names the analyzers.
+        for views in [None, Some("full")] {
+            let spec = RequestSpec {
+                analyze: Some("all"),
+                read: ReadSpec { views, ..ReadSpec::new() },
+                ..RequestSpec::new(root())
+            };
+            assert_eq!(
+                built(&spec).validate_delivery(&watching),
+                Err(RequestError::WatchContent { views: Vec::new() }),
+                "{views:?}"
+            );
+        }
+
+        // A content view's analysis is served from a snapshot exactly as a named analyzer's
+        // is: the basis is one basis, whichever axis enabled it.
+        let implied = built(&reading(ReadSpec { views: Some("code"), ..ReadSpec::new() }));
+        implied
+            .validate_delivery(&Delivery { stale_ok: true, ..one_shot.clone() })
+            .expect("a stale answer needs only a compatible sidecar");
 
         let plain = built(&RequestSpec::new(root()));
         plain.validate_delivery(&watching).expect("a full-scope metadata watch is deliverable");
@@ -2407,7 +2678,10 @@ mod tests {
         };
         let steps = [
             (everything, RequestError::WatchScope),
-            (RequestSpec { scan_depth: None, ..everything }, RequestError::WatchContent),
+            (
+                RequestSpec { scan_depth: None, ..everything },
+                RequestError::WatchContent { views: Vec::new() },
+            ),
             (
                 RequestSpec { scan_depth: None, analyze: None, ..everything },
                 RequestError::WatchCacheOnly,

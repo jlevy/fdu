@@ -189,6 +189,38 @@ impl AnalysisSet {
         self.0 & other.0 == other.0
     }
 
+    /// Every unit in either set.
+    #[must_use]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    /// The analyzers a caller names to request this set, in canonical order.
+    ///
+    /// [`Self::labels`] without `lines` beside another analyzer, since every analyzer
+    /// includes it: a caller types `code`, not `lines,code`. What a note or a tip says when
+    /// it names a set, so the words it shows are the words a caller would type.
+    pub fn named(self) -> Vec<&'static str> {
+        let labels = self.labels();
+        if labels.len() > 1 {
+            labels.into_iter().filter(|label| *label != "lines").collect()
+        } else {
+            labels
+        }
+    }
+
+    /// The shortest value of this axis's grammar that requests exactly this set: `none`,
+    /// `all`, or [`Self::named`] joined by commas.
+    pub fn request_label(self) -> String {
+        if !self.is_enabled() {
+            Self::NONE_LABEL.to_owned()
+        } else if self == Self::ALL {
+            "all".to_owned()
+        } else {
+            self.named().join(",")
+        }
+    }
+
     /// Stable on-disk and fingerprint encoding.
     pub const fn bits(self) -> u8 {
         self.0
@@ -853,5 +885,23 @@ mod tests {
             assert_eq!(AnalysisSet::parse(&spelled), Ok(set), "round trip through {spelled:?}");
         }
         assert!(AnalysisSet::NONE.labels().is_empty());
+    }
+
+    /// The shortest spelling of a set is what a caller types, and parses back to the set.
+    #[test]
+    fn a_request_label_is_the_shortest_spelling_that_parses_back() {
+        for (set, named, label) in [
+            (AnalysisSet::NONE, &[][..], "none"),
+            (AnalysisSet::LINES_ONLY, &["lines"][..], "lines"),
+            (AnalysisSet::CODE_ONLY, &["code"][..], "code"),
+            (AnalysisSet::WORDS_ONLY, &["words"][..], "words"),
+            (AnalysisSet::ALL, &["code", "words"][..], "all"),
+        ] {
+            assert_eq!(set.named(), named, "{set:?}");
+            assert_eq!(set.request_label(), label, "{set:?}");
+            assert_eq!(AnalysisSet::parse(label), Ok(set), "round trip through {label:?}");
+        }
+        assert_eq!(AnalysisSet::CODE_ONLY.union(AnalysisSet::WORDS_ONLY), AnalysisSet::ALL);
+        assert_eq!(AnalysisSet::NONE.union(AnalysisSet::LINES_ONLY), AnalysisSet::LINES_ONLY);
     }
 }

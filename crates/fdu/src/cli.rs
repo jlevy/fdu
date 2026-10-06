@@ -3026,16 +3026,15 @@ mod tests {
         assert!(combined.contains("cannot be combined"), "{combined}");
     }
 
-    /// Principle 13, the direction that protects the user: no view, at any content
-    /// setting, may cause a file body to be opened that `--analyze` did not authorize.
+    /// Cost flows one way, the direction that protects the user: a view with a metadata
+    /// meaning never causes a file body to be opened, and a content view opens exactly
+    /// what its analyzer reads -- naming it is the request for that analysis, and the
+    /// command line passes the flag through for the model to decide.
     #[test]
-    fn no_view_enables_an_analyzer() {
+    fn only_a_content_view_enables_its_analyzer() {
         for view in ViewSpec::ALL {
             let spec = view.label();
             let cli = Cli { view: Some(spec.to_string()), ..cli() };
-            // Built rather than validated, because a view that needs content is refused
-            // rather than answered: what this test pins is that naming it never turns an
-            // analyzer on behind the caller's back.
             let typed = cli.typed_values();
             let built = Request::build(
                 &cli.spec(Path::new("."), &typed).expect("the spec composes"),
@@ -3043,11 +3042,13 @@ mod tests {
                 &AxisNames::FLAGS,
             )
             .expect("every view parses");
-            assert_eq!(
-                built.basis.content,
-                AnalysisSet::NONE,
-                "--view {spec} must leave the content axis empty"
-            );
+            let expected = match view {
+                ViewSpec::Code => AnalysisSet::NONE.with_code(),
+                ViewSpec::Documents => AnalysisSet::NONE.with_words(),
+                _ => AnalysisSet::NONE,
+            };
+            assert_eq!(built.basis.content, expected, "--view {spec}");
+            built.validate().expect("a view answers the basis it built");
         }
     }
 
@@ -3502,7 +3503,7 @@ mod tests {
             "Usage: fdu [OPTIONS] <PATH>",
             "fdu: invalid --view \"bogus\": expected one of tree",
             "  Scope      PATH, --scan-depth",
-            "note: omitted documents — requires content analysis",
+            "note: full omits code, documents without analysis",
             "",
             "  --scan-depth <N>  Limit scanning and retention to N entry levels",
         ] {
