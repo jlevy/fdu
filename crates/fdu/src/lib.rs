@@ -17,9 +17,9 @@ mod skill_install;
 /// drift.
 ///
 /// When nothing compiled them, they kept naming an `AnalysisProfile` type for a release
-/// after it was gone. The path reaches the workspace copy. A packaged crate does not carry
-/// that file, since its crates.io page is this crate's own `README.md`, which only a
-/// doctest run from an extracted package would notice.
+/// after it was gone. The path reaches the workspace copy. A packaged crate carries only
+/// its own directory, so the include fails only when doctests run from an extracted
+/// package; its crates.io page is `crates/fdu/README.md`.
 #[cfg(doctest)]
 #[doc = include_str!("../../../README.md")]
 pub struct ReadmeDoctests;

@@ -6,11 +6,12 @@ counts, for the command line, Python, and Rust**
 For every directory in a tree at once, fdu reports its size, file count, most recent
 change, file kinds, and how much of it `.gitignore` covers.
 On request it also counts lines of code by language and words in documents.
-One parallel walk through each platform’s native directory interface answers all of
-these. On a generated million-entry tree (875,000 files), fdu finished ahead of `du` and
-the seven other disk-usage tools measured ([Speed](#speed)). The same engine is the
-`fdu` command, a Python package, and a Rust crate, with versioned JSON output, a content
-cache, and a live change feed.
+One parallel walk through each platform’s native directory interface gathers the
+metadata, and on a generated million-entry tree (875,000 files) fdu finished ahead of
+`du` and the seven other disk-usage tools measured ([Speed](#speed)). Content counts
+also read the files and are cached between runs.
+The same engine is the `fdu` command, a Python package, and a Rust crate, with versioned
+JSON output and a live change feed.
 For interactive browsing and deletion, or line counts in hundreds of languages, another
 tool fits better: see [when to use each](#comparison-to-alternatives).
 
@@ -20,7 +21,7 @@ crates/fdu/src/cli.rs, whose output tests/golden/cli-surface.tryscript.md and
 tests/parity/deviations-python.diff record. The tagline is also the description in
 crates/fdu/Cargo.toml and crates/fdu-py/pyproject.toml. Update them together. -->
 
-**Status: 0.x.** A minor release may change the command line or either API; see the
+**Status:** 0.x. A minor release may change the command line or either API; see the
 [release process](docs/project/guides/release-process.md).
 
 ## Key Features
@@ -32,16 +33,14 @@ crates/fdu/Cargo.toml and crates/fdu-py/pyproject.toml. Update them together. --
   `.gitignore` files cover, and `--ignored=exclude` or `--ignored=only` reports one
   side. Rules apply per directory, as git applies them; `.git/info/exclude` and global
   ignore files are not read.
-- **Code and documents:** `--view=code` counts code, comment, and blank lines in 15
-  languages, by language and by directory; `--view=documents` counts words, paragraphs,
-  and pages in prose and markup.
+- **Code and documents:** `--view=code` counts code, comment, and blank lines for each
+  of 15 languages, over the tree or any directory you name; the Rust index also holds
+  every directory’s totals.
+  `--view=documents` counts words, paragraphs, and pages in prose and markup.
   Results are cached, so a repeated run reads only the files that changed.
 - **Find and inventory:** Select entries by kind, glob, size, and age, such as every
   `node_modules` untouched for 30 days, and print them as a tree, plain paths,
   size-and-age rows, or a complete JSON inventory.
-- **Speed:** Threads read each directory through the platform’s bulk interface,
-  `getattrlistbulk` on macOS and `getdents64` on Linux, and size each file from its
-  metadata without opening it; see [Speed](#speed).
 - **Live updates:** `--watch` keeps a report current from the platform’s native file
   events (FSEvents, inotify, `ReadDirectoryChangesW`) and can stream each change as JSON
   Lines.
@@ -85,8 +84,8 @@ versions, and uv cool-off policies, see [Other Ways to Install](#other-ways-to-i
 
 ## Quick Start
 
-These samples come from a fresh clone of this repository at revision `55d66863`; your
-numbers will differ.
+The samples on this page come from a fresh clone of this repository at revision
+`55d66863`; your numbers will differ.
 A one-level summary of the clone, its hidden `.git/` directory included:
 
 ```console
@@ -111,10 +110,39 @@ note: display limits: below 1% of root, depth 1
 tip: show more: --min-share=0% --depth=all
 ```
 
-Sizes are allocated disk space, as `du` reports by default; `--size=apparent` gives file
-lengths.
+Sizes are allocated disk space, as `du` reports by default, and `--size=apparent` gives
+file lengths. On Windows, allocated size falls back to file lengths; see
+[allocation and shared files](docs/usage.md#allocation-and-shared-files).
 
-Lines of code by language and words by document type, from one scan:
+`--view` chooses what is reported, and several views share one walk.
+Only `code` and `documents` read file contents; every other view reads metadata and
+`.gitignore` files. `--analyze` adds analysis to the others, such as code lines in
+`--view=languages`.
+
+| Question | Command |
+| --- | --- |
+| Which directories are large? | `fdu .` |
+| Lines of code and words in documents | `fdu . --view=code,documents` |
+| One total for the tree | `fdu . --view=summary` |
+| Languages by space | `fdu . --view=languages` |
+| File families, types, and extensions | `fdu . --view=families,types,extensions` |
+| Twenty largest files | `fdu . --view=largest` |
+| Ten most recently changed working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
+| Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
+| Stay on one filesystem, like `du -x` (macOS and Linux) | `fdu . --one-filesystem` |
+| Machine output | `fdu . --format=json` |
+| Keep the tree live | `fdu . --watch` |
+
+Content analysis, `--watch`, and the libraries’ `open` keep their state under
+`~/.cache/fdu` (`%LOCALAPPDATA%\fdu` on Windows), and a plain `fdu PATH` writes nothing.
+`fdu --cache-status=all` lists what is stored, and `fdu --cache-clear=all` removes it.
+
+`fdu --help` lists every flag, `fdu --docs` prints the offline guide, and the
+[usage guide](docs/usage.md) covers every view, format, and exit status.
+
+## Understand a Codebase
+
+Lines of code by language and words by document type, from one scan of the same clone:
 
 ```console
 $ fdu . --view=code,documents
@@ -154,75 +182,19 @@ note: not analyzed: 3 unsupported
 note: 49 files with unclassified type
 ```
 
-`--view` chooses what is reported, and several views share one walk.
-Only `code` and `documents` read file contents; every other view reads metadata and
-`.gitignore` files. `--analyze` adds analysis to the others, such as code lines in
-`--view=languages`.
-
-| Question | Command |
-| --- | --- |
-| Which directories are large? | `fdu .` |
-| Lines of code and words in documents | `fdu . --view=code,documents` |
-| One total for the tree | `fdu . --view=summary` |
-| Languages by space | `fdu . --view=languages` |
-| File families, types, and extensions | `fdu . --view=families,types,extensions` |
-| Twenty largest files | `fdu . --view=largest` |
-| Ten most recently changed working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
-| Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
-| Machine output | `fdu . --format=json` |
-| Keep the tree live | `fdu . --watch` |
-
-Content analysis, `--watch`, and the libraries’ `open` keep their state under
-`~/.cache/fdu` (`%LOCALAPPDATA%\fdu` on Windows), and a plain `fdu PATH` writes nothing.
-`fdu --cache-status=all` lists what is stored, and `fdu --cache-clear=all` removes it.
-
-`fdu --help` lists every flag, `fdu --docs` prints the offline guide, and the
-[usage guide](docs/usage.md) covers every view, format, and exit status.
-
-## Understand a Codebase
-
-```shell
-fdu . --view=code --ignored=exclude --limit=5
-```
-
-On the same clone, stdout:
-
-```text
-Code lines   Share  Comments   Blank  Analyzed files  Language
-    91,431   55.5%    15,702   7,488         102/102  Rust
-    61,533   37.3%     2,512   7,291         163/163  Python
-     6,182    3.8%       747     516           33/33  JavaScript
-     2,709    1.6%       251     155           20/20  C
-     1,942    1.2%       252     206           35/35  TypeScript
-   164,842  100.0%    19,885  15,798         395/398  TOTAL
-```
-
-And stderr, before the `perf:` line:
-
-```text
-note: totals include hidden languages
-note: 15 languages analyzed, gitignored files excluded
-note: not analyzed: 3 unsupported
-note: 49 files with unclassified type
-note: display limits: 5 of 17 rows shown
-tip: show more: --limit=all
-```
-
 Code lines leave out comments and blank lines, which have columns of their own.
-The percentages and the TOTAL row cover every measured language, including those beyond
-the five rows shown.
 Analyzed files counts the files measured out of the source files selected, and a
-language fdu has no counter for shows a dash rather than zero, as Make and Perl do in
-[Quick Start](#quick-start).
+language fdu has no counter for shows a dash rather than zero, as Make and Perl do.
 The notes count unsupported and unclassified files instead of treating them as zero
 lines.
 
+Each language row shows its gitignored share.
 `--ignored=exclude` skips gitignored trees such as local builds and environments,
 without walking or reading them.
-Omit it to count ignored and non-ignored files and show each one’s share.
-`--limit=all` shows every language, and `--format=json` gives structured counts and
-coverage. See [content analysis](docs/usage.md#analyze-file-contents) for the counting
-convention and supported languages.
+`--limit=5` keeps the five largest languages, while the TOTAL row and the notes still
+account for the rest, and `--format=json` gives structured counts and coverage.
+See [content analysis](docs/usage.md#analyze-file-contents) for the counting convention
+and supported languages.
 
 ## Find Environments and Build Outputs
 
@@ -355,23 +327,33 @@ An embedding that wants none of the command line’s dependencies depends on `fd
 instead. The API reference is on [docs.rs/fdu](https://docs.rs/fdu) and
 [docs.rs/fdu-core](https://docs.rs/fdu-core).
 `open` retains an index for many questions; `prepare_report` answers one report without
-retaining one.
+retaining one. Content analysis is opt-in: `content: Default::default()` scans metadata
+only.
 
 ```rust
-use fdu::{CachePolicy, open};
+use fdu::content::AnalysisSet;
 use fdu::query::{Basis, Delivery, Scope};
+use fdu::{CachePolicy, open};
 use std::path::Path;
 
 fn main() -> Result<(), fdu::Error> {
-    let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: Default::default() };
+    let basis = Basis {
+        root: Path::new(".").into(),
+        scope: Scope::default(),
+        content: AnalysisSet::ALL,
+    };
     let delivery = Delivery::new(CachePolicy::Auto, None);
     let (index, _report) = open(&basis, &delivery)?;
     let total = index.total();
     println!("{} files, {} bytes", total.files, total.bytes);
 
     // Per-directory roll-ups are already computed; this is not another walk.
-    if let Some(src) = index.rollup(Path::new("src")) {
-        println!("src/: {} files, newest {}", src.files, src.newest_mtime_ns);
+    let src = Path::new("src");
+    if let Some(rollup) = index.rollup(src) {
+        println!("src/: {} files, newest {}", rollup.files, rollup.newest_mtime_ns);
+    }
+    if let Some(content) = index.content_rollup(src) {
+        println!("src/: {} code lines", content.total.code.metrics.code_lines);
     }
     Ok(())
 }
@@ -379,27 +361,6 @@ fn main() -> Result<(), fdu::Error> {
 
 Later questions reuse the index; `refresh` reconciles it against the tree, and with
 `watch` enabled, `fdu::session::Session` answers the same request as events arrive.
-
-Content analysis is opt-in; metadata-only is the default:
-
-```rust
-use fdu::content::AnalysisSet;
-use fdu::{CachePolicy, open};
-use fdu::query::{Basis, Delivery, Scope};
-use std::path::Path;
-
-fn main() -> Result<(), fdu::Error> {
-    let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: AnalysisSet::ALL };
-    let delivery = Delivery::new(CachePolicy::Auto, None);
-    let (index, report) = open(&basis, &delivery)?;
-    let analyzed = index
-        .content_rollup(Path::new(""))
-        .map_or(0, |content| content.total.lines.analyzed_files);
-    println!("{} files analyzed for line metrics", analyzed);
-    assert!(report.analysis.is_some());
-    Ok(())
-}
-```
 
 ## Speed
 
@@ -414,8 +375,8 @@ Changes it kept include these, with their measured effects:
   54.5% less time for a cold scan on macOS and 52.0% for re-checking a saved one;
   [exp-032](docs/project/experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)).
 - **A native directory reader on Linux:** `getdents64` fills a reused buffer, and
-  `statx` reads each entry relative to its directory (9–10% less time for the default
-  summary on two real trees;
+  `statx` reads each entry relative to its directory (9–10% less time for
+  `--view=summary` on two real trees, and 2–4% for the default tree;
   [exp-185](docs/project/experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md),
   [exp-186](docs/project/experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)).
 - **Summaries without an index:** A summary is totalled as the walk runs (14.6% less
@@ -429,12 +390,11 @@ Changes it kept include these, with their measured effects:
   [exp-174](docs/project/experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md),
   [exp-178](docs/project/experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md)).
 - **A default tree that keeps only what it shows:** Files too small to reach a row fold
-  into their directories’ totals (13.5% less time on the kernel source, and 79% less
-  peak memory on the generated million-entry tree;
+  into their directories’ totals (13.5% less time on the kernel source;
   [exp-180](docs/project/experiments/exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md)).
-- **One walk for several views:** Unfiltered views share one walk (18.8% less time on
-  macOS;
-  [exp-137](docs/project/experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)).
+  On the generated million-entry tree, 0.3.0’s default tree peaks at 57 MiB of memory,
+  where 0.2.1’s peaked at 293 MiB
+  ([exp-202](docs/project/experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
 
 [The evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
 records every experiment, rejected ones included.
@@ -497,7 +457,7 @@ apply:
 | Plain total | ✅ `--view=summary` | ✅ `-s` | ❌ TUI or export | ✅ `-d 0` | ✅ total row | ✅ `-ns` | ✅ `-d 1` | ✅ | ✅ | —² | —² |
 | Tree breakdown and pruning | ✅ depth, breadth, minimum share, row limit | ✅ depth, size floor | TUI browsing | ✅ depth, top N, size floor | depth; TUI browsing | depth, top N files; TUI browsing | ✅ depth, minimum share | ❌ | ❌ | ❌ per language or file | ❌ per language or file |
 | `.gitignore` | ✅ classify; include, exclude, or only ignored | ❌ | ❌ | ❌ | partial: TUI dims ignored entries; `--ignore-from` patterns | ❌¹ | ❌ | ❌ | ❌ | ✅ exclude | ✅ exclude, inside a git repository |
-| Source code analysis² | ✅ 15 languages: code, comment, and blank lines, per directory | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ 366 languages; complexity and cost estimates | ✅ 333 languages; embedded languages |
+| Source code analysis² | ✅ 15 languages: code, comment, and blank lines; per directory in the Rust API | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ 366 languages; complexity and cost estimates | ✅ 333 languages; embedded languages |
 | Code analysis speed, Linux source³ | 8.2 s; 0.55 s repeated | — | — | — | — | — | — | — | — | 1.4 s | 2.2 s |
 | Text analysis | ✅ lines, words, paragraphs, pages | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | APIs and machine output | ✅ Rust, Python; JSON, JSONL, YAML | tab-separated text; `-0` | JSON export | JSON (`-j`) | Rust library; snapshot files | JSON export; SQLite or Badger | ✅ Rust library; JSON | Rust library | ❌ | ✅ Go package; JSON, CSV, HTML, SQL | ✅ Rust library; JSON |
@@ -516,7 +476,7 @@ tokei counts embedded code, scc estimates complexity, and both count a large tre
 several times as fast as fdu’s first run, though fdu’s cached repeat is faster than
 either. Use fdu for a tree you can prune, a `.gitignore`-aware answer, content metrics,
 versioned machine output, a live or cached view, or a Rust or Python API; for code, it
-adds counts per directory and each language’s ignored share.
+adds each language’s ignored share, and per-directory counts in Rust.
 
 ¹ gdu’s unreleased main branch adds `--ignore-from-gitignore`, which reads patterns from
 one file.
@@ -525,14 +485,11 @@ one file.
 count source lines, not disk usage, so the disk-usage rows show “—”. They count far more
 languages than fdu; tokei also counts code embedded in another language, such as
 Markdown code fences, and scc estimates complexity and cost.
-On the Linux kernel’s 59,953 C sources and headers, all three give the same code,
-comment, and blank counts for 59,766 files; scc differs on 22, where it counts form-feed
-lines as code, and tokei on 165: 107 through three defects in its C parsing, 55 through
-a different convention for a macro’s line splice after a comment, and 3 not attributed.
-See the
-[SLOC tools survey](docs/project/research/research-2026-09-29-sloc-tools-survey.md).
-[cloc](https://github.com/AlDanial/cloc) recognizes the most languages, 402, but runs as
-a single Perl process by default.
+On the Linux kernel’s C sources and headers, all three give the same code, comment, and
+blank counts for 99.7% of files; the
+[SLOC tools survey](docs/project/research/research-2026-09-29-sloc-tools-survey.md)
+explains the rest. [cloc](https://github.com/AlDanial/cloc) recognizes the most
+languages, 402, but runs as a single Perl process by default.
 
 ³ Median wall time for fdu 0.3.0 on a copy of the Linux v6.12 source without `.git`,
 each tool with every ignore-file source off, hidden files counted, and text output; see

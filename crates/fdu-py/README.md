@@ -5,7 +5,7 @@ counts, for the command line, Python, and Rust**
 
 Python bindings for [fdu](https://github.com/jlevy/fdu), which reports, for every
 directory in a tree at once, its size, file count, recency, and file kinds, and on
-request its lines of code and prose volume.
+request lines of code by language and words by document type.
 It walks a tree on several threads through each platform’s native directory interface,
 and on a generated million-entry tree (875,000 files) it finished ahead of `du` and the
 seven other disk-usage tools measured on Linux and macOS
@@ -295,7 +295,7 @@ Argument parsing, help, streams, color, errors, broken-pipe handling, and exit s
 all use the same Rust process boundary as the Cargo-installed binary; there is no Python
 CLI reimplementation.
 
-**Status: 0.x.** A new minor release may change the Python API;
+**Status:** 0.x. A new minor release may change the Python API;
 [the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
 states the compatibility rules.
 Building and testing the package from a checkout is covered in

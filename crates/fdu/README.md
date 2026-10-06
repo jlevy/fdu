@@ -16,7 +16,7 @@ It is also a library that re-exports the whole
 [`fdu-core`](https://crates.io/crates/fdu-core) engine, so there is one name to know for
 installing the tool and for depending on it.
 
-**Status: 0.x.** A new minor release may change the Rust API, the Python API, or the
+**Status:** 0.x. A new minor release may change the Rust API, the Python API, or the
 command line;
 [the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
 states the compatibility rules.
