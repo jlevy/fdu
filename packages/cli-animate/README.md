@@ -115,8 +115,8 @@ directory, and both expand environment variables (an unset one is an error).
 
 ```yaml
 title: "fdu: a real machine, real time"
-terminal: { cols: 128, rows: 30 }
-typing: { seed: 21 }   # wpm defaults to 160
+terminal: { cols: 128, rows: 30, font_size: 18 }   # font_size defaults to 22
+typing: { seed: 21 }   # wpm defaults to 220
 path: [../../../../target/release]
 cwd: $FDU_DEMO_TREES
 env:
@@ -134,13 +134,18 @@ steps:
 Step fields: `run` or `comment`, `label`, `clear`, `before`, `hold` (seconds to wait
 after the next prompt appears), `stop_after` (seconds, then SIGINT, for long-running
 commands), and `during` (`{ at, run }` background actions while the command runs).
-Top-level fields also include `shell`, `setup`, `lead_in`, and `tail`. The fdu demos are
-in `examples/fdu/`.
+Top-level fields also include `shell`, `setup`, `lead_in`, and `tail`. Set
+`terminal.font_size` (CSS pixels, default 22) with `cols` so the widest line fits: a
+terminal that wraps a report’s lines hides its columns.
+The fdu demos are in `examples/fdu/`, `build-tree.yaml` and `linux.yaml` being the
+simplest.
 
 As in a shell, the next prompt is printed the moment a command exits, so how long a
 command takes is visible in the recording.
-Typing defaults to 160 WPM, shaped by the keystroke model in `src/typing.ts`; set
-`typing.wpm` to change it and `typing.seed` to get a different but reproducible take.
+Typing comes in bursts, as people type commands: fast runs within a word and irregular
+pauses between words, with an occasional longer think pause.
+It averages 220 WPM by default (`src/typing.ts` documents the model); set `typing.wpm`
+to change the speed and `typing.seed` to get a different but reproducible take.
 
 ## Encoding Profiles
 

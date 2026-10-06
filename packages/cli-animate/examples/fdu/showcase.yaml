@@ -7,7 +7,7 @@
 # clone under $FDU_DEMO_TREES:
 #   git clone --depth 1 https://github.com/python/cpython "$FDU_DEMO_TREES/cpython"
 title: "fdu: a real machine, real time"
-terminal: { cols: 128, rows: 30 }
+terminal: { cols: 208, rows: 30, font_size: 14 }
 typing: { seed: 21 }
 path: [../../../../target/release]
 cwd: $FDU_DEMO_TREES

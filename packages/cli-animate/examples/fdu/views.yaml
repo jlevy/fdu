@@ -2,7 +2,7 @@
 # release build and a shallow CPython clone under $FDU_DEMO_TREES:
 #   git clone --depth 1 https://github.com/python/cpython "$FDU_DEMO_TREES/cpython"
 title: "fdu: views over the CPython source tree"
-terminal: { cols: 128, rows: 30 }
+terminal: { cols: 216, rows: 30, font_size: 14 }
 typing: { seed: 11 }
 path: [../../../../target/release]
 cwd: $FDU_DEMO_TREES
