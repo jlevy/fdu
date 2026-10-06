@@ -21,8 +21,9 @@ same chart to any single component.
 ## Goals
 
 - **One score that reflects what matters.** It covers the default command on a real
-  repository, scale, the summary view, repeat runs with the cache, code and document
-  analysis, and memory, on macOS and on Linux.
+  repository, a first run with empty caches, the summary view, code and document
+  analysis with the content cache cold and warm, scale, and memory, on macOS and on
+  Linux.
 - **Every improvement can show somewhere.** A kept change appears in the index or in a
   named component. Today the 1M-tree line cannot show Linux, summary, cache, or
   `.gitignore` work, which is why the green bars and the line disagree.
@@ -119,18 +120,55 @@ Trees:
 
 Default weights per platform:
 
-| Component | Command and tree | Why it matters | Weight |
+| Component | Command, tree, and cache state | Why it matters | Weight |
 | --- | --- | --- | ---: |
-| Default command on a repository | `fdu PATH`, first run, on K | What most users run, on what most users have | 25% |
-| Scale | `fdu PATH`, first run, on G | Very large trees, where peers compete hardest | 10% |
-| Summary | `fdu --view summary PATH` on K | The du-replacement total | 10% |
-| Repeat run | `fdu PATH` a second time, with its cache, on K | The cache’s promise: a warm path must beat a cold scan | 15% |
-| Code | `fdu --view code PATH`, first run, on K | Code metrics by language, a differentiator | 15% |
-| Documents | `fdu --view documents PATH`, first run, on K | Prose and document metrics, a differentiator | 15% |
-| Memory | Peak RSS of the two default-command components | A speedup bought with memory is not free | 10% |
+| Cold cache | `fdu PATH` on K, fdu’s caches empty | Every user’s first run of a tree | 15% |
+| Warm-cache content: code | `fdu --view code PATH` on K, second run, content cache filled | Content analysis is where fdu’s cache pays | 10% |
+| Warm-cache content: documents | `fdu --view documents PATH` on K, second run, content cache filled | The same, for prose and documents | 10% |
+| Default tree view | `fdu PATH` on K, repeated, default cache policy | What most users run, on what most users have | 15% |
+| Summary view | `fdu --view summary PATH` on K, default cache policy | The du-replacement total | 7.5% |
+| Code view | `fdu --view code PATH` on K, first run, content cache empty | Code metrics by language | 7.5% |
+| Documents view | `fdu --view documents PATH` on K, first run, content cache empty | Prose and document metrics | 7.5% |
+| Multi-view content report | `fdu --view code,documents,languages PATH` on K, first run | One scan, many views | 5% |
+| Warm metadata cache | `fdu --cache on PATH` on K, second run: snapshot load and revalidation | The cache must beat a cold scan | 7.5% |
+| Opened root | the library’s `open` on K, then a second report and an applied change | Serving and watch, for library and agent callers | 5% |
+| Scale | `fdu PATH` on G, fdu’s caches empty | Very large trees, where peers compete hardest | 5% |
+| Memory | Peak RSS of the cold-cache and scale components | A speedup bought with memory is not free | 5% |
 
-Content analysis, code and documents together, carries 30%, at the maintainer’s
-direction: it is what fdu offers that the du-class peers do not.
+The split is the maintainer’s: 15% cold cache, 20% warm-cache content, and the rest
+across the views and the other optimization targets, with scale and memory kept in.
+Content analysis carries 47.5% in all, cold and warm.
+“Cold cache” means fdu’s own caches are empty, not a cold OS disk cache: the OS keeps
+the tree’s metadata cached, as in every record so far.
+A view run with the default cache policy is timed in its steady state, after the
+warm-ups. For a metadata view on 0.2.0 or later that is a full scan, because
+`--cache auto` writes no snapshot for a one-shot metadata report; a build that reuses a
+snapshot there is credited for it.
+
+### Every Optimization Target Is in the Score
+
+Every benchmark job the loop measures maps to a scored component, so every kept change
+can move the score.
+A job with no component fails `make check`, which forces a new target
+into the suite, with a weight, before its first verdict is published.
+The mapping for the jobs in the record so far:
+
+| Job in the record | Component |
+| --- | --- |
+| `cold-scan-index`, `cold-scan-producer`, `adaptive-scan-index`, `default-tree-first`, `content-disabled` | Cold cache (Scale on a generated million-entry tree) |
+| `default-tree`, `cli-default-tree` | Default tree view |
+| `aggregate-summary`, `rich-summary-report`, `rich-summary-open-pipeline`, `rich-summary-shared-openers`, `selected-allocated-total` | Summary view |
+| `content-basic`, `code-sloc` | Code view |
+| `markdown-prose`, `text-prose` | Documents view |
+| `content-cache-hit`, `code-sloc-cache-hit`, `document-cache-hit` | Warm-cache content |
+| `content-query` | Multi-view content report |
+| `warm-revalidate`, `warm-snapshot-load`, `cold-snapshot-save`, `cold-open-save` | Warm metadata cache |
+| `opened-discovery`, `opened-second-report`, `index-second-report`, `delta-apply-large`, `delta-apply-batched` | Opened root |
+| Peak RSS on any job | Memory |
+
+A change measured only on Linux moves the Linux half of the score, and one measured only
+on macOS the macOS half.
+Both halves are in the score, so a platform-specific change shows too.
 
 - **Platforms.** macOS and Linux each carry 50% of the total.
 - **Missing platform.** A macOS-only index is published as such and never presented as
@@ -196,8 +234,10 @@ direction: it is what fdu offers that the du-class peers do not.
   reference build agreed in review.
 - [ ] Move the history driver into the harness with tests: command shapes per era,
   answer-check groups, anchor, alternation, and internal-storage checks.
-- [ ] Run the macOS cells for the 13 milestone builds: K, with the default, summary,
-  repeat, code and documents components; G, with scale.
+- [ ] Run the macOS cells for the 13 milestone builds: K, with the cold-cache, view, and
+  warm-cache content components; G, with scale.
+- [ ] Add the job-to-component table beside the manifest, and a check that fails any
+  recorded job with no component.
 - [ ] Project the index and its interval; add the chooser, the headline, and the faded
   bars to the page.
 - [ ] Publish it as the macOS index, labeled as such.
@@ -229,9 +269,10 @@ Release notes quote the unified score with its interval and link the components.
 
 ## Open Questions
 
-- **Weights.** Are 25/10/10/15/15/15/10 right (default, scale, summary, repeat, code,
-  documents, memory), with content at 30%? And should macOS and Linux be equal, or
-  weighted by where fdu runs?
+- **Weights.** The split above is agreed in direction: 15% cold cache, 20% warm-cache
+  content, and the views, scale and memory for the rest.
+  Is the split among the views right?
+  And should macOS and Linux be equal, or weighted by where fdu runs?
 - **Reference build.** Should it be the latest release (moving), or a fixed pin such as
   the pre-work binary, so that scores compare across index versions?
 - **More scenarios.** Should watch mode, the opened-root second report, or the Python
