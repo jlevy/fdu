@@ -21,8 +21,8 @@ same chart to any single component.
 ## Goals
 
 - **One score that reflects what matters.** It covers the default command on a real
-  repository, scale, the summary view, repeat runs with the cache, content analysis, and
-  memory, on macOS and on Linux.
+  repository, scale, the summary view, repeat runs with the cache, code and document
+  analysis, and memory, on macOS and on Linux.
 - **Every improvement can show somewhere.** A kept change appears in the index or in a
   named component. Today the 1M-tree line cannot show Linux, summary, cache, or
   `.gitignore` work, which is why the green bars and the line disagree.
@@ -121,12 +121,16 @@ Default weights per platform:
 
 | Component | Command and tree | Why it matters | Weight |
 | --- | --- | --- | ---: |
-| Default command on a repository | `fdu PATH`, first run, on K | What most users run, on what most users have | 30% |
-| Scale | `fdu PATH`, first run, on G | Very large trees, where peers compete hardest | 15% |
-| Summary | `fdu --view summary PATH` on K | The du-replacement total | 15% |
+| Default command on a repository | `fdu PATH`, first run, on K | What most users run, on what most users have | 25% |
+| Scale | `fdu PATH`, first run, on G | Very large trees, where peers compete hardest | 10% |
+| Summary | `fdu --view summary PATH` on K | The du-replacement total | 10% |
 | Repeat run | `fdu PATH` a second time, with its cache, on K | The cache’s promise: a warm path must beat a cold scan | 15% |
-| Content | `fdu --view code PATH`, first run, on K | Code and document metrics, fdu’s differentiator | 15% |
+| Code | `fdu --view code PATH`, first run, on K | Code metrics by language, a differentiator | 15% |
+| Documents | `fdu --view documents PATH`, first run, on K | Prose and document metrics, a differentiator | 15% |
 | Memory | Peak RSS of the two default-command components | A speedup bought with memory is not free | 10% |
+
+Content analysis, code and documents together, carries 30%, at the maintainer’s
+direction: it is what fdu offers that the du-class peers do not.
 
 - **Platforms.** macOS and Linux each carry 50% of the total.
 - **Missing platform.** A macOS-only index is published as such and never presented as
@@ -193,7 +197,7 @@ Default weights per platform:
 - [ ] Move the history driver into the harness with tests: command shapes per era,
   answer-check groups, anchor, alternation, and internal-storage checks.
 - [ ] Run the macOS cells for the 13 milestone builds: K, with the default, summary,
-  repeat and content components; G, with scale.
+  repeat, code and documents components; G, with scale.
 - [ ] Project the index and its interval; add the chooser, the headline, and the faded
   bars to the page.
 - [ ] Publish it as the macOS index, labeled as such.
@@ -225,9 +229,9 @@ Release notes quote the unified score with its interval and link the components.
 
 ## Open Questions
 
-- **Weights.** Are 30/15/15/15/15/10 right, or should the default command on a
-  repository weigh more?
-  And should macOS and Linux be equal, or weighted by where fdu runs?
+- **Weights.** Are 25/10/10/15/15/15/10 right (default, scale, summary, repeat, code,
+  documents, memory), with content at 30%? And should macOS and Linux be equal, or
+  weighted by where fdu runs?
 - **Reference build.** Should it be the latest release (moving), or a fixed pin such as
   the pre-work binary, so that scores compare across index versions?
 - **More scenarios.** Should watch mode, the opened-root second report, or the Python
