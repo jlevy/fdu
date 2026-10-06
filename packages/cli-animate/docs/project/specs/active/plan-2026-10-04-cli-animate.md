@@ -137,7 +137,7 @@ YAML, validated on load with errors that name the field:
 ```yaml
 title: "fdu: a real machine, real time"
 terminal: { cols: 128, rows: 30 }
-typing: { seed: 21 }   # wpm defaults to 160
+typing: { seed: 21 }   # wpm defaults to 220
 cwd: $FDU_DEMO_TREES
 path: [../../../../target/release]   # relative to this file
 env: { TIMEFORMAT: "real %3Rs" }
@@ -150,6 +150,8 @@ steps:
     clear: true
 ```
 
+`terminal` takes `cols`, `rows`, and `font_size`; a smaller font lets a wide report fit
+without wrapping in the same video width.
 Step fields: `run` or `comment`, `label`, `clear`, `before` (hidden commands), `hold`,
 `stop_after` (seconds, then SIGINT), and `during` (background actions at offsets).
 
@@ -167,10 +169,14 @@ tool versions.
 
 ### Typing Model
 
-The inter-key interval is a base (from the target words per minute, 160 by default,
-calibrated on a reference text) times a digraph factor times mean-preserving log-normal
-noise and a per-token factor, plus occasional stalls and word-initial hesitations.
-Enter follows after a log-normal pause with a 250 ms median.
+Keys go down in fast bursts within a word, with the pauses between words.
+The interval before a key is a base times a digraph factor times mean-preserving
+log-normal noise and a per-token factor, with occasional stalls; the first key of each
+word after the first also waits a log-normal word gap, or now and then a longer think
+pause. Gaps and pauses are set in multiples of the average interval for the target speed
+(220 WPM by default), so the rhythm keeps its shape at any speed, and the base is
+calibrated on a reference text to take what remains.
+Enter follows after a log-normal pause with a 200 ms median.
 Digraph factors follow skilled-typist studies: hand alternation fastest, same hand
 slower, same finger slowest, repeated keys slower for experts, frequent English digraphs
 faster, first letter of a word slower, Shift and number-row reaches costlier.
@@ -225,8 +231,11 @@ players read untagged high-definition video as BT.709.
 - [x] Update the research brief and the pull request
 - [x] Bump tryscript to 0.3.0 and remove the temporary fast-glob stand-in
 - [x] Move the plan and research brief into the package (`docs/project/`)
-- [x] Prompt on command exit; 160 WPM default; CLI split per `typescript-cli-tool-rules`
-  (commands/, lib/, command groups, exit codes, JSON errors, stdout EPIPE)
+- [x] Burst typing (word gaps, think pauses), 220 WPM; `terminal.font_size`; simple
+  demos over fdu’s own build tree and the Linux kernel
+- [x] Prompt on command exit; faster default typing; CLI split per
+  `typescript-cli-tool-rules` (commands/, lib/, command groups, exit codes, JSON errors,
+  stdout EPIPE)
 
 ## Testing Strategy
 

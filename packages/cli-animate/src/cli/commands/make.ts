@@ -6,6 +6,7 @@ import { EXIT_CHECK_FAILED } from '../../errors.js';
 import { fetchFonts } from '../../fonts.js';
 import { PROFILES } from '../../profiles.js';
 import { record } from '../../record.js';
+import { loadScenario } from '../../scenario.js';
 import { capture, deliver, writeRenderReceipt } from '../../render.js';
 import { verify } from '../../verify.js';
 import { context, integer, positive, stem } from '../lib/context.js';
@@ -39,6 +40,7 @@ export function registerMake(program: Command): void {
       out.note(`capturing ${master}`);
       const captured = await capture(cast, master, {
         fps: opts.fps,
+        fontSize: loadScenario(scenario).terminal.font_size,
         scale: opts.scale,
         ...(opts.chrome === undefined ? {} : { chromePath: opts.chrome }),
         onProgress: (done, total) => out.note(`  frame ${done} / ${total}`),

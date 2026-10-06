@@ -1,12 +1,16 @@
 /**
  * Keystroke timing for a fast, skilled human typist, seeded so a take reproduces.
  *
- * Each key waits an inter-key interval (IKI) after the previous one:
+ * People type commands in bursts: a word goes down in a quick run of keys, and the
+ * pauses fall between words, where the next word is chosen. So each key waits an
+ * inter-key interval (IKI) after the previous one:
  *
- *   IKI = base × digraph factor × token factor × noise (+ a stall or a hesitation)
+ *   IKI = base × digraph factor × token factor × noise (× a stall)
+ *         + a word gap (+ a think pause), before the first key of each word
  *
- * - The base comes from the target speed in words per minute, calibrated so the reference
- *   text below averages that speed.
+ * - Speed is the average over the reference text below, in words per minute. The word
+ *   gaps and think pauses are set in multiples of that average interval, so the rhythm
+ *   keeps its shape at any speed; the base interval is whatever remains for the keys.
  * - The digraph factor depends on the pair of keys, relative to a hand alternation, with
  *   values measured on the fastest typists (103–130 WPM) of the Behmer and Crump
  *   copy-typing data: same hand 1.10 (1.20 across the top and bottom rows), same finger
@@ -17,9 +21,13 @@
  *   key of a sub-token is 1.10.
  * - Whole tokens run faster or slower together (log-normal σ 0.12). That word-level
  *   factor, not stroke-to-stroke correlation, is what the data shows.
- * - Per-key noise is mean-preserving log-normal, σ 0.30, as measured. Its right tail is
- *   too light, so 1.5% of keys inside a word stall at 2–4×, and 5% of words start after a
- *   hesitation (log-normal excess, median 170 ms, capped at 600 ms).
+ * - Per-key noise is mean-preserving log-normal, σ 0.30, as measured, and 1.5% of keys
+ *   inside a word stall at 2–4×.
+ * - Every word after the first starts after a gap: log-normal, median 1.6 average
+ *   intervals, σ 0.55, so most gaps are short and some are several times longer. One word
+ *   in twelve starts after a think pause instead (median 5 intervals, capped at 14).
+ *   Copy-typing data understates these pauses, because a copy typist reads the next word
+ *   instead of choosing it; they are tuned by eye on recorded commands.
  *
  * This package's research brief, in docs/project/research/, records the sources and
  * which values are measured and which extrapolated.
@@ -151,15 +159,19 @@ export interface TypingProfile {
   tokenSigma: number;
   stallRate: number;
   stallRange: [number, number];
-  hesitationRate: number;
-  hesitationMedianS: number;
-  hesitationSigma: number;
-  hesitationCapS: number;
+  /** Word gap before each word after the first, in average intervals: log-normal. */
+  gapMedian: number;
+  gapSigma: number;
+  /** Share of words that start after a think pause instead, in average intervals. */
+  thinkRate: number;
+  thinkMedian: number;
+  thinkSigma: number;
+  thinkCap: number;
   floorS: number;
 }
 
 export const DEFAULT_PROFILE: Readonly<TypingProfile> = {
-  wpm: 160,
+  wpm: 220,
   alternateHand: 1.0,
   sameHand: 1.1,
   rowJump: 1.1,
@@ -178,11 +190,13 @@ export const DEFAULT_PROFILE: Readonly<TypingProfile> = {
   tokenSigma: 0.12,
   stallRate: 0.015,
   stallRange: [2, 4],
-  hesitationRate: 0.05,
-  hesitationMedianS: 0.17,
-  hesitationSigma: 0.5,
-  hesitationCapS: 0.6,
-  floorS: 0.03,
+  gapMedian: 1.6,
+  gapSigma: 0.55,
+  thinkRate: 1 / 12,
+  thinkMedian: 5,
+  thinkSigma: 0.4,
+  thinkCap: 14,
+  floorS: 0.025,
 };
 
 const isLetter = (ch: string): boolean => /^[a-z]$/i.test(ch);
@@ -215,35 +229,42 @@ export function digraphFactor(prev: string | undefined, ch: string, p: TypingPro
 /** Mean of exp(N(mu, sigma)) is 1 when mu = -sigma^2 / 2. */
 const lognormal = (z: number, sigma: number): number => Math.exp(sigma * z - (sigma * sigma) / 2);
 
-function expectedHesitationS(p: TypingProfile): number {
-  const mean = p.hesitationMedianS * Math.exp((p.hesitationSigma * p.hesitationSigma) / 2);
-  return p.hesitationRate * Math.min(mean, p.hesitationCapS);
+/** The average interval, in seconds, that the profile's speed asks for. */
+export const averageInterval = (p: TypingProfile = DEFAULT_PROFILE): number => 60 / (p.wpm * 5);
+
+/** Expected pause before a word after the first, in average intervals. */
+function expectedWordPause(p: TypingProfile): number {
+  const gap = p.gapMedian * Math.exp((p.gapSigma * p.gapSigma) / 2);
+  const think = Math.min(p.thinkMedian * Math.exp((p.thinkSigma * p.thinkSigma) / 2), p.thinkCap);
+  return (1 - p.thinkRate) * gap + p.thinkRate * think;
 }
 
-/** The base interval that makes REFERENCE_TEXT average the profile's speed. */
+/** The base key interval that makes REFERENCE_TEXT, pauses included, average the speed. */
 export function baseInterval(p: TypingProfile = DEFAULT_PROFILE): number {
-  const target = 60 / (p.wpm * 5);
+  const target = averageInterval(p);
   const stall = 1 + p.stallRate * ((p.stallRange[0] + p.stallRange[1]) / 2 - 1);
   let factors = 0;
-  let tokenStarts = 0;
+  let wordStarts = 0;
   let prev: string | undefined;
   for (const ch of REFERENCE_TEXT) {
     const inWord = !startsToken(prev) && ch !== ' ';
     factors += digraphFactor(prev, ch, p) * (inWord ? stall : 1);
-    if (startsToken(prev) && ch !== ' ') tokenStarts += 1;
+    if (prev === ' ' && ch !== ' ') wordStarts += 1;
     prev = ch;
   }
   const n = REFERENCE_TEXT.length;
-  const hesitation = (expectedHesitationS(p) * tokenStarts) / n;
-  return Math.max(target - hesitation, 0) / (factors / n);
+  const keysBudget = target * n - target * expectedWordPause(p) * wordStarts;
+  if (keysBudget <= 0) throw new Error(`typing profile leaves no time for keys at ${p.wpm} WPM`);
+  return keysBudget / factors;
 }
 
 /**
  * Seconds to wait before each character of `text`. Every character consumes the same
- * nine random draws, whichever branches apply, so a seed reproduces a take.
+ * eleven random draws, whichever branches apply, so a seed reproduces a take.
  */
 export function keyIntervals(text: string, rng: Rng, p: TypingProfile = DEFAULT_PROFILE): number[] {
   const base = baseInterval(p);
+  const average = averageInterval(p);
   const out: number[] = [];
   let tokenFactor = 1;
   let prev: string | undefined;
@@ -252,8 +273,9 @@ export function keyIntervals(text: string, rng: Rng, p: TypingProfile = DEFAULT_
     const tokenDraw = rng.gauss();
     const stallDraw = rng.random();
     const stallSize = rng.random();
-    const hesitateDraw = rng.random();
-    const hesitationDraw = rng.gauss();
+    const gapDraw = rng.gauss();
+    const thinkDraw = rng.random();
+    const thinkSize = rng.gauss();
 
     const tokenStart = startsToken(prev) && ch !== ' ';
     if (tokenStart) tokenFactor = lognormal(tokenDraw, p.tokenSigma);
@@ -262,17 +284,21 @@ export function keyIntervals(text: string, rng: Rng, p: TypingProfile = DEFAULT_
       const [low, high] = p.stallRange;
       delay *= low + (high - low) * stallSize;
     }
-    if (tokenStart && prev !== undefined && hesitateDraw < p.hesitationRate) {
-      const excess = p.hesitationMedianS * Math.exp(p.hesitationSigma * hesitationDraw);
-      delay += Math.min(excess, p.hesitationCapS);
+    delay = Math.max(delay, p.floorS);
+    if (prev === ' ' && ch !== ' ') {
+      const pause =
+        thinkDraw < p.thinkRate
+          ? Math.min(p.thinkMedian * Math.exp(p.thinkSigma * thinkSize), p.thinkCap)
+          : p.gapMedian * Math.exp(p.gapSigma * gapDraw);
+      delay += pause * average;
     }
-    out.push(Math.max(delay, p.floorS));
+    out.push(delay);
     prev = ch;
   }
   return out;
 }
 
-/** The pause between the last typed key and Enter: log-normal, median 250 ms. */
+/** The pause between the last typed key and Enter: log-normal, median 200 ms. */
 export function enterPause(rng: Rng): number {
-  return 0.25 * Math.exp(0.3 * rng.gauss());
+  return 0.2 * Math.exp(0.3 * rng.gauss());
 }

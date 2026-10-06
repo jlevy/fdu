@@ -1,0 +1,18 @@
+# The tree view over a large tree everyone can rebuild: this repository's own checkout,
+# with its full build in target/ (debug, release, and Windows cross builds). The page
+# cache is warm; fdu's own cache is off, so the walk is real.
+#
+# Needs this repository's release build on PATH, and its build tree in target/
+# (CARGO_TARGET_DIR unset, or pointing at target/).
+title: "fdu: its own repository and build, 14 GiB"
+terminal: { cols: 176, rows: 20, font_size: 16 }
+typing: { seed: 4 }
+path: [../../../../target/release]
+cwd: ../../../..
+steps:
+  - label: intro
+    comment: "# fdu's own repository, with every build it has made under target/."
+    hold: 0.6
+  - label: tree
+    run: fdu . --depth 2 --cache off
+    hold: 4.5

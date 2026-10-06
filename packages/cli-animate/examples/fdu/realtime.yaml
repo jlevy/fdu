@@ -1,7 +1,7 @@
 # Real speed, real tree: du and fdu over the same root filesystem, both with a warm page
 # cache. Needs this repository's release build (cargo build --release -p fdu).
 title: "fdu vs du: the whole root filesystem, real time"
-terminal: { cols: 104, rows: 30 }
+terminal: { cols: 176, rows: 30, font_size: 16 }
 typing: { seed: 7 }
 path: [../../../../target/release]
 cwd: /
