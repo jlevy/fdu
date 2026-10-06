@@ -9,6 +9,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking:** a content view requests the analysis it shows.
+  `fdu . --view=code,documents` gives lines of code by language and words by document
+  type from one scan, with no `--analyze`; `--view=code` and `--view=documents` give
+  either alone. `--analyze` now adds analyzers beyond what the views imply: analysis
+  shown in a metadata view (`--analyze=code --view=languages`), analysis run without
+  display, or a wider set.
+  Views with a metadata meaning (`tree`, `languages`, `types`, `families`, `full`) never
+  imply analysis. In Python, `fdu.report(root, Query(views=(View.CODE,)))` runs code
+  analysis; an index from `fdu.open` or `fdu.scan` is never widened by a read, and a
+  view it cannot answer is refused with the analyzer named.
+  `documents` now requires `words` analysis, so `--analyze=lines --view=documents` is
+  refused on a held index.
+  `request.analyze` in structured output is the enabled set, named or implied; the
+  report schema is unchanged.
+- The messages around analysis name the exact remedy:
+  `note: code analysis not shown by summary` with `tip: show it: --view code`, and
+  `note: full omits code, documents without analysis` with
+  `tip: include them: --analyze all`.
 - Human reports hold only the result: rows, column headings, and multi-view section
   headers. Every explanation is a `note:` or `tip:` line on stderr after it, including
   what used to sit inside the result: the percentage denominator
