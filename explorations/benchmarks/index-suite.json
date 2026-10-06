@@ -2,6 +2,7 @@
   "schema": "fdu-performance-index-suite/1",
   "version": 1,
   "spec": "docs/project/specs/active/plan-2026-10-05-fdu-performance-index.md",
+  "jobs": "explorations/benchmarks/index-jobs.json",
   "reference_build": "v0.3.0",
   "platform_weights": {
     "macOS": 0.5,
@@ -23,7 +24,7 @@
       "title": "Cold cache",
       "weight": 0.15,
       "tree": "K",
-      "command": "fdu PATH",
+      "command": "fdu --cache off PATH",
       "cache_state": "fdu's caches empty for every sample",
       "measures": "wall"
     },
@@ -32,7 +33,7 @@
       "title": "Warm-cache content: code",
       "weight": 0.1,
       "tree": "K",
-      "command": "fdu --view code PATH",
+      "command": "fdu --view code --analyze code PATH",
       "cache_state": "content cache filled by an untimed run of the same build just before",
       "measures": "wall"
     },
@@ -41,7 +42,7 @@
       "title": "Warm-cache content: documents",
       "weight": 0.1,
       "tree": "K",
-      "command": "fdu --view documents PATH",
+      "command": "fdu --view documents --analyze words PATH",
       "cache_state": "content cache filled by an untimed run of the same build just before",
       "measures": "wall"
     },
@@ -68,7 +69,7 @@
       "title": "Code view",
       "weight": 0.075,
       "tree": "K",
-      "command": "fdu --view code PATH",
+      "command": "fdu --view code --analyze code PATH",
       "cache_state": "fdu's caches empty for every sample",
       "measures": "wall"
     },
@@ -77,7 +78,7 @@
       "title": "Documents view",
       "weight": 0.075,
       "tree": "K",
-      "command": "fdu --view documents PATH",
+      "command": "fdu --view documents --analyze words PATH",
       "cache_state": "fdu's caches empty for every sample",
       "measures": "wall"
     },
@@ -86,16 +87,16 @@
       "title": "Warm metadata cache",
       "weight": 0.075,
       "tree": "K",
-      "command": "fdu --cache on PATH",
+      "command": "perf_probe warm-revalidate",
       "cache_state": "snapshot written by an untimed run of the same build just before",
-      "measures": "wall"
+      "measures": "component"
     },
     {
       "id": "multi-view",
       "title": "Multi-view content report",
       "weight": 0.05,
       "tree": "K",
-      "command": "fdu --view code,documents,languages PATH",
+      "command": "fdu --view code,documents,languages --analyze all PATH",
       "cache_state": "fdu's caches empty for every sample",
       "measures": "wall"
     },
@@ -104,16 +105,16 @@
       "title": "Opened root",
       "weight": 0.05,
       "tree": "K",
-      "command": "perf_probe opened-second-report",
-      "cache_state": "the library's open, then a second report",
-      "measures": "wall"
+      "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
+      "cache_state": "the library's open, then a second report; then an applied change",
+      "measures": "component"
     },
     {
       "id": "scale",
       "title": "Scale",
       "weight": 0.05,
       "tree": "G",
-      "command": "fdu PATH",
+      "command": "fdu --cache off PATH",
       "cache_state": "fdu's caches empty for every sample",
       "measures": "wall"
     },
@@ -122,41 +123,10 @@
       "title": "Memory",
       "weight": 0.05,
       "tree": "K,G",
-      "command": "peak RSS of the cold-cache and scale components",
+      "command": "peak RSS of every component that records it",
       "cache_state": "as those components",
       "measures": "peak_rss",
-      "from_components": ["cold-cache", "scale"]
+      "from_components": "all"
     }
-  ],
-  "job_components": {
-    "cold-scan-index": "cold-cache",
-    "cold-scan-producer": "cold-cache",
-    "adaptive-scan-index": "cold-cache",
-    "default-tree-first": "cold-cache",
-    "content-disabled": "cold-cache",
-    "default-tree": "default-tree",
-    "cli-default-tree": "default-tree",
-    "aggregate-summary": "summary",
-    "rich-summary-report": "summary",
-    "rich-summary-open-pipeline": "summary",
-    "rich-summary-shared-openers": "summary",
-    "selected-allocated-total": "summary",
-    "content-basic": "code",
-    "code-sloc": "code",
-    "markdown-prose": "documents",
-    "text-prose": "documents",
-    "content-cache-hit": "warm-content-code",
-    "code-sloc-cache-hit": "warm-content-code",
-    "document-cache-hit": "warm-content-documents",
-    "content-query": "multi-view",
-    "warm-revalidate": "warm-metadata",
-    "warm-snapshot-load": "warm-metadata",
-    "cold-snapshot-save": "warm-metadata",
-    "cold-open-save": "warm-metadata",
-    "opened-discovery": "opened-root",
-    "opened-second-report": "opened-root",
-    "index-second-report": "opened-root",
-    "delta-apply-large": "opened-root",
-    "delta-apply-batched": "opened-root"
-  }
+  ]
 }

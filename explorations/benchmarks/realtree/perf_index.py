@@ -4,22 +4,25 @@ The suite, its weights, and the reference build live in
 `explorations/benchmarks/index-suite.json`; the design is
 `docs/project/specs/active/plan-2026-10-05-fdu-performance-index.md`.
 
-**The score is a weighted sum of log speedups.** For build *b* and component *c*, the
-component ratio *r* is *b*'s runtime over the reference build's, taken from the paired
-figure of one interleaved session, so no ratio chains two sessions. The index is
+**The index is a weighted sum of log runtime ratios.** For build *b* and component *c*,
+the component ratio *r* is *b*'s runtime over the reference build's, taken from the
+paired figure of one interleaved session, so no ratio chains two sessions. The index is
 `exp(sum(w * ln r) / sum(w))`: a relative runtime, 1.0 at the reference build. Summing
-logs keeps a 70-second benchmark from outweighing a 160-millisecond one and makes a 2x
-gain and a 2x loss cancel exactly, which a sum of raw times or of raw ratios does not.
+logs keeps a 70-second benchmark from outweighing a 160-millisecond one, and on two
+components of equal weight a 2x gain and a 2x loss cancel exactly, which a sum of raw
+times or of raw ratios does not.
 
-**Every optimization target is in the score.** Every benchmark job the loop has recorded
-maps to a component in the manifest; `unmapped_jobs` names any that do not, and the
-projection refuses to build while one exists, so a new target gets a component and a
-weight before its first verdict is published.
+**Every optimization target is exercised.** Every benchmark job the loop has recorded
+maps, in `index-jobs.json`, to a component whose measurement runs that job's code path;
+`unmapped_jobs` names any job that does not map, and the projection refuses to build
+while one exists, so a new target gets a component and a weight before its first verdict
+is published.
 
-**A build is scored only on what it can do.** A build without a component's capability
-(content views before they existed) has no ratio there. The line the page draws uses
-the components every plotted build supports, renormalized, and says which it leaves out;
-the full index is published only for builds that have every component.
+**A build is scored only on what it can do, and says so.** A build without a component's
+capability (the pre-work binary has no content views) has no ratio there, and every
+score carries its coverage, the share of the suite's weight it includes. The full index
+exists only for builds with every component; the page draws earlier builds as a partial
+score.
 """
 
 from __future__ import annotations
@@ -36,8 +39,14 @@ Z95 = 1.959963984540054
 
 
 def load_suite(path: Path = SUITE_PATH) -> Dict[str, Any]:
-    """The manifest, with its weights checked to sum to one."""
+    """The manifest with its job table, its weights checked to sum to one.
+
+    The job table is a separate file so that mapping a new job to an existing component
+    is not a new index version; adding or reweighting a component is.
+    """
     suite = json.loads(path.read_text(encoding="utf-8"))
+    jobs_path = path.parent / Path(suite.get("jobs") or "index-jobs.json").name
+    suite["job_components"] = json.loads(jobs_path.read_text(encoding="utf-8"))["job_components"]
     total = sum(component["weight"] for component in suite["components"])
     if abs(total - 1.0) > 1e-9:
         raise ValueError(f"{path}: component weights sum to {total}, not 1")
@@ -110,7 +119,11 @@ def component_ratios(
     for component in suite["components"]:
         if component["measures"] != "peak_rss":
             continue
-        sources = [by_component[name] for name in component.get("from_components", []) if name in by_component]
+        named = component.get("from_components", [])
+        if named == "all":
+            sources = list(by_component.values())
+        else:
+            sources = [by_component[name] for name in named if name in by_component]
         memory: Dict[str, Dict[str, float]] = {}
         for label in {item["label"] for cell in sources for item in cell["milestones"]}:
             logs = []
@@ -183,6 +196,10 @@ def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) 
             row["coverage"] = round(sum(weights[name] for name in available), 6)
             if common:
                 row["common"] = combine({name: available[name] for name in common}, weights)
+            # Every component measured so far; the same as the full index once the whole
+            # suite has been measured on this platform.
+            if set(available) == set(ratios):
+                row["measured_full"] = combine(available, weights)
             if set(available) == set(weights):
                 row["full"] = combine(available, weights)
             rows.append(row)

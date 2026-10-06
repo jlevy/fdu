@@ -633,21 +633,23 @@ def history_cell(dataset: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
 def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> List[Dict[str, Any]]:
     """The chooser's metrics: the unified score first, then every measured component.
 
-    Each point is a build's value as a share of the first build that has one, so the
-    score, a millisecond benchmark, and peak memory read on one axis. The score uses the
-    components every plotted build supports; its title says how many of the suite's.
+    Every value is relative to the reference build, so every line ends at 1.0 and lines
+    that start at different builds still compare: the score, a millisecond benchmark,
+    and peak memory read on one axis. The unified score has two lines: the full index,
+    solid, from the first build that has every measured component, and a partial score,
+    dashed, over the components every build has, labelled with its coverage.
     """
     platforms = dataset.get("index") or []
     if not platforms:
         return []
     projected = platforms[0]
     builds = [build for build in projected["builds"] if build.get("after_experiment") in position]
+    reference = projected["reference_build"]
 
     def points(values: Sequence[tuple]) -> List[Dict[str, Any]]:
         present = [(build, value, detail) for build, value, detail in values if value]
         if len(present) < 2:
             return []
-        first = present[0][1]
         return [
             {
                 "after_experiment": build["after_experiment"],
@@ -655,35 +657,70 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
                 "commit": build.get("commit") or "",
                 "date": build.get("date") or "",
                 "includes": build.get("includes") or "",
-                "share": value / first,
+                "share": value,
                 "detail": detail,
             }
             for build, value, detail in present
         ]
 
-    total = len(projected["measured"]) + len(projected["missing"])
-    series = []
-    score = points(
+    measured = len(projected["measured"])
+    total = measured + len(projected["missing"])
+    measured_weight = sum(
+        build["coverage"] for build in builds[-1:]
+    ) if builds else 0.0
+    full_line = points(
+        [
+            (
+                build,
+                (build.get("measured_full") or {}).get("index"),
+                f"index {build['measured_full']['index']:.3f} of {reference}, all {measured} "
+                f"measured components" if build.get("measured_full") else "",
+            )
+            for build in builds
+        ]
+    )
+    partial_line = points(
         [
             (
                 build,
                 (build.get("common") or {}).get("index"),
-                f"index {build['common']['index']:.3f} relative to {projected['reference_build']}"
+                f"index {build['common']['index']:.3f} of {reference}, "
+                f"{len(projected['common'])} components every build has"
                 if build.get("common")
                 else "",
             )
             for build in builds
         ]
     )
-    if score:
+    lines = []
+    if full_line:
+        lines.append(
+            {
+                "points": full_line,
+                "dashed": False,
+                "label": f"full score, {measured} of {total} components",
+            }
+        )
+    if partial_line and len(projected["common"]) < measured:
+        lines.append(
+            {
+                "points": partial_line,
+                "dashed": True,
+                "label": f"partial, {len(projected['common'])} of {total} components "
+                f"({projected['common_weight'] * 100:.0f}% of the weight)",
+            }
+        )
+    series = []
+    if lines:
+        coverage = (
+            "" if measured == total else f", {measured_weight * 100:.0f}% of the suite measured"
+        )
         series.append(
             {
                 "id": "score",
-                "title": f"Unified score ({projected['platform']}, {len(projected['common'])} of "
-                f"{total} components)",
-                "short_title": "unified score",
+                "title": f"Unified score ({projected['platform']}{coverage})",
                 "verb": "better",
-                "points": score,
+                "lines": lines,
             }
         )
     for component in projected["measured"]:
@@ -692,7 +729,7 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
                 (
                     build,
                     build["components"].get(component),
-                    f"{build['components'][component]:.3f} of {projected['reference_build']}"
+                    f"{build['components'][component]:.3f} of {reference}"
                     if component in build["components"]
                     else "",
                 )
@@ -705,9 +742,8 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
                 {
                     "id": component,
                     "title": title,
-                    "short_title": title.lower(),
                     "verb": "less memory" if component == "memory" else "faster",
-                    "points": values,
+                    "lines": [{"points": values, "dashed": False, "label": title.lower()}],
                 }
             )
     return series
@@ -737,7 +773,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         if len(placed) >= 2:
             cells.append((cell, placed))
     series = metric_series(dataset, position)
-    milestones = [point for item in series for point in item["points"]]
+    milestones = [point for item in series for line in item["lines"] for point in line["points"]]
 
     left, right = 64, 150
     width = 900
@@ -785,33 +821,36 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     )
 
     if series:
-        # Log scale of each metric as a share of its first build, so a tree timed in
-        # seconds, one timed in milliseconds, and the score read on one axis.
-        shares = [point["share"] for item in series for point in item["points"]]
-        candidates = [tick for tick in (0.5, 0.2, 0.1, 0.05, 0.02, 0.01) if tick < min(shares)]
-        floor = candidates[0] if candidates else min(shares) * 0.9
-        ceiling = max(1.0, max(shares))
+        # Log scale of each metric relative to the reference build, so a tree timed in
+        # seconds, one timed in milliseconds, the score, and memory read on one axis,
+        # and every line ends at 1x.
+        values = [point["share"] for item in series for line in item["lines"] for point in line["points"]]
+        floor = min(1.0, min(values)) * 0.85
+        ceiling = max(1.0, max(values)) * 1.15
         span = math.log10(ceiling) - math.log10(floor)
         y_of = lambda share: top_y0 + (math.log10(ceiling) - math.log10(share)) / span * top_h
-        for tick in (1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01):
+        for tick in (0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0):
             if floor <= tick <= ceiling:
                 y = y_of(tick)
                 out.append(f'<line class="grid" x1="{left}" y1="{y:.1f}" x2="{width - right}" y2="{y:.1f}"/>')
                 out.append(
                     f'<text class="tick" x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
-                    f"{tick * 100:g}%</text>"
+                    f"{tick:g}&times;</text>"
                 )
+        reference = (dataset.get("index") or [{}])[0].get("reference_build", "the reference build")
         out.append(
             f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">the chosen metric as a '
-            f"share of the first build, log scale &mdash; lower is better; builds numbered</text>"
+            f"multiple of {esc(reference)}&rsquo;s, log scale &mdash; lower is better; "
+            f"builds numbered</text>"
         )
         # Milestones numbered once along the top, staggered over three rows so builds
         # that landed close together stay legible; the caption names them. Every cell
         # times the same builds.
         named = {}
         for item in series:
-            for point in item["points"]:
-                named.setdefault(point["after_experiment"], point["short"])
+            for line in item["lines"]:
+                for point in line["points"]:
+                    named.setdefault(point["after_experiment"], point["short"])
         for number, after in enumerate(named, start=1):
             x = x_of(position[after])
             label_y = top_y0 - 30 + (number - 1) % 3 * 10
@@ -825,37 +864,45 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
             )
         for item in series:
             css = "series-mac" if item["id"] == "score" else "series-linux"
-            points = [(x_of(position[point["after_experiment"]]), y_of(point["share"]), point) for point in item["points"]]
             group = [f'<g class="metric{" on" if item["id"] == "score" else ""}" data-metric="{esc(item["id"])}">']
-            path = []
-            for index, (x, y, _) in enumerate(points):
-                if index:
-                    path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
-                path.append(f"{x:.1f},{y:.1f}")
-            path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
-            group.append(f'<polyline class="{css} series-line" points="{" ".join(path)}"/>')
-            for x, y, point in points:
-                group.append(f'<circle class="{css}" cx="{x:.1f}" cy="{y:.1f}" r="3.5"/>')
-                group.append(
-                    f'<rect class="hit" x="{x - 7:.1f}" y="{y - 7:.1f}" width="14" height="14" '
-                    + tip(
-                        f"{item['title']}: {point['short']} ({point['commit']}, {point['date']})\n"
-                        f"{point['includes']}\n"
-                        f"{1 / point['share']:.2f}x better than the first build"
-                        + (f"; {point['detail']}" if point.get("detail") else "")
+            for line in item["lines"]:
+                points = [
+                    (x_of(position[point["after_experiment"]]), y_of(point["share"]), point)
+                    for point in line["points"]
+                ]
+                path = []
+                for index, (x, y, _) in enumerate(points):
+                    if index:
+                        path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
+                    path.append(f"{x:.1f},{y:.1f}")
+                path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
+                dashed = " dashed" if line["dashed"] else ""
+                group.append(f'<polyline class="{css} series-line{dashed}" points="{" ".join(path)}"/>')
+                first, last = line["points"][0], line["points"][-1]
+                for x, y, point in points:
+                    group.append(f'<circle class="{css}" cx="{x:.1f}" cy="{y:.1f}" r="3.5"/>')
+                    group.append(
+                        f'<rect class="hit" x="{x - 7:.1f}" y="{y - 7:.1f}" width="14" height="14" '
+                        + tip(
+                            f"{item['title']}, {line['label']}: {point['short']} "
+                            f"({point['commit']}, {point['date']})\n"
+                            f"{point['includes']}\n"
+                            f"{point['share']:.2f}x the reference build's time"
+                            + (f"; {point['detail']}" if point.get("detail") else "")
+                        )
+                        + "/>"
                     )
-                    + "/>"
+                # Every line ends at the reference build, so each is labelled at its start.
+                x0, y0 = points[0][0], points[0][1]
+                group.append(
+                    f'<text class="value-label {css}" x="{x0 + 8:.1f}" y="{y0 - 8:.1f}" '
+                    f'stroke="none">{first["share"] / last["share"]:.1f}x {esc(item["verb"])} '
+                    f"since {esc(first['short'])}</text>"
                 )
-            last = item["points"][-1]
-            group.append(
-                f'<text class="value-label {css}" x="{width - right + 8:.1f}" '
-                f'y="{points[-1][1] + 4:.1f}" stroke="none">'
-                f"{1 / last['share']:.1f}x {esc(item['verb'])}</text>"
-            )
-            group.append(
-                f'<text class="point-label" x="{width - right + 8:.1f}" '
-                f'y="{points[-1][1] + 17:.1f}">{esc(item["short_title"])}</text>'
-            )
+                group.append(
+                    f'<text class="point-label" x="{x0 + 8:.1f}" y="{y0 + 14:.1f}">'
+                    f"{esc(line['label'])}</text>"
+                )
             group.append("</g>")
             out.extend(group)
 
@@ -940,9 +987,8 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
             f"so on a repository they do less work. Hover a point for what each build added. "
         )
         named = {}
-        for item in series:
-            for point in item["points"]:
-                named.setdefault(point["after_experiment"], point["short"])
+        for point in milestones:
+            named.setdefault(point["after_experiment"], point["short"])
         caption += (
             "Builds: "
             + "; ".join(f"{number} {esc(short)}" for number, short in enumerate(named.values(), start=1))
@@ -1500,6 +1546,7 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .series-mac { stroke: var(--after); fill: var(--after); }
 .series-linux { stroke: var(--warn); fill: var(--warn); }
 .series-line { fill: none; stroke-width: 1.5; }
+.series-line.dashed { stroke-dasharray: 5 4; }
 .point-label { font: 10px var(--mono); fill: var(--muted); }
 .gutter { font: 9.5px var(--mono); fill: var(--muted); opacity: 0.75; }
 /* Every mark is inert to the pointer, so the only hover target inside a chart is the row
@@ -2289,21 +2336,27 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
     if not platforms:
         return ""
     projected = platforms[0]
-    builds = [build for build in projected["builds"] if build.get("common")]
-    if len(builds) < 2:
-        return ""
-    first, last = builds[0]["common"], builds[-1]["common"]
-    speedup = first["index"] / last["index"]
-    low = first["low"] / last["high"]
-    high = first["high"] / last["low"]
     total = len(projected["measured"]) + len(projected["missing"])
-    return (
-        f'<div><span class="n good">{speedup:.1f}&times; better</span>'
-        f'<span class="k">unified score, {esc(projected["platform"])}, first build to '
-        f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
-        f"[{low:.1f}&times;, {high:.1f}&times;]; {len(projected['common'])} of {total} "
-        f"components</span></div>"
-    )
+    figures = []
+    for key, components, what in (
+        ("measured_full", projected["measured"], "unified score"),
+        ("common", projected["common"], "partial score"),
+    ):
+        if key == "common" and len(projected["common"]) == len(projected["measured"]):
+            continue
+        builds = [build for build in projected["builds"] if build.get(key)]
+        if len(builds) < 2:
+            continue
+        first, last = builds[0][key], builds[-1][key]
+        figures.append(
+            f'<div><span class="n good">{first["index"] / last["index"]:.1f}&times; better</span>'
+            f'<span class="k">{what}, {esc(projected["platform"])}, '
+            f'{esc(builds[0].get("short") or builds[0]["label"])} to '
+            f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
+            f"[{first['low'] / last['high']:.1f}&times;, {first['high'] / last['low']:.1f}&times;]; "
+            f"{len(components)} of {total} components</span></div>"
+        )
+    return "".join(figures)
 
 
 def _history_figure(dataset: Mapping[str, Any]) -> str:

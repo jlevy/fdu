@@ -49864,6 +49864,11 @@
      "date": "2026-08-10",
      "includes": "pre-work baseline: serial walker, no .gitignore support",
      "label": "prework",
+     "measured_full": {
+      "high": 4.628769871044088,
+      "index": 4.490586881060887,
+      "low": 4.3565290775208805
+     },
      "short": "start"
     },
     {
@@ -49883,6 +49888,11 @@
      "date": "2026-08-10",
      "includes": "H1 bounded parallel directory producer",
      "label": "exp001",
+     "measured_full": {
+      "high": 1.7870117649995079,
+      "index": 1.7310322717177993,
+      "low": 1.6768063783448621
+     },
      "short": "H1 producer"
     },
     {
@@ -49902,6 +49912,11 @@
      "date": "2026-08-12",
      "includes": "H3+H26 macOS getattrlistbulk scan metadata",
      "label": "exp022",
+     "measured_full": {
+      "high": 1.381122217607394,
+      "index": 1.3556676871789948,
+      "low": 1.3306822920024
+     },
      "short": "bulk metadata"
     },
     {
@@ -49921,6 +49936,11 @@
      "date": "2026-08-12",
      "includes": "H12+H9 bounded parallel reconciliation with no-op elision",
      "label": "exp030",
+     "measured_full": {
+      "high": 1.4058123404209826,
+      "index": 1.3762666580054768,
+      "low": 1.3473419314062618
+     },
      "short": "parallel reconcile"
     },
     {
@@ -49940,6 +49960,11 @@
      "date": "2026-09-01",
      "includes": "H86 structural composite: fixed controls once per directory (exp-096) and compact detached child topology (exp-101)",
      "label": "exp101",
+     "measured_full": {
+      "high": 1.2748641052355696,
+      "index": 1.2476664473732717,
+      "low": 1.2210490180938922
+     },
      "short": "H86 compact index"
     },
     {
@@ -49959,6 +49984,11 @@
      "date": "2026-09-25",
      "includes": "release v0.1.0 (.gitignore read by default)",
      "label": "v0.1.0",
+     "measured_full": {
+      "high": 2.3880271613865833,
+      "index": 2.327771006091952,
+      "low": 2.2690352707948818
+     },
      "short": "0.1.0"
     },
     {
@@ -49978,6 +50008,11 @@
      "date": "2026-09-28",
      "includes": "H160 no one-shot snapshot under --cache auto, with H156 (first release carrying H160)",
      "label": "v0.2.0",
+     "measured_full": {
+      "high": 2.361447588951913,
+      "index": 2.2919593491021986,
+      "low": 2.2245158785287544
+     },
      "short": "0.2.0"
     },
     {
@@ -49997,6 +50032,11 @@
      "date": "2026-09-28",
      "includes": "H159, H161, H162, H163",
      "label": "v0.2.1",
+     "measured_full": {
+      "high": 1.405967017844225,
+      "index": 1.3686370638406367,
+      "low": 1.3322982607305074
+     },
      "short": "0.2.1"
     },
     {
@@ -50016,6 +50056,11 @@
      "date": "2026-09-29",
      "includes": "H171 bucketed .gitignore matching",
      "label": "exp178",
+     "measured_full": {
+      "high": 1.374004882004499,
+      "index": 1.3362371689099766,
+      "low": 1.2995075890645216
+     },
      "short": "bucketed gitignore"
     },
     {
@@ -50035,6 +50080,11 @@
      "date": "2026-09-29",
      "includes": "H172 exact transient tree tier, with H175, H176 and F6e",
      "label": "exp180",
+     "measured_full": {
+      "high": 1.0690405660140456,
+      "index": 1.0437955687315263,
+      "low": 1.019146722715905
+     },
      "short": "transient tree"
     },
     {
@@ -50054,6 +50104,11 @@
      "date": "2026-09-29",
      "includes": "overnight final: H180 walker trims, H169 Linux-native reader (Linux only), H183 gitignore pre-checks",
      "label": "ebc06c78",
+     "measured_full": {
+      "high": 1.0773566083361783,
+      "index": 1.0490959099724906,
+      "low": 1.0215765326030062
+     },
      "short": "overnight round"
     },
     {
@@ -50073,6 +50128,11 @@
      "date": "2026-09-29",
      "includes": "pdu track: H185, H186, H188, H189",
      "label": "exp201",
+     "measured_full": {
+      "high": 1.0533266704241497,
+      "index": 1.0280222244830002,
+      "low": 1.0033256763596574
+     },
      "short": "pdu track"
     },
     {
@@ -50092,6 +50152,11 @@
      "date": "2026-09-30",
      "includes": "release v0.3.0",
      "label": "v0.3.0",
+     "measured_full": {
+      "high": 1.0,
+      "index": 1.0,
+      "low": 1.0
+     },
      "short": "0.3.0"
     }
    ],
