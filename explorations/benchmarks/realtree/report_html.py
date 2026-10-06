@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
-from benchmarks.realtree.perf_index import CONTROLLED_REGIMES, score_ratio
+from benchmarks.realtree.perf_index import CONTROLLED_REGIMES, QUOTABLE_ROUNDS, score_ratio
 from benchmarks.realtree.timeline import METRICS
 
 #: Jobs shown in the absolute figure, in the order the work happens: build the index
@@ -606,7 +606,14 @@ def regime_note(projected: Mapping[str, Any]) -> str:
         return ""
     regimes = projected.get("host_regimes") or []
     loose = [regime for regime in regimes if regime not in CONTROLLED_REGIMES]
-    host = "uncontrolled host" if "uncontrolled" in loose or not loose else f"{'/'.join(loose)} host"
+    if not loose:
+        # A controlled host, but an exploratory stage or too few rounds to quote: say
+        # exploratory, not uncontrolled, and name a round shortfall.
+        fewest = projected.get("fewest_rounds")
+        if fewest is not None and fewest < QUOTABLE_ROUNDS:
+            return f"exploratory, {fewest} rounds"
+        return "exploratory"
+    host = "uncontrolled host" if "uncontrolled" in loose else f"{'/'.join(loose)} host"
     return f"exploratory, {host}"
 
 

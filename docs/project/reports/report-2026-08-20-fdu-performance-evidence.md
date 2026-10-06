@@ -1370,8 +1370,10 @@ scale components:
 
 An earlier cell, on the external USB SSD, is kept under `history/superseded/`: there the
 kernel and USB path set the wall time after campaign 1. The driver,
-`benchmarks.realtree.history`, checks every build’s answer (content totals included)
-before timing, and `make perf-report-check` re-derives every cell from its committed run
+`benchmarks.realtree.history`, checks every build’s root totals before timing and, from
+now on, its content totals too; the five content cells here predate that check, so their
+content totals were checked in an untimed re-run after timing (`answer_check.rechecked`
+in each cell). `make perf-report-check` re-derives every cell from its committed run
 artifact.
 
 The bottom panel is every experiment’s paired change on its own primary metric: green

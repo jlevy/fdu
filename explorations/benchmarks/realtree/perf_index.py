@@ -384,23 +384,29 @@ def project_index(cells: Sequence[Mapping[str, Any]], suite: Mapping[str, Any]) 
 #: `uncontrolled` supports exploration and discovery only).
 CONTROLLED_REGIMES = frozenset({"quiet", "controlled-interactive"})
 
+#: Rounds every cell behind a quoted score must have run (the spec's quotation rule).
+QUOTABLE_ROUNDS = 20
+
 
 def evidence_regime(cells: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
     """The regime a platform's score was measured in, from the cells behind it.
 
     A score is exploratory when any cell behind it ran on a host regime other than
-    `quiet` or `controlled-interactive`, or at the exploratory stage; the page says so
-    beside the number, with the range of each cell's share of sample boundaries above
-    the quiet gate.
+    `quiet` or `controlled-interactive`, at the exploratory stage, or with fewer than
+    `QUOTABLE_ROUNDS` rounds (or none recorded); the page says so beside the number,
+    with the range of each cell's share of sample boundaries above the quiet gate.
     """
     cells = list(cells)
     regimes = sorted({str(cell.get("regime") or "unrecorded") for cell in cells})
     stages = sorted({str(cell.get("stage") or "unrecorded") for cell in cells})
     shares = [cell["above_quiet_gate"] for cell in cells if cell.get("above_quiet_gate") is not None]
+    rounds = [cell.get("trials") or 0 for cell in cells]
     controlled = bool(cells) and all(regime in CONTROLLED_REGIMES for regime in regimes)
+    short = bool(cells) and min(rounds) < QUOTABLE_ROUNDS
     return {
         "host_regimes": regimes,
         "stages": stages,
-        "exploratory": not controlled or "exploratory" in stages,
+        "fewest_rounds": min(rounds) if cells else None,
+        "exploratory": not controlled or "exploratory" in stages or short,
         "above_quiet_gate_range": [min(shares), max(shares)] if shares else None,
     }

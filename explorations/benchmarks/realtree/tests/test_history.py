@@ -777,6 +777,16 @@ class AnswerCheckTests(unittest.TestCase):
         missing = [self.content_record("v0.2.0", None)]
         problems = history.answer_problems(history.answer_groups(missing, self.FINGERPRINT))
         self.assertIn("no code_totals to compare", " ".join(problems))
+        # G4: an entry is stale when its build is absent from the cell, or when every other
+        # build now reports the declared value; both fail rather than pass silently.
+        absent = history.answer_groups(records[:2], self.FINGERPRINT, known)
+        self.assertIn("checked no such answer", " ".join(history.answer_problems(absent)))
+        converged = [
+            self.content_record("v0.2.0", self.CODE_030),
+            self.content_record("v0.3.0", self.CODE_030),
+        ]
+        problems = history.answer_problems(history.answer_groups(converged, self.FINGERPRINT, known))
+        self.assertIn("remove the stale known-answers entry", " ".join(problems))
 
     def test_documents_totals_are_read_from_the_documents_section(self) -> None:
         single = (

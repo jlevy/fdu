@@ -53262,6 +53262,7 @@
    ],
    "common_weight": 0.4,
    "exploratory": true,
+   "fewest_rounds": 12,
    "host_regimes": [
     "uncontrolled"
    ],

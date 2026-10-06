@@ -722,11 +722,22 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("unified score,", page)
         figure = figure_timeline(dataset)
         self.assertIn("macOS score, 2 of 12 components", figure)
-        # A score whose every cell ran quiet or controlled at a held-out stage is not.
-        quiet = dict(_index_cell("cold-cache", 150.0, 30.0), regime="quiet", stage="held-out")
+        # A score whose every cell ran quiet or controlled, at a held-out stage, for 20
+        # rounds is not.
+        quiet = dict(_index_cell("cold-cache", 150.0, 30.0), regime="quiet", stage="held-out", trials=20)
         quiet_page = render(self._chart_dataset([quiet]))
         self.assertIn("macOS score, 2 of 12 components", quiet_page)
         self.assertNotIn("exploratory, ", quiet_page)
+        self.assertNotIn("measured; exploratory", quiet_page)
+        # G5: an exploratory stage on a controlled host is exploratory, not "uncontrolled".
+        controlled = dict(quiet, stage="exploratory")
+        controlled_page = render(self._chart_dataset([controlled]))
+        self.assertIn("measured; exploratory", controlled_page)
+        self.assertNotIn("exploratory, uncontrolled", controlled_page)
+        # A quiet held-out cell of 12 rounds cannot be quoted, and the label says why.
+        short = dict(quiet, trials=12)
+        short_page = render(self._chart_dataset([short]))
+        self.assertIn("measured; exploratory, 12 rounds", short_page)
 
     def test_the_chooser_defaults_to_the_score_and_bars_carry_their_component(self) -> None:
         # E13: the default the spec asks for, and the attributes the fading reads.

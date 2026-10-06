@@ -82,7 +82,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple, Union
 
-from benchmarks.atomic_write import write_text_atomic
+from benchmarks.atomic_write import write_bytes_atomic, write_text_atomic
 from benchmarks.realtree import compare_tools, ledger, measure, perf_index, tree
 
 MANIFEST = Path(__file__).resolve().parents[1] / "index-suite.json"
@@ -1161,6 +1161,30 @@ def answer_groups(
                     )
                 )
             group["content"][field] = json.loads(next(iter(values))) if len(values) == 1 else None
+            # A declared difference that no longer differs is stale: the other builds now
+            # report the same value, so the entry would excuse nothing and must go.
+            for record in expecting:
+                entry = known.get((record["label"], field))
+                if entry is not None and group["content"].get(field) == entry["value"]:
+                    group["content_problems"].append(
+                        f"{record['label']}: declared {field} difference matches the other "
+                        "builds; remove the stale known-answers entry"
+                    )
+    # A declared difference for a build or field this cell did not check is stale too.
+    checked = {
+        (record["label"], field)
+        for record in records
+        for content, field in CONTENT_FIELDS.items()
+        if content in (record.get("content") or [])
+    }
+    for (label, field), entry in known.items():
+        if (label, field) not in checked:
+            key = next(iter(groups)) if groups else None
+            if key is not None:
+                groups[key]["content_problems"].append(
+                    f"{label}: declared {field} difference, but this cell checked no such answer "
+                    "for that build"
+                )
     for group in groups.values():
         if group["totals"] is None:
             group["matches_fingerprint"] = None
@@ -1852,7 +1876,7 @@ def recheck_answers(
     path = output_dir / f"answer-check-{name}.json"
     kept = output_dir / f"answer-check-{name}.as-timed.json"
     if path.is_file() and not kept.is_file():
-        kept.write_bytes(path.read_bytes())
+        write_bytes_atomic(kept, path.read_bytes())
     records = [check_build(build, root, fingerprint) for build in builds if build.supported]
     answer_check = {
         "builds": records,
