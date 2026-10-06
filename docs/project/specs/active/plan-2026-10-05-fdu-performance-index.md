@@ -170,9 +170,12 @@ Weights per platform, set by the maintainer:
 
 Every job is timed whole-process, from launch to exit, so a probe job’s timed region
 includes the discovery, snapshot load, and snapshot save around its own component timer.
-The commands are written as v0.3.0 spells them; earlier builds use their own spelling of
-the same request (`--no-cache` before 0.1.0, for example), and a build that cannot make
-the request at all has no ratio for that job.
+It also includes the probe’s verification walk, its oracle, which builds before 0.1.0
+cannot turn off. That cost is harness instrumentation and varies by build, across the
+12.5% of the weight the probe jobs carry; separating it is tracked as `fdu-92bg`. The
+commands are written as v0.3.0 spells them; earlier builds use their own spelling of the
+same request (`--no-cache` before 0.1.0, for example), and a build that cannot make the
+request at all has no ratio for that job.
 The driver records the exact argv per build.
 
 The split is the maintainer’s: 15% cold cache, 20% warm-cache content, and the rest
