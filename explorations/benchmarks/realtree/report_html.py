@@ -597,24 +597,25 @@ def score_label(projected: Mapping[str, Any], components: int) -> str:
 
 
 def regime_note(projected: Mapping[str, Any]) -> str:
-    """"exploratory, uncontrolled host" when any cell behind the score was not controlled.
+    """"exploratory, uncontrolled host, 12 rounds" when a score cannot be quoted.
 
-    The loop's regime table limits an uncontrolled host to exploration and discovery, so a
-    score measured on one is labelled as such wherever it is stated.
+    The loop's regime table limits an uncontrolled host to exploration and discovery, and
+    a quoted score needs 20 rounds, so a score short of either is labelled with each
+    reason wherever it is stated: the host when any cell's was not controlled, and the
+    fewest rounds when any cell ran fewer than 20. An exploratory stage on a controlled
+    host with enough rounds is just "exploratory".
     """
     if not projected.get("exploratory"):
         return ""
     regimes = projected.get("host_regimes") or []
     loose = [regime for regime in regimes if regime not in CONTROLLED_REGIMES]
-    if not loose:
-        # A controlled host, but an exploratory stage or too few rounds to quote: say
-        # exploratory, not uncontrolled, and name a round shortfall.
-        fewest = projected.get("fewest_rounds")
-        if fewest is not None and fewest < QUOTABLE_ROUNDS:
-            return f"exploratory, {fewest} rounds"
-        return "exploratory"
-    host = "uncontrolled host" if "uncontrolled" in loose else f"{'/'.join(loose)} host"
-    return f"exploratory, {host}"
+    reasons = ["exploratory"]
+    if loose:
+        reasons.append("uncontrolled host" if "uncontrolled" in loose else f"{'/'.join(loose)} host")
+    fewest = projected.get("fewest_rounds")
+    if fewest is not None and fewest < QUOTABLE_ROUNDS:
+        reasons.append(f"{fewest} rounds")
+    return ", ".join(reasons)
 
 
 def gate_note(projected: Mapping[str, Any]) -> str:

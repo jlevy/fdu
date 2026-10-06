@@ -738,6 +738,9 @@ class RenderTests(unittest.TestCase):
         short = dict(quiet, trials=12)
         short_page = render(self._chart_dataset([short]))
         self.assertIn("measured; exploratory, 12 rounds", short_page)
+        # H1 on #175: on an uncontrolled host the shortfall is named too.
+        loose = dict(short, regime="uncontrolled")
+        self.assertIn("exploratory, uncontrolled host, 12 rounds", render(self._chart_dataset([loose])))
 
     def test_the_chooser_defaults_to_the_score_and_bars_carry_their_component(self) -> None:
         # E13: the default the spec asks for, and the attributes the fading reads.
