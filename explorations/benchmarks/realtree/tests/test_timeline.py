@@ -22,9 +22,7 @@ from benchmarks.realtree.report_html import (
     figure_per_entry,
     fmt_primary,
     iteration_kind,
-    id_ranges,
     kept_improvements,
-    phase_rows,
     render,
 )
 from benchmarks.realtree.timeline import (
@@ -497,22 +495,50 @@ class RenderTests(unittest.TestCase):
         # A projection without the release record still renders, without the figure.
         self.assertNotIn("0.2.1 to 0.3.0", render(project([experiment("exp-001")])))
 
-    def test_every_experiment_falls_in_a_phase_or_the_trailing_row(self) -> None:
-        # A record added after the phases were named must still be counted, not dropped.
+    def test_a_remeasurement_is_not_counted_as_a_kept_change(self) -> None:
+        # Cumulative checkpoints re-measure campaign 1; counting them as kept changes drew
+        # the same work four times as tall green bars.
         dataset = project(
             [
-                experiment("exp-001"),
-                experiment("exp-002", decision="rejected"),
-                experiment("exp-067", decision="baseline"),
-                experiment("exp-250"),
+                experiment("exp-032"),
+                experiment("exp-154", kept="control"),
+                experiment("exp-190"),
             ]
         )
-        rows = phase_rows(dataset)
-        self.assertEqual(sum(row["total"] for row in rows), 4)
-        self.assertEqual(rows[0]["counts"], {"accepted": 1, "rejected": 1, "other": 0})
-        self.assertEqual(rows[1]["counts"], {"accepted": 0, "rejected": 0, "other": 1})
-        self.assertEqual(rows[-1]["name"], "Not yet assigned a phase")
-        self.assertEqual(rows[-1]["ids"], "exp-250")
+        kinds = {record["id"]: iteration_kind(record) for record in dataset["experiments"]}
+        self.assertEqual(kinds["exp-032"], "measured")
+        self.assertEqual(kinds["exp-154"], "measured")
+        self.assertEqual(kinds["exp-190"], "kept")
+        self.assertIn("Not a new change: a cumulative checkpoint", figure_timeline(dataset))
+
+    def test_history_cells_load_in_display_order(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from benchmarks.realtree.timeline import load_history
+
+        with tempfile.TemporaryDirectory() as directory:
+            for name, order in (("a-cell", 2), ("b-cell", 1)):
+                Path(directory, f"{name}.json").write_text(
+                    json.dumps(
+                        {
+                            "display_order": order,
+                            "subject": {"label": name, "counts": {"total": 10}},
+                            "milestones": [{"label": "x", "wall_ms": {"median": 5.0}}],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            cells = load_history(Path(directory))
+        self.assertEqual([cell["id"] for cell in cells], ["b-cell", "a-cell"])
+        self.assertEqual(cells[0]["milestones"][0]["wall_ms"], 5.0)
+
+    def test_the_page_carries_the_theme_chooser(self) -> None:
+        page = render(project([experiment("exp-001")]))
+        for choice in ("system", "light", "dark"):
+            self.assertIn(f'data-theme-choice="{choice}"', page)
+        self.assertIn("fdu.report.themeMode", page)
 
     def test_the_iterations_figure_draws_every_experiment_once(self) -> None:
         # The figure is the page's record of every iteration; one silently dropped is a
@@ -551,25 +577,23 @@ class RenderTests(unittest.TestCase):
                      "includes": "start", "after_experiment": "exp-000", "wall_ms": 150000.0},
                     {"label": "b", "version": "fdu 0.3.0", "commit": "bbbb", "date": "2026-09-30",
                      "includes": "end", "after_experiment": "exp-032", "wall_ms": 30000.0},
-                    {"label": "c", "version": "lost", "commit": "cccc", "date": "2026-10-01",
-                     "includes": "none", "after_experiment": "exp-999", "wall_ms": 1000.0},
+                    {"label": "c", "short": "unplaced-build", "version": "lost", "commit": "cccc",
+                     "date": "2026-10-01", "includes": "none", "after_experiment": "exp-999",
+                     "wall_ms": 1000.0},
                 ],
             }
         ]
         figure = figure_timeline(dataset)
         self.assertIn("5.0x faster", figure)
-        self.assertNotIn("lost", figure)
+        # The unplaced build's name would appear in its tooltip and the caption if drawn.
+        self.assertNotIn("unplaced-build", figure)
+        # The header uses the same placement, so it cannot claim 150x for a build the
+        # chart leaves out.
+        self.assertNotIn("150.0&times;", render(dataset))
         # Milestone times are milliseconds; the formatter takes nanoseconds, and passing
         # milliseconds printed every runtime as "0 ms".
         self.assertIn(fmt_primary(150000.0 * 1e6, "wall_ns"), figure)
         self.assertNotIn(" 0 ms", figure)
-
-    def test_id_ranges_skip_unused_ids_but_not_recorded_ones(self) -> None:
-        # exp-113 was never used, so it does not split exp-112 from exp-114; exp-104 is a
-        # record in another phase, so exp-103 and exp-105 stay separate ranges.
-        self.assertEqual(id_ranges([112, 114, 115], [112, 114, 115]), "exp-112\u2013115")
-        self.assertEqual(id_ranges([103, 105], [103, 104, 105]), "exp-103, exp-105")
-        self.assertEqual(id_ranges([66, 67, 68, 104]), "exp-066\u2013068, exp-104")
 
     def test_a_projection_without_the_field_reads_baselines_as_one_build(self) -> None:
         # A committed projection written before `compares` existed still renders.

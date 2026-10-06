@@ -1339,8 +1339,13 @@ The page shows every number; this report says what they mean.
 The top panel is total runtime on two fixed benchmarks, each from a history cell
 (`performance-evidence/history/`): thirteen milestone builds, from the pre-work binary
 `b565882b` through each major kept optimization to 0.3.0, timed interleaved in one
-session per benchmark on this Mac’s internal SSD (exploratory, uncontrolled host, no
-invalid samples). Lines are runtime as a share of the first build, on a log scale.
+session per benchmark on an Apple M1 Pro’s internal SSD (exploratory, on an uncontrolled
+host: CPU was above the 25% quiet gate at 76% and 60% of sample boundaries, so
+differences of about 10% between adjacent builds are within the noise; no invalid
+samples). Lines are runtime as a share of the first build, on a log scale.
+The cells were driven by a scratch wrapper around `benchmarks.realtree.compare_tools`,
+which moves into the harness as `benchmarks.realtree.history` with the performance
+index; each cell names its committed run artifact.
 
 - **The generated 1M-entry tree:** 70.4 s to 6.54 s, 10.8× (paired 10.76×, 95%
   [8.88×, 11.65×]). The fall is H1 (5.3×) and bulk metadata (a further −48%). Every
@@ -1356,10 +1361,14 @@ invalid samples). Lines are runtime as a share of the first build, on a log scal
 An earlier cell, on the external USB SSD, is kept under `history/superseded/`: there the
 kernel and USB path set the wall time after campaign 1.
 
-The bottom panel is every experiment’s paired change on its own primary metric (green
-kept and at least 3% better, red tried and not kept, grey measurements).
-Its effects are not multiplied into a runtime: each was measured on its own job and
-tree, and compounding the 55 kept speed-ups would claim over 20,000×.
+The bottom panel is every experiment’s paired change on its own primary metric: green
+for the 57 changes kept at least 3% better (51 on wall time, 4 on peak memory, 2 on a
+pre-registered component timer), red for changes tried and not kept, and grey for
+everything else. Grey includes 17 accepted records that re-measure work already counted,
+listed with reasons as `REMEASUREMENTS` in `report_html.py`: cumulative checkpoints,
+post-merge and transfer validations, leftover determinations, and screens that kept no
+arm. The effects are not multiplied into a runtime: each was measured on its own job and
+tree, and compounding the 51 kept wall-time changes would claim over 50,000×.
 
 **Absolute.** Wall time at five cumulative checkpoints on one 60k-entry macOS tree, each
 re-measuring the original binary against the code of the day in one interleaved run:
