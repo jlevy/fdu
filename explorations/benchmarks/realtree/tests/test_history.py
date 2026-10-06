@@ -747,7 +747,13 @@ class CellTests(unittest.TestCase):
     # Labels the committed cell describes, so their descriptions are copied over.
     FIRST, SKIPPED = "prework", "exp001"
 
-    def make_cell(self, component_id: str = "summary", timing: str = "wall") -> Dict[str, Any]:
+    def make_cell(
+        self,
+        component_id: str = "summary",
+        timing: str = "wall",
+        capture: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Time a fixture cell and summarize it; ``capture`` receives what it was made of."""
         walls = {self.FIRST: 3_000_000, "v0.3.0": 1_000_000}
         # A probe's own timer, deliberately a different ratio from the process's.
         components = {self.FIRST: 800_000, "v0.3.0": 400_000}
@@ -846,6 +852,10 @@ class CellTests(unittest.TestCase):
             "problems": [],
         }
         source = json.loads(self.COMMITTED.read_text(encoding="utf-8"))
+        if capture is not None:
+            capture.update(
+                document=document, builds=builds, answer_check=answer_check, source=source
+            )
         return history.build_cell(
             document,
             builds=builds,
@@ -861,6 +871,49 @@ class CellTests(unittest.TestCase):
             harness_revision="abc",
             run_artifact="cell.run.json.gz",
         )
+
+    def test_a_stored_run_is_summarized_again_without_new_timing(self) -> None:
+        parts: Dict[str, Any] = {}
+        earlier = self.make_cell(capture=parts)
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            (directory / "run-cell.json").write_text(json.dumps(parts["document"]))
+            (directory / "answer-check-cell.json").write_text(json.dumps(parts["answer_check"]))
+            (directory / "cell.json").write_text(json.dumps(earlier))
+            rebuilt_path = history.rebuild_cell(
+                directory,
+                "cell",
+                builds=parts["builds"],
+                entry=entry("summary"),
+                manifest=MANIFEST,
+                reference="v0.3.0",
+                metadata_source=parts["source"],
+                summary_revision="def",
+            )
+            rebuilt = json.loads(rebuilt_path.read_text())
+            # Same numbers, the timing harness's revision kept, the summarizer's added.
+            self.assertEqual(rebuilt["milestones"], json.loads(json.dumps(earlier["milestones"])))
+            self.assertEqual(rebuilt["harness"]["harness_revision"], "abc")
+            self.assertEqual(rebuilt["harness"]["summary_revision"], "def")
+            self.assertEqual(rebuilt["run_artifact"], "cell.run.json.gz")
+            # A build that no longer maps to the command the run timed is refused.
+            moved = parts["builds"][0]
+            original = moved.shape
+            moved.shape = shape("default-tree", V030)
+            try:
+                with self.assertRaisesRegex(history.HistoryError, "but the run timed"):
+                    history.rebuild_cell(
+                        directory,
+                        "cell",
+                        builds=parts["builds"],
+                        entry=entry("summary"),
+                        manifest=MANIFEST,
+                        reference="v0.3.0",
+                        metadata_source=parts["source"],
+                        summary_revision="def",
+                    )
+            finally:
+                moved.shape = original
 
     def test_the_cell_names_its_component_manifest_and_platform(self) -> None:
         cell = self.make_cell()

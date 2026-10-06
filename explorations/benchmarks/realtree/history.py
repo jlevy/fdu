@@ -1381,6 +1381,58 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def rebuild_cell(
+    output_dir: Path,
+    name: str,
+    *,
+    builds: Sequence[Build],
+    entry: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    reference: str,
+    metadata_source: Optional[Mapping[str, Any]],
+    summary_revision: Optional[str],
+    manifest_entry: Optional[Mapping[str, Any]] = None,
+    override_note: Optional[str] = None,
+) -> Path:
+    """Summarize a stored run again, so a cell gains new fields without new timing.
+
+    The run artifact, the answer check, and the earlier cell (for the storage check and
+    the timing harness's revision) are read from ``output_dir``. Every build must map to
+    exactly the command the run timed, or the summary would describe another cell.
+    """
+    document = json.loads((output_dir / f"run-{name}.json").read_text(encoding="utf-8"))
+    answer_check = json.loads(
+        (output_dir / f"answer-check-{name}.json").read_text(encoding="utf-8")
+    )
+    earlier = json.loads((output_dir / f"{name}.json").read_text(encoding="utf-8"))
+    for build in builds:
+        recorded = (document["tools"].get(build.label) or {}).get("command")
+        mapped = list(build.shape.argv) if isinstance(build.shape, Shape) else None
+        if recorded != mapped:
+            raise HistoryError(
+                f"build {build.label} maps to {mapped}, but the run timed {recorded}"
+            )
+    locations = (earlier.get("subject") or {}).get("storage_check") or {}
+    cell = build_cell(
+        document,
+        builds=builds,
+        entry=entry,
+        manifest=manifest,
+        reference=reference,
+        metadata_source=metadata_source,
+        answer_check=answer_check,
+        storage={"locations": locations, "allowed_external": "external" in locations.values()},
+        harness_revision=(earlier.get("harness") or {}).get("harness_revision"),
+        run_artifact=f"{name}.run.json.gz",
+        manifest_entry=manifest_entry,
+        override_note=override_note,
+    )
+    cell["harness"]["summary_revision"] = summary_revision
+    cell_path = output_dir / f"{name}.json"
+    write_text_atomic(cell_path, json.dumps(cell, indent=2) + "\n")
+    return cell_path
+
+
 # --------------------------------------------------------------------------------------
 # Command line
 
@@ -1474,6 +1526,12 @@ def main(argv: Sequence[str]) -> int:
         "--cache-state", choices=sorted(CACHE_STATES), help="override the manifest cache state"
     )
     parser.add_argument("--override-note", help="why this cell departs from the manifest")
+    parser.add_argument(
+        "--from-run",
+        action="store_true",
+        help="re-summarize the cell from this name's stored run, answer check, and earlier "
+        "cell in --output-dir, without timing anything",
+    )
     arguments = parser.parse_args(list(argv))
 
     try:
@@ -1501,6 +1559,23 @@ def main(argv: Sequence[str]) -> int:
         for line in plan_lines(builds, reference, arguments.trials, arguments.warmups):
             print(line, file=sys.stderr)
         if arguments.plan:
+            return 0
+        if arguments.from_run:
+            cell_path = rebuild_cell(
+                arguments.output_dir,
+                arguments.name,
+                builds=builds,
+                entry=entry,
+                manifest=manifest,
+                reference=reference,
+                metadata_source=json.loads(arguments.milestones.read_text(encoding="utf-8"))
+                if arguments.milestones
+                else None,
+                summary_revision=arguments.harness_revision or _harness_revision(),
+                manifest_entry=defined,
+                override_note=arguments.override_note,
+            )
+            print(f"wrote {cell_path}", file=sys.stderr)
             return 0
         if len([b for b in builds if b.supported]) < 2:
             raise HistoryError("a cell needs the reference and at least one other build")
