@@ -92,13 +92,13 @@ A one-level summary of the clone, its hidden `.git/` directory included:
 ```console
 $ fdu . --depth=1
 ██████████   100%      63 MiB  . 1,185 files (4.0 KiB gitignored)
-████░░░░░░    41%      26 MiB    .git/ 28 files
+████░░░░░░    41%      25 MiB    .git/ 28 files
 ████░░░░░░    38%      24 MiB    docs/ 492 files
 █░░░░░░░░░     9%     5.5 MiB    crates/ 126 files
 █░░░░░░░░░     8%     4.8 MiB    explorations/ 286 files
 ░░░░░░░░░░     2%     1.2 MiB    tests/ 112 files (4.0 KiB gitignored)
 ░░░░░░░░░░     1%     700 KiB    scripts/ 43 files
-░░░░░░░░░░     1%     972 KiB    … and 98 more files
+░░░░░░░░░░     2%     972 KiB    … and 98 more files
 ```
 
 The result goes to stdout.
