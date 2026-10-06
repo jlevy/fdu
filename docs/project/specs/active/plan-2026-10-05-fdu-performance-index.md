@@ -44,8 +44,10 @@ switches the same chart to any single component.
   Rankings against dust, dumac, pdu, diskus, and the rest stay in the tool comparisons.
 - **The accept rule.** Single changes are still decided by their own paired cell and the
   3% rule. Using the index as a gate on changes is an open question, not this spec.
-- **Cold disk and bare metal.** The index is warm-steady and uses the hosts available;
-  cold-disk and bare-metal components wait for hosts that can measure them.
+- **A cold OS cache and bare metal.** The index is warm-steady and uses the hosts
+  available; components for a cold OS cache (a first read from disk) and for bare metal
+  wait for hosts that can measure them.
+  This is distinct from the cold-cache component, which empties fdu’s own caches.
 - **Tail latency.** `p95_over_median` at 12 to 20 rounds is an order statistic, not a
   stable population figure.
   It stays in the records, outside the index.
@@ -63,8 +65,10 @@ switches the same chart to any single component.
   - 17 record no changed lines: checkpoints, validations, and determinations that
     re-measure earlier work.
 - **The history cells of 2026-10-05** time 13 milestone builds in one session on two
-  trees on the internal SSD
-  ([the evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md)).
+  trees on the internal SSD. They and their description arrive on `main` with
+  [#169](https://github.com/jlevy/fdu/pull/169), under
+  `docs/project/reports/performance-evidence/history/` and in the evidence report’s
+  “Reading the Charted Page”.
   - The generated 1M-entry tree: 10.8×, all of it from H1 and bulk metadata.
     Every later build is level, because macOS metadata calls set the time on a tree four
     times the vnode limit.
@@ -75,12 +79,14 @@ switches the same chart to any single component.
     They are adopted as the cold-cache and scale components because their commands and
     cache state match those components exactly; every other component’s cell runs after
     its definition here.
-- **The design principles name the dimensions:**
-  - every output surface is a benchmark job;
-  - a warm path that loses to a cold scan is a defect;
-  - a speedup bought with memory is not free;
-  - a measurement is evidence about its own regime
-    ([fdu design principles](../../architecture/fdu-design-principles.md#performance)).
+- **The project’s own rules name the dimensions:**
+  - every output surface is a benchmark job
+    ([design principles](../../architecture/fdu-design-principles.md#every-output-surface-is-a-benchmark-job));
+  - a warm path that loses to a cold scan is a defect, and a measurement is evidence
+    about its own regime
+    ([design principles: Performance](../../architecture/fdu-design-principles.md#performance));
+  - a speedup bought with memory is not free
+    ([the performance loop: What we measure](../../guides/performance-loop.md#what-we-measure)).
 - **The index’s form is not new.** The 2026-08-14 performance explorer (branch
   `codex/performance-research-white-paper`) computed a weighted latency index over
   Linux/macOS × cold/warm cells as `1 − exp(Σ w · ln(candidate ÷ control))`. That is the
@@ -92,16 +98,20 @@ switches the same chart to any single component.
 
 For build *b*, component *c* with weight *w_c*, and reference build *R*:
 
-- **component ratio** *r_b,c*: *b*’s runtime relative to *R* on *c*, taken as the paired
-  figure from the component’s interleaved session, the median over adjacent pairs of
-  *b*’s time divided by *R*’s. *R*’s own ratio is 1;
+- **job ratio**: *b*’s cost relative to *R* on one job of a component, taken as the
+  paired figure from that job’s interleaved session, the median over adjacent pairs of
+  *b*’s time (or peak memory) divided by *R*’s. *R*’s own ratio is 1;
+- **component ratio** *r_b,c*: the job ratio when the component has one job, and the
+  geometric mean of its jobs’ ratios, equally weighted, when it has several;
 - **index** *I_b* = exp(Σ_c *w_c* · ln *r_b,c* ÷ Σ_c *w_c*), summed over the components
-  *b* has. It is a relative runtime: 1.0 is the reference build, and 0.5 means half its
-  time on the weighted suite;
-- **score** = 1 ÷ *I_b*, the speedup shown on the page (“3.4× better than the first
-  build” compares two builds’ scores).
+  *b* has. It is a relative cost: runtime for every component except memory, which is
+  peak memory. 1.0 is the reference build, and 0.5 means half its cost on the weighted
+  suite;
+- **score** = 1 ÷ *I_b*. “3.4× better than the first build” is the ratio of two builds’
+  scores. That ratio is valid because each build’s ratio to *R* comes from a session in
+  which both were measured side by side, so *R*’s own speed cancels.
 
-The exponent is a weighted sum of log runtime ratios.
+The exponent is a weighted sum of log cost ratios.
 
 **Why not a plain weighted sum?**
 
@@ -112,14 +122,16 @@ The exponent is a weighted sum of log runtime ratios.
 - Summing logs is scale-free and symmetric: on two components of equal weight, doubling
   one’s speed and halving the other’s cancel exactly.
 
-**Interval.** Each component’s 95% paired interval is converted to a standard error in
-log space, and the errors are combined as independent, which they are, each component
-being its own session.
-The memory component has no interval of its own, and is not independent of the cells it
-is read from; it contributes its point value only.
+**Interval.** Each job’s 95% paired interval is converted to a standard error in log
+space, and the errors are combined as independent, which they are, each job being its
+own session. The memory component has no interval of its own, and is not independent of
+the cells it is read from; it contributes its point value only.
+The interval of a ratio between two builds’ scores combines their two log-space errors
+the same way.
 
-**Memory.** Peak RSS enters as a ratio to the reference build, the geometric mean over
-every component that records peak RSS for the build.
+**Memory.** Peak RSS enters as a ratio to the reference build: the geometric mean over
+the components whose cells record peak RSS for every build in the comparison, so every
+build’s memory is averaged over the same mix.
 
 ### The Suite
 
@@ -143,15 +155,17 @@ Weights per platform, set by the maintainer:
 | Summary view | `fdu --view summary PATH` on K, default cache policy, steady state | The du-replacement total | 7.5% |
 | Code view | `fdu --view code --analyze code PATH` on K, caches empty | Code metrics by language | 7.5% |
 | Documents view | `fdu --view documents --analyze words PATH` on K, caches empty | Prose and document metrics | 7.5% |
-| Multi-view content report | `fdu --view code,documents,languages --analyze all PATH` on K, caches empty | One scan, many views | 5% |
-| Warm metadata cache | the probe’s `warm-revalidate` on K, snapshot written by an untimed run just before | Loading and revalidating a saved index | 7.5% |
-| Opened root | the probe’s `opened-second-report` and `delta-apply-large` on K, each by its component timer | Serving an opened root and applying a change | 5% |
+| Multi-view content report | `fdu --view code,documents,languages --analyze code,words PATH` on K, caches empty | One scan, many views | 5% |
+| Warm metadata cache | two jobs on K: `cold-open-save`, a timed first run that scans and writes the snapshot; and `warm-revalidate`, the probe’s `revalidate` mode loading that snapshot and reconciling it, after an untimed run wrote it | Saving, loading, and revalidating an index | 7.5% |
+| Opened root | two jobs on K: the probe’s `opened-second-report` and `delta-apply-large` | Opening a root, discovering it, reporting again, and applying a change | 5% |
 | Scale | `fdu --cache off PATH` on G | Very large trees, where peers compete hardest | 5% |
-| Memory | Peak RSS across every component | A speedup bought with memory is not free | 5% |
+| Memory | Peak RSS of the components every build has | A speedup bought with memory is not free | 5% |
 
+Every job is timed whole-process, from launch to exit, so a probe job’s timed region
+includes the discovery, snapshot load, and snapshot save around its own component timer.
 The commands are written as v0.3.0 spells them; earlier builds use their own spelling of
 the same request (`--no-cache` before 0.1.0, for example), and a build that cannot make
-the request at all has no ratio for that component.
+the request at all has no ratio for that job.
 The driver records the exact argv per build.
 
 The split is the maintainer’s: 15% cold cache, 20% warm-cache content, and the rest
@@ -171,8 +185,9 @@ design that served repeat runs differently should show in the score.
 
 ### Every Optimization Target Is Exercised
 
-Every benchmark job the loop measures maps to a component, and the component’s
-measurement runs that job’s code path: the same command or probe job, on a scored tree.
+Every benchmark job the loop measures maps to a component, and the component’s timed
+region runs that job’s code path on a scored tree, through the command line or the probe
+mode that exercises it.
 A recorded job with no component fails `make check`, which forces a new target into the
 suite, with a weight, before its first verdict is published.
 Labels alone are not coverage, so the table below names, for each job, what in the
@@ -185,11 +200,14 @@ component exercises it.
 | `aggregate-summary`, `rich-summary-report`, `rich-summary-open-pipeline`, `rich-summary-shared-openers`, `selected-allocated-total` | Summary view | `--view summary` |
 | `content-basic`, `code-sloc` | Code view | `--view code` with analysis, cold |
 | `markdown-prose`, `text-prose` | Documents view | `--view documents` with analysis, cold |
-| `content-cache-hit`, `code-sloc-cache-hit`, `document-cache-hit` | Warm-cache content | The same views with the content cache filled |
+| `content-cache-hit`, `code-sloc-cache-hit` | Warm-cache content: code | `--view code` with the content cache filled |
+| `document-cache-hit` | Warm-cache content: documents | `--view documents` with the content cache filled |
 | `content-query` | Multi-view content report | Several content views from one scan |
-| `warm-revalidate`, `warm-snapshot-load`, `cold-snapshot-save`, `cold-open-save` | Warm metadata cache | The probe’s `warm-revalidate`, after an untimed run wrote the snapshot |
-| `opened-discovery`, `opened-second-report`, `index-second-report`, `delta-apply-large`, `delta-apply-batched` | Opened root | The probe’s `opened-second-report` and `delta-apply-large` |
-| Peak RSS on any job | Memory | Peak RSS of every component |
+| `cold-snapshot-save`, `cold-open-save` | Warm metadata cache | The timed `cold-open-save` job, which scans and writes the snapshot |
+| `warm-revalidate`, `warm-snapshot-load` | Warm metadata cache | The timed `warm-revalidate` job, which loads the snapshot and reconciles it |
+| `opened-discovery`, `opened-second-report`, `index-second-report` | Opened root | The timed `opened-second-report` job, which opens, discovers, and reports again |
+| `delta-apply-large`, `delta-apply-batched` | Opened root | The timed `delta-apply-large` job |
+| Peak RSS on any job | Memory | Peak RSS of the components every build has |
 
 The job table is a separate file from the weighted suite, so mapping a new job to an
 existing component is not a new index version; adding or reweighting a component is.
@@ -208,8 +226,12 @@ Both halves are in the score, so a platform-specific change shows too.
 
 ### Measurement
 
-- **One history cell per component and platform.** All builds in the comparison are
-  timed interleaved, anchored on the reference build:
+- **One history cell per job and platform.** A component with two jobs has two cells.
+  Each cell records its component, its job, the manifest version, and a digest of its
+  component’s definition (tree, command, cache state, jobs); the projection refuses a
+  cell whose digest does not match the manifest, so a component redefined in place
+  cannot reuse cells measured under the old definition.
+  All builds in a cell are timed interleaved, anchored on the reference build:
   - order alternated, 3 warm-ups, at least 12 rounds, 20 where the cell stays under an
     hour;
   - answers checked before timing within each capability group;
@@ -245,8 +267,9 @@ Both halves are in the score, so a platform-specific change shows too.
 - **The job table** at `explorations/benchmarks/index-jobs.json`, mapping every recorded
   job to a component.
 - **The history driver** at `explorations/benchmarks/realtree/history.py`, with tests.
-  It reads the manifest, derives each build’s argv for each component by probing the
-  build, implements each cache state, and writes one history cell per component.
+  It reads the manifest, derives each build’s argv for each job by probing the build,
+  implements each cache state, times every job whole-process, and writes one history
+  cell per job.
 - **Projection.** `explorations/benchmarks/realtree/perf_index.py` computes component
   ratios, the index, its interval, and its coverage per build per platform, and
   `timeline.py` refuses to project while any recorded job is unmapped.
@@ -261,7 +284,9 @@ Both halves are in the score, so a platform-specific change shows too.
 - [ ] The history driver in the harness, with tests: argv per build era, unsupported
   capabilities, cache states, probe-job components, the anchor, alternation, answer
   checks, and internal-storage checks.
-- [ ] The macOS cells for the 13 milestone builds: every component on K, and scale on G.
+- [ ] The macOS cells for the 13 milestone builds, one per job: cold cache, the default
+  tree, summary, code, documents, both warm-cache content components, multi-view, both
+  warm-metadata jobs, and both opened-root jobs on K; scale on G; memory read from them.
 - [ ] The completeness check in the projection, and its test.
 - [ ] The index, its interval, and its coverage; the chooser, the headline, and the
   faded bars.
@@ -282,8 +307,9 @@ Both halves are in the score, so a platform-specific change shows too.
   - the chooser’s default.
 - Drift checks: `make perf-report-check` re-derives the index from the committed cells,
   so the page cannot assert a number the cells do not produce.
-- A cell records the manifest version it was measured against, and the projection
-  refuses a cell whose component is not in that version.
+- A cell records the digest of its component’s definition, and the projection refuses a
+  cell whose digest does not match the manifest’s; a test edits a definition and expects
+  the refusal.
 
 ## Rollout Plan
 
@@ -302,6 +328,10 @@ components.
   release’s, beyond the per-change accept rule?
 - **The case against.**
   - A single score invites optimizing the score.
+    Concretely: on builds since 0.2.0 the cold-cache, default-tree, and scale components
+    are all full scans, 35% of the weight, and the summary view is a fourth at 7.5%, so
+    the cheapest way to raise the score is the walker, not the cache and content work
+    the weights favour.
   - Any weighting is a judgment that suits some users and not others.
   - The full suite costs hours per refresh.
   - The mitigations are pre-registration, versioned manifests, always-visible
