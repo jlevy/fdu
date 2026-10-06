@@ -512,11 +512,28 @@ design is legible from the help text alone.
 ### One Scan, Many Views
 
 Views are projections over one consistent scanned state.
-The reusable form of that state is the in-memory index: requesting more views never adds
-filesystem work, and two reports over the same index cannot disagree about when the tree
-was observed. For a one-shot request that proves no snapshot read or rewrite, live
-session, second view, filter, or later query can consume hierarchy, an internal
-execution planner may retain an exact aggregate instead.
+The views of one request share one basis, and so one scan and one analysis pass over the
+analyzers that basis enables.
+The reusable form of that state is the in-memory index: reading more views from an index
+never adds filesystem work, and two reports over the same index cannot disagree about
+when the tree was observed.
+
+A request that builds its own basis is the one place a view can add work.
+A content view widens that basis by the analyzer it implies (see *Cost flows one way*
+below), so `fdu . --view tree,documents` reads every eligible text file where
+`fdu . --view tree` reads none.
+A view never widens a basis an index holds.
+And every view renders the metrics its basis holds, so a content view can add columns to
+a metadata view in the same request: `--analyze code --view languages,documents` shows
+words on each LANGUAGES row, and `--analyze code --view languages` does not.
+That coupling is intended.
+One basis is what gives `--view code` and `--analyze code` one sidecar and one answer,
+and a per-view metric projection would undo it, so a change that decouples a view’s
+columns from its request’s basis needs this section amended first.
+
+For a one-shot request that proves no snapshot read or rewrite, live session, second
+view, filter, or later query can consume hierarchy, an internal execution planner may
+retain an exact aggregate instead.
 Today that is an unfiltered `--view summary`, with or without `--no-gitignore`: its
 ignored share needs each entry classified as it is counted, which takes the rules and
 the heads of ignored subtrees rather than the index.
