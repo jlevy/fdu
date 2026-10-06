@@ -3,26 +3,25 @@
   "component": "warm-metadata",
   "component_title": "Warm metadata cache",
   "manifest_version": 1,
-  "manifest_command": "fdu --cache on PATH",
-  "cache_state": "snapshot written by an untimed run of the same build just before",
-  "override": {
-    "note": "review B on PR #175 (B1, B2): warm metadata is two probe jobs timed whole-process, a cold-open-save first run that scans and writes the snapshot, and a warm-revalidate (probe mode revalidate) of a snapshot written by an untimed run just before; the manifest on this branch still names fdu --cache on PATH",
-    "command": "perf_probe cold-open-save; perf_probe revalidate",
-    "cache_state": "a first run that scans and writes the snapshot; then a run that loads and revalidates a snapshot written by an untimed run of the same build just before"
-  },
+  "manifest_command": "the probe's cold-open-save, and the probe's revalidate mode",
+  "cache_state": "cold-open-save: caches empty, writes the snapshot; warm-revalidate: snapshot written by an untimed run of the same build just before",
+  "override": null,
   "timed_metric": "wall_ns",
   "job": "cold-open-save",
+  "component_digest": "b6a22549a84a93b8",
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
   "run_artifact": "macos-warm-metadata-cold-open-save-internal.run.json.gz",
+  "driver": "benchmarks.realtree.history",
   "harness": {
     "module": "benchmarks.realtree.history, timing through benchmarks.realtree.compare_tools with per-build command contracts",
     "harness_revision": "3bfa3ba2dd8bcc69ebeee6e6d5baa8f7ba3f6a43",
     "artifact_schema": "fdu-tool-comparison-v3",
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
-    "confidence_interval": "paired-bootstrap-median-95-v1"
+    "confidence_interval": "paired-bootstrap-median-95-v1",
+    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -75,25 +74,18 @@
     },
     "max_depth": 14,
     "hardlinks": {
-      "groups": 0,
-      "linked_file_entries": 0,
-      "duplicate_file_entries": 0,
+      "duplicate_allocated_bytes": 0,
       "duplicate_apparent_bytes": 0,
-      "duplicate_allocated_bytes": 0
+      "duplicate_file_entries": 0,
+      "groups": 0,
+      "linked_file_entries": 0
     },
     "baseline_drift": [],
     "mutated_during_run": [],
     "answer_check_groups": {
-      "without_gitignore": {
-        "labels": [
-          "exp101"
-        ],
+      "with_gitignore": {
         "all_identical": true,
         "exit_codes_zero": true,
-        "matches_fingerprint": null,
-        "oracle_errors": []
-      },
-      "with_gitignore": {
         "labels": [
           "v0.1.0",
           "v0.2.0",
@@ -104,8 +96,15 @@
           "exp201",
           "v0.3.0"
         ],
+        "matches_fingerprint": null,
+        "oracle_errors": []
+      },
+      "without_gitignore": {
         "all_identical": true,
         "exit_codes_zero": true,
+        "labels": [
+          "exp101"
+        ],
         "matches_fingerprint": null,
         "oracle_errors": []
       }
@@ -114,17 +113,17 @@
   "host": {
     "arch": "arm64",
     "cpu_count": 10,
-    "python": "3.14.7",
-    "system": "Darwin",
-    "release": "25.5.0",
-    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
-    "virtualization": "bare-metal",
     "cpu_model": "Apple M1 Pro",
-    "memory_bytes": 34359738368,
-    "max_vnodes": 263168,
-    "performance_cores": 8,
     "efficiency_cores": 2,
-    "filesystem": "apfs"
+    "filesystem": "apfs",
+    "max_vnodes": 263168,
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "python": "3.14.7",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "virtualization": "bare-metal"
   },
   "regime": {
     "campaign_stage": "exploratory",
@@ -135,11 +134,11 @@
       "controlled_load_alive": null,
       "cpu_busy_pct": 30.36,
       "cpu_busy_unavailable_reason": null,
-      "logical_cpu_count": 10,
+      "load_15m": 25.522,
       "load_1m": 31.097,
       "load_1m_per_cpu": 3.1097,
       "load_5m": 27.796,
-      "load_15m": 25.522,
+      "logical_cpu_count": 10,
       "power_source": "AC",
       "system": "Darwin",
       "thermal_pressure": "normal",
@@ -149,11 +148,11 @@
       "controlled_load_alive": null,
       "cpu_busy_pct": 41.43,
       "cpu_busy_unavailable_reason": null,
-      "logical_cpu_count": 10,
+      "load_15m": 21.557,
       "load_1m": 13.317,
       "load_1m_per_cpu": 1.3317,
       "load_5m": 18.757,
-      "load_15m": 21.557,
+      "logical_cpu_count": 10,
       "power_source": "AC",
       "system": "Darwin",
       "thermal_pressure": "normal",
@@ -191,156 +190,156 @@
   "answer_check": {
     "builds": [
       {
-        "label": "exp101",
-        "reads_gitignore": false,
-        "exit_codes": [
-          0
-        ],
-        "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
         "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
         "code_totals": null,
-        "oracle_exit_code": 0,
-        "oracle_error": null,
         "component_ns": 129618875,
-        "totals": null
-      },
-      {
-        "label": "v0.1.0",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp101",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 421694458,
-        "totals": null
-      },
-      {
-        "label": "v0.2.0",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "v0.1.0",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 416196125,
-        "totals": null
-      },
-      {
-        "label": "v0.2.1",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "v0.2.0",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 172714083,
-        "totals": null
-      },
-      {
-        "label": "exp178",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "v0.2.1",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 171198458,
-        "totals": null
-      },
-      {
-        "label": "exp180",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp178",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 173949708,
-        "totals": null
-      },
-      {
-        "label": "ebc06c78",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp180",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 172828000,
-        "totals": null
-      },
-      {
-        "label": "exp201",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "ebc06c78",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 173146458,
-        "totals": null
-      },
-      {
-        "label": "v0.3.0",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 1,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp201",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 1,
+        "code_totals": null,
         "component_ns": 173343792,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.3.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
         "totals": null
       }
     ],

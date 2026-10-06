@@ -692,6 +692,56 @@ def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> Li
     return series
 
 
+def _numbered_builds(
+    points: Sequence[Mapping[str, Any]], position: Mapping[str, int]
+) -> Dict[str, str]:
+    """Every build the chart places, numbered in the order the builds landed.
+
+    The full score's line starts at the first fully covered build and the partial
+    line at the first build, so numbering in the order the lines list their points
+    would number a late build first.
+    """
+    named: Dict[str, str] = {}
+    for point in sorted(points, key=lambda point: position[point["after_experiment"]]):
+        named.setdefault(point["after_experiment"], point["short"])
+    return named
+
+
+def _describe_cells(cells: Sequence[Mapping[str, Any]]) -> str:
+    """The history cells the chart reads, one phrase per tree rather than per cell.
+
+    A tree timed once per component job would otherwise repeat its title for every
+    cell; the phrase says how many cells and paired rounds each tree has.
+    """
+    groups: Dict[tuple, List[Mapping[str, Any]]] = {}
+    for cell in cells:
+        key = (
+            cell.get("title") or cell["subject"],
+            cell.get("entries"),
+            cell.get("cpu") or "",
+            cell.get("storage") or "",
+            cell.get("regime") or "",
+        )
+        groups.setdefault(key, []).append(cell)
+    phrases = []
+    for (title, entries, cpu, storage, regime), members in groups.items():
+        rounds = sorted({cell.get("trials") for cell in members if cell.get("trials")})
+        rounds_text = (
+            f"{rounds[0]} paired rounds"
+            if len(rounds) == 1
+            else f"{rounds[0]} to {rounds[-1]} paired rounds"
+            if rounds
+            else "paired rounds"
+        )
+        count = f"{len(members)} cells, one per component job, " if len(members) > 1 else ""
+        size = f"{entries:,} entries, " if isinstance(entries, int) else ""
+        phrases.append(
+            f"{esc(title)} ({size}{count}{rounds_text}, {esc(cpu)}, {esc(storage)}, "
+            f"{esc(regime)} host)"
+        )
+    return "; ".join(phrases)
+
+
 def figure_timeline(dataset: Mapping[str, Any]) -> str:
     """Two stacked panels on one experiment axis, in the order the experiments ran.
 
@@ -789,11 +839,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         # Milestones numbered once along the top, staggered over three rows so builds
         # that landed close together stay legible; the caption names them. Every cell
         # times the same builds.
-        named = {}
-        for item in series:
-            for line in item["lines"]:
-                for point in line["points"]:
-                    named.setdefault(point["after_experiment"], point["short"])
+        named = _numbered_builds(milestones, position)
         for number, after in enumerate(named, start=1):
             x = x_of(position[after])
             label_y = top_y0 - 30 + (number - 1) % 3 * 10
@@ -923,20 +969,13 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     )
     caption = ""
     if cells:
-        described = "; ".join(
-            f"{esc(cell.get('title') or cell['subject'])} ({cell['entries']:,} entries, "
-            f"{cell['trials']} paired rounds, {esc(cell['cpu'])}, {esc(cell['storage'])}, "
-            f"{esc(cell['regime'])} host)"
-            for cell, _ in cells
-        )
         caption = (
             f"Top: on each benchmark, every milestone build timed in one interleaved "
-            f"session: {described}. Builds before 0.1.0 do not read .gitignore, "
-            f"so on a repository they do less work. Hover a point for what each build added. "
+            f"session: {_describe_cells([cell for cell, _ in cells])}. Builds before 0.1.0 "
+            f"do not read .gitignore, so on a repository they do less work. Hover a point "
+            f"for what each build added. "
         )
-        named = {}
-        for point in milestones:
-            named.setdefault(point["after_experiment"], point["short"])
+        named = _numbered_builds(milestones, position)
         caption += (
             "Builds: "
             + "; ".join(f"{number} {esc(short)}" for number, short in enumerate(named.values(), start=1))
@@ -2327,16 +2366,21 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
 
 
 def _history_figure(dataset: Mapping[str, Any]) -> str:
-    """Each history cell's measured first-to-last speedup.
+    """The unified score, then any history cell's own first-to-last speedup.
 
-    The ratio of the medians the chart draws, so the headline and the chart agree; the
-    paired figure stays in the record.
+    A cell that is one job of an index component speaks through the score and its
+    component's line, so only a cell outside the index gets a headline of its own: one
+    tree timed once per component job would otherwise repeat its title for every cell.
+    The ratio is of the medians the chart draws, so the headline and the chart agree;
+    the paired figure stays in the record.
     """
     figures = [_score_figure(dataset)]
     # The same builds the chart can place, so the headline never states a ratio between
     # builds the chart does not draw.
     recorded = {record["id"] for record in dataset["experiments"]}
     for cell in dataset.get("history") or []:
+        if cell.get("component"):
+            continue
         milestones = [
             item
             for item in cell.get("milestones", [])

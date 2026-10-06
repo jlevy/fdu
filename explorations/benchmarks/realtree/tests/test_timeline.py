@@ -10,6 +10,7 @@ import unittest
 from typing import Any, Dict, List
 
 from benchmarks.realtree.report_html import (
+    _numbered_builds,
     STYLE,
     axis_ticks,
     decision_label,
@@ -656,6 +657,39 @@ class RenderTests(unittest.TestCase):
         # Milestone times are milliseconds; passing them to the nanosecond formatter
         # printed every runtime as "0 ms".
         self.assertNotIn(" 0 ms", page)
+
+    def test_one_tree_timed_per_component_job_is_described_and_headlined_once(self) -> None:
+        # Twelve cells on the Linux tree once drew twelve "N.Nx faster, the Linux v6.12
+        # source tree" headlines and repeated the tree in the caption twelve times.
+        dataset = project([experiment("exp-000"), experiment("exp-032")])
+        dataset["history"] = [
+            _index_cell("cold-cache", 150.0, 30.0),
+            _index_cell("default-tree", 120.0, 40.0),
+        ]
+        dataset["index"] = project_index(dataset["history"], load_suite())
+        figure = figure_timeline(dataset)
+        self.assertEqual(figure.count("the Linux v6.12 source tree ("), 1)
+        self.assertIn("2 cells, one per component job", figure)
+        page = render(dataset)
+        self.assertNotIn("source tree, first build to", page)
+        # A cell outside the index still gets its own headline.
+        outside = dict(_index_cell("cold-cache", 150.0, 30.0), component=None, id="outside")
+        dataset["history"].append(outside)
+        self.assertIn("source tree, first build to", render(dataset))
+
+    def test_builds_are_numbered_in_the_order_they_landed(self) -> None:
+        # The full score's line starts at the first fully covered build, so numbering
+        # points in line order numbered a late build first.
+        position = {"exp-000": 0, "exp-010": 1, "exp-020": 2}
+        points = [
+            {"after_experiment": "exp-020", "short": "late"},
+            {"after_experiment": "exp-000", "short": "first"},
+            {"after_experiment": "exp-010", "short": "middle"},
+            {"after_experiment": "exp-020", "short": "late"},
+        ]
+        self.assertEqual(
+            list(_numbered_builds(points, position).values()), ["first", "middle", "late"]
+        )
 
     def test_the_score_is_a_weighted_sum_of_log_ratios(self) -> None:
         # A 2x gain on one component and a 2x loss on another of equal weight cancel

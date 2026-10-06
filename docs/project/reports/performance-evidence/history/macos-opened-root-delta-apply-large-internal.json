@@ -3,26 +3,25 @@
   "component": "opened-root",
   "component_title": "Opened root",
   "manifest_version": 1,
-  "manifest_command": "perf_probe opened-second-report",
-  "cache_state": "the library's open, then a second report",
-  "override": {
-    "note": "review B on PR #175 (B1, B4): opened root is two probe jobs, opened-second-report and delta-apply-large, each timed whole-process so discovery is included; the manifest on this branch still names perf_probe opened-second-report alone",
-    "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
-    "cache_state": "the library's open, then a second report; then an applied change"
-  },
+  "manifest_command": "the probe's opened-second-report, and the probe's delta-apply-large",
+  "cache_state": "each job opens the root itself; timed whole-process, discovery included",
+  "override": null,
   "timed_metric": "wall_ns",
   "job": "delta-apply-large",
+  "component_digest": "4e282eed355457ec",
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
   "run_artifact": "macos-opened-root-delta-apply-large-internal.run.json.gz",
+  "driver": "benchmarks.realtree.history",
   "harness": {
     "module": "benchmarks.realtree.history, timing through benchmarks.realtree.compare_tools with per-build command contracts",
     "harness_revision": "3bfa3ba2dd8bcc69ebeee6e6d5baa8f7ba3f6a43",
     "artifact_schema": "fdu-tool-comparison-v3",
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
-    "confidence_interval": "paired-bootstrap-median-95-v1"
+    "confidence_interval": "paired-bootstrap-median-95-v1",
+    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -75,25 +74,18 @@
     },
     "max_depth": 14,
     "hardlinks": {
-      "groups": 0,
-      "linked_file_entries": 0,
-      "duplicate_file_entries": 0,
+      "duplicate_allocated_bytes": 0,
       "duplicate_apparent_bytes": 0,
-      "duplicate_allocated_bytes": 0
+      "duplicate_file_entries": 0,
+      "groups": 0,
+      "linked_file_entries": 0
     },
     "baseline_drift": [],
     "mutated_during_run": [],
     "answer_check_groups": {
-      "without_gitignore": {
-        "labels": [
-          "exp101"
-        ],
+      "with_gitignore": {
         "all_identical": true,
         "exit_codes_zero": true,
-        "matches_fingerprint": null,
-        "oracle_errors": []
-      },
-      "with_gitignore": {
         "labels": [
           "v0.1.0",
           "v0.2.0",
@@ -104,8 +96,15 @@
           "exp201",
           "v0.3.0"
         ],
+        "matches_fingerprint": null,
+        "oracle_errors": []
+      },
+      "without_gitignore": {
         "all_identical": true,
         "exit_codes_zero": true,
+        "labels": [
+          "exp101"
+        ],
         "matches_fingerprint": null,
         "oracle_errors": []
       }
@@ -114,17 +113,17 @@
   "host": {
     "arch": "arm64",
     "cpu_count": 10,
-    "python": "3.14.7",
-    "system": "Darwin",
-    "release": "25.5.0",
-    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
-    "virtualization": "bare-metal",
     "cpu_model": "Apple M1 Pro",
-    "memory_bytes": 34359738368,
-    "max_vnodes": 263168,
-    "performance_cores": 8,
     "efficiency_cores": 2,
-    "filesystem": "apfs"
+    "filesystem": "apfs",
+    "max_vnodes": 263168,
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "python": "3.14.7",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "virtualization": "bare-metal"
   },
   "regime": {
     "campaign_stage": "exploratory",
@@ -135,11 +134,11 @@
       "controlled_load_alive": null,
       "cpu_busy_pct": 9.79,
       "cpu_busy_unavailable_reason": null,
-      "logical_cpu_count": 10,
+      "load_15m": 6.964,
       "load_1m": 2.372,
       "load_1m_per_cpu": 0.2372,
       "load_5m": 3.102,
-      "load_15m": 6.964,
+      "logical_cpu_count": 10,
       "power_source": "AC",
       "system": "Darwin",
       "thermal_pressure": "normal",
@@ -149,11 +148,11 @@
       "controlled_load_alive": null,
       "cpu_busy_pct": 8.79,
       "cpu_busy_unavailable_reason": null,
-      "logical_cpu_count": 10,
+      "load_15m": 4.523,
       "load_1m": 1.619,
       "load_1m_per_cpu": 0.1619,
       "load_5m": 2.314,
-      "load_15m": 4.523,
+      "logical_cpu_count": 10,
       "power_source": "AC",
       "system": "Darwin",
       "thermal_pressure": "normal",
@@ -191,156 +190,156 @@
   "answer_check": {
     "builds": [
       {
-        "label": "exp101",
-        "reads_gitignore": false,
-        "exit_codes": [
-          0
-        ],
-        "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
         "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
         "code_totals": null,
-        "oracle_exit_code": 0,
-        "oracle_error": null,
         "component_ns": 474594791,
-        "totals": null
-      },
-      {
-        "label": "v0.1.0",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp101",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": false,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 103989083,
-        "totals": null
-      },
-      {
-        "label": "v0.2.0",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "v0.1.0",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 103546625,
-        "totals": null
-      },
-      {
-        "label": "v0.2.1",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "v0.2.0",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 103873917,
-        "totals": null
-      },
-      {
-        "label": "exp178",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "v0.2.1",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 104042459,
-        "totals": null
-      },
-      {
-        "label": "exp180",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp178",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 104382584,
-        "totals": null
-      },
-      {
-        "label": "ebc06c78",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp180",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 103083334,
-        "totals": null
-      },
-      {
-        "label": "exp201",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "ebc06c78",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 103950542,
-        "totals": null
-      },
-      {
-        "label": "v0.3.0",
-        "reads_gitignore": true,
         "exit_codes": [
           0
         ],
         "exit_ok": true,
-        "cache_files_after": 0,
-        "performance_line": null,
-        "cache_evidence": "unknown",
-        "analysis": null,
-        "code_totals": null,
-        "oracle_exit_code": 0,
+        "label": "exp201",
         "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
+        "totals": null
+      },
+      {
+        "analysis": null,
+        "cache_evidence": "unknown",
+        "cache_files_after": 0,
+        "code_totals": null,
         "component_ns": 103841000,
+        "exit_codes": [
+          0
+        ],
+        "exit_ok": true,
+        "label": "v0.3.0",
+        "oracle_error": null,
+        "oracle_exit_code": 0,
+        "performance_line": null,
+        "reads_gitignore": true,
         "totals": null
       }
     ],

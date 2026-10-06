@@ -3,15 +3,17 @@
   "component": "code",
   "component_title": "Code view",
   "manifest_version": 1,
-  "manifest_command": "fdu --view code PATH",
+  "manifest_command": "fdu --view code --analyze code PATH",
   "cache_state": "fdu's caches empty for every sample",
   "override": null,
   "timed_metric": "wall_ns",
-  "job": null,
+  "job": "code",
+  "component_digest": "9b685a72b38ab9f4",
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
   "run_artifact": "macos-code-internal.run.json.gz",
+  "driver": "benchmarks.realtree.history",
   "harness": {
     "module": "benchmarks.realtree.history, timing through benchmarks.realtree.compare_tools with per-build command contracts",
     "harness_revision": "8c019f242cf8d88aa824954bc2e71c8b679afaae",
@@ -19,7 +21,7 @@
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
     "confidence_interval": "paired-bootstrap-median-95-v1",
-    "summary_revision": "edc39b6375f07aa19bc9a578861b9029033e4b00"
+    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
   },
   "subject": {
     "label": "linux-v6.12-macos",
