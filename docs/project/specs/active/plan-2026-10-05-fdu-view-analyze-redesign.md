@@ -442,7 +442,7 @@ One phase, one draft pull request, landed after or merged with the epilogue work
   tip names the implied union; the `--view words` refusal; wording settled with
   `fdu-wzpx`.
 - [ ] Goldens, parity class, Python tests, and the path-independence matrix.
-- [ ] Help, `--docs`, skill, usage guide, README, machine-output reference, output
+- [x] Help, `--docs`, skill, usage guide, README, machine-output reference, output
   design, surface architecture, design principles.
 - [ ] Demo scripts and the cli-animate README.
 
@@ -491,6 +491,11 @@ One phase, one draft pull request, landed after or merged with the epilogue work
    default, which is a rule outside the model.
 4. Is the vocabulary split (option C) settled, or should `documents` be revisited once B
    has shipped and the mapping table is no longer the first thing a user meets?
+
+The implementation took these defaults, each open to revision: the demo uses the
+one-flag `fdu linux --view code,documents --limit 6`; `documents` requires `words` on a
+held basis; `--analyze none` beside a content view is the empty set, so the view still
+implies its analyzer; and the vocabulary split stays.
 
 ## References
 

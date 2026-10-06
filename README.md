@@ -97,10 +97,11 @@ $ fdu . --depth=1
 ░░░░░░░░░░     2%     440 KiB    … and 38 more files
 ```
 
-Add `--analyze` to read file contents, here for lines of code and words in documents:
+Name the content views to read file contents, here for lines of code and words in
+documents:
 
 ```console
-$ fdu . --analyze=code,words
+$ fdu . --view=code,documents
 CODE
 Code lines   Share  Comments   Blank  Analyzed files  Language
     79,748   61.5%    12,801   6,720         101/101  Rust       (0 gitignored)
@@ -142,7 +143,8 @@ present.
 | Totals, excluding ignored entries | `fdu . --ignored=exclude --view=summary` |
 | Languages by space | `fdu . --view=languages` |
 | Ten files that changed most recently | `fdu . --view=recent --limit=10` |
-| Standard lines of code | `fdu . --analyze=code` |
+| Standard lines of code | `fdu . --view=code` |
+| Words in documents | `fdu . --view=documents` |
 | Keep the tree live | `fdu . --watch` |
 | Machine output | `fdu . --format=json` |
 | Complete recursive tree | `fdu . --view tree --full --format json` |
@@ -151,10 +153,10 @@ present.
 | Find Rust files | `fdu . --kind file --include '*.rs' --full --format paths` |
 
 `--view` chooses what is reported; several views share one walk.
-`--analyze` is the only switch that reads file bodies.
-A view never turns analysis on.
-Exit status 0 is a complete result, 1 a failure, and 2 a partial result or a usage
-error.
+Only `code` and `documents` read file bodies, because neither has anything to show
+without analysis; every other view is metadata-only.
+`--analyze` adds analysis to the others, such as code lines in `--view=languages`. Exit
+status 0 is a complete result, 1 a failure, and 2 a partial result or a usage error.
 
 `fdu --docs` is the offline guide, `fdu --help` is every flag, and `fdu --install-skill`
 writes a portable skill for coding agents where they look for it (`fdu --skill` prints
@@ -173,7 +175,7 @@ See
 ## Understand a Codebase
 
 ```shell
-fdu . --analyze=code --ignored=exclude --limit=5
+fdu . --view=code --ignored=exclude --limit=5
 ```
 
 For example, the implementation at repository revision `7a499493` produced this stdout:

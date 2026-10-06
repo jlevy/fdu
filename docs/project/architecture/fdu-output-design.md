@@ -58,6 +58,18 @@ so document-word percentages cannot be mistaken for byte percentages:
 note: percentages are shares of code lines (LANGUAGES), document words (DOCUMENTS)
 ```
 See the [analysis mapping](../../usage.md#measurements-views-and-headers).
+The mapping reads both ways for the two views with no metadata meaning: `code` and
+`documents` each request their analyzer, so `--view code,documents` is the one-flag form
+of `--analyze code,words`, and the vocabulary split costs a reader nothing.
+When analysis and views do not match, the epilogue names the remedy in the other
+vocabulary, each as one note and one runnable tip:
+
+```text
+note: code analysis not shown by summary
+tip: show it: --view code
+note: full omits code, documents without analysis
+tip: include them: --analyze all
+```
 
 The code overview is one table with aligned code-line, share, comment, blank,
 analyzed-file, and language columns.

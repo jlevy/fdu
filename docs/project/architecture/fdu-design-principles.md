@@ -479,7 +479,7 @@ Every option belongs to exactly one axis:
 | Axis | Question | Options |
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
-| Content | Which file bodies are read, and which metrics are measured? | `--analyze` |
+| Content | Which file bodies are read beyond what the views imply, and which metrics are measured? | `--analyze` |
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color`, `--progress` |
@@ -538,7 +538,8 @@ Any enabled `--analyze` set retains the full metadata index, then streams every 
 file absent from a satisfying sidecar through EOF. Worker count bounds concurrency,
 never per-file coverage.
 `languages` is a metadata-only byte and count view by default; the code analyzer adds
-standard LOC. `documents` requires at least one enabled analyzer.
+standard LOC. `code` needs the code analyzer and `documents` the words analyzer, and
+each requests it when a request builds its own basis.
 
 `--analyze` is a set over the analyzer registry, never an ordered level.
 The analyzers are independent, the registry and the sidecar provenance already record
@@ -552,15 +553,36 @@ requested analyzers’ results.
 That projection is sound only when results and coverage are stored per analyzer, so an
 unsupported analyzer can never erase another analyzer’s results.
 
-**Cost flows one way; display follows cost.** A view never enables an analyzer
-implicitly or presents an unmeasured value as zero: choosing how to display a result
-must never authorize reading file bodies.
-The reverse direction carries no such hazard, because it re-projects state already paid
-for, so the requested analyzer set selects the *default* view and an explicit `--view`
-always wins. What this protects is that a run displays what it paid for.
+**Cost flows one way; display follows cost.** A view with a metadata meaning never
+enables an analyzer, and no view presents an unmeasured value as zero: a display choice
+that has a cheap answer must never quietly turn into a read of every file in the tree.
+If `--view languages` read file bodies because it *can* show code lines, a metadata
+report on a million-file tree would become a content walk with nothing in the command to
+say so. `languages`, `types`, `families`, `full`, and the tree all have such a meaning,
+so none of them implies anything.
+
+A view with no metadata meaning is different: `code` and `documents` show nothing
+without analysis, so there is no cheap version of them to protect, and naming one is a
+request for the analysis it shows.
+When a request builds its own basis -- the command line, `fdu.report`, a Rust caller of
+`Request::build` -- it enables the analyzers its views imply (`ViewSpec::implies`, one
+table in the request model) in union with the ones `--analyze` names, so `--view code`
+and `--analyze code` are one basis with one sidecar and one answer.
+A basis an index already holds is never widened: the index holds what it was opened
+with, a read can display only what the basis paid for, and a view it cannot answer is
+refused with the analyzer named.
+A metric sort implies nothing either, because it orders rows rather than saying what the
+report is about. Classify the next view by this reason, not by its name: it implies an
+analyzer only if, without that analyzer, it has nothing to show.
+
+The reverse direction carries no hazard, because it re-projects state already paid for,
+so the analyzer set selects the *default* view, the one each content view implies, and
+an explicit `--view` always wins.
+What this protects is that a run displays what it paid for.
 A request that reads content and renders none of it is a defect -- it is the shape the
-CLI shipped in when `--analyze` had no axis of its own -- and a view omitted for lack of
-analysis is named in the report rather than silently dropped.
+CLI shipped in when `--analyze` had no axis of its own -- so it says which view would
+show the analysis, and a view `full` omitted for lack of analysis is named in the report
+rather than silently dropped.
 
 Expected content coverage is distinct from operational completeness.
 Binary data, invalid UTF-8, and file types without a requested analyzer remain explicit
