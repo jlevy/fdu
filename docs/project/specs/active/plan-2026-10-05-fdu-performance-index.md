@@ -298,17 +298,17 @@ Both halves are in the score, so a platform-specific change shows too.
 
 ### Phase 1: Manifest, Driver, and macOS Index
 
-- [ ] The manifest and the job table, as above.
-- [ ] The history driver in the harness, with tests: argv per build era, unsupported
+- [x] The manifest and the job table, as above.
+- [x] The history driver in the harness, with tests: argv per build era, unsupported
   capabilities, cache states, probe-job components, the anchor, alternation, answer
   checks, and internal-storage checks.
-- [ ] The macOS cells for the 13 milestone builds, one per job: cold cache, the default
+- [x] The macOS cells for the 13 milestone builds, one per job: cold cache, the default
   tree, summary, code, documents, both warm-cache content components, multi-view, both
   warm-metadata jobs, and both opened-root jobs on K; scale on G; memory read from them.
-- [ ] The completeness check in the projection, and its test.
-- [ ] The index, its interval, and its coverage; the chooser, the headline, and the
+- [x] The completeness check in the projection, and its test.
+- [x] The index, its interval, and its coverage; the chooser, the headline, and the
   faded bars.
-- [ ] Publish it as the macOS index, labeled as such.
+- [x] Publish it as the macOS index, labeled as such.
 
 ### Phase 2: Linux
 

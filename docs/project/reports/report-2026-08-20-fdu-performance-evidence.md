@@ -1336,16 +1336,26 @@ Grouped by topic; the order to run them in is
 The page shows every number; this report says what they mean.
 
 **Over time.** Two stacked panels on one axis of experiments in the order they ran.
-The top panel is total runtime on two fixed benchmarks, each from a history cell
-(`performance-evidence/history/`): thirteen milestone builds, from the pre-work binary
-`b565882b` through each major kept optimization to 0.3.0, timed interleaved in one
-session per benchmark on an Apple M1 Pro’s internal SSD (exploratory, on an uncontrolled
-host: CPU was above the 25% quiet gate at 76% and 60% of sample boundaries, so
-differences of about 10% between adjacent builds are within the noise; no invalid
-samples). Lines are runtime as a share of the first build, on a log scale.
-The cells were driven by a scratch wrapper around `benchmarks.realtree.compare_tools`,
-which moves into the harness as `benchmarks.realtree.history` with the performance
-index; each cell names its committed run artifact.
+The top panel is the fdu performance index
+([the index spec](../specs/active/plan-2026-10-05-fdu-performance-index.md)): one score
+across twelve components, each a history cell (`performance-evidence/history/`) timing
+thirteen milestone builds, from the pre-work binary `b565882b` through each major kept
+optimization to 0.3.0, interleaved against 0.3.0 on an Apple M1 Pro’s internal SSD.
+Every value is a multiple of 0.3.0’s, on a log scale.
+A chooser switches the panel from the unified score to any single component, and fades
+the experiment bars that do not count toward the chosen metric.
+
+- **The macOS score, 12 of 12 components:** 1.71× better [1.68×, 1.74×] from 0.2.0, the
+  first build with every component, to 0.3.0.
+- **The partial macOS score, 4 of 12 components** (cold cache, default tree, scale,
+  memory; 40% of the weight): 4.73× better [4.60×, 4.87×] from the pre-work binary.
+- **Exploratory, uncontrolled host.** CPU was above the 25% quiet gate at many sample
+  boundaries in most cells, so differences of about 10% between adjacent builds are
+  within the noise. A score quoted in release notes waits on a quiet re-time at 20 rounds
+  (`fdu-bkj2`). Linux, half of the combined index, is not yet measured.
+
+Two of the cells are the history cells this page first drew, now the cold-cache and
+scale components:
 
 - **The generated 1M-entry tree:** 70.4 s to 6.54 s, 10.8× (paired 10.76×, 95%
   [8.88×, 11.65×]). The fall is H1 (5.3×) and bulk metadata (a further −48%). Every
@@ -1359,7 +1369,10 @@ index; each cell names its committed run artifact.
   work.
 
 An earlier cell, on the external USB SSD, is kept under `history/superseded/`: there the
-kernel and USB path set the wall time after campaign 1.
+kernel and USB path set the wall time after campaign 1. The driver,
+`benchmarks.realtree.history`, checks every build’s answer (content totals included)
+before timing, and `make perf-report-check` re-derives every cell from its committed run
+artifact.
 
 The bottom panel is every experiment’s paired change on its own primary metric: green
 for the 52 changes kept at least 3% better, each counted once (47 on wall time, 3 on
