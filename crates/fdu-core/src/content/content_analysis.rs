@@ -1651,10 +1651,10 @@ mod tests {
 
     #[test]
     fn document_word_shares_sum_to_their_denominator_when_pooling_is_not_additive() {
-        // Ordinary prose counts its tokens; ten 30-character tokens fall below the clamp
-        // and count as characters / 6. Pooled, the long tokens pull the whole section into
-        // the characters / 6 regime, so the total's own document words (142) are below
-        // the rows' sum (125 + 50). Dividing by that total gave 88.0% + 35.2% (fdu-ij5n).
+        // Ordinary prose counts its tokens; ten 30-character tokens are clamped up to
+        // characters / 6. Pooled, the long tokens pull the whole section into the
+        // characters / 6 regime, so the total's own document words (142) are below the
+        // rows' sum (125 + 50). Dividing by that total gave 88.0% + 35.2% (fdu-ij5n).
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join("guide.md"), "This prose has four words. ".repeat(25))
             .expect("write markdown");
