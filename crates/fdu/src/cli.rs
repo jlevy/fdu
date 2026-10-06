@@ -2908,7 +2908,8 @@ mod tests {
     ///
     /// An agent copies an inline `--view full` as readily as a fenced command, so both
     /// count. Only the guide was checked, and the skill kept `--view all` and an
-    /// analyzer vocabulary the content axis no longer has.
+    /// analyzer vocabulary the content axis no longer has. Both spellings count too:
+    /// splitting on whitespace alone skipped every `--view=code,documents`.
     #[test]
     fn the_skill_only_names_views_and_analyzers_that_parse() {
         let skill = compose_skill();
@@ -2916,7 +2917,8 @@ mod tests {
         let commands = skill.lines().map(str::trim_start).filter(|line| line.starts_with("fdu "));
         let mut checked = 0;
         for text in spans.chain(commands) {
-            let mut words = text.split_whitespace();
+            let mut words =
+                text.split(|c: char| c.is_whitespace() || c == '=').filter(|word| !word.is_empty());
             while let Some(flag) = words.next() {
                 if flag != "--view" && flag != "--analyze" {
                     continue;
@@ -2935,6 +2937,62 @@ mod tests {
             }
         }
         assert!(checked > 0, "the skill should show views and analyzers");
+    }
+
+    /// Every command the skill shows must resolve as written, as the guide's must.
+    ///
+    /// An agent runs these lines verbatim, the `uvx` fallback included, so each line of
+    /// a fenced `bash` block is parsed and its request built and validated, which is
+    /// where every refusal that needs no filesystem happens. `<that>` stands for the
+    /// timestamp the watermark example records.
+    #[test]
+    fn every_command_the_skill_shows_resolves() {
+        let skill = compose_skill();
+        let mut in_bash = false;
+        let mut checked = 0;
+        for line in skill.lines() {
+            if let Some(fence) = line.strip_prefix("```") {
+                in_bash = !in_bash && fence == "bash";
+                continue;
+            }
+            let line = line.trim_start();
+            let command = line
+                .strip_prefix("uvx --no-build fdu@latest ")
+                .or_else(|| line.strip_prefix("fdu "))
+                .filter(|_| in_bash);
+            let Some(command) = command else { continue };
+            // A trailing comment says what the command is for.
+            let command = command.split(" #").next().unwrap_or(command).trim_end();
+            let args = std::iter::once("fdu".to_string())
+                .chain(shell_words(command).into_iter().map(|word| word.replace("<that>", "@0")));
+            let parsed = Cli::try_parse_from(args)
+                .unwrap_or_else(|error| panic!("the skill shows `fdu {command}`: {error}"));
+            if let Err(error) = parsed.resolved_request() {
+                panic!("the skill shows `fdu {command}`: {error}");
+            }
+            checked += 1;
+        }
+        assert!(checked >= 30, "the skill should show its commands; found {checked}");
+    }
+
+    /// A command line split into words the way a POSIX shell splits the ones the skill
+    /// shows: whitespace separates words, and single quotes keep a glob in one word.
+    fn shell_words(command: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut word: Option<String> = None;
+        let mut quoted = false;
+        for c in command.chars() {
+            match c {
+                '\'' => {
+                    quoted = !quoted;
+                    word.get_or_insert_with(String::new);
+                }
+                c if c.is_whitespace() && !quoted => words.extend(word.take()),
+                c => word.get_or_insert_with(String::new).push(c),
+            }
+        }
+        words.extend(word);
+        words
     }
 
     /// The stale-schema bug, made unrepeatable.
