@@ -630,6 +630,89 @@ def history_cell(dataset: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
     return cells[0] if cells else None
 
 
+def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> List[Dict[str, Any]]:
+    """The chooser's metrics: the unified score first, then every measured component.
+
+    Each point is a build's value as a share of the first build that has one, so the
+    score, a millisecond benchmark, and peak memory read on one axis. The score uses the
+    components every plotted build supports; its title says how many of the suite's.
+    """
+    platforms = dataset.get("index") or []
+    if not platforms:
+        return []
+    projected = platforms[0]
+    builds = [build for build in projected["builds"] if build.get("after_experiment") in position]
+
+    def points(values: Sequence[tuple]) -> List[Dict[str, Any]]:
+        present = [(build, value, detail) for build, value, detail in values if value]
+        if len(present) < 2:
+            return []
+        first = present[0][1]
+        return [
+            {
+                "after_experiment": build["after_experiment"],
+                "short": build.get("short") or build["label"],
+                "commit": build.get("commit") or "",
+                "date": build.get("date") or "",
+                "includes": build.get("includes") or "",
+                "share": value / first,
+                "detail": detail,
+            }
+            for build, value, detail in present
+        ]
+
+    total = len(projected["measured"]) + len(projected["missing"])
+    series = []
+    score = points(
+        [
+            (
+                build,
+                (build.get("common") or {}).get("index"),
+                f"index {build['common']['index']:.3f} relative to {projected['reference_build']}"
+                if build.get("common")
+                else "",
+            )
+            for build in builds
+        ]
+    )
+    if score:
+        series.append(
+            {
+                "id": "score",
+                "title": f"Unified score ({projected['platform']}, {len(projected['common'])} of "
+                f"{total} components)",
+                "short_title": "unified score",
+                "verb": "better",
+                "points": score,
+            }
+        )
+    for component in projected["measured"]:
+        values = points(
+            [
+                (
+                    build,
+                    build["components"].get(component),
+                    f"{build['components'][component]:.3f} of {projected['reference_build']}"
+                    if component in build["components"]
+                    else "",
+                )
+                for build in builds
+            ]
+        )
+        if values:
+            title = projected["titles"].get(component, component)
+            series.append(
+                {
+                    "id": component,
+                    "title": title,
+                    "short_title": title.lower(),
+                    "verb": "less memory" if component == "memory" else "faster",
+                    "points": values,
+                }
+            )
+    return series
+
+
 def figure_timeline(dataset: Mapping[str, Any]) -> str:
     """Two stacked panels on one experiment axis, in the order the experiments ran.
 
@@ -653,7 +736,8 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         ]
         if len(placed) >= 2:
             cells.append((cell, placed))
-    milestones = [item for _, placed in cells for item in placed]
+    series = metric_series(dataset, position)
+    milestones = [point for item in series for point in item["points"]]
 
     left, right = 64, 150
     width = 900
@@ -700,10 +784,10 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         f"order they ran</text>"
     )
 
-    if cells:
-        # Log scale of runtime as a share of each benchmark's first build, so a tree
-        # timed in seconds and one timed in milliseconds read on one axis.
-        shares = [item["wall_ms"] / placed[0]["wall_ms"] for _, placed in cells for item in placed]
+    if series:
+        # Log scale of each metric as a share of its first build, so a tree timed in
+        # seconds, one timed in milliseconds, and the score read on one axis.
+        shares = [point["share"] for item in series for point in item["points"]]
         candidates = [tick for tick in (0.5, 0.2, 0.1, 0.05, 0.02, 0.01) if tick < min(shares)]
         floor = candidates[0] if candidates else min(shares) * 0.9
         ceiling = max(1.0, max(shares))
@@ -718,16 +802,16 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                     f"{tick * 100:g}%</text>"
                 )
         out.append(
-            f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">total runtime as a '
-            f"share of the first build, log scale &mdash; lower is faster; builds numbered</text>"
+            f'<text class="tick axis-name" x="{left}" y="{top_y0 - 46}">the chosen metric as a '
+            f"share of the first build, log scale &mdash; lower is better; builds numbered</text>"
         )
         # Milestones numbered once along the top, staggered over three rows so builds
         # that landed close together stay legible; the caption names them. Every cell
         # times the same builds.
         named = {}
-        for _, placed in cells:
-            for item in placed:
-                named.setdefault(item["after_experiment"], item.get("short") or item["label"])
+        for item in series:
+            for point in item["points"]:
+                named.setdefault(point["after_experiment"], point["short"])
         for number, after in enumerate(named, start=1):
             x = x_of(position[after])
             label_y = top_y0 - 30 + (number - 1) % 3 * 10
@@ -739,43 +823,41 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 f'<text class="point-label" x="{x:.1f}" y="{label_y}" text-anchor="middle">'
                 f"{number}</text>"
             )
-        series = ("series-mac", "series-linux", "series-mac", "series-linux")
-        for number, (cell, placed) in enumerate(cells):
-            css = series[number % len(series)]
-            first = placed[0]["wall_ms"]
-            points = [(x_of(position[item["after_experiment"]]), y_of(item["wall_ms"] / first), item) for item in placed]
+        for item in series:
+            css = "series-mac" if item["id"] == "score" else "series-linux"
+            points = [(x_of(position[point["after_experiment"]]), y_of(point["share"]), point) for point in item["points"]]
+            group = [f'<g class="metric{" on" if item["id"] == "score" else ""}" data-metric="{esc(item["id"])}">']
             path = []
             for index, (x, y, _) in enumerate(points):
                 if index:
                     path.append(f"{x:.1f},{points[index - 1][1]:.1f}")
                 path.append(f"{x:.1f},{y:.1f}")
             path.append(f"{width - right:.1f},{points[-1][1]:.1f}")
-            out.append(f'<polyline class="{css} series-line" points="{" ".join(path)}"/>')
-            title = cell.get("title") or cell["subject"]
-            for x, y, item in points:
-                out.append(f'<circle class="{css}" cx="{x:.1f}" cy="{y:.1f}" r="3.5"/>')
-                out.append(
+            group.append(f'<polyline class="{css} series-line" points="{" ".join(path)}"/>')
+            for x, y, point in points:
+                group.append(f'<circle class="{css}" cx="{x:.1f}" cy="{y:.1f}" r="3.5"/>')
+                group.append(
                     f'<rect class="hit" x="{x - 7:.1f}" y="{y - 7:.1f}" width="14" height="14" '
                     + tip(
-                        f"{title}: {item.get('short') or item['label']} "
-                        f"({item['commit']}, {item['date']})\n"
-                        f"{item['includes']}\n"
-                        f"{fmt_ms(item['wall_ms'] * 1e6)}, {first / item['wall_ms']:.1f}x faster "
-                        f"than the first build"
-                        + (f", peak {item['peak_rss_mib']:.0f} MiB" if item.get("peak_rss_mib") else "")
+                        f"{item['title']}: {point['short']} ({point['commit']}, {point['date']})\n"
+                        f"{point['includes']}\n"
+                        f"{1 / point['share']:.2f}x better than the first build"
+                        + (f"; {point['detail']}" if point.get("detail") else "")
                     )
                     + "/>"
                 )
-            last = placed[-1]
-            out.append(
+            last = item["points"][-1]
+            group.append(
                 f'<text class="value-label {css}" x="{width - right + 8:.1f}" '
                 f'y="{points[-1][1] + 4:.1f}" stroke="none">'
-                f"{first / last['wall_ms']:.1f}x faster</text>"
+                f"{1 / last['share']:.1f}x {esc(item['verb'])}</text>"
             )
-            out.append(
+            group.append(
                 f'<text class="point-label" x="{width - right + 8:.1f}" '
-                f'y="{points[-1][1] + 17:.1f}">{esc(title)}</text>'
+                f'y="{points[-1][1] + 17:.1f}">{esc(item["short_title"])}</text>'
             )
+            group.append("</g>")
+            out.extend(group)
 
     # Bottom panel: every experiment, plus the running count of kept changes.
     low, high = ITERATION_CLAMP
@@ -800,6 +882,10 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     )
     css = {"kept": "dot-good", "rejected": "dot-bad", "measured": "dot-flat"}
     bar = max(min(step * 0.7, 6.0), 1.2)
+    jobs = dataset.get("index_jobs") or {}
+    titles = {}
+    for platform in dataset.get("index") or []:
+        titles.update(platform.get("titles") or {})
     for index, record in enumerate(records):
         change = record.get("change_pct")
         faster = -change if change is not None else 0.0
@@ -807,12 +893,15 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
         x = left + index * step + (step - bar) / 2
         y1, y2 = sorted((zero, y_of_change(drawn)))
         kind = iteration_kind(record)
+        metric = record.get("primary_metric")
+        component = "memory" if metric == "peak_rss_bytes" else jobs.get(record.get("primary_job") or "", "")
         out.append(
-            f'<rect class="{css[kind]}" x="{x:.1f}" y="{y1:.1f}" width="{bar:.1f}" '
-            f'height="{max(y2 - y1, 1.0):.1f}"/>'
+            f'<rect class="{css[kind]} bar" x="{x:.1f}" y="{y1:.1f}" width="{bar:.1f}" '
+            f'height="{max(y2 - y1, 1.0):.1f}" data-component="{esc(component)}" '
+            f'data-platform="{esc(record.get("platform") or "")}"/>'
         )
         label = {"kept": "kept, better", "rejected": "tried, not kept", "measured": "measured"}[kind]
-        metric = record.get("primary_metric")
+        counts_toward = titles.get(component) or component or "no component"
         out.append(
             f'<rect class="hit" x="{left + index * step:.1f}" y="{bottom_y0}" '
             f'width="{step:.1f}" height="{bottom_h}" '
@@ -822,19 +911,16 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 f"{fmt_pct(change) if change is not None else 'no paired change'} "
                 f"on {record.get('primary_job') or 'its job'}"
                 + (f" ({metric})" if metric not in (None, "wall_ns") else "")
+                + f"\nCounts toward: {counts_toward}, {record.get('platform') or 'its platform'}"
             )
             + "/>"
         )
     out.append("</svg>")
 
     counts = {kind: sum(iteration_kind(record) == kind for record in records) for kind in css}
-    cell_keys = [
-        (("key-mac", "key-linux")[number % 2], f"{cell.get('title') or cell['subject']}, "
-         f"{fmt_ms(placed[0]['wall_ms'] * 1e6)} to {fmt_ms(placed[-1]['wall_ms'] * 1e6)}")
-        for number, (cell, placed) in enumerate(cells)
-    ]
     keys = legend(
-        *cell_keys,
+        ("key-mac", "the unified score"),
+        ("key-linux", "a single component, when chosen"),
         ("key-good", f"kept, at least 3% better ({counts['kept']})"),
         ("key-bad", f"tried, not kept ({counts['rejected']})"),
         ("key-flat", f"measurements and other verdicts ({counts['measured']})"),
@@ -854,16 +940,29 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
             f"so on a repository they do less work. Hover a point for what each build added. "
         )
         named = {}
-        for _, placed in cells:
-            for item in placed:
-                named.setdefault(item["after_experiment"], item.get("short") or item["label"])
+        for item in series:
+            for point in item["points"]:
+                named.setdefault(point["after_experiment"], point["short"])
         caption += (
             "Builds: "
             + "; ".join(f"{number} {esc(short)}" for number, short in enumerate(named.values(), start=1))
             + ". "
         )
+    chooser = ""
+    if series:
+        options = "".join(
+            f'<option value="{esc(item["id"])}"{" selected" if item["id"] == "score" else ""}>'
+            f"{esc(item['title'])}</option>"
+            for item in series
+        )
+        chooser = (
+            '<p class="metric-chooser"><label>Metric <select id="metric" '
+            f'data-platform="{esc((dataset.get("index") or [{}])[0].get("platform", ""))}">'
+            f"{options}</select></label> <span class=\"muted\">Bars that do not count "
+            "toward the chosen metric are faded.</span></p>"
+        )
     return (
-        f'<figure class="fig">{"".join(out)}{keys}<figcaption>{caption}Bottom: bars beyond '
+        f'<figure class="fig">{chooser}{"".join(out)}{keys}<figcaption>{caption}Bottom: bars beyond '
         "the axis are drawn at its edge; hover one for its experiment and real figure. The "
         "dashed line is the 3% accept threshold.</figcaption></figure>"
     )
@@ -1382,6 +1481,12 @@ figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: 
 .dot-before { fill: var(--before); }
 .dot-step { fill: var(--after); opacity: 0.55; }
 .dot-final { fill: var(--after); }
+.metric { display: none; }
+.metric.on { display: inline; }
+.bar.faded { opacity: 0.15; }
+.metric-chooser { font-size: 13px; margin: 0 0 8px; max-width: none; }
+.metric-chooser select { font: inherit; margin-left: 6px; padding: 2px 4px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
 .value-label { font: 12px var(--mono); fill: var(--after); font-variant-numeric: tabular-nums; }
 .value-before { fill: var(--muted); }
 .value-arrow { fill: var(--border); }
@@ -1624,6 +1729,31 @@ THEME_SCRIPT = """
 })();
 """
 
+#: The metric chooser: shows the chosen series on the runtime panel and fades every
+#: experiment bar that does not count toward it. The unified score counts every
+#: component, so under it only bars from a platform the score does not yet cover fade.
+METRIC_SCRIPT = """
+(function () {
+  var chooser = document.getElementById('metric');
+  if (!chooser) return;
+  var platform = chooser.getAttribute('data-platform');
+  var groups = Array.prototype.slice.call(document.querySelectorAll('.metric'));
+  var bars = Array.prototype.slice.call(document.querySelectorAll('.bar'));
+  function show(metric) {
+    groups.forEach(function (group) {
+      group.classList.toggle('on', group.getAttribute('data-metric') === metric);
+    });
+    bars.forEach(function (bar) {
+      var counts = bar.getAttribute('data-platform') === platform &&
+        (metric === 'score' || bar.getAttribute('data-component') === metric);
+      bar.classList.toggle('faded', !counts);
+    });
+  }
+  chooser.addEventListener('change', function () { show(chooser.value); });
+  show(chooser.value);
+})();
+"""
+
 
 def render(dataset: Mapping[str, Any]) -> str:
     """The whole page."""
@@ -1656,7 +1786,7 @@ def render(dataset: Mapping[str, Any]) -> str:
 <body>
 <div class="wrap">{SETTINGS}{body}</div>
 <div id="tip" role="tooltip"></div>
-<script>{SCRIPT}{THEME_SCRIPT}</script>
+<script>{SCRIPT}{THEME_SCRIPT}{METRIC_SCRIPT}</script>
 </body>
 </html>
 """
@@ -2149,13 +2279,40 @@ def _standing_figure(dataset: Mapping[str, Any]) -> str:
     )
 
 
+def _score_figure(dataset: Mapping[str, Any]) -> str:
+    """The unified score from the first build to the last, with its interval.
+
+    The interval is the combined interval of the two index values, both relative to the
+    reference build, so it is the honest width of the ratio between them.
+    """
+    platforms = dataset.get("index") or []
+    if not platforms:
+        return ""
+    projected = platforms[0]
+    builds = [build for build in projected["builds"] if build.get("common")]
+    if len(builds) < 2:
+        return ""
+    first, last = builds[0]["common"], builds[-1]["common"]
+    speedup = first["index"] / last["index"]
+    low = first["low"] / last["high"]
+    high = first["high"] / last["low"]
+    total = len(projected["measured"]) + len(projected["missing"])
+    return (
+        f'<div><span class="n good">{speedup:.1f}&times; better</span>'
+        f'<span class="k">unified score, {esc(projected["platform"])}, first build to '
+        f'{esc(builds[-1].get("short") or builds[-1]["label"])} '
+        f"[{low:.1f}&times;, {high:.1f}&times;]; {len(projected['common'])} of {total} "
+        f"components</span></div>"
+    )
+
+
 def _history_figure(dataset: Mapping[str, Any]) -> str:
     """Each history cell's measured first-to-last speedup.
 
     The ratio of the medians the chart draws, so the headline and the chart agree; the
     paired figure stays in the record.
     """
-    figures = []
+    figures = [_score_figure(dataset)]
     for cell in dataset.get("history") or []:
         milestones = [item for item in cell.get("milestones", []) if item.get("wall_ms")]
         if len(milestones) < 2:

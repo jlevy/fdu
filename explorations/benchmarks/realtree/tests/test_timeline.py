@@ -27,6 +27,7 @@ from benchmarks.realtree.report_html import (
     phase_rows,
     render,
 )
+from benchmarks.realtree.perf_index import combine, load_suite, project_index, unmapped_jobs
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
     SYNTHETIC_SUBJECTS,
@@ -36,6 +37,39 @@ from benchmarks.realtree.timeline import (
     subject_family,
     subject_key,
 )
+
+
+def _index_cell(component: str, first_ms: float, last_ms: float, extra_after: str = "") -> Dict[str, Any]:
+    """A two-build history cell for one index component, anchored on v0.3.0."""
+    milestones = [
+        {"label": "prework", "short": "start", "commit": "aaaa", "date": "2026-08-10",
+         "includes": "start", "after_experiment": "exp-000", "wall_ms": first_ms,
+         "peak_rss_mib": 400.0, "vs_latest_pct": (first_ms / last_ms - 1) * 100,
+         "vs_latest_ci95_pct": [(first_ms / last_ms - 1) * 90, (first_ms / last_ms - 1) * 110],
+         "supported": True},
+        {"label": "v0.3.0", "short": "0.3.0", "commit": "bbbb", "date": "2026-09-30",
+         "includes": "end", "after_experiment": "exp-032", "wall_ms": last_ms,
+         "peak_rss_mib": 60.0, "vs_latest_pct": None, "vs_latest_ci95_pct": None,
+         "supported": True},
+    ]
+    if extra_after:
+        milestones.append(
+            {"label": "lost", "short": "lost", "commit": "cccc", "date": "2026-10-01",
+             "includes": "none", "after_experiment": extra_after, "wall_ms": 1000.0,
+             "vs_latest_pct": -96.7, "supported": True}
+        )
+    return {
+        "component": component,
+        "platform": "macOS",
+        "subject": "linux-v6.12",
+        "title": "the Linux v6.12 source tree",
+        "entries": 92460,
+        "cpu": "M1",
+        "storage": "internal SSD",
+        "trials": 12,
+        "regime": "uncontrolled",
+        "milestones": milestones,
+    }
 
 
 def metric(
@@ -538,31 +572,45 @@ class RenderTests(unittest.TestCase):
         # follows. A milestone naming an experiment the record lacks is left out rather
         # than drawn at an invented position.
         dataset = project([experiment("exp-000"), experiment("exp-032")])
-        dataset["history"] = [
-            {
-                "subject": "balanced-1m",
-                "entries": 1000001,
-                "cpu": "M1",
-                "storage": "ssd",
-                "trials": 12,
-                "regime": "uncontrolled",
-                "milestones": [
-                    {"label": "a", "version": "fdu 0.0.1", "commit": "aaaa", "date": "2026-08-10",
-                     "includes": "start", "after_experiment": "exp-000", "wall_ms": 150000.0},
-                    {"label": "b", "version": "fdu 0.3.0", "commit": "bbbb", "date": "2026-09-30",
-                     "includes": "end", "after_experiment": "exp-032", "wall_ms": 30000.0},
-                    {"label": "c", "version": "lost", "commit": "cccc", "date": "2026-10-01",
-                     "includes": "none", "after_experiment": "exp-999", "wall_ms": 1000.0},
-                ],
-            }
-        ]
+        dataset["history"] = [_index_cell("cold-cache", 150000.0, 30000.0, extra_after="exp-999")]
+        dataset["index"] = project_index(dataset["history"], load_suite())
         figure = figure_timeline(dataset)
+        self.assertIn("5.0x better", figure)
         self.assertIn("5.0x faster", figure)
-        self.assertNotIn("lost", figure)
-        # Milestone times are milliseconds; the formatter takes nanoseconds, and passing
-        # milliseconds printed every runtime as "0 ms".
-        self.assertIn(fmt_primary(150000.0 * 1e6, "wall_ns"), figure)
-        self.assertNotIn(" 0 ms", figure)
+        self.assertNotIn(": lost", figure)
+        self.assertIn('data-metric="score"', figure)
+        self.assertIn('<option value="cold-cache"', figure)
+
+    def test_the_score_is_a_weighted_sum_of_log_ratios(self) -> None:
+        # A 2x gain on one component and a 2x loss on another of equal weight cancel
+        # exactly; a sum of raw times or raw ratios would not.
+        result = combine(
+            {
+                "a": {"ratio": 2.0, "low": 2.0, "high": 2.0},
+                "b": {"ratio": 0.5, "low": 0.5, "high": 0.5},
+            },
+            {"a": 0.25, "b": 0.25},
+        )
+        self.assertAlmostEqual(result["index"], 1.0)
+        # Weights renormalize over the components a build has.
+        alone = combine({"a": {"ratio": 4.0, "low": 3.0, "high": 5.0}}, {"a": 0.1})
+        self.assertAlmostEqual(alone["index"], 4.0)
+        self.assertLess(alone["low"], 4.0)
+        self.assertGreater(alone["high"], 4.0)
+
+    def test_every_recorded_job_maps_to_a_scored_component(self) -> None:
+        # The completeness rule: a job the loop measures but the score cannot see would
+        # let a kept change improve something no line shows.
+        suite = load_suite()
+        self.assertEqual(unmapped_jobs(project([experiment("exp-001")])["experiments"], suite), [])
+        stray = experiment("exp-002")
+        stray["results"][0]["job"] = "brand-new-job"
+        stray["verdict"]["primary_job"] = "brand-new-job"
+        self.assertEqual(unmapped_jobs(project([stray])["experiments"], suite), ["brand-new-job"])
+
+    def test_the_suite_weights_sum_to_one(self) -> None:
+        suite = load_suite()
+        self.assertAlmostEqual(sum(item["weight"] for item in suite["components"]), 1.0)
 
     def test_id_ranges_skip_unused_ids_but_not_recorded_ones(self) -> None:
         # exp-113 was never used, so it does not split exp-112 from exp-114; exp-104 is a

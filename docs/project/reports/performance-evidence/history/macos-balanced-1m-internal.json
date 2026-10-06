@@ -1,5 +1,8 @@
 {
  "schema": "fdu-history-summary-v1",
+ "component": "scale",
+ "manifest_version": 1,
+ "platform": "macOS",
  "run_artifact": "run-macos-balanced-1m-internal-fdu-history.json(.gz)",
  "harness": {
   "module": "benchmarks.realtree.compare_tools (unmodified, via drive_history.py registering two argv contracts)",

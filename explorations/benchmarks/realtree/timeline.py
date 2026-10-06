@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
 from benchmarks.realtree.experiment import compares_two_builds, kept_arm
+from benchmarks.realtree.perf_index import SUITE_PATH, load_suite, project_index, unmapped_jobs
 from benchmarks.realtree.summary import (
     BASELINE_COMMIT,
     EXPERIMENTS_DIR,
@@ -499,17 +500,20 @@ def load_history(directory: Path) -> List[Dict[str, Any]]:
                     "system_s": (item.get("cpu_s_median") or {}).get("system"),
                     "vs_latest_pct": paired.get("median_change_pct"),
                     "vs_latest_ci95_pct": paired.get("ci95_change_pct"),
+                    "supported": item.get("supported", True),
                 }
             )
         headline = summary.get("headline") or {}
         cells.append(
             {
                 "id": path.stem,
+                "component": summary.get("component"),
+                "manifest_version": summary.get("manifest_version"),
+                "platform": summary.get("platform") or host.get("system") or "",
                 "subject": subject.get("label") or path.stem,
                 "title": subject.get("title") or subject.get("label") or path.stem,
                 "entries": (subject.get("counts") or {}).get("total"),
                 "storage": subject.get("storage") or "",
-                "platform": host.get("system") or "",
                 "cpu": host.get("cpu_model") or "",
                 "regime": (summary.get("regime") or {}).get("host_regime") or "",
                 "trials": (summary.get("rounds") or {}).get("trials"),
@@ -527,6 +531,7 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--experiments", type=Path, default=EXPERIMENTS_DIR)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--history", type=Path, default=HISTORY_DIR)
+    parser.add_argument("--suite", type=Path, default=SUITE_PATH)
     parser.add_argument(
         "--prepared",
         default="",
@@ -549,6 +554,19 @@ def main(argv: Sequence[str]) -> int:
         return 1
     dataset = project(experiments)
     dataset["history"] = load_history(arguments.history)
+    # Every job the loop has measured must count toward the score, or a kept change
+    # could improve something the score cannot see. Refuse to project until it does.
+    suite = load_suite(arguments.suite)
+    missing = unmapped_jobs(dataset["experiments"], suite)
+    if missing:
+        print(
+            f"error: {arguments.suite} maps no index component for job(s) "
+            f"{', '.join(missing)}; add each to job_components with a component",
+            file=sys.stderr,
+        )
+        return 1
+    dataset["index"] = project_index(dataset["history"], suite)
+    dataset["index_jobs"] = dict(sorted(suite["job_components"].items()))
     # Carried in the dataset rather than stamped at render time, so the drift check
     # compares evidence against evidence and does not fail every midnight.
     dataset["prepared"] = arguments.prepared or _preserved_prepared(arguments.out)
