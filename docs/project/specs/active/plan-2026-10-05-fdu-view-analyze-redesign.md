@@ -445,7 +445,7 @@ One phase, one draft pull request, landed after or merged with the epilogue work
   artifact itself awaits CI’s Linux recording).
 - [x] Help, `--docs`, skill, usage guide, README, machine-output reference, output
   design, surface architecture, design principles.
-- [ ] Demo scripts and the cli-animate README.
+- [x] Demo scripts and the cli-animate README.
 
 ## Testing Strategy
 

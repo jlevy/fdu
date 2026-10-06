@@ -2,7 +2,8 @@
 # usage tree, then code and document tallies twice -- first with fdu's cache cleared, so
 # the analysis reads every file with fdu's progress line live, then again, answered from
 # the cache the first run built. The page cache is warmed in setup, so "no cache" means
-# fdu's own cache, not the disk.
+# fdu's own cache, not the disk. The screen never clears: each command's output scrolls
+# up under the next, as in a terminal.
 #
 # Needs this repository's release build and a shallow Linux clone, without its .git
 # (the pack file is not part of the source), under $FDU_DEMO_TREES:
@@ -29,14 +30,12 @@ steps:
     run: fdu .
     hold: 2.5
   - comment: "# Full code and document analysis (first run, no cache, slowest)"
-    clear: true
     hold: 0.2
   - label: analysis, first run
     before: [fdu . --cache-clear]
     run: fdu . --view code,documents
     hold: 2.5
   - comment: "# Full code and document analysis (subsequent runs, fast)"
-    clear: true
     hold: 0.2
   - label: analysis, cached
     run: fdu . --view code,documents
