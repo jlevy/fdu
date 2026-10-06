@@ -10,7 +10,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Rust: `ViewSpec::implies` and `ViewSpec::shows`, the analyzers a view requests and the
-  ones it displays; `AnalysisSet::union`, `named`, and `request_label`;
+  ones it displays; `ViewSpec::defaults_for`, the views a request shows its analysis in
+  when the caller named none; `AnalysisSet::union`, `named`, and `request_label`;
   `Request::implied_by`; `Request::read_opened`, a read of an opened root that refuses
   in its words; and `query::BasisHolder`, which the analysis refusals carry.
 
@@ -40,7 +41,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   includes DOCUMENTS, which needs words analysis: the report lists it in `omitted_views`
   and says `note: full omits documents without words analysis` with
   `tip: include them: --analyze all`. A script that read the DOCUMENTS section of such a
-  report adds `words` to `--analyze`.
+  report adds `words` to `--analyze`. In Rust, `ViewSpec::full_report` partitions the
+  same way, keeping a view only when the analyzers include everything it implies:
+  `full_report(AnalysisSet::LINES_ONLY)` and `full_report(AnalysisSet::CODE_ONLY)` now
+  return `Documents` among the omitted views rather than the shown ones.
 - **Breaking:** `fdu_core::query::Request` gains a private field recording which
   analyzers the caller named and which views implied the rest.
   Rust code outside the engine crate builds a request with `Request::new`,
