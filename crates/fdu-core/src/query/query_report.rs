@@ -4529,6 +4529,7 @@ mod tests {
             let error = crate::query::RequestError::ViewNeedsAnalyzer {
                 view: ViewSpec::Documents,
                 held: AnalysisSet::NONE,
+                holder: crate::query::BasisHolder::Index,
             }
             .message(axes);
             assert!(error.starts_with(&format!("{view} documents")), "{error}");

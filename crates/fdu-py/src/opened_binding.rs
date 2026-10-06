@@ -174,7 +174,8 @@ impl SelectionValues {
 /// projection, a report -- so a rule is worded once for all of them. An opened root holds
 /// no analyzers and always observes control state, and
 /// [`OpenedIndex::basis`](fdu_core::OpenedIndex::basis) is where that is stated; a read it
-/// cannot answer is refused against that basis, not against a stronger one.
+/// cannot answer is refused against that basis, not against a stronger one, in words
+/// that say an opened root runs no analyzer.
 fn opened_read(
     selection: Option<&Bound<'_, PyDict>>,
     views: Option<Vec<String>>,
@@ -185,7 +186,7 @@ fn opened_read(
     let values = SelectionValues::read(selection)?;
     Ok(super::build_request(
         now,
-        super::RequestBasis::Held(&fdu_core::OpenedIndex::basis()),
+        super::RequestBasis::Opened,
         views,
         format,
         values.include,
