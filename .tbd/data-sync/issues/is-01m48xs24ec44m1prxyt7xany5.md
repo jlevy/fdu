@@ -5,7 +5,7 @@ title: "fdu 0.4.1: totals that match, and the 0.4.0 review follow-ups"
 kind: epic
 status: open
 priority: 1
-version: 13
+version: 14
 labels: []
 dependencies: []
 child_order_hints:
@@ -21,7 +21,8 @@ child_order_hints:
   - is-01m495eqrrn51b0cka51qtrh4j
   - is-01m495ercwjpy2gbztb68mg5tn
   - is-01m495ervajgkm115aaz2gwh6a
+  - is-01m495f4j208gctyd0npkhkz5n
 created_at: 2026-10-06T15:37:07.981Z
-updated_at: 2026-10-06T17:51:19.401Z
+updated_at: 2026-10-06T17:51:31.393Z
 ---
 Patch release after 0.4.0. Priority (maintainer, 2026-10-06): anything where totals do not match. P1: fdu-x3pq (documents TOTAL document_words/pages are pooled estimates that differ from the sum of the rows, in either direction; make logical words additive, e.g. the clamp per file, or otherwise make the total and the rows agree), with fdu-ao6i (test both directions). Related, larger: fdu-579b (hardlink attribution: totals that count a hardlinked file once per link differ from du; a design gate, may exceed a patch). Then the deferred review items from #177/#181: fdu-rdbq, fdu-0j83, fdu-r3k2, fdu-ki59, fdu-1iv2, fdu-jqfz, fdu-mvnp. Not here: fdu-ti4c (marking RequestError variants #[non_exhaustive] is breaking; next minor).
