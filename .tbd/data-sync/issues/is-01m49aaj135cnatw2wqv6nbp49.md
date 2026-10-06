@@ -3,9 +3,10 @@ type: is
 id: is-01m49aaj135cnatw2wqv6nbp49
 title: "Address PR #183 review A: README restructure follow-ups"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 16
+version: 17
+delegate: claude-code@spud10.local
 labels: []
 dependencies: []
 child_order_hints:
@@ -24,7 +25,10 @@ child_order_hints:
   - is-01m49ab0g4zj67rbwrwnygq24q
   - is-01m49ab0ywr0bnc1g5d18yke3n
   - is-01m49ab1e8g8ndbfs4yspnzvmx
+hold: null
+hold_until: null
 created_at: 2026-10-06T19:16:24.226Z
-updated_at: 2026-10-06T19:16:40.007Z
+updated_at: 2026-10-06T19:26:03.922Z
+started_at: 2026-10-06T19:26:03.921Z
 ---
 Review A (senior, round 1) on PR #183 at head 8440dfa4: https://github.com/jlevy/fdu/pull/183#issuecomment-6023645992. 3 Medium (A1-A3), 7 Low (A4-A10), suggestions A11-A15.
