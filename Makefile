@@ -190,8 +190,11 @@ test-performance: performance-probe
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
 # comparison is authoritative and catches execution failures or incomplete updates.
+# The updater writes literals over named patterns; restore those it only expanded, so
+# the diff left for review is the intentional change.
 golden-update: build $(NODE_INSTALL_STAMP)
 	-$(NPM) run test:golden:update
+	$(NODE) scripts/golden-restore-patterns.mjs
 	$(NPM) run test:golden
 
 $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
@@ -287,7 +290,7 @@ golden-invocations:
 	$(NODE) scripts/check-golden-invocations.mjs
 
 golden-observability:
-	$(NODE) --test scripts/check-golden-observability.test.mjs
+	$(NODE) --test scripts/check-golden-observability.test.mjs scripts/golden-restore-patterns.test.mjs
 	$(NODE) scripts/check-golden-observability.mjs
 
 # cli-animate (packages/cli-animate), the terminal-recording tool: typecheck and unit tests,
