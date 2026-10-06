@@ -60,7 +60,7 @@ Sections that share a denominator are listed under it once, in first-seen order
 (`code lines (CODE, LANGUAGES)`):
 
 ```text
-note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
+note: percentages are shares of code lines (CODE, LANGUAGES), document words (DOCUMENTS)
 ```
 
 Display-limit notes name their section the same way (`2 rows below min share in TYPES`),

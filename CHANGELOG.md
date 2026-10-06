@@ -81,9 +81,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no analyzer, and only a request that can add an analyzer is told to.
   A watch is the exception for now, because it checks a metric sort, and in Python a
   content view, before it refuses analysis: `fdu . --watch --sort=code_lines` says
-  `add --analyze code`, and `Index.watch()` names the analyzers its index was opened
-  with, remedies a watch then refuses.
-  A refused watch names every axis that enabled analysis:
+  `add --analyze code`, and `Index.watch()` says its index was opened with
+  `analyze none`, which sends the caller to reopen it with an analyzer that a watch then
+  refuses. A refused watch names every axis that enabled analysis:
   `fdu . --watch --analyze=words --view=code` says
   `--analyze words and --view code need words and code analysis`.
 - Human reports hold only the result: rows, column headings, and multi-view section
