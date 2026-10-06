@@ -117,18 +117,29 @@ const KNOBS =
   /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
-// A report's bound suggestions name the same setter differently on each surface.
-// The full line, including action and value, is pinned so no other tip can borrow this
-// exception merely because it contains a familiar word.
-const TIP_PAIRS = [
-  ['tip: show smaller entries: --min-share=0%', 'tip: show smaller entries: min_share=0%'],
-  ['tip: expand deeper: --depth=all', 'tip: expand deeper: depth=all'],
-  ['tip: show more children: --breadth=all', 'tip: show more children: breadth=all'],
-  ['tip: show more rows: --limit=all', 'tip: show more rows: limit=all'],
+// A report's one bound suggestion names the same setters differently on each surface: a
+// command line (`--min-share=0% --depth=all`) or one call's keyword arguments
+// (`min_share=0%, depth=all`). Every setter and value is pinned, and both lists must name
+// the same setters in the same order, so no other tip can borrow this exception merely
+// because it contains a familiar word.
+const BOUND_SETTERS = [
+  ['--min-share=0%', 'min_share=0%'],
+  ['--depth=all', 'depth=all'],
+  ['--breadth=all', 'breadth=all'],
+  ['--limit=all', 'limit=all'],
 ];
+const BOUND_TIP = 'tip: show more: ';
 const sameBoundTip = (removed, added) => {
   const marker = removed.startsWith('! ') ? '! ' : '';
-  return TIP_PAIRS.some(([cli, api]) => removed === marker + cli && added === marker + api);
+  if (!removed.startsWith(marker + BOUND_TIP) || !added.startsWith(marker + BOUND_TIP)) {
+    return false;
+  }
+  const cli = removed.slice(marker.length + BOUND_TIP.length).split(' ');
+  const api = added.slice(marker.length + BOUND_TIP.length).split(', ');
+  return (
+    cli.length === api.length &&
+    cli.every((flag, i) => BOUND_SETTERS.some(([c, a]) => flag === c && api[i] === a))
+  );
 };
 const sameAnalysisTip = (removed, added) =>
   removed === 'tip: include omitted views: add --analyze code' &&

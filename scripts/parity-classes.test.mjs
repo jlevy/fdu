@@ -136,17 +136,23 @@ test("bound tips accept only exact CLI-to-Python setter names and values", () =>
     classify(session([removed, "note: same fact"], [added, "note: same fact"]))?.id ===
     "bound-tip-vocabulary";
   for (const [cli, api] of [
-    ["tip: show smaller entries: --min-share=0%", "tip: show smaller entries: min_share=0%"],
-    ["tip: expand deeper: --depth=all", "tip: expand deeper: depth=all"],
-    ["tip: show more children: --breadth=all", "tip: show more children: breadth=all"],
-    ["tip: show more rows: --limit=all", "tip: show more rows: limit=all"],
+    ["tip: show more: --min-share=0%", "tip: show more: min_share=0%"],
+    ["tip: show more: --depth=all", "tip: show more: depth=all"],
+    ["tip: show more: --breadth=all", "tip: show more: breadth=all"],
+    ["tip: show more: --limit=all", "tip: show more: limit=all"],
+    ["tip: show more: --depth=all --limit=all", "tip: show more: depth=all, limit=all"],
   ]) {
     assert.ok(matches(cli, api), `${cli} / ${api}`);
     assert.ok(matches(`! ${cli}`, `! ${api}`), `stderr: ${cli}`);
     assert.ok(!matches(cli, `${api} now`), "extra text is a real difference");
     assert.ok(!matches(cli, api.replace("=all", "=3").replace("=0%", "=1%")), "value changed");
   }
-  assert.ok(!matches("tip: show smaller entries: --min-share=0%", "tip: expand deeper: depth=all"));
+  assert.ok(!matches("tip: show more: --min-share=0%", "tip: show more: depth=all"));
+  assert.ok(
+    !matches("tip: show more: --depth=all --limit=all", "tip: show more: limit=all, depth=all"),
+    "the same setters in the same order",
+  );
+  assert.ok(!matches("tip: show more: --depth=all --limit=all", "tip: show more: depth=all"));
 });
 
 test("the stale-answer warning accepts only its exact option translation", () => {
@@ -206,8 +212,8 @@ test("no class absorbs an extra changed line", () => {
       ["error: invalid modified_since", "total 999"],
     ),
     "bound-tip-vocabulary": session(
-      ["tip: expand deeper: --depth=all", "total 100"],
-      ["tip: expand deeper: depth=all", "total 999"],
+      ["tip: show more: --depth=all", "total 100"],
+      ["tip: show more: depth=all", "total 999"],
     ),
   };
   for (const cls of CLASSES) {
