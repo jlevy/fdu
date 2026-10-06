@@ -14,10 +14,11 @@ labeled with the components it covers.
 One pre-registered number that says how fast fdu is across everything it is for, with
 every component it is made of published beside it.
 The **fdu performance index** combines a fixed suite of components by a weighted sum of
-log runtime ratios. Each component is one user-facing scenario on one platform, or peak
-memory, and each ratio is measured within one interleaved session against a fixed
-reference build. The charted page shows the index as its headline line, and a chooser
-switches the same chart to any single component.
+log cost ratios (runtime, and peak memory for the memory component).
+Each component is one user-facing scenario on one platform, or peak memory, and each
+ratio is measured within one interleaved session against a fixed reference build.
+The charted page shows the index as its headline line, and a chooser switches the same
+chart to any single component.
 
 ## Goals
 
@@ -128,10 +129,15 @@ own session. The memory component has no interval of its own, and is not indepen
 the cells it is read from; it contributes its point value only.
 The interval of a ratio between two builds’ scores combines their two log-space errors
 the same way.
+Treating the two as independent is conservative: they share their reference
+sessions, so the true interval is narrower.
 
-**Memory.** Peak RSS enters as a ratio to the reference build: the geometric mean over
-the components whose cells record peak RSS for every build in the comparison, so every
-build’s memory is averaged over the same mix.
+**Memory.** Peak RSS enters as a ratio of medians to the reference build, not a paired
+figure, since the harness records peak RSS per arm.
+Each component counts once (a component with two jobs averages them first), and each
+score line averages its own components: the full score’s memory reads every measured
+component, and the partial score’s reads only the partial score’s components, so every
+build on a line is averaged over the same mix.
 
 ### The Suite
 
@@ -159,7 +165,7 @@ Weights per platform, set by the maintainer:
 | Warm metadata cache | two jobs on K: `cold-open-save`, a timed first run that scans and writes the snapshot; and `warm-revalidate`, the probe’s `revalidate` mode loading that snapshot and reconciling it, after an untimed run wrote it | Saving, loading, and revalidating an index | 7.5% |
 | Opened root | two jobs on K: the probe’s `opened-second-report` and `delta-apply-large` | Opening a root, discovering it, reporting again, and applying a change | 5% |
 | Scale | `fdu --cache off PATH` on G | Very large trees, where peers compete hardest | 5% |
-| Memory | Peak RSS of the components every build has | A speedup bought with memory is not free | 5% |
+| Memory | Peak RSS of each score line’s own components, each counted once | A speedup bought with memory is not free | 5% |
 
 Every job is timed whole-process, from launch to exit, so a probe job’s timed region
 includes the discovery, snapshot load, and snapshot save around its own component timer.
@@ -207,7 +213,7 @@ component exercises it.
 | `warm-revalidate`, `warm-snapshot-load` | Warm metadata cache | The timed `warm-revalidate` job, which loads the snapshot and reconciles it |
 | `opened-discovery`, `opened-second-report`, `index-second-report` | Opened root | The timed `opened-second-report` job, which opens, discovers, and reports again |
 | `delta-apply-large`, `delta-apply-batched` | Opened root | The timed `delta-apply-large` job |
-| Peak RSS on any job | Memory | Peak RSS of the components every build has |
+| Peak RSS on any job | Memory | Peak RSS of every measured component |
 
 The job table is a separate file from the weighted suite, so mapping a new job to an
 existing component is not a new index version; adding or reweighting a component is.
@@ -263,7 +269,10 @@ Both halves are in the score, so a platform-specific change shows too.
 
 - **The suite manifest** at `explorations/benchmarks/index-suite.json`: components,
   weights, trees, cache states, the reference build, and a version number.
-  A change to a component or a weight is a new version, never an edit.
+  Version 1 was revised during this spec’s review, before any of its changed components
+  was measured, and is frozen when [#176](https://github.com/jlevy/fdu/pull/176) merges;
+  from then on a change to a component or a weight is a new version, never an edit, and
+  each cell’s definition digest catches an edit in place.
 - **The job table** at `explorations/benchmarks/index-jobs.json`, mapping every recorded
   job to a component.
 - **The history driver** at `explorations/benchmarks/realtree/history.py`, with tests.
@@ -329,9 +338,9 @@ components.
 - **The case against.**
   - A single score invites optimizing the score.
     Concretely: on builds since 0.2.0 the cold-cache, default-tree, and scale components
-    are all full scans, 35% of the weight, and the summary view is a fourth at 7.5%, so
-    the cheapest way to raise the score is the walker, not the cache and content work
-    the weights favour.
+    are all full scans, at least 35% of the weight, and the summary view is a fourth at
+    7.5%, so the cheapest way to raise the score is the walker, not the cache and
+    content work the weights favour.
   - Any weighting is a judgment that suits some users and not others.
   - The full suite costs hours per refresh.
   - The mitigations are pre-registration, versioned manifests, always-visible
