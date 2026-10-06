@@ -3,7 +3,8 @@
  "component": "cold-cache",
  "manifest_version": 1,
  "platform": "macOS",
- "run_artifact": "run-linux-v6.12-macos-fdu-history.json(.gz)",
+ "run_artifact": "macos-linux-v6.12-internal.run.json.gz",
+ "driver": "a scratch driver around benchmarks.realtree.compare_tools; it moves into the harness as benchmarks.realtree.history",
  "harness": {
   "module": "benchmarks.realtree.compare_tools (unmodified, via drive_history.py registering two argv contracts)",
   "harness_revision": "17b23c198e14b3b101d65d08d5ce1aa258c1b854",

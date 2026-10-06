@@ -475,10 +475,14 @@ def load_history(directory: Path) -> List[Dict[str, Any]]:
 
     A history cell times every milestone build in one interleaved session on one tree, so
     its milestones compare with each other directly, which no chain of experiments can.
+    Cells are listed by their `display_order`, then by file name.
     """
     cells = []
+    summaries = []
     for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
-        summary = json.loads(path.read_text(encoding="utf-8"))
+        summaries.append((path, json.loads(path.read_text(encoding="utf-8"))))
+    summaries.sort(key=lambda item: (item[1].get("display_order", float("inf")), item[0].name))
+    for path, summary in summaries:
         subject = summary.get("subject") or {}
         host = summary.get("host") or {}
         milestones = []

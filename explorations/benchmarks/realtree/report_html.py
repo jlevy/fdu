@@ -498,117 +498,49 @@ def figure_end_to_end(dataset: Mapping[str, Any], platform: str = "Linux") -> st
     )
 
 
-# ---------------------------------------------------------------- figure: phases
+# ---------------------------------------------------------------- figure: iterations
 
-#: The phases the loop has run in, by experiment number, each with the question it
-#: asked. The loop history report tells each one in full. A record in no phase is
-#: counted in a trailing row rather than dropped, so a new experiment can never vanish
-#: from the page before someone gives it a phase.
-PHASES = (
-    (
-        "Building the loop",
-        frozenset(range(0, 66)),
-        "Where does a cold scan and a warm open spend its time? The accept rule, paired "
-        "measurement, the record, and the counters were built here.",
-    ),
-    (
-        "A denominator and a strategy",
-        frozenset([*range(66, 71), 104]),
-        "How much is left? The syscall floor gave every tier a denominator, and the "
-        "default command was measured for the first time.",
-    ),
-    (
-        "Closing a rewrite's regression",
-        frozenset(range(71, 104)),
-        "What closes the streaming engine's gap without changing an answer? Then the H86 "
-        "structural composite, judged as one experiment.",
-    ),
-    (
-        "Unattended rounds",
-        frozenset(range(105, 156)),
-        "On the 0.1.0 engine, what is left in the default command and a warm content "
-        "open? Run overnight by an agent, first on macOS, then on Linux.",
-    ),
-    (
-        "Release-driven questions",
-        frozenset([*range(156, 175), *range(187, 192)]),
-        "Questions 0.2.0 raised, ending in the finding that .gitignore classification "
-        "was most of the Linux default command.",
-    ),
-    (
-        "Linux against its peers",
-        frozenset([*range(175, 187), *range(192, 203)]),
-        "Can the default command beat pdu on real trees with .gitignore on and no answer "
-        "changed? One unattended night, the pdu track, and the 0.3.0 release cell.",
-    ),
-)
-
-
-def id_ranges(numbers: Sequence[int], recorded: Optional[Sequence[int]] = None) -> str:
-    """Experiment numbers as id ranges: exp-066–070, exp-104.
-
-    A gap holding only unused ids (numbers no record carries) does not split a range, so
-    exp-113's absence leaves exp-105–155 whole. Without `recorded`, every gap splits.
-    """
-    spans: List[List[int]] = []
-    for number in sorted(numbers):
-        gap = range(spans[-1][1] + 1, number) if spans else range(0)
-        unused = recorded is not None and not any(item in recorded for item in gap)
-        if spans and (number == spans[-1][1] + 1 or unused):
-            spans[-1][1] = number
-        else:
-            spans.append([number, number])
-    return ", ".join(
-        f"exp-{low:03d}" if low == high else f"exp-{low:03d}\u2013{high:03d}"
-        for low, high in spans
-    )
-
-
-def phase_rows(dataset: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    """Each phase's verdict counts, id span, and platforms, read from the records."""
-    groups: List[tuple] = [(name, numbers, question) for name, numbers, question in PHASES]
-    assigned = set().union(*(numbers for _, numbers, _ in PHASES))
-    later = frozenset(
-        record["number"] for record in dataset["experiments"] if record["number"] not in assigned
-    )
-    if later:
-        groups.append(("Not yet assigned a phase", later, "Recorded after the phases above."))
-    rows = []
-    for name, numbers, question in groups:
-        records = [record for record in dataset["experiments"] if record["number"] in numbers]
-        if not records:
-            continue
-        counts = {
-            "accepted": sum(record["decision"] == "accepted" for record in records),
-            "rejected": sum(record["decision"] == "rejected" for record in records),
-        }
-        counts["other"] = len(records) - counts["accepted"] - counts["rejected"]
-        platforms = sorted({record["platform"] for record in records})
-        rows.append(
-            {
-                "name": name,
-                "question": question,
-                "total": len(records),
-                "counts": counts,
-                "platforms": platforms,
-                "ids": id_ranges(
-                    [record["number"] for record in records],
-                    [record["number"] for record in dataset["experiments"]],
-                ),
-            }
-        )
-    return rows
+#: Accepted records that measure earlier changes again rather than adding one, with the
+#: reason. A record's fields cannot tell these apart: checkpoints record changed lines,
+#: and real changes sometimes record none (exp-015, exp-187, exp-190), so the list is
+#: explicit. Drawing them as kept changes counted campaign 1 four times over.
+REMEASUREMENTS = {
+    "exp-006": "a cumulative checkpoint against the pre-work binary",
+    "exp-023": "a cumulative checkpoint against the pre-work binary",
+    "exp-027": "a cumulative checkpoint against the pre-work binary",
+    "exp-032": "a cumulative checkpoint against the pre-work binary",
+    "exp-033": "a validation after the composable command line merged",
+    "exp-034": "a validation after the composable command line merged",
+    "exp-035": "a validation after the composable command line merged",
+    "exp-054": "the Linux campaign's changes validated on macOS",
+    "exp-065": "exp-064's change validated on a second tree",
+    "exp-071": "a rewrite measured against its own regression",
+    "exp-126": "a leftover determination, no code change",
+    "exp-134": "a leftover determination, no code change",
+    "exp-136": "a leftover determination, no code change",
+    "exp-138": "macOS changes validated on Linux",
+    "exp-140": "macOS changes validated on Linux",
+    "exp-148": "a screen that kept neither arm",
+    "exp-154": "a PGO screen whose kept arm is the control",
+}
 
 
 def iteration_kind(record: Mapping[str, Any]) -> str:
     """How the iterations figure colours one experiment.
 
-    `kept` is an accepted change whose primary metric improved by at least the accept
-    threshold; `rejected` is a change tried and not kept; everything else (baselines,
-    checkpoints, profiles, noninferiority steps, unfinished work) is `measured`.
+    `kept` is an accepted change, not a re-measurement, whose primary metric improved by
+    at least the accept threshold and whose candidate stayed; `rejected` is a change
+    tried and not kept; everything else (baselines, checkpoints, validations,
+    determinations, noninferiority steps, unfinished work) is `measured`.
     """
     change = record.get("change_pct")
-    if record["decision"] == "accepted" and change is not None and change <= -3:
+    if (
+        record["decision"] == "accepted"
+        and change is not None
+        and change <= -3
+        and record["id"] not in REMEASUREMENTS
+        and record.get("kept") != "control"
+    ):
         return "kept"
     if record["decision"] == "rejected":
         return "rejected"
@@ -624,10 +556,6 @@ def _chronological(dataset: Mapping[str, Any]) -> List[Mapping[str, Any]]:
     return sorted(dataset["experiments"], key=lambda record: (record.get("date") or "", record["number"]))
 
 
-def history_cell(dataset: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-    """The history cell the timeline draws: the first one recorded, if any."""
-    cells = dataset.get("history") or []
-    return cells[0] if cells else None
 
 
 def metric_series(dataset: Mapping[str, Any], position: Mapping[str, int]) -> List[Dict[str, Any]]:
@@ -755,7 +683,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
     The top panel is total runtime on one fixed benchmark, measured for every milestone
     build in one interleaved session, so its steps compare directly. The bottom panel is
     every experiment's paired change on its own primary job, green where a change was
-    kept, red where it was tried and dropped, with the running count of kept changes.
+    kept, red where it was tried and dropped, grey for re-measurements and other verdicts.
     The bottom panel's effects are not multiplied into a runtime: each was measured on
     its own job and tree, and compounding them would claim a speed-up no build shows.
     """
@@ -906,7 +834,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
             group.append("</g>")
             out.extend(group)
 
-    # Bottom panel: every experiment, plus the running count of kept changes.
+    # Bottom panel: every experiment, coloured by what it did.
     low, high = ITERATION_CLAMP
     y_of_change = lambda faster: bottom_y0 + (high - faster) / (high - low) * bottom_h
     zero = y_of_change(0.0)
@@ -959,6 +887,11 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                 f"on {record.get('primary_job') or 'its job'}"
                 + (f" ({metric})" if metric not in (None, "wall_ns") else "")
                 + f"\nCounts toward: {counts_toward}, {record.get('platform') or 'its platform'}"
+                + (
+                    f"\nNot a new change: {REMEASUREMENTS[record['id']]}"
+                    if record["id"] in REMEASUREMENTS
+                    else ""
+                )
             )
             + "/>"
         )
@@ -2344,7 +2277,13 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
     ):
         if key == "common" and len(projected["common"]) == len(projected["measured"]):
             continue
-        builds = [build for build in projected["builds"] if build.get(key)]
+        # Only builds the chart can place, so the headline and the chart agree.
+        recorded = {record["id"] for record in dataset["experiments"]}
+        builds = [
+            build
+            for build in projected["builds"]
+            if build.get(key) and build.get("after_experiment") in recorded
+        ]
         if len(builds) < 2:
             continue
         first, last = builds[0][key], builds[-1][key]
@@ -2366,8 +2305,15 @@ def _history_figure(dataset: Mapping[str, Any]) -> str:
     paired figure stays in the record.
     """
     figures = [_score_figure(dataset)]
+    # The same builds the chart can place, so the headline never states a ratio between
+    # builds the chart does not draw.
+    recorded = {record["id"] for record in dataset["experiments"]}
     for cell in dataset.get("history") or []:
-        milestones = [item for item in cell.get("milestones", []) if item.get("wall_ms")]
+        milestones = [
+            item
+            for item in cell.get("milestones", [])
+            if item.get("wall_ms") and item.get("after_experiment") in recorded
+        ]
         if len(milestones) < 2:
             continue
         first, last = milestones[0], milestones[-1]
@@ -2398,7 +2344,7 @@ the {decisions.get('rejected', 0)} that did not pay.</p>
   <div><span class="n tnum">{totals['experiments']}</span>
     <span class="k">experiments</span></div>
   <div><span class="n tnum good">{kept}</span>
-    <span class="k">kept, and better</span></div>
+    <span class="k">changes kept, 3% or more better</span></div>
   <div><span class="n tnum">{decisions.get('rejected', 0)}</span>
     <span class="k">tried, not kept</span></div>
 </div>
@@ -2416,11 +2362,13 @@ def _section_iterations(dataset: Mapping[str, Any]) -> str:
 <h3>Total runtime, and every experiment that changed it</h3>
 <p>The top panel is fdu&rsquo;s total runtime on two fixed benchmarks, a generated
 million-entry tree and the Linux kernel source with its <code>.gitignore</code> files. Each
-milestone build was timed side by side in one session per benchmark, so the steps are the
-real accumulated improvement. The bottom panel is every experiment in the order it ran: green bars were
-kept, red bars were tried and dropped. Most
-ideas moved their job by less than the 3% a change must clear; the tall green bars are the
-changes that made fdu fast.</p>
+milestone build was timed side by side in one session per benchmark, on a busy desktop, so
+the steps are measured accumulated improvement, and differences of about 10% between
+adjacent builds are within the noise. The bottom panel is every experiment in the order it
+ran, each on its own primary metric: green bars are changes that were kept, red bars were
+tried and dropped, and grey bars are checkpoints, validations, and other measurements of
+work already counted. Most ideas moved their job by less than the 3% a change must
+clear.</p>
 {figure_timeline(dataset)}
 """
 
@@ -2432,7 +2380,8 @@ def _section_loop(dataset: Mapping[str, Any]) -> str:
 effect, builds exactly one change, checks that every answer is unchanged, and measures it
 against the code it came from &mdash; both binaries interleaved in one run on a tree pinned
 by content digest, at least twelve paired trials and twenty when the predicted effect is
-small, with any sample taken on a busy host thrown out. A change is kept when it is at
+small. A controlled cell throws out any sample taken on a busy host; an exploratory cell
+on an uncontrolled host keeps them and says so. A change is kept when it is at
 least 3% faster with its 95% interval clear of zero. Each result, kept or not, is stored as
 a validated record, and this page is regenerated from those records.</p>
 """

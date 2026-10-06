@@ -306,8 +306,8 @@ the 61 that did not pay.</p>
   <div><span class="n good">4.5&times; better</span><span class="k">unified score, macOS, start to 0.3.0 [4.4&times;, 4.6&times;]; 3 of 12 components</span></div><div><span class="n good">10.8&times; faster</span><span class="k">the generated 1M-entry tree, first build to 0.3.0</span></div><div><span class="n good">3.3&times; faster</span><span class="k">the Linux v6.12 source tree, first build to 0.3.0</span></div><div><span class="n">209 ms <span class="muted">&rarr;</span> <span class="good">110 ms</span></span><span class="k">Linux default tree, 0.2.1 to 0.3.0</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
   <div><span class="n tnum">200</span>
     <span class="k">experiments</span></div>
-  <div><span class="n tnum good">74</span>
-    <span class="k">kept, and better</span></div>
+  <div><span class="n tnum good">57</span>
+    <span class="k">changes kept, 3% or more better</span></div>
   <div><span class="n tnum">61</span>
     <span class="k">tried, not kept</span></div>
 </div>
@@ -321,11 +321,13 @@ against other tools is in the comparisons
 <h3>Total runtime, and every experiment that changed it</h3>
 <p>The top panel is fdu&rsquo;s total runtime on two fixed benchmarks, a generated
 million-entry tree and the Linux kernel source with its <code>.gitignore</code> files. Each
-milestone build was timed side by side in one session per benchmark, so the steps are the
-real accumulated improvement. The bottom panel is every experiment in the order it ran: green bars were
-kept, red bars were tried and dropped. Most
-ideas moved their job by less than the 3% a change must clear; the tall green bars are the
-changes that made fdu fast.</p>
+milestone build was timed side by side in one session per benchmark, on a busy desktop, so
+the steps are measured accumulated improvement, and differences of about 10% between
+adjacent builds are within the noise. The bottom panel is every experiment in the order it
+ran, each on its own primary metric: green bars are changes that were kept, red bars were
+tried and dropped, and grey bars are checkpoints, validations, and other measurements of
+work already counted. Most ideas moved their job by less than the 3% a change must
+clear.</p>
 <figure class="fig"><p class="metric-chooser"><label>Metric <select id="metric" data-platform="macOS"><option value="score" selected>Unified score (macOS, 25% of the suite measured)</option><option value="cold-cache">Cold cache</option><option value="memory">Memory</option><option value="scale">Scale</option></select></label> <span class="muted">Bars that do not count toward the chosen metric are faded.</span></p><svg class="chart" viewBox="0 0 900 608" role="img" preserveAspectRatio="xMinYMin meet" aria-label="Total runtime on fixed benchmarks above, every experiment&#x27;s effect below"><title>Total runtime on fixed benchmarks above, every experiment&#x27;s effect below</title><desc>Top: measured runtime of each milestone build on each benchmark, as a share of its first build. Bottom: one bar per experiment, green kept, red not kept.</desc><line class="grid" x1="64.0" y1="70" x2="64.0" y2="564"/><text class="tick" x="67.0" y="580">Aug 10</text><line class="grid" x1="190.9" y1="70" x2="190.9" y2="564"/><text class="tick" x="193.9" y="580">Aug 13</text><line class="grid" x1="256.1" y1="70" x2="256.1" y2="564"/><text class="tick" x="259.1" y="580">Aug 15</text><line class="grid" x1="413.9" y1="70" x2="413.9" y2="564"/><text class="tick" x="416.9" y="580">Sep 2</text><line class="grid" x1="533.9" y1="70" x2="533.9" y2="564"/><text class="tick" x="536.9" y="580">Sep 20</text><line class="grid" x1="602.5" y1="70" x2="602.5" y2="564"/><text class="tick" x="605.5" y="580">Sep 27</text><line class="grid" x1="671.1" y1="70" x2="671.1" y2="564"/><text class="tick" x="674.1" y="580">Sep 29</text><text class="tick axis-name" x="64" y="602">experiments in the order they ran</text><line class="grid" x1="64" y1="265.7" x2="750" y2="265.7"/><text class="tick" x="58" y="269.7" text-anchor="end">1&times;</text><line class="grid" x1="64" y1="211.8" x2="750" y2="211.8"/><text class="tick" x="58" y="215.8" text-anchor="end">2&times;</text><line class="grid" x1="64" y1="140.5" x2="750" y2="140.5"/><text class="tick" x="58" y="144.5" text-anchor="end">5&times;</text><line class="grid" x1="64" y1="86.5" x2="750" y2="86.5"/><text class="tick" x="58" y="90.5" text-anchor="end">10&times;</text><text class="tick axis-name" x="64" y="24">the chosen metric as a multiple of v0.3.0&rsquo;s, log scale &mdash; lower is better; builds numbered</text><line class="grid" x1="65.7" y1="43" x2="65.7" y2="280"/><text class="point-label" x="65.7" y="40" text-anchor="middle">1</text><line class="grid" x1="69.1" y1="53" x2="69.1" y2="280"/><text class="point-label" x="69.1" y="50" text-anchor="middle">2</text><line class="grid" x1="141.2" y1="63" x2="141.2" y2="280"/><text class="point-label" x="141.2" y="60" text-anchor="middle">3</text><line class="grid" x1="168.6" y1="43" x2="168.6" y2="280"/><text class="point-label" x="168.6" y="40" text-anchor="middle">4</text><line class="grid" x1="412.1" y1="53" x2="412.1" y2="280"/><text class="point-label" x="412.1" y="50" text-anchor="middle">5</text><line class="grid" x1="600.8" y1="63" x2="600.8" y2="280"/><text class="point-label" x="600.8" y="60" text-anchor="middle">6</text><line class="grid" x1="621.4" y1="43" x2="621.4" y2="280"/><text class="point-label" x="621.4" y="40" text-anchor="middle">7</text><line class="grid" x1="669.4" y1="53" x2="669.4" y2="280"/><text class="point-label" x="669.4" y="50" text-anchor="middle">8</text><line class="grid" x1="683.1" y1="63" x2="683.1" y2="280"/><text class="point-label" x="683.1" y="60" text-anchor="middle">9</text><line class="grid" x1="690.0" y1="43" x2="690.0" y2="280"/><text class="point-label" x="690.0" y="40" text-anchor="middle">10</text><line class="grid" x1="724.3" y1="53" x2="724.3" y2="280"/><text class="point-label" x="724.3" y="50" text-anchor="middle">11</text><line class="grid" x1="744.9" y1="63" x2="744.9" y2="280"/><text class="point-label" x="744.9" y="60" text-anchor="middle">12</text><line class="grid" x1="748.3" y1="43" x2="748.3" y2="280"/><text class="point-label" x="748.3" y="40" text-anchor="middle">13</text><g class="metric on" data-metric="score"><polyline class="series-mac series-line" points="65.7,148.8 69.1,148.8 69.1,223.0 141.2,223.0 141.2,242.0 168.6,242.0 168.6,240.9 412.1,240.9 412.1,248.5 600.8,248.5 600.8,200.0 621.4,200.0 621.4,201.2 669.4,201.2 669.4,241.3 683.1,241.3 683.1,243.2 690.0,243.2 690.0,262.4 724.3,262.4 724.3,262.0 744.9,262.0 744.9,263.6 748.3,263.6 748.3,265.7 750.0,265.7"/><circle class="series-mac" cx="65.7" cy="148.8" r="3.5"/><rect class="hit" x="58.7" y="141.8" width="14" height="14" data-tip="Unified score (macOS, 25% of the suite measured), full score, 3 of 12 components: start (b565882b, 2026-08-10)
 pre-work baseline: serial walker, no .gitignore support
 4.49x the reference build&#x27;s time; index 4.491 of v0.3.0, all 3 measured components"/><circle class="series-mac" cx="69.1" cy="223.0" r="3.5"/><rect class="hit" x="62.1" y="216.0" width="14" height="14" data-tip="Unified score (macOS, 25% of the suite measured), full score, 3 of 12 components: H1 producer (a0cc981d, 2026-08-10)
@@ -442,9 +444,10 @@ Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="78.2" y="467.7"
 candidate kept, kept, better: -9.4% on warm-revalidate
 Counts toward: warm-metadata, macOS"/><rect class="dot-good bar" x="81.7" y="445.2" width="2.4" height="45.5" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="81.2" y="344" width="3.4" height="220" data-tip="exp-005: Snapshot load resolves through the parent
 candidate kept, kept, better: -18.6% on warm-snapshot-load
-Counts toward: warm-metadata, macOS"/><rect class="dot-good bar" x="85.1" y="371.1" width="2.4" height="119.6" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="84.6" y="344" width="3.4" height="220" data-tip="exp-006: Cumulative effect of every accepted change
-candidate kept, kept, better: -48.9% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="88.5" y="473.3" width="2.4" height="17.3" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="88.0" y="344" width="3.4" height="220" data-tip="exp-007: Direct reconcile reads expectations off entry ids
+Counts toward: warm-metadata, macOS"/><rect class="dot-flat bar" x="85.1" y="371.1" width="2.4" height="119.6" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="84.6" y="344" width="3.4" height="220" data-tip="exp-006: Cumulative effect of every accepted change
+candidate kept, measured: -48.9% on cold-scan-index
+Counts toward: Cold cache, macOS
+Not a new change: a cumulative checkpoint against the pre-work binary"/><rect class="dot-good bar" x="88.5" y="473.3" width="2.4" height="17.3" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="88.0" y="344" width="3.4" height="220" data-tip="exp-007: Direct reconcile reads expectations off entry ids
 candidate kept, kept, better: -7.1% on warm-revalidate
 Counts toward: warm-metadata, macOS"/><rect class="dot-good bar" x="92.0" y="452.4" width="2.4" height="38.3" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="91.4" y="344" width="3.4" height="220" data-tip="exp-008: Extensions interned to integer ids
 candidate kept, kept, better: -15.7% on cold-scan-index
@@ -476,17 +479,19 @@ Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="136.5" y="477.7
 candidate kept, kept, better: -5.3% on cold-scan-index
 Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="140.0" y="417.0" width="2.4" height="73.7" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="139.5" y="344" width="3.4" height="220" data-tip="exp-022: Batch macOS scan metadata with getattrlistbulk
 candidate kept, kept, better: -30.1% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="143.4" y="359.9" width="2.4" height="130.8" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="142.9" y="344" width="3.4" height="220" data-tip="exp-023: Cumulative effect through adaptive scanning and macOS bulk metadata
-candidate kept, kept, better: -53.5% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-bad bar" x="146.8" y="490.5" width="2.4" height="1.0" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="146.3" y="344" width="3.4" height="220" data-tip="exp-024: Open macOS directories relative to one retained root fd
+Counts toward: Cold cache, macOS"/><rect class="dot-flat bar" x="143.4" y="359.9" width="2.4" height="130.8" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="142.9" y="344" width="3.4" height="220" data-tip="exp-023: Cumulative effect through adaptive scanning and macOS bulk metadata
+candidate kept, measured: -53.5% on cold-scan-index
+Counts toward: Cold cache, macOS
+Not a new change: a cumulative checkpoint against the pre-work binary"/><rect class="dot-bad bar" x="146.8" y="490.5" width="2.4" height="1.0" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="146.3" y="344" width="3.4" height="220" data-tip="exp-024: Open macOS directories relative to one retained root fd
 rejected, tried, not kept: -0.1% on cold-scan-index
 Counts toward: Cold cache, macOS"/><rect class="dot-bad bar" x="150.3" y="490.7" width="2.4" height="46.9" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="149.8" y="344" width="3.4" height="220" data-tip="exp-025: Revisit worker depth after macOS bulk metadata
 rejected, tried, not kept: +19.2% on cold-scan-index
 Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="153.7" y="406.6" width="2.4" height="84.1" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="153.2" y="344" width="3.4" height="220" data-tip="exp-026: Reuse macOS bulk metadata during full reconciliation
 candidate kept, kept, better: -34.4% on warm-revalidate
-Counts toward: warm-metadata, macOS"/><rect class="dot-good bar" x="157.1" y="361.5" width="2.4" height="129.2" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="156.6" y="344" width="3.4" height="220" data-tip="exp-027: Cumulative effect through bulk reconciliation
-candidate kept, kept, better: -52.8% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-bad bar" x="160.6" y="490.7" width="2.4" height="1.0" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="160.0" y="344" width="3.4" height="220" data-tip="exp-028: Reuse macOS bulk directory staging allocations
+Counts toward: warm-metadata, macOS"/><rect class="dot-flat bar" x="157.1" y="361.5" width="2.4" height="129.2" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="156.6" y="344" width="3.4" height="220" data-tip="exp-027: Cumulative effect through bulk reconciliation
+candidate kept, measured: -52.8% on cold-scan-index
+Counts toward: Cold cache, macOS
+Not a new change: a cumulative checkpoint against the pre-work binary"/><rect class="dot-bad bar" x="160.6" y="490.7" width="2.4" height="1.0" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="160.0" y="344" width="3.4" height="220" data-tip="exp-028: Reuse macOS bulk directory staging allocations
 rejected, tried, not kept: +0.2% on cold-scan-index
 Counts toward: Cold cache, macOS"/><rect class="dot-bad bar" x="164.0" y="486.3" width="2.4" height="4.4" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="163.5" y="344" width="3.4" height="220" data-tip="exp-029: Increase macOS bulk metadata buffer to 256 KiB
 rejected, tried, not kept: -1.8% on cold-scan-index
@@ -494,15 +499,19 @@ Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="167.4" y="345.1
 candidate kept, kept, better: -59.5% on warm-revalidate
 Counts toward: warm-metadata, macOS"/><rect class="dot-bad bar" x="170.8" y="490.7" width="2.4" height="4.0" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="170.3" y="344" width="3.4" height="220" data-tip="exp-031: Increase immutable-baseline reconciliation waves to 4096 directories
 rejected, tried, not kept: +1.6% on warm-revalidate
-Counts toward: warm-metadata, macOS"/><rect class="dot-good bar" x="174.3" y="357.4" width="2.4" height="133.3" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="173.8" y="344" width="3.4" height="220" data-tip="exp-032: Cumulative effect through bounded parallel reconciliation
-candidate kept, kept, better: -54.5% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="177.7" y="387.4" width="2.4" height="103.3" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="177.2" y="344" width="3.4" height="220" data-tip="exp-033: Post-composable-CLI integration validation
-candidate kept, kept, better: -42.3% on warm-revalidate
-Counts toward: warm-metadata, macOS"/><rect class="dot-good bar" x="181.1" y="416.2" width="2.4" height="74.5" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="180.6" y="344" width="3.4" height="220" data-tip="exp-034: Post-composable-CLI validation under cache pressure
-candidate kept, kept, better: -30.5% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="184.6" y="414.0" width="2.4" height="76.6" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="184.1" y="344" width="3.4" height="220" data-tip="exp-035: Post-composable-CLI validation on the live 1M workspace
-candidate kept, kept, better: -31.3% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-bad bar" x="188.0" y="487.5" width="2.4" height="3.2" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="187.5" y="344" width="3.4" height="220" data-tip="exp-036: Revisit worker depth on the live 1M workspace
+Counts toward: warm-metadata, macOS"/><rect class="dot-flat bar" x="174.3" y="357.4" width="2.4" height="133.3" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="173.8" y="344" width="3.4" height="220" data-tip="exp-032: Cumulative effect through bounded parallel reconciliation
+candidate kept, measured: -54.5% on cold-scan-index
+Counts toward: Cold cache, macOS
+Not a new change: a cumulative checkpoint against the pre-work binary"/><rect class="dot-flat bar" x="177.7" y="387.4" width="2.4" height="103.3" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="177.2" y="344" width="3.4" height="220" data-tip="exp-033: Post-composable-CLI integration validation
+candidate kept, measured: -42.3% on warm-revalidate
+Counts toward: warm-metadata, macOS
+Not a new change: a validation after the composable command line merged"/><rect class="dot-flat bar" x="181.1" y="416.2" width="2.4" height="74.5" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="180.6" y="344" width="3.4" height="220" data-tip="exp-034: Post-composable-CLI validation under cache pressure
+candidate kept, measured: -30.5% on cold-scan-index
+Counts toward: Cold cache, macOS
+Not a new change: a validation after the composable command line merged"/><rect class="dot-flat bar" x="184.6" y="414.0" width="2.4" height="76.6" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="184.1" y="344" width="3.4" height="220" data-tip="exp-035: Post-composable-CLI validation on the live 1M workspace
+candidate kept, measured: -31.3% on cold-scan-index
+Counts toward: Cold cache, macOS
+Not a new change: a validation after the composable command line merged"/><rect class="dot-bad bar" x="188.0" y="487.5" width="2.4" height="3.2" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="187.5" y="344" width="3.4" height="220" data-tip="exp-036: Revisit worker depth on the live 1M workspace
 rejected, tried, not kept: -1.3% on cold-scan-index
 Counts toward: Cold cache, macOS"/><rect class="dot-bad bar" x="191.4" y="490.7" width="2.4" height="8.7" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="190.9" y="344" width="3.4" height="220" data-tip="exp-037: Revisit breadth-first versus depth-first on the live 1M workspace
 rejected, tried, not kept: +3.6% on cold-scan-index
@@ -538,9 +547,10 @@ Counts toward: Cold cache, Linux"/><rect class="dot-flat bar" x="242.9" y="490.7
 candidate kept, measured: +0.0% on cold-scan-index
 Counts toward: Cold cache, Linux"/><rect class="dot-flat bar" x="246.3" y="487.6" width="2.4" height="3.1" data-component="cold-cache" data-platform="Linux"/><rect class="hit" x="245.8" y="344" width="3.4" height="220" data-tip="exp-053: Move instrumentation to a runtime toggle and measure all three of its costs
 candidate kept, measured: -1.3% on cold-scan-index
-Counts toward: Cold cache, Linux"/><rect class="dot-good bar" x="249.7" y="452.3" width="2.4" height="38.3" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="249.2" y="344" width="3.4" height="220" data-tip="exp-054: Validate the Linux campaign&#x27;s cumulative effect on macOS
-candidate kept, kept, better: -15.7% on warm-revalidate
-Counts toward: warm-metadata, macOS"/><rect class="dot-flat bar" x="253.2" y="488.3" width="2.4" height="2.3" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="252.7" y="344" width="3.4" height="220" data-tip="exp-055: Validate review fixes on macOS
+Counts toward: Cold cache, Linux"/><rect class="dot-flat bar" x="249.7" y="452.3" width="2.4" height="38.3" data-component="warm-metadata" data-platform="macOS"/><rect class="hit" x="249.2" y="344" width="3.4" height="220" data-tip="exp-054: Validate the Linux campaign&#x27;s cumulative effect on macOS
+candidate kept, measured: -15.7% on warm-revalidate
+Counts toward: warm-metadata, macOS
+Not a new change: the Linux campaign&#x27;s changes validated on macOS"/><rect class="dot-flat bar" x="253.2" y="488.3" width="2.4" height="2.3" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="252.7" y="344" width="3.4" height="220" data-tip="exp-055: Validate review fixes on macOS
 candidate kept, measured: -0.9% on cold-scan-index
 Counts toward: Cold cache, macOS"/><rect class="dot-flat bar" x="256.6" y="489.3" width="2.4" height="1.3" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="256.1" y="344" width="3.4" height="220" data-tip="exp-056: Bound adaptive scan diagnostics overhead
 candidate kept, measured: -0.5% on cold-scan-index
@@ -560,9 +570,10 @@ Counts toward: Cold cache, Linux"/><rect class="dot-good bar" x="280.6" y="465.0
 candidate kept, kept, better: -10.5% on cold-open-save
 Counts toward: warm-metadata, Linux"/><rect class="dot-good bar" x="284.0" y="416.6" width="2.4" height="74.1" data-component="warm-content-code" data-platform="Linux"/><rect class="hit" x="283.5" y="344" width="3.4" height="220" data-tip="exp-064: Content roll-up lookup and indexed type-rule tiers
 candidate kept, kept, better: -30.3% on content-cache-hit
-Counts toward: warm-content-code, Linux"/><rect class="dot-good bar" x="287.5" y="427.7" width="2.4" height="63.0" data-component="warm-content-code" data-platform="Linux"/><rect class="hit" x="287.0" y="344" width="3.4" height="220" data-tip="exp-065: Validate the content roll-up change on a dense real tree
-candidate kept, kept, better: -25.8% on content-cache-hit
-Counts toward: warm-content-code, Linux"/><rect class="dot-flat bar" x="290.9" y="486.0" width="2.4" height="4.7" data-component="default-tree" data-platform="macOS"/><rect class="hit" x="290.4" y="344" width="3.4" height="220" data-tip="exp-066: Baseline for the default command on a real package cache
+Counts toward: warm-content-code, Linux"/><rect class="dot-flat bar" x="287.5" y="427.7" width="2.4" height="63.0" data-component="warm-content-code" data-platform="Linux"/><rect class="hit" x="287.0" y="344" width="3.4" height="220" data-tip="exp-065: Validate the content roll-up change on a dense real tree
+candidate kept, measured: -25.8% on content-cache-hit
+Counts toward: warm-content-code, Linux
+Not a new change: exp-064&#x27;s change validated on a second tree"/><rect class="dot-flat bar" x="290.9" y="486.0" width="2.4" height="4.7" data-component="default-tree" data-platform="macOS"/><rect class="hit" x="290.4" y="344" width="3.4" height="220" data-tip="exp-066: Baseline for the default command on a real package cache
 baseline, measured: -1.9% on default-tree
 Counts toward: default-tree, macOS"/><rect class="dot-good bar" x="294.3" y="464.7" width="2.4" height="25.9" data-component="default-tree" data-platform="macOS"/><rect class="hit" x="293.8" y="344" width="3.4" height="220" data-tip="exp-067: Skip the identical snapshot rewrite on the cold-scan path
 candidate kept, kept, better: -10.6% on default-tree
@@ -572,9 +583,10 @@ Counts toward: default-tree, macOS"/><rect class="dot-good bar" x="301.2" y="414
 candidate kept, kept, better: -31.0% on content-cache-hit
 Counts toward: warm-content-code, macOS"/><rect class="dot-flat bar" x="304.6" y="487.5" width="2.4" height="3.1" data-component="warm-content-code" data-platform="macOS"/><rect class="hit" x="304.1" y="344" width="3.4" height="220" data-tip="exp-070: Validate the separator fixes against the result they landed on
 candidate kept, measured: -1.3% on content-cache-hit
-Counts toward: warm-content-code, macOS"/><rect class="dot-good bar" x="308.0" y="369.6" width="2.4" height="121.1" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="307.5" y="344" width="3.4" height="220" data-tip="exp-071: PR #51 halves its base regression but does not restore main parity
-candidate kept, kept, better: -49.5% on cold-scan-index
-Counts toward: Cold cache, macOS"/><rect class="dot-flat bar" x="311.5" y="344.0" width="2.4" height="146.7" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="311.0" y="344" width="3.4" height="220" data-tip="exp-072: Attribute the PR #51 residual to path-keyed ancestry preflight
+Counts toward: warm-content-code, macOS"/><rect class="dot-flat bar" x="308.0" y="369.6" width="2.4" height="121.1" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="307.5" y="344" width="3.4" height="220" data-tip="exp-071: PR #51 halves its base regression but does not restore main parity
+candidate kept, measured: -49.5% on cold-scan-index
+Counts toward: Cold cache, macOS
+Not a new change: a rewrite measured against its own regression"/><rect class="dot-flat bar" x="311.5" y="344.0" width="2.4" height="146.7" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="311.0" y="344" width="3.4" height="220" data-tip="exp-072: Attribute the PR #51 residual to path-keyed ancestry preflight
 blocked, measured: -66.7% on cold-scan-index (component_ns)
 Counts toward: Cold cache, macOS"/><rect class="dot-flat bar" x="314.9" y="490.7" width="2.4" height="73.3" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="314.4" y="344" width="3.4" height="220" data-tip="exp-073: PR #51 remains above the pre-rewrite whole-scan control
 blocked, measured: +144.5% on cold-scan-index
@@ -680,9 +692,10 @@ Counts toward: warm-content-code, macOS"/><rect class="dot-good bar" x="486.4" y
 candidate kept, kept, better: -8.0% on content-cache-hit
 Counts toward: warm-content-code, macOS"/><rect class="dot-flat bar" x="489.8" y="489.9" width="2.4" height="1.0" data-component="warm-content-code" data-platform="macOS"/><rect class="hit" x="489.3" y="344" width="3.4" height="220" data-tip="exp-125: Post-H125 cache-hit leftover after restore-count completeness
 candidate kept, measured: -0.3% on content-cache-hit
-Counts toward: warm-content-code, macOS"/><rect class="dot-good bar" x="493.3" y="478.5" width="2.4" height="12.1" data-component="opened-root" data-platform="macOS"/><rect class="hit" x="492.8" y="344" width="3.4" height="220" data-tip="exp-126: First-pass walk versus opened-discovery I/O on metabrowser
-candidate kept, kept, better: -5.0% on opened-discovery
-Counts toward: opened-root, macOS"/><rect class="dot-flat bar" x="496.7" y="490.7" width="2.4" height="2.7" data-component="default-tree" data-platform="macOS"/><rect class="hit" x="496.2" y="344" width="3.4" height="220" data-tip="exp-127: Default-tree leftover on file-heavy metabrowser after H122
+Counts toward: warm-content-code, macOS"/><rect class="dot-flat bar" x="493.3" y="478.5" width="2.4" height="12.1" data-component="opened-root" data-platform="macOS"/><rect class="hit" x="492.8" y="344" width="3.4" height="220" data-tip="exp-126: First-pass walk versus opened-discovery I/O on metabrowser
+candidate kept, measured: -5.0% on opened-discovery
+Counts toward: opened-root, macOS
+Not a new change: a leftover determination, no code change"/><rect class="dot-flat bar" x="496.7" y="490.7" width="2.4" height="2.7" data-component="default-tree" data-platform="macOS"/><rect class="hit" x="496.2" y="344" width="3.4" height="220" data-tip="exp-127: Default-tree leftover on file-heavy metabrowser after H122
 candidate kept, measured: +1.1% on default-tree
 Counts toward: default-tree, macOS"/><rect class="dot-good bar" x="500.1" y="458.6" width="2.4" height="32.0" data-component="warm-content-code" data-platform="macOS"/><rect class="hit" x="499.6" y="344" width="3.4" height="220" data-tip="exp-128: Cache-only restore omits classify on metabrowser
 candidate kept, kept, better: -13.1% on content-cache-hit
@@ -696,21 +709,25 @@ Counts toward: warm-content-code, macOS"/><rect class="dot-good bar" x="513.8" y
 candidate kept, kept, better: -6.4% on content-cache-hit
 Counts toward: warm-content-code, macOS"/><rect class="dot-flat bar" x="517.3" y="489.8" width="2.4" height="1.0" data-component="warm-content-code" data-platform="macOS"/><rect class="hit" x="516.8" y="344" width="3.4" height="220" data-tip="exp-133: Post-H133 cache-hit leftover after unused snapshot path skip
 candidate kept, measured: -0.4% on content-cache-hit
-Counts toward: warm-content-code, macOS"/><rect class="dot-good bar" x="520.7" y="481.6" width="2.4" height="9.1" data-component="code" data-platform="macOS"/><rect class="hit" x="520.2" y="344" width="3.4" height="220" data-tip="exp-134: Post-H124 first-pass content-basic leftover
-candidate kept, kept, better: -3.7% on content-basic
-Counts toward: code, macOS"/><rect class="dot-flat bar" x="524.1" y="490.7" width="2.4" height="1.0" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="523.6" y="344" width="3.4" height="220" data-tip="exp-135: Post-H128 first-run default-tree leftover
+Counts toward: warm-content-code, macOS"/><rect class="dot-flat bar" x="520.7" y="481.6" width="2.4" height="9.1" data-component="code" data-platform="macOS"/><rect class="hit" x="520.2" y="344" width="3.4" height="220" data-tip="exp-134: Post-H124 first-pass content-basic leftover
+candidate kept, measured: -3.7% on content-basic
+Counts toward: code, macOS
+Not a new change: a leftover determination, no code change"/><rect class="dot-flat bar" x="524.1" y="490.7" width="2.4" height="1.0" data-component="cold-cache" data-platform="macOS"/><rect class="hit" x="523.6" y="344" width="3.4" height="220" data-tip="exp-135: Post-H128 first-run default-tree leftover
 candidate kept, measured: +0.2% on default-tree-first
-Counts toward: Cold cache, macOS"/><rect class="dot-good bar" x="527.6" y="482.7" width="2.4" height="8.0" data-component="multi-view" data-platform="macOS"/><rect class="hit" x="527.0" y="344" width="3.4" height="220" data-tip="exp-136: Post-H123 content-query leftover
-candidate kept, kept, better: -3.3% on content-query
-Counts toward: multi-view, macOS"/><rect class="dot-good bar" x="531.0" y="444.8" width="2.4" height="45.9" data-component="multi-view" data-platform="macOS"/><rect class="hit" x="530.5" y="344" width="3.4" height="220" data-tip="exp-137: Share one every_entry across unfiltered metric views
+Counts toward: Cold cache, macOS"/><rect class="dot-flat bar" x="527.6" y="482.7" width="2.4" height="8.0" data-component="multi-view" data-platform="macOS"/><rect class="hit" x="527.0" y="344" width="3.4" height="220" data-tip="exp-136: Post-H123 content-query leftover
+candidate kept, measured: -3.3% on content-query
+Counts toward: multi-view, macOS
+Not a new change: a leftover determination, no code change"/><rect class="dot-good bar" x="531.0" y="444.8" width="2.4" height="45.9" data-component="multi-view" data-platform="macOS"/><rect class="hit" x="530.5" y="344" width="3.4" height="220" data-tip="exp-137: Share one every_entry across unfiltered metric views
 candidate kept, kept, better: -18.8% on content-query
-Counts toward: multi-view, macOS"/><rect class="dot-good bar" x="534.4" y="435.7" width="2.4" height="55.0" data-component="warm-content-code" data-platform="Linux"/><rect class="hit" x="533.9" y="344" width="3.4" height="220" data-tip="exp-138: Linux cache-hit stack same versus #91 control
-candidate kept, kept, better: -22.5% on content-cache-hit
-Counts toward: warm-content-code, Linux"/><rect class="dot-flat bar" x="537.9" y="490.7" width="2.4" height="1.6" data-component="default-tree" data-platform="Linux"/><rect class="hit" x="537.3" y="344" width="3.4" height="220" data-tip="exp-139: Linux walk leftover is still the getdents64 plus statx floor
+Counts toward: multi-view, macOS"/><rect class="dot-flat bar" x="534.4" y="435.7" width="2.4" height="55.0" data-component="warm-content-code" data-platform="Linux"/><rect class="hit" x="533.9" y="344" width="3.4" height="220" data-tip="exp-138: Linux cache-hit stack same versus #91 control
+candidate kept, measured: -22.5% on content-cache-hit
+Counts toward: warm-content-code, Linux
+Not a new change: macOS changes validated on Linux"/><rect class="dot-flat bar" x="537.9" y="490.7" width="2.4" height="1.6" data-component="default-tree" data-platform="Linux"/><rect class="hit" x="537.3" y="344" width="3.4" height="220" data-tip="exp-139: Linux walk leftover is still the getdents64 plus statx floor
 candidate kept, measured: +0.6% on default-tree
-Counts toward: default-tree, Linux"/><rect class="dot-good bar" x="541.3" y="447.6" width="2.4" height="43.0" data-component="multi-view" data-platform="Linux"/><rect class="hit" x="540.8" y="344" width="3.4" height="220" data-tip="exp-140: Linux content-query stack same versus #91 control
-candidate kept, kept, better: -17.6% on content-query
-Counts toward: multi-view, Linux"/><rect class="dot-bad bar" x="544.7" y="490.7" width="2.4" height="4.9" data-component="default-tree" data-platform="Linux"/><rect class="hit" x="544.2" y="344" width="3.4" height="220" data-tip="exp-141: H111 Linux floor and RSS gates fail on current engine
+Counts toward: default-tree, Linux"/><rect class="dot-flat bar" x="541.3" y="447.6" width="2.4" height="43.0" data-component="multi-view" data-platform="Linux"/><rect class="hit" x="540.8" y="344" width="3.4" height="220" data-tip="exp-140: Linux content-query stack same versus #91 control
+candidate kept, measured: -17.6% on content-query
+Counts toward: multi-view, Linux
+Not a new change: macOS changes validated on Linux"/><rect class="dot-bad bar" x="544.7" y="490.7" width="2.4" height="4.9" data-component="default-tree" data-platform="Linux"/><rect class="hit" x="544.2" y="344" width="3.4" height="220" data-tip="exp-141: H111 Linux floor and RSS gates fail on current engine
 rejected, tried, not kept: +2.0% on default-tree
 Counts toward: default-tree, Linux"/><rect class="dot-flat bar" x="548.1" y="490.7" width="2.4" height="1.0" data-component="cold-cache" data-platform="Linux"/><rect class="hit" x="547.6" y="344" width="3.4" height="220" data-tip="exp-142: Linux H111 leftover is still walk floor plus retained-index RSS
 candidate kept, measured: +0.1% on cold-scan-index
@@ -724,9 +741,10 @@ Counts toward: opened-root, Linux"/><rect class="dot-flat bar" x="561.9" y="490.
 accepted evidence, measured: +1.8% on aggregate-summary
 Counts toward: summary, Linux"/><rect class="dot-flat bar" x="565.3" y="490.7" width="2.4" height="3.6" data-component="cold-cache" data-platform="Linux"/><rect class="hit" x="564.8" y="344" width="3.4" height="220" data-tip="exp-147: Linux first-run leftover is still the walk; snapshot write not skippable
 candidate kept, measured: +1.5% on default-tree-first
-Counts toward: Cold cache, Linux"/><rect class="dot-good bar" x="568.7" y="466.1" width="2.4" height="24.6" data-component="summary" data-platform="Linux"/><rect class="hit" x="568.2" y="344" width="3.4" height="220" data-tip="exp-148: Linux H84 --no-controls --threads 8 sign transfers to nominated /usr
-accepted evidence, kept, better: -10.1% on aggregate-summary
-Counts toward: summary, Linux"/><rect class="dot-flat bar" x="572.2" y="490.7" width="2.4" height="17.4" data-component="summary" data-platform="Linux"/><rect class="hit" x="571.6" y="344" width="3.4" height="220" data-tip="exp-149: Linux default /usr aggregate --threads 8 regresses; do not lower unlock
+Counts toward: Cold cache, Linux"/><rect class="dot-flat bar" x="568.7" y="466.1" width="2.4" height="24.6" data-component="summary" data-platform="Linux"/><rect class="hit" x="568.2" y="344" width="3.4" height="220" data-tip="exp-148: Linux H84 --no-controls --threads 8 sign transfers to nominated /usr
+accepted evidence, measured: -10.1% on aggregate-summary
+Counts toward: summary, Linux
+Not a new change: a screen that kept neither arm"/><rect class="dot-flat bar" x="572.2" y="490.7" width="2.4" height="17.4" data-component="summary" data-platform="Linux"/><rect class="hit" x="571.6" y="344" width="3.4" height="220" data-tip="exp-149: Linux default /usr aggregate --threads 8 regresses; do not lower unlock
 accepted evidence, measured: +7.1% on aggregate-summary
 Counts toward: summary, Linux"/><rect class="dot-bad bar" x="575.6" y="478.5" width="2.4" height="12.2" data-component="summary" data-platform="Linux"/><rect class="hit" x="575.1" y="344" width="3.4" height="220" data-tip="exp-150: Linux H85 recycle misses the 20% mimalloc bar
 rejected, tried, not kept: -5.0% on aggregate-summary
@@ -736,9 +754,10 @@ Counts toward: summary, Linux"/><rect class="dot-bad bar" x="582.4" y="486.7" wi
 rejected, tried, not kept: -1.6% on aggregate-summary
 Counts toward: summary, Linux"/><rect class="dot-good bar" x="585.9" y="468.6" width="2.4" height="22.0" data-component="summary" data-platform="Linux"/><rect class="hit" x="585.4" y="344" width="3.4" height="220" data-tip="exp-153: Linux H72 d_type skip clears 3% on symlink-heavy /usr
 candidate kept, kept, better: -9.0% on aggregate-summary
-Counts toward: summary, Linux"/><rect class="dot-good bar" x="589.3" y="470.3" width="2.4" height="20.4" data-component="cold-cache" data-platform="Linux"/><rect class="hit" x="588.8" y="344" width="3.4" height="220" data-tip="exp-154: Linux PGO screen clears 3% on cold-scan-index and warm-revalidate
-control kept, kept, better: -8.3% on cold-scan-index
-Counts toward: Cold cache, Linux"/><rect class="dot-flat bar" x="592.7" y="490.7" width="2.4" height="1.0" data-component="warm-content-code" data-platform="Linux"/><rect class="hit" x="592.2" y="344" width="3.4" height="220" data-tip="exp-155: Linux cache-hit restore mix after leftover apply-timer expansion
+Counts toward: summary, Linux"/><rect class="dot-flat bar" x="589.3" y="470.3" width="2.4" height="20.4" data-component="cold-cache" data-platform="Linux"/><rect class="hit" x="588.8" y="344" width="3.4" height="220" data-tip="exp-154: Linux PGO screen clears 3% on cold-scan-index and warm-revalidate
+control kept, measured: -8.3% on cold-scan-index
+Counts toward: Cold cache, Linux
+Not a new change: a PGO screen whose kept arm is the control"/><rect class="dot-flat bar" x="592.7" y="490.7" width="2.4" height="1.0" data-component="warm-content-code" data-platform="Linux"/><rect class="hit" x="592.2" y="344" width="3.4" height="220" data-tip="exp-155: Linux cache-hit restore mix after leftover apply-timer expansion
 candidate kept, measured: +0.0% on content-cache-hit
 Counts toward: warm-content-code, Linux"/><rect class="dot-flat bar" x="596.2" y="486.3" width="2.4" height="4.3" data-component="default-tree" data-platform="macOS"/><rect class="hit" x="595.6" y="344" width="3.4" height="220" data-tip="exp-156: Progress indicator without a handle against main
 candidate kept, measured: -1.8% on default-tree
@@ -830,14 +849,15 @@ Counts toward: default-tree, Linux"/><rect class="dot-flat bar" x="743.7" y="483
 baseline, measured: -3.1% on default-tree
 Counts toward: default-tree, Linux"/><rect class="dot-flat bar" x="747.1" y="373.3" width="2.4" height="117.3" data-component="default-tree" data-platform="Linux"/><rect class="hit" x="746.6" y="344" width="3.4" height="220" data-tip="exp-202: Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees
 baseline, measured: -48.0% on default-tree
-Counts toward: default-tree, Linux"/></svg><p class="legend"><span class="legend-item"><span class="key key-mac"></span>the unified score</span><span class="legend-item"><span class="key key-linux"></span>a single component, when chosen</span><span class="legend-item"><span class="key key-good"></span>kept, at least 3% better (74)</span><span class="legend-item"><span class="key key-bad"></span>tried, not kept (61)</span><span class="legend-item"><span class="key key-flat"></span>measurements and other verdicts (65)</span></p><figcaption>Top: on each benchmark, every milestone build timed in one interleaved session: the generated 1M-entry tree (1,000,001 entries, 12 paired rounds); the Linux v6.12 source tree (92,460 entries, 20 paired rounds); Apple M1 Pro, internal SSD, uncontrolled host. Builds before 0.1.0 do not read .gitignore, so on a repository they do less work. Hover a point for what each build added. Builds: 1 start; 2 H1 producer; 3 bulk metadata; 4 parallel reconcile; 5 H86 compact index; 6 0.1.0; 7 0.2.0; 8 0.2.1; 9 bucketed gitignore; 10 transient tree; 11 overnight round; 12 pdu track; 13 0.3.0. Bottom: bars beyond the axis are drawn at its edge; hover one for its experiment and real figure. The dashed line is the 3% accept threshold.</figcaption></figure>
+Counts toward: default-tree, Linux"/></svg><p class="legend"><span class="legend-item"><span class="key key-mac"></span>the unified score</span><span class="legend-item"><span class="key key-linux"></span>a single component, when chosen</span><span class="legend-item"><span class="key key-good"></span>kept, at least 3% better (57)</span><span class="legend-item"><span class="key key-bad"></span>tried, not kept (61)</span><span class="legend-item"><span class="key key-flat"></span>measurements and other verdicts (82)</span></p><figcaption>Top: on each benchmark, every milestone build timed in one interleaved session: the generated 1M-entry tree (1,000,001 entries, 12 paired rounds); the Linux v6.12 source tree (92,460 entries, 20 paired rounds); Apple M1 Pro, internal SSD, uncontrolled host. Builds before 0.1.0 do not read .gitignore, so on a repository they do less work. Hover a point for what each build added. Builds: 1 start; 2 H1 producer; 3 bulk metadata; 4 parallel reconcile; 5 H86 compact index; 6 0.1.0; 7 0.2.0; 8 0.2.1; 9 bucketed gitignore; 10 transient tree; 11 overnight round; 12 pdu track; 13 0.3.0. Bottom: bars beyond the axis are drawn at its edge; hover one for its experiment and real figure. The dashed line is the 3% accept threshold.</figcaption></figure>
 
 <h2 id="loop">The loop</h2>
 <p>One experiment is one question with one answer. It names a hypothesis and a predicted
 effect, builds exactly one change, checks that every answer is unchanged, and measures it
 against the code it came from &mdash; both binaries interleaved in one run on a tree pinned
 by content digest, at least twelve paired trials and twenty when the predicted effect is
-small, with any sample taken on a busy host thrown out. A change is kept when it is at
+small. A controlled cell throws out any sample taken on a busy host; an exploratory cell
+on an uncontrolled host keeps them and says so. A change is kept when it is at
 least 3% faster with its 95% interval clear of zero. Each result, kept or not, is stored as
 a validated record, and this page is regenerated from those records.</p>
 
