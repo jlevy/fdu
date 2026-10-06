@@ -30,7 +30,9 @@ from benchmarks.realtree.report_html import (
     fmt_primary,
     iteration_kind,
     kept_improvements,
+    peer_drift,
     render,
+    DRIFT_TOOL,
 )
 from benchmarks.realtree.perf_index import (
     Z95,
@@ -402,6 +404,41 @@ class ProjectionTests(unittest.TestCase):
         )
         self.assertEqual(dataset["totals"]["accepted_lines_changed"], 100)
 
+    def test_a_peer_tools_drift_counts_runs_not_the_experiments_that_share_them(self) -> None:
+        # A1 on #182: the page typed "eleven runs" for eleven dust calibrations that came
+        # from nine run artifacts, because exp-007 and exp-009, and exp-010 and exp-011,
+        # each shared one session and its measurement. The page computes the count and
+        # the range instead, on the tree with the most runs of the tool.
+        def calibrated(identifier: str, run: str, wall_ns: float, root: str = "a" * 64) -> Dict[str, Any]:
+            record = experiment(identifier, root=root)
+            record["method"] = dict(record["method"], run_artifact=run)
+            record["reference_tools"] = [{"name": DRIFT_TOOL, "wall_ns_median": wall_ns}]
+            return record
+
+        dataset = project(
+            [
+                calibrated("exp-001", "run-a.json", 210e6),
+                calibrated("exp-002", "run-b.json", 327e6),
+                calibrated("exp-003", "run-b.json", 327e6),
+                calibrated("exp-004", "run-c.json", 900e6, root="c" * 64),
+            ]
+        )
+        self.assertEqual(
+            [row["run"] for row in dataset["calibration"]],
+            ["run-a.json", "run-b.json", "run-b.json", "run-c.json"],
+        )
+        self.assertEqual(
+            peer_drift(dataset),
+            {"subject": dataset["calibration"][0]["subject"], "runs": 2, "low_ns": 210e6, "high_ns": 327e6},
+        )
+        page = render(dataset)
+        self.assertIn("measured 210&nbsp;ms to 327&nbsp;ms on the same tree across 2 runs", page)
+        self.assertNotIn("eleven", page)
+        # Without a calibration the paragraph still says why pairing is needed.
+        bare = project([experiment("exp-001")])
+        self.assertIsNone(peer_drift(bare))
+        self.assertIn("because the host's speed drifts.", render(bare))
+
 
 class RenderTests(unittest.TestCase):
     def _page(self) -> str:
@@ -741,6 +778,42 @@ class RenderTests(unittest.TestCase):
         # H1 on #175: on an uncontrolled host the shortfall is named too.
         loose = dict(short, regime="uncontrolled")
         self.assertIn("exploratory, uncontrolled host, 12 rounds", render(self._chart_dataset([loose])))
+
+    def test_a_round_is_defined_where_it_is_first_stated_and_names_no_campaign(self) -> None:
+        # A2 on #182: the headline states "12 rounds" before the loop section defines a
+        # round, so there it links to the definition; and the page's own prose calls a
+        # campaign a campaign, or "12 rounds" could read as twelve optimization campaigns.
+        page = " ".join(render(self._chart_dataset([_index_cell("cold-cache", 150.0, 30.0)])).split())
+        self.assertIn('exploratory, uncontrolled host, 12 <a href="#loop">rounds</a>', page)
+        self.assertIn(
+            "<strong>rounds</strong>, or 20 when the predicted effect is small; a round is one "
+            "paired trial of each arm (the harness&rsquo;s <span class=\"mono\">--trials</span>)",
+            page,
+        )
+        anchored = " ".join(self._page().split())
+        self.assertIn("Campaign 1, the first optimization campaign,", anchored)
+        self.assertNotIn("optimization round", anchored)
+
+    def test_the_score_tooltip_carries_its_regime(self) -> None:
+        # A3 on #182: the tooltip states the score and is the text a reader copies, so a
+        # score short of the quotable bar carries its regime there too. A component is
+        # not a score, and a quotable score has no regime to state.
+        import re
+
+        def tips(cell: Dict[str, Any]) -> Dict[str, List[str]]:
+            figure = figure_timeline(self._chart_dataset([cell]))
+            groups = re.findall(r'<g class="metric[^"]*" data-metric="([^"]+)">(.*?)</g>', figure, re.S)
+            return {metric: re.findall(r'data-tip="([^"]*)"', body) for metric, body in groups}
+
+        loose = tips(_index_cell("cold-cache", 150.0, 30.0))
+        self.assertTrue(loose["score"])
+        for text in loose["score"]:
+            self.assertTrue(text.endswith("; exploratory, uncontrolled host, 12 rounds"), text)
+        for text in loose["cold-cache"]:
+            self.assertNotIn("exploratory", text)
+        quiet = dict(_index_cell("cold-cache", 150.0, 30.0), regime="quiet", stage="held-out", trials=20)
+        for text in tips(quiet)["score"]:
+            self.assertNotIn("exploratory", text)
 
     def test_the_chooser_defaults_to_the_score_and_bars_carry_their_component(self) -> None:
         # E13: the default the spec asks for, and the attributes the fading reads.

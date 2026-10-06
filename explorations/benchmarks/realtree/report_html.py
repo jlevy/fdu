@@ -339,7 +339,7 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
     )
     return (
         f'<figure class="fig">{"".join(out)}{keys}'
-        f"<figcaption>Campaign 1, the first optimization round, on one macOS tree of "
+        f"<figcaption>Campaign 1, the first optimization campaign, on one macOS tree of "
         f"{series['entries_first']:,}–{series['entries_last']:,} entries, measured five "
         f"times over three days. The pre-work binary is the code before any experiment. "
         f'The checkpoints, in order:<ol class="checkpoints">{checkpoints}</ol>'
@@ -590,7 +590,7 @@ def score_label(projected: Mapping[str, Any], components: int) -> str:
     return f"{projected['platform']} score, {components} of {total} components"
 
 
-def regime_note(projected: Mapping[str, Any]) -> str:
+def regime_note(projected: Mapping[str, Any], link: bool = False) -> str:
     """"exploratory, uncontrolled host, 12 rounds" when a score cannot be quoted.
 
     The loop's regime table limits an uncontrolled host to exploration and discovery, and
@@ -598,6 +598,11 @@ def regime_note(projected: Mapping[str, Any]) -> str:
     with each reason wherever it is stated: the host when any cell's was not controlled,
     and the fewest rounds when any cell ran short. An exploratory stage on a controlled
     host with enough rounds is just "exploratory".
+
+    Plain text by default, for a tooltip or the chooser. With `link` it is markup whose
+    "rounds" links to the loop section that defines a round, since the headline that
+    states it comes before that definition, and a reader could otherwise take twelve
+    rounds for twelve optimization campaigns.
     """
     if not projected.get("exploratory"):
         return ""
@@ -606,9 +611,11 @@ def regime_note(projected: Mapping[str, Any]) -> str:
     reasons = ["exploratory"]
     if loose:
         reasons.append("uncontrolled host" if "uncontrolled" in loose else f"{'/'.join(loose)} host")
+    if link:
+        reasons = [esc(reason) for reason in reasons]
     fewest = projected.get("fewest_rounds")
     if fewest is not None and fewest < QUOTABLE_ROUNDS:
-        reasons.append(f"{fewest} rounds")
+        reasons.append(f'{fewest} <a href="#loop">rounds</a>' if link else f"{fewest} rounds")
     return ", ".join(reasons)
 
 
@@ -723,6 +730,9 @@ def metric_series(
                 "verb": "better",
                 "worse": "worse",
                 "unit": "index",
+                # Kept apart from the title so each tooltip, which states the score, can
+                # carry it too.
+                "regime": regime,
                 "lines": lines,
             }
         )
@@ -964,6 +974,7 @@ def figure_timeline(dataset: Mapping[str, Any]) -> str:
                             # The score is an index, memory a peak, a component a time.
                             f"{point['share']:.2f}x {reference}'s {item['unit']}"
                             + (f"; {point['detail']}" if point.get("detail") else "")
+                            + (f"; {item['regime']}" if item.get("regime") else "")
                         )
                         + "/>"
                     )
@@ -1119,7 +1130,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
 
     A baseline that compares two builds is drawn too, since its change is what it
     measured: the end-to-end and release cells (exp-194, exp-195, exp-201, exp-202) are
-    how the record says what a round added up to. A baseline of one build against itself
+    how the record says what a campaign added up to. A baseline of one build against itself
     has nothing to draw.
     """
     records = [
@@ -1930,15 +1941,50 @@ def render(dataset: Mapping[str, Any]) -> str:
     return page.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
+#: The peer tool whose unchanged binary shows how far the host's speed drifts between
+#: runs on one tree.
+DRIFT_TOOL = "dust"
+
+
+def peer_drift(dataset: Mapping[str, Any], tool: str = DRIFT_TOOL) -> Optional[Dict[str, Any]]:
+    """One peer binary's range on the tree it was timed on most, and its run count.
+
+    Runs are counted by run artifact, not by experiment: experiments that shared a
+    session (exp-007 and exp-009, exp-010 and exp-011) share its reading, so counting
+    calibration rows would count one run twice. A row without an artifact counts alone.
+    """
+    subjects: Dict[str, List[Mapping[str, Any]]] = {}
+    for row in dataset.get("calibration") or []:
+        if row.get("tool") == tool and row.get("wall_ns"):
+            subjects.setdefault(row["subject"], []).append(row)
+
+    def runs(rows: Sequence[Mapping[str, Any]]) -> int:
+        return len({row.get("run") or row["id"] for row in rows})
+
+    if not subjects:
+        return None
+    subject, rows = max(subjects.items(), key=lambda item: runs(item[1]))
+    walls = [row["wall_ns"] for row in rows]
+    return {"subject": subject, "runs": runs(rows), "low_ns": min(walls), "high_ns": max(walls)}
+
+
 def _section_relative(dataset: Mapping[str, Any]) -> str:
     totals = dataset["totals"]
     rejected = totals["decisions"].get("rejected", 0)
+    drift = peer_drift(dataset)
+    spread = (
+        f': the peer tool <span class="mono">{esc(DRIFT_TOOL)}</span>, whose binary never '
+        f"changed, measured {fmt_ms(drift['low_ns']).replace(' ', '&nbsp;')} to "
+        f"{fmt_ms(drift['high_ns']).replace(' ', '&nbsp;')} on the same tree across "
+        f"{drift['runs']} runs"
+        if drift
+        else ""
+    )
     return f"""
 <h2 id="relative">Relative</h2>
 <h3>What each experiment did</h3>
 <p>Milliseconds say how fast the tool is, but not whether a particular change made it so,
-because the host's speed drifts: the peer tool <span class="mono">dust</span>, whose binary
-never changed, measured 210&nbsp;ms to 327&nbsp;ms on the same tree across eleven runs.
+because the host's speed drifts{spread}.
 Every experiment therefore interleaved its two builds and compared them in pairs, and each
 verdict rests on the paired change below.</p>
 {figure_effects(dataset)}
@@ -2211,8 +2257,8 @@ def _section_reading(dataset: Mapping[str, Any]) -> str:
 <h3>The two figures do not divide into each other</h3>
 <p>Dividing a row's endpoints in the absolute figure does not give the relative figure's
 percentage. The absolute values are each arm's median on its own; the relative value is
-the median of the <em>paired</em> changes, each candidate round against the control round
-beside it. When the host drifts during a run the two diverge, in this record by several
+the median of the <em>paired</em> changes, the candidate against the control within each
+round. When the host drifts during a run the two diverge, in this record by several
 percentage points and sometimes in sign.</p>
 <p class="note">exp&#8209;005's <span class="mono">cold-scan-index</span> reads
 <strong>+2.8%</strong> from its medians and <strong>&minus;3.9%</strong> paired. The paired
@@ -2409,7 +2455,7 @@ def _score_figure(dataset: Mapping[str, Any]) -> str:
     figures = []
     recorded = {record["id"] for record in dataset["experiments"]}
     for projected in dataset.get("index") or []:
-        regime = regime_note(projected)
+        regime = regime_note(projected, link=True)
         gate = gate_note(projected)
         context = "; ".join(
             part
@@ -2548,12 +2594,14 @@ def _section_loop(dataset: Mapping[str, Any]) -> str:
 checks that every answer is unchanged, and times the change (the candidate) against the
 code it came from (the control): its two <strong>arms</strong>. Both binaries alternate in
 one interleaved session, a <strong>cell</strong>, on a tree pinned by content digest, for at
-least 12 paired rounds, or 20 when the predicted effect is small. The <strong>paired
-change</strong> is the median of each candidate round&rsquo;s change from the control round
-beside it, so drift in the host&rsquo;s speed reaches both arms alike; its 95% interval is a
-bootstrap of that median. A change is kept when it is at least 3% faster with its 95%
-interval below zero. Some are accepted instead on <strong>noninferiority</strong>, when
-the interval rules out a slowdown beyond a stated margin.</p>
+least 12 <strong>rounds</strong>, or 20 when the predicted effect is small; a round is one
+paired trial of each arm (the harness&rsquo;s <span class="mono">--trials</span>). The
+<strong>paired change</strong> is the median over the rounds of the candidate&rsquo;s change
+from the control in the same round, so drift in the host&rsquo;s speed reaches both arms
+alike; its 95% interval is a bootstrap of that median. A change is kept when it is at
+least 3% faster with its 95% interval below zero. Some are accepted instead on
+<strong>noninferiority</strong>, when the interval rules out a slowdown beyond a stated
+margin.</p>
 <p>The harness reads host CPU load before and after every sample. On a quiet host a sample
 with a reading above 25% busy, the <strong>quiet gate</strong>, is discarded; an
 uncontrolled host keeps every sample and records the load. A score is

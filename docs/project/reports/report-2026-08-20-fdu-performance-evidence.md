@@ -8,9 +8,11 @@ The per-experiment numbers live in the artifacts; this report says what they add
 
 fdu’s speed work is done as a loop: one hypothesis, one change, a paired and interleaved
 measurement against the code it came from, and a written accept rule.
-A **paired** figure is the median of the differences between each candidate trial and
-the control trial interleaved beside it, which controls for drift in the host
-([Paired and Marginal Figures](#paired-and-marginal-figures-are-different-numbers)).
+A **paired** figure is the median over a cell’s **rounds** of the candidate’s change
+from the control in the same round, which controls for drift in the host
+([Paired and Marginal Figures](#paired-and-marginal-figures-are-different-numbers)). A
+round is one paired trial of each arm (the harness’s `--trials`); the dated rounds in
+[Every Round in Full](#every-round-in-full) are campaigns.
 Every turn leaves a validated artifact in [docs/project/experiments/](../experiments/),
 kept whether it was accepted or rejected.
 Three views are generated from those artifacts and never edited by hand:
@@ -1375,14 +1377,14 @@ and 0.29 on dense real source (exp-065).
 ### Paired and Marginal Figures Are Different Numbers
 
 The page’s absolute values are **marginal** figures, the median of each arm on its own.
-Its relative values are paired: the median of the differences between each candidate
-trial and the control trial interleaved beside it.
+Its relative values are paired: the median over a cell’s rounds of the candidate’s
+change from the control in the same round.
 When the host drifts mid-run the two disagree: exp-005’s `cold-scan-index` reads +2.8%
 by dividing its medians and −3.9% paired.
 The paired figure controls for drift, so every verdict uses it; the page publishes both
 and derives neither from the other.
 On the 60k subject the peer tool `dust`, whose binary never changed, measured 210 to 327
-ms across eleven runs.
+ms across nine runs.
 
 ### Accepted and Faster Are Different Sets
 
