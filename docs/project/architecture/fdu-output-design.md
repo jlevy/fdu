@@ -258,9 +258,10 @@ tip: show more: --min-share=0% --depth=all
 
 The share threshold applies to individual entries against the selected root, not to the
 combined hidden amount.
-Grouped views list what a bound hid in the same note (`8 languages below min share`,
-`2 of 15 rows shown`). Collect bounds from actual omissions, deduplicate across views,
-and never sum remainders across views whose contents may overlap.
+Grouped views list what a bound hid in the same note (`8 rows below min share`,
+`2 of 15 rows shown`), and beside other views each count names its section
+(`2 rows below min share in TYPES`). Collect bounds from actual omissions, deduplicate
+across views, and never sum remainders across views whose contents may overlap.
 The tip names each lifted bound once, in a fixed order, as one command line (or one
 call’s keyword arguments on the Python surface).
 
