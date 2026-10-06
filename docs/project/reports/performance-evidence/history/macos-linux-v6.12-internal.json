@@ -5,6 +5,7 @@
  "component_digest": "58487def188c1b4f",
  "manifest_version": 1,
  "platform": "macOS",
+ "reference_build": "v0.3.0",
  "run_artifact": "macos-linux-v6.12-internal.run.json.gz",
  "driver": "a scratch driver around benchmarks.realtree.compare_tools; it moves into the harness as benchmarks.realtree.history",
  "harness": {

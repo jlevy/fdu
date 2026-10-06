@@ -6,9 +6,19 @@
   "manifest_command": "fdu --view summary PATH",
   "cache_state": "default cache policy, steady state after the warm-ups",
   "override": null,
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": null,
+    "timed_metric": "wall_ns",
+    "command": "fdu --view summary PATH",
+    "cache_state": "default cache policy, steady state after the warm-ups",
+    "source": "the run artifact's contract description"
+  },
   "timed_metric": "wall_ns",
   "job": "summary",
   "component_digest": "ffda5eeef3fd4e06",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
@@ -21,7 +31,7 @@
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
     "confidence_interval": "paired-bootstrap-median-95-v1",
-    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -83,9 +93,28 @@
     "baseline_drift": [],
     "mutated_during_run": [],
     "answer_check_groups": {
-      "with_gitignore": {
+      "without_gitignore": {
+        "labels": [
+          "exp101"
+        ],
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": null
+        },
         "all_identical": true,
         "exit_codes_zero": true,
+        "matches_fingerprint": true,
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      },
+      "with_gitignore": {
         "labels": [
           "v0.1.0",
           "v0.2.0",
@@ -96,8 +125,6 @@
           "exp201",
           "v0.3.0"
         ],
-        "matches_fingerprint": true,
-        "oracle_errors": [],
         "totals": {
           "allocated_bytes": 1965858816,
           "apparent_bytes": 1759711146,
@@ -110,24 +137,15 @@
             "dirs": 11,
             "files": 28
           }
-        }
-      },
-      "without_gitignore": {
+        },
         "all_identical": true,
         "exit_codes_zero": true,
-        "labels": [
-          "exp101"
-        ],
         "matches_fingerprint": true,
         "oracle_errors": [],
-        "totals": {
-          "allocated_bytes": 1965858816,
-          "apparent_bytes": 1759711146,
-          "complete": true,
-          "dirs": 5767,
-          "files": 86630,
-          "ignored": null
-        }
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
       }
     }
   },
@@ -234,7 +252,9 @@
           "files": 86630,
           "ignored": null
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -265,7 +285,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -296,7 +318,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -327,7 +351,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -358,7 +384,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -389,7 +417,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -420,7 +450,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -451,7 +483,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       },
       {
         "analysis": {
@@ -482,7 +516,9 @@
             "files": 28
           }
         },
-        "totals_exit_code": 0
+        "totals_exit_code": 0,
+        "expected_state": "steady",
+        "content": []
       }
     ],
     "problems": []

@@ -5,10 +5,24 @@
   "manifest_version": 1,
   "manifest_command": "the probe's cold-open-save, and the probe's revalidate mode",
   "cache_state": "cold-open-save: caches empty, writes the snapshot; warm-revalidate: snapshot written by an untimed run of the same build just before",
-  "override": null,
+  "override": {
+    "note": "review B on PR #175 (B1, B2): warm metadata is two probe jobs timed whole-process, a cold-open-save first run that scans and writes the snapshot, and a warm-revalidate (probe mode revalidate) of a snapshot written by an untimed run just before; the manifest on this branch still names fdu --cache on PATH",
+    "command": "perf_probe cold-open-save; perf_probe revalidate",
+    "cache_state": "a first run that scans and writes the snapshot; then a run that loads and revalidates a snapshot written by an untimed run of the same build just before"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": "review B on PR #175 (B1, B2): warm metadata is two probe jobs timed whole-process, a cold-open-save first run that scans and writes the snapshot, and a warm-revalidate (probe mode revalidate) of a snapshot written by an untimed run just before; the manifest on this branch still names fdu --cache on PATH",
+    "timed_metric": "wall_ns",
+    "command": "perf_probe cold-open-save; perf_probe revalidate",
+    "cache_state": "a first run that scans and writes the snapshot; then a run that loads and revalidates a snapshot written by an untimed run of the same build just before",
+    "source": "the run artifact's index_component"
+  },
   "timed_metric": "wall_ns",
   "job": "cold-open-save",
   "component_digest": "b6a22549a84a93b8",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
@@ -21,7 +35,7 @@
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
     "confidence_interval": "paired-bootstrap-median-95-v1",
-    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -83,9 +97,20 @@
     "baseline_drift": [],
     "mutated_during_run": [],
     "answer_check_groups": {
-      "with_gitignore": {
+      "without_gitignore": {
+        "labels": [
+          "exp101"
+        ],
         "all_identical": true,
         "exit_codes_zero": true,
+        "matches_fingerprint": null,
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      },
+      "with_gitignore": {
         "labels": [
           "v0.1.0",
           "v0.2.0",
@@ -96,17 +121,14 @@
           "exp201",
           "v0.3.0"
         ],
-        "matches_fingerprint": null,
-        "oracle_errors": []
-      },
-      "without_gitignore": {
         "all_identical": true,
         "exit_codes_zero": true,
-        "labels": [
-          "exp101"
-        ],
         "matches_fingerprint": null,
-        "oracle_errors": []
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
       }
     }
   },
@@ -204,7 +226,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": false,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -221,7 +245,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -238,7 +264,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -255,7 +283,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -272,7 +302,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -289,7 +321,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -306,7 +340,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -323,7 +359,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -340,7 +378,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       }
     ],
     "problems": []
@@ -493,8 +533,6 @@
         "user": 0.201,
         "system": 0.815
       },
-      "cli_binary_sha256": "1c0de443a05a086ddb962bc798282094992fd1d92b646b408f4873db0ffda9f6",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 161.48,
@@ -533,6 +571,8 @@
         "anchor_median_ms_in_these_pairs": 171.15,
         "speed_ratio_this_over_reference": 0.9527
       },
+      "cli_binary_sha256": "1c0de443a05a086ddb962bc798282094992fd1d92b646b408f4873db0ffda9f6",
+      "job": "cold-open-save",
       "vs_first_derived": null,
       "vs_previous_milestone_derived": null
     },
@@ -587,8 +627,6 @@
         "user": 0.566,
         "system": 0.832
       },
-      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 426.45,
@@ -627,6 +665,8 @@
         "anchor_median_ms_in_these_pairs": 176.49,
         "speed_ratio_this_over_reference": 2.4378
       },
+      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {
@@ -713,8 +753,6 @@
         "user": 0.557,
         "system": 0.849
       },
-      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 418.83,
@@ -753,6 +791,8 @@
         "anchor_median_ms_in_these_pairs": 170.23,
         "speed_ratio_this_over_reference": 2.4503
       },
+      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {
@@ -839,8 +879,6 @@
         "user": 0.315,
         "system": 0.847
       },
-      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 174.54,
@@ -879,6 +917,8 @@
         "anchor_median_ms_in_these_pairs": 174.03,
         "speed_ratio_this_over_reference": 1.0037
       },
+      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {
@@ -965,8 +1005,6 @@
         "user": 0.239,
         "system": 0.89
       },
-      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 174.03,
@@ -1005,6 +1043,8 @@
         "anchor_median_ms_in_these_pairs": 172.1,
         "speed_ratio_this_over_reference": 1.0302
       },
+      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {
@@ -1091,8 +1131,6 @@
         "user": 0.231,
         "system": 0.877
       },
-      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 183.43,
@@ -1131,6 +1169,8 @@
         "anchor_median_ms_in_these_pairs": 174.79,
         "speed_ratio_this_over_reference": 1.011
       },
+      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {
@@ -1217,8 +1257,6 @@
         "user": 0.21,
         "system": 0.874
       },
-      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 176.42,
@@ -1257,6 +1295,8 @@
         "anchor_median_ms_in_these_pairs": 174.6,
         "speed_ratio_this_over_reference": 1.0052
       },
+      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {
@@ -1343,8 +1383,6 @@
         "user": 0.212,
         "system": 0.884
       },
-      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 175.33,
@@ -1383,6 +1421,8 @@
         "anchor_median_ms_in_these_pairs": 172.13,
         "speed_ratio_this_over_reference": 0.9982
       },
+      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {
@@ -1469,8 +1509,6 @@
         "user": 0.21,
         "system": 0.883
       },
-      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
-      "job": "cold-open-save",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 172.76,
@@ -1487,6 +1525,8 @@
       },
       "vs_v0_3_0_paired_harness": null,
       "vs_v0_3_0_paired_harness_component": null,
+      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
+      "job": "cold-open-save",
       "vs_first_derived": {
         "first": "exp101",
         "round_matched": {

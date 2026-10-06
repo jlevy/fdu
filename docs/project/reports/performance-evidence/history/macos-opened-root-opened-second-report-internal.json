@@ -5,10 +5,24 @@
   "manifest_version": 1,
   "manifest_command": "the probe's opened-second-report, and the probe's delta-apply-large",
   "cache_state": "each job opens the root itself; timed whole-process, discovery included",
-  "override": null,
+  "override": {
+    "note": "review B on PR #175 (B1, B4): opened root is two probe jobs, opened-second-report and delta-apply-large, each timed whole-process so discovery is included; the manifest on this branch still names perf_probe opened-second-report alone",
+    "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
+    "cache_state": "the library's open, then a second report; then an applied change"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": "review B on PR #175 (B1, B4): opened root is two probe jobs, opened-second-report and delta-apply-large, each timed whole-process so discovery is included; the manifest on this branch still names perf_probe opened-second-report alone",
+    "timed_metric": "wall_ns",
+    "command": "perf_probe opened-second-report; perf_probe delta-apply-large",
+    "cache_state": "the library's open, then a second report; then an applied change",
+    "source": "the run artifact's index_component"
+  },
   "timed_metric": "wall_ns",
   "job": "opened-second-report",
   "component_digest": "4e282eed355457ec",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
@@ -21,7 +35,7 @@
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
     "confidence_interval": "paired-bootstrap-median-95-v1",
-    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -83,8 +97,6 @@
     "mutated_during_run": [],
     "answer_check_groups": {
       "with_gitignore": {
-        "all_identical": true,
-        "exit_codes_zero": true,
         "labels": [
           "v0.1.0",
           "v0.2.0",
@@ -95,8 +107,14 @@
           "exp201",
           "v0.3.0"
         ],
+        "all_identical": true,
+        "exit_codes_zero": true,
         "matches_fingerprint": null,
-        "oracle_errors": []
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
       }
     }
   },
@@ -194,7 +212,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -211,7 +231,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -228,7 +250,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -245,7 +269,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -262,7 +288,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -279,7 +307,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -296,7 +326,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       },
       {
         "analysis": null,
@@ -313,7 +345,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "empty",
+        "content": []
       }
     ],
     "problems": []
@@ -488,8 +522,6 @@
         "user": 1.236,
         "system": 0.442
       },
-      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 0.26,
@@ -528,6 +560,8 @@
         "anchor_median_ms_in_these_pairs": 0.44,
         "speed_ratio_this_over_reference": 0.5913
       },
+      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
+      "job": "opened-second-report",
       "vs_first_derived": null,
       "vs_previous_milestone_derived": null
     },
@@ -580,8 +614,6 @@
         "user": 1.231,
         "system": 0.44
       },
-      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 2.66,
@@ -620,6 +652,8 @@
         "anchor_median_ms_in_these_pairs": 0.44,
         "speed_ratio_this_over_reference": 5.962
       },
+      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
+      "job": "opened-second-report",
       "vs_first_derived": {
         "first": "v0.1.0",
         "round_matched": {
@@ -704,8 +738,6 @@
         "user": 1.082,
         "system": 0.443
       },
-      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 2.68,
@@ -744,6 +776,8 @@
         "anchor_median_ms_in_these_pairs": 0.44,
         "speed_ratio_this_over_reference": 6.0946
       },
+      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
+      "job": "opened-second-report",
       "vs_first_derived": {
         "first": "v0.1.0",
         "round_matched": {
@@ -828,8 +862,6 @@
         "user": 0.996,
         "system": 0.443
       },
-      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 2.64,
@@ -868,6 +900,8 @@
         "anchor_median_ms_in_these_pairs": 0.44,
         "speed_ratio_this_over_reference": 6.0356
       },
+      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
+      "job": "opened-second-report",
       "vs_first_derived": {
         "first": "v0.1.0",
         "round_matched": {
@@ -952,8 +986,6 @@
         "user": 0.997,
         "system": 0.435
       },
-      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 2.69,
@@ -992,6 +1024,8 @@
         "anchor_median_ms_in_these_pairs": 0.44,
         "speed_ratio_this_over_reference": 6.1252
       },
+      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
+      "job": "opened-second-report",
       "vs_first_derived": {
         "first": "v0.1.0",
         "round_matched": {
@@ -1076,8 +1110,6 @@
         "user": 0.967,
         "system": 0.437
       },
-      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 2.51,
@@ -1116,6 +1148,8 @@
         "anchor_median_ms_in_these_pairs": 0.44,
         "speed_ratio_this_over_reference": 5.7667
       },
+      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
+      "job": "opened-second-report",
       "vs_first_derived": {
         "first": "v0.1.0",
         "round_matched": {
@@ -1200,8 +1234,6 @@
         "user": 0.962,
         "system": 0.432
       },
-      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 0.44,
@@ -1240,6 +1272,8 @@
         "anchor_median_ms_in_these_pairs": 0.44,
         "speed_ratio_this_over_reference": 1.0011
       },
+      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
+      "job": "opened-second-report",
       "vs_first_derived": {
         "first": "v0.1.0",
         "round_matched": {
@@ -1324,8 +1358,6 @@
         "user": 0.971,
         "system": 0.435
       },
-      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
-      "job": "opened-second-report",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 0.44,
@@ -1342,6 +1374,8 @@
       },
       "vs_v0_3_0_paired_harness": null,
       "vs_v0_3_0_paired_harness_component": null,
+      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
+      "job": "opened-second-report",
       "vs_first_derived": {
         "first": "v0.1.0",
         "round_matched": {

@@ -49288,6 +49288,7 @@
  ],
  "history": [
   {
+   "above_quiet_gate": 0.764,
    "component": "scale",
    "component_digest": "00cff7b322450d6d",
    "cpu": "Apple M1 Pro",
@@ -49556,18 +49557,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 10.755,
    "speedup_x_ci95": [
     8.877,
     11.652
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "macos-balanced-1m-internal",
    "title": "the generated 1M-entry tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.6,
    "component": "cold-cache",
    "component_digest": "58487def188c1b4f",
    "cpu": "Apple M1 Pro",
@@ -49836,20 +49840,23 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 3.345,
    "speedup_x_ci95": [
     3.242,
     3.39
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 20
   },
   {
+   "above_quiet_gate": 0.994,
    "component": "code",
-   "component_digest": "9b685a72b38ab9f4",
+   "component_digest": "ac8e95ddcbc1d319",
    "cpu": "Apple M1 Pro",
    "entries": 92460,
    "id": "macos-code-internal",
@@ -50098,18 +50105,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.193,
    "speedup_x_ci95": [
     1.025,
     1.399
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.825,
    "component": "default-tree",
    "component_digest": "5cfc2952e813ce77",
    "cpu": "Apple M1 Pro",
@@ -50378,20 +50388,23 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 5.27,
    "speedup_x_ci95": [
     5.182,
     5.79
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 20
   },
   {
+   "above_quiet_gate": 0.89,
    "component": "documents",
-   "component_digest": "2ef399378d4e5168",
+   "component_digest": "67a3eb9ac7d7083a",
    "cpu": "Apple M1 Pro",
    "entries": 92460,
    "id": "macos-documents-internal",
@@ -50646,20 +50659,23 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.017,
    "speedup_x_ci95": [
     0.996,
     1.061
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.722,
    "component": "multi-view",
-   "component_digest": "3b8b5e157ec32e7a",
+   "component_digest": "46e1a7688a008721",
    "cpu": "Apple M1 Pro",
    "entries": 92460,
    "id": "macos-multi-view-internal",
@@ -50908,18 +50924,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.132,
    "speedup_x_ci95": [
     1.064,
     1.156
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.033,
    "component": "opened-root",
    "component_digest": "4e282eed355457ec",
    "cpu": "Apple M1 Pro",
@@ -51176,18 +51195,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.995,
    "speedup_x_ci95": [
     1.987,
     2.004
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.031,
    "component": "opened-root",
    "component_digest": "4e282eed355457ec",
    "cpu": "Apple M1 Pro",
@@ -51441,18 +51463,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.204,
    "speedup_x_ci95": [
     1.193,
     1.221
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.927,
    "component": "summary",
    "component_digest": "ffda5eeef3fd4e06",
    "cpu": "Apple M1 Pro",
@@ -51709,18 +51734,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 0.949,
    "speedup_x_ci95": [
     0.923,
     1.023
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 20
   },
   {
+   "above_quiet_gate": 0.933,
    "component": "warm-content-code",
    "component_digest": "8b3c1eecd7bb78e9",
    "cpu": "Apple M1 Pro",
@@ -51971,18 +51999,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.422,
    "speedup_x_ci95": [
     1.411,
     1.446
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.887,
    "component": "warm-content-documents",
    "component_digest": "765de6f12f3186e8",
    "cpu": "Apple M1 Pro",
@@ -52239,18 +52270,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.063,
    "speedup_x_ci95": [
     0.992,
     1.225
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.86,
    "component": "warm-metadata",
    "component_digest": "b6a22549a84a93b8",
    "cpu": "Apple M1 Pro",
@@ -52507,18 +52541,21 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 0.972,
    "speedup_x_ci95": [
     0.951,
     0.978
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
    "trials": 12
   },
   {
+   "above_quiet_gate": 0.481,
    "component": "warm-metadata",
    "component_digest": "b6a22549a84a93b8",
    "cpu": "Apple M1 Pro",
@@ -52787,12 +52824,14 @@
     }
    ],
    "platform": "macOS",
+   "reference_build": "v0.3.0",
    "regime": "uncontrolled",
    "speedup_x": 1.801,
    "speedup_x_ci95": [
     1.755,
     1.845
    ],
+   "stage": "exploratory",
    "storage": "internal SSD",
    "subject": "linux-v6.12-macos",
    "title": "the Linux v6.12 source tree",
@@ -52801,6 +52840,10 @@
  ],
  "index": [
   {
+   "above_quiet_gate_range": [
+    0.031,
+    0.994
+   ],
    "builds": [
     {
      "after_experiment": "exp-000",
@@ -53218,6 +53261,10 @@
     "memory"
    ],
    "common_weight": 0.4,
+   "exploratory": true,
+   "host_regimes": [
+    "uncontrolled"
+   ],
    "manifest_version": 1,
    "measured": [
     "code",
@@ -53236,6 +53283,9 @@
    "missing": [],
    "platform": "macOS",
    "reference_build": "v0.3.0",
+   "stages": [
+    "exploratory"
+   ],
    "titles": {
     "code": "Code view",
     "cold-cache": "Cold cache",
@@ -53249,6 +53299,9 @@
     "warm-content-code": "Warm-cache content: code",
     "warm-content-documents": "Warm-cache content: documents",
     "warm-metadata": "Warm metadata cache"
+   },
+   "unmeasured_platforms": {
+    "Linux": 0.5
    }
   }
  ],

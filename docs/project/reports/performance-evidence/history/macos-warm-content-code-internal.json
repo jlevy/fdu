@@ -5,10 +5,37 @@
   "manifest_version": 1,
   "manifest_command": "fdu --view code --analyze code PATH",
   "cache_state": "content cache filled by an untimed run of the same build just before",
-  "override": null,
+  "override": {
+    "note": "timed under earlier manifest text; stamped by argv equivalence: every build ran exactly what this definition asks",
+    "command": "fdu --view code PATH",
+    "cache_state": "content cache filled by an untimed run of the same build just before"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": null,
+    "timed_metric": "wall_ns",
+    "command": "fdu --view code PATH",
+    "cache_state": "content cache filled by an untimed run of the same build just before",
+    "source": "the run artifact's contract description"
+  },
   "timed_metric": "wall_ns",
   "job": "warm-content-code",
   "component_digest": "8b3c1eecd7bb78e9",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [
+    {
+      "label": "v0.3.0",
+      "field": "code_totals",
+      "value": {
+        "files": 61452,
+        "code": 26312091,
+        "comment": 4290689,
+        "blank": 4342976
+      },
+      "commit": "2ed3af9f6fa474b7873c51634ba934b8682d8ca1",
+      "reason": "0.3.0 is the first build in the cells with 2ed3af9f (fdu-0lo2, fdu-d0gc), which reads a modeline value as a whole token. Before it, Linux v6.12's Documentation/docutils.conf, whose first line is `# -*- coding: utf-8 mode: conf-colon -*-`, matched the `c` alias as a prefix of `conf-colon` and was counted as C: 6 code lines and 1 blank line. 0.3.0 leaves it unclassified, so it reports one code file, 6 code lines, and 1 blank line fewer than v0.2.0 through exp201 (61,453 files, 26,312,097 code, 4,290,689 comment, 4,342,977 blank). The same commit moves 161 headers from C++ to C, which changes per-language rows but not the totals. Found by diffing the per-file classification of `fdu --cache off --analyze code --view files --format jsonl` from v0.2.0 and v0.3.0 on the tree."
+    }
+  ],
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
@@ -21,7 +48,7 @@
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
     "confidence_interval": "paired-bootstrap-median-95-v1",
-    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -82,8 +109,6 @@
     "mutated_during_run": [],
     "answer_check_groups": {
       "with_gitignore": {
-        "all_identical": true,
-        "exit_codes_zero": true,
         "labels": [
           "v0.2.0",
           "v0.2.1",
@@ -93,8 +118,6 @@
           "exp201",
           "v0.3.0"
         ],
-        "matches_fingerprint": true,
-        "oracle_errors": [],
         "totals": {
           "allocated_bytes": 1965858816,
           "apparent_bytes": 1759711146,
@@ -107,7 +130,24 @@
             "dirs": 11,
             "files": 28
           }
-        }
+        },
+        "all_identical": true,
+        "exit_codes_zero": true,
+        "matches_fingerprint": true,
+        "oracle_errors": [],
+        "content": {
+          "code_totals": {
+            "blank": 4342977,
+            "code": 26312097,
+            "comment": 4290689,
+            "files": 61453
+          }
+        },
+        "content_problems": [],
+        "known_differences_applied": [
+          "v0.3.0: code_totals"
+        ],
+        "state_problems": []
       }
     }
   },
@@ -203,13 +243,17 @@
           "comment": 4290689,
           "files": 61453
         },
+        "content": [
+          "code"
+        ],
         "exit_codes": [
           0,
           0
         ],
         "exit_ok": true,
+        "expected_state": "filled",
         "label": "v0.2.0",
-        "performance_line": "perf: took 878.9 ms to walk 86,630 files (1.8 GiB) at 98,560 files/s (2.083 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "performance_line": "perf: took 808.8 ms to walk 86,630 files (1.8 GiB) at 107,111 files/s (2.264 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -239,13 +283,17 @@
           "comment": 4290689,
           "files": 61453
         },
+        "content": [
+          "code"
+        ],
         "exit_codes": [
           0,
           0
         ],
         "exit_ok": true,
+        "expected_state": "filled",
         "label": "v0.2.1",
-        "performance_line": "perf: took 743.9 ms to walk 86,630 files (1.8 GiB) at 116,446 files/s (2.461 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "performance_line": "perf: took 724.1 ms to walk 86,630 files (1.8 GiB) at 119,645 files/s (2.529 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -275,13 +323,17 @@
           "comment": 4290689,
           "files": 61453
         },
+        "content": [
+          "code"
+        ],
         "exit_codes": [
           0,
           0
         ],
         "exit_ok": true,
+        "expected_state": "filled",
         "label": "exp178",
-        "performance_line": "perf: took 648.9 ms to walk 86,630 files (1.8 GiB) at 133,494 files/s (2.821 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "performance_line": "perf: took 606.6 ms to walk 86,630 files (1.8 GiB) at 142,810 files/s (3.018 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -311,13 +363,17 @@
           "comment": 4290689,
           "files": 61453
         },
+        "content": [
+          "code"
+        ],
         "exit_codes": [
           0,
           0
         ],
         "exit_ok": true,
+        "expected_state": "filled",
         "label": "exp180",
-        "performance_line": "perf: took 633.3 ms to walk 86,630 files (1.8 GiB) at 136,785 files/s (2.891 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "performance_line": "perf: took 603.5 ms to walk 86,630 files (1.8 GiB) at 143,551 files/s (3.034 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -347,13 +403,17 @@
           "comment": 4290689,
           "files": 61453
         },
+        "content": [
+          "code"
+        ],
         "exit_codes": [
           0,
           0
         ],
         "exit_ok": true,
+        "expected_state": "filled",
         "label": "ebc06c78",
-        "performance_line": "perf: took 637.3 ms to walk 86,630 files (1.8 GiB) at 135,935 files/s (2.873 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "performance_line": "perf: took 615.1 ms to walk 86,630 files (1.8 GiB) at 140,830 files/s (2.976 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -383,13 +443,17 @@
           "comment": 4290689,
           "files": 61453
         },
+        "content": [
+          "code"
+        ],
         "exit_codes": [
           0,
           0
         ],
         "exit_ok": true,
+        "expected_state": "filled",
         "label": "exp201",
-        "performance_line": "perf: took 644.2 ms to walk 86,630 files (1.8 GiB) at 134,475 files/s (2.842 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "performance_line": "perf: took 579.8 ms to walk 86,630 files (1.8 GiB) at 149,425 files/s (3.158 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -419,13 +483,17 @@
           "comment": 4290689,
           "files": 61452
         },
+        "content": [
+          "code"
+        ],
         "exit_codes": [
           0,
           0
         ],
         "exit_ok": true,
+        "expected_state": "filled",
         "label": "v0.3.0",
-        "performance_line": "perf: took 650.9 ms to walk 86,630 files (1.8 GiB) at 133,086 files/s (2.813 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
+        "performance_line": "perf: took 544.7 ms to walk 86,630 files (1.8 GiB) at 159,028 files/s (3.361 GiB/s); 1,593 gitignore rules (358 files); content read 0 B; analysis 0 fresh, 86,630 cached (1.6 GiB); warm revalidation",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -443,7 +511,11 @@
         "totals_exit_code": 0
       }
     ],
-    "problems": []
+    "problems": [],
+    "rechecked": {
+      "note": "the answer check run again, untimed, after timing, to record the content answers and start states it now compares; the same builds on a tree with the timed tree's tallies",
+      "revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
+    }
   },
   "milestones": [
     {

@@ -5,10 +5,24 @@
   "manifest_version": 1,
   "manifest_command": "the probe's cold-open-save, and the probe's revalidate mode",
   "cache_state": "cold-open-save: caches empty, writes the snapshot; warm-revalidate: snapshot written by an untimed run of the same build just before",
-  "override": null,
+  "override": {
+    "note": "review B on PR #175 (B1, B2): warm metadata is two probe jobs timed whole-process, a cold-open-save first run that scans and writes the snapshot, and a warm-revalidate (probe mode revalidate) of a snapshot written by an untimed run just before; the manifest on this branch still names fdu --cache on PATH",
+    "command": "perf_probe cold-open-save; perf_probe revalidate",
+    "cache_state": "a first run that scans and writes the snapshot; then a run that loads and revalidates a snapshot written by an untimed run of the same build just before"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": "review B on PR #175 (B1, B2): warm metadata is two probe jobs timed whole-process, a cold-open-save first run that scans and writes the snapshot, and a warm-revalidate (probe mode revalidate) of a snapshot written by an untimed run just before; the manifest on this branch still names fdu --cache on PATH",
+    "timed_metric": "wall_ns",
+    "command": "perf_probe cold-open-save; perf_probe revalidate",
+    "cache_state": "a first run that scans and writes the snapshot; then a run that loads and revalidates a snapshot written by an untimed run of the same build just before",
+    "source": "the run artifact's index_component"
+  },
   "timed_metric": "wall_ns",
   "job": "warm-revalidate",
   "component_digest": "b6a22549a84a93b8",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
@@ -21,7 +35,7 @@
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
     "confidence_interval": "paired-bootstrap-median-95-v1",
-    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -87,9 +101,24 @@
     "baseline_drift": [],
     "mutated_during_run": [],
     "answer_check_groups": {
-      "with_gitignore": {
+      "without_gitignore": {
+        "labels": [
+          "prework",
+          "exp001",
+          "exp022",
+          "exp030",
+          "exp101"
+        ],
         "all_identical": true,
         "exit_codes_zero": true,
+        "matches_fingerprint": null,
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      },
+      "with_gitignore": {
         "labels": [
           "v0.1.0",
           "v0.2.0",
@@ -100,21 +129,14 @@
           "exp201",
           "v0.3.0"
         ],
-        "matches_fingerprint": null,
-        "oracle_errors": []
-      },
-      "without_gitignore": {
         "all_identical": true,
         "exit_codes_zero": true,
-        "labels": [
-          "prework",
-          "exp001",
-          "exp022",
-          "exp030",
-          "exp101"
-        ],
         "matches_fingerprint": null,
-        "oracle_errors": []
+        "oracle_errors": [],
+        "content": {},
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
       }
     }
   },
@@ -213,7 +235,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": false,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -231,7 +255,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": false,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -249,7 +275,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": false,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -267,7 +295,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": false,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -285,7 +315,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": false,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -303,7 +335,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -321,7 +355,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -339,7 +375,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -357,7 +395,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -375,7 +415,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -393,7 +435,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -411,7 +455,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       },
       {
         "analysis": null,
@@ -429,7 +475,9 @@
         "oracle_exit_code": 0,
         "performance_line": null,
         "reads_gitignore": true,
-        "totals": null
+        "totals": null,
+        "expected_state": "filled",
+        "content": []
       }
     ],
     "problems": []
@@ -493,8 +541,6 @@
         "user": 0.504,
         "system": 0.371
       },
-      "cli_binary_sha256": "338c77153d74452a32c21e4ac6541c670f3d6888b7d32a9c6c08135ca70059bc",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 500.35,
@@ -533,6 +579,8 @@
         "anchor_median_ms_in_these_pairs": 131.03,
         "speed_ratio_this_over_reference": 3.8001
       },
+      "cli_binary_sha256": "338c77153d74452a32c21e4ac6541c670f3d6888b7d32a9c6c08135ca70059bc",
+      "job": "warm-revalidate",
       "vs_first_derived": null,
       "vs_prework_derived": null,
       "vs_previous_milestone_derived": null
@@ -595,8 +643,6 @@
         "user": 0.512,
         "system": 0.369
       },
-      "cli_binary_sha256": "7f69d59d3df189f44298064fe313c40e635226007f633b2a1636ec3d40e08fde",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 502.79,
@@ -635,6 +681,8 @@
         "anchor_median_ms_in_these_pairs": 126.62,
         "speed_ratio_this_over_reference": 3.9908
       },
+      "cli_binary_sha256": "7f69d59d3df189f44298064fe313c40e635226007f633b2a1636ec3d40e08fde",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -750,8 +798,6 @@
         "user": 0.318,
         "system": 0.366
       },
-      "cli_binary_sha256": "d5c0ab76f357215ef8a2bbaaab273b08a94490b16cb66b952e0ef3472b9760f2",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 421.99,
@@ -790,6 +836,8 @@
         "anchor_median_ms_in_these_pairs": 120.28,
         "speed_ratio_this_over_reference": 3.5255
       },
+      "cli_binary_sha256": "d5c0ab76f357215ef8a2bbaaab273b08a94490b16cb66b952e0ef3472b9760f2",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -905,8 +953,6 @@
         "user": 0.314,
         "system": 0.482
       },
-      "cli_binary_sha256": "ebac215b326a06d0c68ab8555d4b0af0649b664c39abc8ab268671286ec0330d",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 136.89,
@@ -945,6 +991,8 @@
         "anchor_median_ms_in_these_pairs": 120.15,
         "speed_ratio_this_over_reference": 1.0634
       },
+      "cli_binary_sha256": "ebac215b326a06d0c68ab8555d4b0af0649b664c39abc8ab268671286ec0330d",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -1060,8 +1108,6 @@
         "user": 0.274,
         "system": 0.412
       },
-      "cli_binary_sha256": "1c0de443a05a086ddb962bc798282094992fd1d92b646b408f4873db0ffda9f6",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 118.43,
@@ -1100,6 +1146,8 @@
         "anchor_median_ms_in_these_pairs": 127.1,
         "speed_ratio_this_over_reference": 0.9474
       },
+      "cli_binary_sha256": "1c0de443a05a086ddb962bc798282094992fd1d92b646b408f4873db0ffda9f6",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -1215,8 +1263,6 @@
         "user": 0.636,
         "system": 0.431
       },
-      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 125.65,
@@ -1255,6 +1301,8 @@
         "anchor_median_ms_in_these_pairs": 121.6,
         "speed_ratio_this_over_reference": 1.0155
       },
+      "cli_binary_sha256": "86ed0a4921c6dbac3717286f6d4c22a35c881a691c7abadfbfbae615183eb813",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -1370,8 +1418,6 @@
         "user": 0.632,
         "system": 0.425
       },
-      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 124.8,
@@ -1410,6 +1456,8 @@
         "anchor_median_ms_in_these_pairs": 123.16,
         "speed_ratio_this_over_reference": 1.0095
       },
+      "cli_binary_sha256": "db434bb578797b8b5d85dc13238f00dd79a81d5840afc11814a3aa8ed2336a42",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -1525,8 +1573,6 @@
         "user": 0.499,
         "system": 0.445
       },
-      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 129.0,
@@ -1565,6 +1611,8 @@
         "anchor_median_ms_in_these_pairs": 131.03,
         "speed_ratio_this_over_reference": 1.0145
       },
+      "cli_binary_sha256": "edac95539cc6a29121b031b98743b245f7b6e27fee89008c155bf02b0bcf5baf",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -1680,8 +1728,6 @@
         "user": 0.425,
         "system": 0.412
       },
-      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 120.57,
@@ -1720,6 +1766,8 @@
         "anchor_median_ms_in_these_pairs": 125.58,
         "speed_ratio_this_over_reference": 1.0039
       },
+      "cli_binary_sha256": "617a7e8f3b40bad9fa4a7b95fdd31db3ae7c1593e09c6add3d2f302307d5f353",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -1835,8 +1883,6 @@
         "user": 0.425,
         "system": 0.411
       },
-      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 120.36,
@@ -1875,6 +1921,8 @@
         "anchor_median_ms_in_these_pairs": 123.48,
         "speed_ratio_this_over_reference": 0.9835
       },
+      "cli_binary_sha256": "d1181e7426198c04b14a4738c68936f7268ba77215da51898a52ab32c5b8dfb1",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -1990,8 +2038,6 @@
         "user": 0.404,
         "system": 0.429
       },
-      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 125.24,
@@ -2030,6 +2076,8 @@
         "anchor_median_ms_in_these_pairs": 127.42,
         "speed_ratio_this_over_reference": 0.9894
       },
+      "cli_binary_sha256": "448da29138248fb3d30512db3e76b3200fd13d8fb28f7fd44c92518d34db09aa",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -2145,8 +2193,6 @@
         "user": 0.408,
         "system": 0.461
       },
-      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 133.4,
@@ -2185,6 +2231,8 @@
         "anchor_median_ms_in_these_pairs": 132.67,
         "speed_ratio_this_over_reference": 1.0066
       },
+      "cli_binary_sha256": "d4ae9c558aeeb364fa6dcee448fc045236c9ef29bcdea4a27945ca23b8f3903a",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {
@@ -2300,8 +2348,6 @@
         "user": 0.408,
         "system": 0.425
       },
-      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
-      "job": "warm-revalidate",
       "component_ms": {
         "source": "probe-reported component_ns, harness median of valid timed samples",
         "median": 123.57,
@@ -2318,6 +2364,8 @@
       },
       "vs_v0_3_0_paired_harness": null,
       "vs_v0_3_0_paired_harness_component": null,
+      "cli_binary_sha256": "b23fae296edb328f282dcb1851af37a80085fda8338ad4cf91ad5bbe71fb794c",
+      "job": "warm-revalidate",
       "vs_first_derived": {
         "first": "prework",
         "round_matched": {

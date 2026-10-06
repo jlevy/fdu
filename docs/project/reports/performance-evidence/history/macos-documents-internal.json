@@ -3,12 +3,26 @@
   "component": "documents",
   "component_title": "Documents view",
   "manifest_version": 1,
-  "manifest_command": "fdu --view documents --analyze words PATH",
-  "cache_state": "fdu's caches empty for every sample",
-  "override": null,
+  "manifest_command": "fdu --cache off --view documents --analyze words PATH",
+  "cache_state": "fdu's caches empty for every sample, with the cache off: the content cache write is untimed",
+  "override": {
+    "note": "timed under earlier manifest text; stamped by argv equivalence: every build ran exactly what this definition asks",
+    "command": "fdu --view documents PATH",
+    "cache_state": "fdu's caches empty for every sample"
+  },
+  "timed_under": {
+    "harness": "benchmarks.realtree.history",
+    "override_note": null,
+    "timed_metric": "wall_ns",
+    "command": "fdu --view documents PATH",
+    "cache_state": "fdu's caches empty for every sample",
+    "source": "the run artifact's contract description"
+  },
   "timed_metric": "wall_ns",
   "job": "documents",
-  "component_digest": "2ef399378d4e5168",
+  "component_digest": "67a3eb9ac7d7083a",
+  "stamped_by": "argv equivalence",
+  "known_answer_differences": [],
   "tree_key": "K",
   "platform": "macOS",
   "reference_build": "v0.3.0",
@@ -21,7 +35,7 @@
     "schedule": "competitor-adjacent-fdu-anchor-v1",
     "stopping_rule": "fixed-N-no-optional-stopping-v1",
     "confidence_interval": "paired-bootstrap-median-95-v1",
-    "summary_revision": "c3fddd920b5f0e3084ea9c40e9407d3662aa6cee"
+    "summary_revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
   },
   "subject": {
     "label": "linux-v6.12-macos",
@@ -83,9 +97,35 @@
     "baseline_drift": [],
     "mutated_during_run": [],
     "answer_check_groups": {
-      "with_gitignore": {
+      "without_gitignore": {
+        "labels": [
+          "exp101"
+        ],
+        "totals": {
+          "allocated_bytes": 1965858816,
+          "apparent_bytes": 1759711146,
+          "complete": true,
+          "dirs": 5767,
+          "files": 86630,
+          "ignored": null
+        },
         "all_identical": true,
         "exit_codes_zero": true,
+        "matches_fingerprint": true,
+        "oracle_errors": [],
+        "content": {
+          "document_totals": {
+            "files": 5304,
+            "formats": 7,
+            "lines": 965628,
+            "words": 5100802
+          }
+        },
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
+      },
+      "with_gitignore": {
         "labels": [
           "v0.1.0",
           "v0.2.0",
@@ -96,8 +136,6 @@
           "exp201",
           "v0.3.0"
         ],
-        "matches_fingerprint": true,
-        "oracle_errors": [],
         "totals": {
           "allocated_bytes": 1965858816,
           "apparent_bytes": 1759711146,
@@ -110,24 +148,22 @@
             "dirs": 11,
             "files": 28
           }
-        }
-      },
-      "without_gitignore": {
+        },
         "all_identical": true,
         "exit_codes_zero": true,
-        "labels": [
-          "exp101"
-        ],
         "matches_fingerprint": true,
         "oracle_errors": [],
-        "totals": {
-          "allocated_bytes": 1965858816,
-          "apparent_bytes": 1759711146,
-          "complete": true,
-          "dirs": 5767,
-          "files": 86630,
-          "ignored": null
-        }
+        "content": {
+          "document_totals": {
+            "files": 5285,
+            "formats": 6,
+            "lines": 962511,
+            "words": 5084348
+          }
+        },
+        "content_problems": [],
+        "known_differences_applied": [],
+        "state_problems": []
       }
     }
   },
@@ -218,12 +254,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5304,
+          "formats": 7,
+          "lines": 965628,
+          "words": 5100802
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "exp101",
-        "performance_line": "Performance: walked 86,630 files / 1.6 GiB; content read 1.3 GiB at 277 MiB/s; analysis 86,630 fresh at 17.1k files/s, 0 cached; cold scan; total 5.41 s",
+        "performance_line": "Performance: walked 86,630 files / 1.6 GiB; content read 1.3 GiB at 188 MiB/s; analysis 86,630 fresh at 11.6k files/s, 0 cached; cold scan; total 7.66 s",
         "reads_gitignore": false,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -243,12 +289,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "v0.1.0",
-        "performance_line": "Performance: walked 86,630 files / 1.8 GiB; ignore rules 358 files; content read 1.3 GiB at 275 MiB/s; analysis 86,630 fresh at 16.9k files/s, 0 cached; cold scan; total 6.34 s",
+        "performance_line": "Performance: walked 86,630 files / 1.8 GiB; ignore rules 358 files; content read 1.3 GiB at 188 MiB/s; analysis 86,630 fresh at 11.6k files/s, 0 cached; cold scan; total 7.99 s",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -273,12 +329,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "v0.2.0",
-        "performance_line": "perf: took 3.87 s to walk 86,630 files (1.8 GiB) at 22,383 files/s (0.473 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 428 MiB/s; analysis 86,630 fresh at 26,374 files/s, 0 cached; cold scan",
+        "performance_line": "perf: took 7.98 s to walk 86,630 files (1.8 GiB) at 10,850 files/s (0.229 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 188 MiB/s; analysis 86,630 fresh at 11,588 files/s, 0 cached; cold scan",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -303,12 +369,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "v0.2.1",
-        "performance_line": "perf: took 3.50 s to walk 86,630 files (1.8 GiB) at 24,746 files/s (0.523 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 440 MiB/s; analysis 86,630 fresh at 27,120 files/s, 0 cached; cold scan",
+        "performance_line": "perf: took 7.83 s to walk 86,630 files (1.8 GiB) at 11,060 files/s (0.234 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 186 MiB/s; analysis 86,630 fresh at 11,453 files/s, 0 cached; cold scan",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -333,12 +409,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "exp178",
-        "performance_line": "perf: took 3.76 s to walk 86,630 files (1.8 GiB) at 23,056 files/s (0.487 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 408 MiB/s; analysis 86,630 fresh at 25,117 files/s, 0 cached; cold scan",
+        "performance_line": "perf: took 7.74 s to walk 86,630 files (1.8 GiB) at 11,189 files/s (0.236 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 188 MiB/s; analysis 86,630 fresh at 11,568 files/s, 0 cached; cold scan",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -363,12 +449,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "exp180",
-        "performance_line": "perf: took 3.47 s to walk 86,630 files (1.8 GiB) at 24,998 files/s (0.528 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 444 MiB/s; analysis 86,630 fresh at 27,378 files/s, 0 cached; cold scan",
+        "performance_line": "perf: took 7.72 s to walk 86,630 files (1.8 GiB) at 11,228 files/s (0.237 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 188 MiB/s; analysis 86,630 fresh at 11,605 files/s, 0 cached; cold scan",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -393,12 +489,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "ebc06c78",
-        "performance_line": "perf: took 4.42 s to walk 86,630 files (1.8 GiB) at 19,589 files/s (0.414 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 343 MiB/s; analysis 86,630 fresh at 21,154 files/s, 0 cached; cold scan",
+        "performance_line": "perf: took 7.70 s to walk 86,630 files (1.8 GiB) at 11,246 files/s (0.238 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 188 MiB/s; analysis 86,630 fresh at 11,622 files/s, 0 cached; cold scan",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -423,12 +529,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "exp201",
-        "performance_line": "perf: took 5.03 s to walk 86,630 files (1.8 GiB) at 17,223 files/s (0.364 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 305 MiB/s; analysis 86,630 fresh at 18,797 files/s, 0 cached; cold scan",
+        "performance_line": "perf: took 7.71 s to walk 86,630 files (1.8 GiB) at 11,237 files/s (0.238 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 188 MiB/s; analysis 86,630 fresh at 11,609 files/s, 0 cached; cold scan",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -453,12 +569,22 @@
         "cache_evidence": "cold",
         "cache_files_after": 0,
         "code_totals": null,
+        "content": [
+          "documents"
+        ],
+        "document_totals": {
+          "files": 5285,
+          "formats": 6,
+          "lines": 962511,
+          "words": 5084348
+        },
         "exit_codes": [
           0
         ],
         "exit_ok": true,
+        "expected_state": "empty",
         "label": "v0.3.0",
-        "performance_line": "perf: took 4.12 s to walk 86,630 files (1.8 GiB) at 21,026 files/s (0.444 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 370 MiB/s; analysis 86,630 fresh at 22,823 files/s, 0 cached; cold scan",
+        "performance_line": "perf: took 7.74 s to walk 86,630 files (1.8 GiB) at 11,193 files/s (0.237 GiB/s); 1,593 gitignore rules (358 files); content read 1.3 GiB at 187 MiB/s; analysis 86,630 fresh at 11,516 files/s, 0 cached; cold scan",
         "reads_gitignore": true,
         "totals": {
           "allocated_bytes": 1965858816,
@@ -476,7 +602,11 @@
         "totals_exit_code": 0
       }
     ],
-    "problems": []
+    "problems": [],
+    "rechecked": {
+      "note": "the answer check run again, untimed, after timing, to record the content answers and start states it now compares; the same builds on a tree with the timed tree's tallies",
+      "revision": "4f16e04135d0972f1ea60377f5d4c2d53e796386"
+    }
   },
   "milestones": [
     {
