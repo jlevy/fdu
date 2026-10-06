@@ -551,6 +551,25 @@ class RenderTests(unittest.TestCase):
         # A projection without the release record still renders, without the figure.
         self.assertNotIn("0.2.1 to 0.3.0", render(project([experiment("exp-001")])))
 
+    def test_every_remeasurement_names_a_record_that_would_otherwise_count(self) -> None:
+        # The list is hand-maintained; an id with no record, or a record that would not
+        # count as kept anyway, means the list and the record have drifted apart.
+        import json
+        from pathlib import Path
+
+        from benchmarks.realtree.report_html import REMEASUREMENTS
+
+        committed = Path("docs/project/reports/performance-evidence/timeline.json")
+        records = {
+            record["id"]: record
+            for record in json.loads(committed.read_text(encoding="utf-8"))["experiments"]
+        }
+        for identifier in REMEASUREMENTS:
+            self.assertIn(identifier, records)
+            record = records[identifier]
+            self.assertEqual(record["decision"], "accepted", identifier)
+            self.assertLessEqual(record["change_pct"], -3, identifier)
+
     def test_a_remeasurement_is_not_counted_as_a_kept_change(self) -> None:
         # Cumulative checkpoints re-measure campaign 1; counting them as kept changes drew
         # the same work four times as tall green bars.
@@ -860,8 +879,8 @@ class PlatformSectionTests(unittest.TestCase):
                 subject["synthetic"] = True
         page = render(dataset)
         self.assertIn('id="platforms"', page)
-        self.assertIn("Linux: 2 improvements kept", page)
-        self.assertIn("macOS: 1 improvement kept", page)
+        self.assertIn("Linux: 2 accepted runs that improved", page)
+        self.assertIn("macOS: 1 accepted run that improved", page)
         self.assertIn("Decided on a generated tree: 1 of 2.", page)
         self.assertIn("Decided on a generated tree: 0 of 1.", page)
         # The rejected Linux run is counted in the summary but never listed as kept.
