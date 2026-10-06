@@ -96,7 +96,7 @@ In `documents`, it shows document-word share.
 Text output labels those two non-byte denominators; machine output always carries the
 exact `share_metric`, numerator, and denominator.
 The denominator is the sum of every row’s value before display bounds, so unbounded rows
-add up to 100%.
+add up to 100%, within display rounding.
 
 ## Choose a Format
 

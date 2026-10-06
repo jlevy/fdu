@@ -940,7 +940,9 @@ pub enum MetricGroup {
 /// their numerators sum to it exactly.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct MetricShare {
-    /// This row's value in the section's share metric.
+    /// This row's value in the section's share metric. On a section's total row it is the
+    /// denominator itself, the sum of the rows, which for document words can differ from
+    /// the total row's own pooled `document_words`.
     pub numerator: u64,
     /// Sum of every row's numerator before the share filter and display truncation.
     pub denominator: u64,
@@ -2809,8 +2811,9 @@ fn merge_coverage(total: &mut BTreeMap<CoverageReason, u64>, row: &BTreeMap<Cove
 /// It is the rows' sum rather than the total row's own value because the two differ for
 /// document words. Logical words are derived from pooled statistics
 /// ([`LogicalWordStats::logical_words`]), whose regime the pool decides, so a section
-/// mixing long-token and ordinary prose formats has a total below the sum of its rows.
-/// Dividing by that total made the rows' shares sum past 100% (fdu-ij5n). For bytes,
+/// mixing formats has a total that differs from the sum of its rows, in either direction.
+/// Dividing by that total made the rows' shares sum past 100% beside long-token formats,
+/// and below it beside very short tokens (fdu-ij5n). For bytes,
 /// code lines, and raw words the two are equal, so this rule changes nothing there.
 fn share_denominator(rows: &[MetricRow], metric: ShareMetric) -> u64 {
     rows.iter().fold(0_u64, |sum, row| sum.saturating_add(share_value(row, metric)))

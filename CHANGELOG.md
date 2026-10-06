@@ -93,10 +93,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- `documents` percentages add up to 100%. Each row’s share divided its document words by
-  the total’s, but logical words are derived after pooling, so a tree mixing a
-  long-token format such as HTML with ordinary prose had a total below the sum of its
-  rows, and the shares summed past 100% (101.6% on the Linux kernel).
+- `documents` percentages add up to 100%, within display rounding.
+  Each row’s share divided its document words by the total’s, but logical words are
+  derived after pooling, so a pooled total of mixed formats differed from the sum of its
+  rows in either direction: with a long-token format such as HTML beside ordinary prose
+  the shares summed past 100% (101.6% on the Linux kernel), and with very short tokens
+  they could sum well below it.
   Shares in every grouped view now divide by the sum of the rows’ values, which is what
   `share.denominator` and the total row’s `share` carry in structured output; the total
   row’s own `document_words` and `pages` are still the pooled count.

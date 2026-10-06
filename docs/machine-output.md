@@ -125,9 +125,9 @@ rows removed by a row cap.
 Selected aggregate totals stay unchanged by both display bounds.
 A grouped metric section’s share denominator is the sum of every row’s numerator before
 either bound, which is also the total row’s share.
-For `document_words` it can exceed the total row’s own `document_words`: logical words
-are derived after pooling, so a pooled total of mixed formats is not the sum of its
-rows.
+For `document_words` it can differ from the total row’s own `document_words` and
+`pages.words`, in either direction: logical words are derived after pooling, so a pooled
+total of mixed formats is not the sum of its rows.
 
 A code tally has `source_files`, `analyzed_files`, `code_lines`, `comment_lines`,
 `blank_lines`, `missing_records`, and a `coverage` reason map.
