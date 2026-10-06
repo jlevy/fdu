@@ -34,8 +34,8 @@ crates/fdu/Cargo.toml and crates/fdu-py/pyproject.toml. Update them together. --
   side. Rules apply per directory, as git applies them; `.git/info/exclude` and global
   ignore files are not read.
 - **Code and documents:** `--view=code` counts code, comment, and blank lines for each
-  of 15 languages, over the tree or any directory you name; the Rust index also holds
-  every directory’s totals.
+  of 15 languages, over the tree or any directory you name; the Rust API’s
+  `content_rollup` also gives each directory’s totals across languages.
   `--view=documents` counts words, paragraphs, and pages in prose and markup.
   Results are cached, so a repeated run reads only the files that changed.
 - **Find and inventory:** Select entries by kind, glob, size, and age, such as every
@@ -186,7 +186,8 @@ Code lines leave out comments and blank lines, which have columns of their own.
 Analyzed files counts the files measured out of the source files selected, and a
 language fdu has no counter for shows a dash rather than zero, as Make and Perl do.
 The notes count unsupported and unclassified files instead of treating them as zero
-lines.
+lines. In DOCUMENTS, a page is 250 words (`--words-per-page`), and the suffix counts
+files detected as generated or as documentation.
 
 Each language row shows its gitignored share.
 `--ignored=exclude` skips gitignored trees such as local builds and environments,
@@ -376,7 +377,7 @@ Changes it kept include these, with their measured effects:
   [exp-032](docs/project/experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)).
 - **A native directory reader on Linux:** `getdents64` fills a reused buffer, and
   `statx` reads each entry relative to its directory (9–10% less time for
-  `--view=summary` on two real trees, and 2–4% for the default tree;
+  `--view=summary` on two real trees, and 4% for the default tree on one of them;
   [exp-185](docs/project/experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md),
   [exp-186](docs/project/experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)).
 - **Summaries without an index:** A summary is totalled as the walk runs (14.6% less

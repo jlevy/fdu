@@ -12,7 +12,7 @@ under one name.
 Full documentation, design notes, and the tool survey this is built from live in the
 repository: <https://github.com/jlevy/fdu>
 
-**Status: 0.x.** A new minor release may change the API;
+**Status:** 0.x. A new minor release may change the API;
 [the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
 states the compatibility rules.
 The revision-arbitrated observation/commit contract, bounded parallel walker, applying
