@@ -257,12 +257,13 @@ tip: show more: --min-share=0% --depth=all
 Add the tip’s flags to the same command to see what was hidden, or use `--full` to lift
 every display bound.
 Display limits never change totals.
-Notes also name a percentage denominator other than bytes
-(`note: percentages are shares of code lines`) and the code view’s coverage
-(`note: 15 languages analyzed`, `note: not analyzed: 2 unsupported`). Machine formats
-send the same lines to stderr, so stdout stays parseable; check their structured fields,
-not the notes, before trusting a result.
-Use `--quiet` (`-q`) to hide notes, tips, performance lines, and progress.
+Notes also name a percentage denominator other than bytes, with the section it applies
+to when several views are shown
+(`note: percentages are shares of code lines (CODE), document words (DOCUMENTS)`), and
+the code view’s coverage (`note: 15 languages analyzed`,
+`note: not analyzed: 2 unsupported`). Machine formats send the same lines to stderr, so
+stdout stays parseable; check their structured fields, not the notes, before trusting a
+result. Use `--quiet` (`-q`) to hide notes, tips, performance lines, and progress.
 Result stdout, warnings, errors, and exit status are unchanged; structured facts are
 retained.
 
@@ -434,8 +435,11 @@ Headers name views; columns name metrics.
 Use `--analyze=words --view=types` to include word metrics for other text types.
 Use `--analyze=lines --view=languages` for physical line counts across code languages.
 
-A view that displays no requested content metric prints a note naming the view that
-would (`note: code analysis not shown by summary`, `tip: show it: --view code`).
+When the selected views show none or only part of the requested analysis, a note names
+what is not shown and a tip gives the views that show it:
+`--analyze=code --view=summary` ends with `note: code analysis not shown by summary` and
+`tip: show it: --view code`, and `--analyze=code --view=documents` with
+`note: code analysis not shown by documents` and `tip: show it: --view documents,code`.
 `--view full` includes Code only with code analysis and Documents only with words
 analysis, naming the views it skipped and `--analyze all` to include them.
 Use `--workers` to bound concurrent reads and `--words-per-page` to control page
