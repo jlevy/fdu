@@ -4,7 +4,7 @@ Start with the [usage guide](usage.md) when you want to run fdu.
 It covers the default report, every view and analyzer, `.gitignore` selection, cache
 behavior, watch, and stable machine-output contracts.
 The repository [README](../README.md) is the landing page: install, the command, the
-live change feed, and the Rust and Python libraries.
+live change feed, the Rust and Python libraries, speed, and comparison with other tools.
 `fdu --docs` is the offline guide and `fdu --help` is the complete flag reference.
 
 ## Use fdu
@@ -16,8 +16,9 @@ live change feed, and the Rust and Python libraries.
 - [Live updates](../README.md#live-updates)
 - [Rust library examples](../README.md#as-a-rust-library)
 - [Python package examples](../README.md#as-a-python-module)
-- [0.3.0 release notes](project/release-notes/0.3.0.md) and
-  [0.1.0 release notes](project/release-notes/0.1.0.md)
+- Release notes: [0.3.0](project/release-notes/0.3.0.md),
+  [0.2.1](project/release-notes/0.2.1.md), [0.2.0](project/release-notes/0.2.0.md), and
+  [0.1.0](project/release-notes/0.1.0.md)
 
 ## Understand the Design
 

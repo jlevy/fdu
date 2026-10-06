@@ -16,13 +16,12 @@ context.
 Use `fdu` to summarize a directory tree without modifying files in that tree.
 It reports size, file count, recency, and file kinds for every directory at once, and on
 request lines of code by language and words by document type.
-It walks the tree on several threads through each platform’s native directory interface:
-on a million-file tree it runs about 9× as fast as `du` on macOS and 2.6× as fast on
-Linux, ahead of pdu, diskus, and dust.
-Every report requires an explicit `PATH`, `.` for the current directory; bare `fdu`
-prints help instead of scanning.
-`fdu --docs` prints common commands, cache behavior, and the full usage contract without
-a PATH and without scanning.
+It walks the tree on several threads through each platform’s native directory interface,
+and on a generated million-entry tree (875,000 files) it finished ahead of `du` and the
+seven other disk-usage tools measured on Linux and macOS. Every report requires an
+explicit `PATH`, `.` for the current directory; bare `fdu` prints help instead of
+scanning. `fdu --docs` prints common commands, cache behavior, and the full usage
+contract without a PATH and without scanning.
 
 ## Run fdu
 

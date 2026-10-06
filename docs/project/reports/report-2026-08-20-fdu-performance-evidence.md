@@ -31,6 +31,8 @@ is in [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026
 the peer-tool rankings are in the tool comparisons
 [on macOS](report-2026-09-26-fdu-live-tool-comparison.md) and
 [on Linux](report-2026-09-27-fdu-linux-tool-comparison.md).
+[Performance Measurements](../../performance-measurements.md) collects the figures the
+README cites, including the source-line counting comparison with scc and tokei.
 
 A number is evidence about the tree it was measured on and its **regime**: the platform,
 host, and cache state.

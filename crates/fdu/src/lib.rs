@@ -13,12 +13,13 @@ mod progress_line;
 mod progress_ticker;
 mod skill_install;
 
-/// The repository README's Rust examples, compiled and run as doctests.
+/// The repository README's Rust examples, compiled and run as doctests so they cannot
+/// drift.
 ///
-/// The README is this crate's crates.io page, and nothing compiled its examples, so they
-/// kept naming an `AnalysisProfile` type for a release after it was gone. The path reaches
-/// the workspace copy; a packaged crate carries the README at its own root, which only a
-/// doctest run from an extracted package would notice.
+/// When nothing compiled them, they kept naming an `AnalysisProfile` type for a release
+/// after it was gone. The path reaches the workspace copy. A packaged crate carries only
+/// its own directory, so the include fails only when doctests run from an extracted
+/// package; its crates.io page is `crates/fdu/README.md`.
 #[cfg(doctest)]
 #[doc = include_str!("../../../README.md")]
 pub struct ReadmeDoctests;
