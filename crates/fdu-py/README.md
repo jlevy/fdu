@@ -1,13 +1,14 @@
 # fdu (Python)
 
-**Fastest native du replacement and detailed file analytics for Python and Rust**
+**The fastest du we measured, with `.gitignore`-aware sizes and code and document
+counts, for the command line, Python, and Rust**
 
 Python bindings for [fdu](https://github.com/jlevy/fdu), which reports, for every
 directory in a tree at once, its size, file count, recency, and file kinds, and on
 request its lines of code and prose volume.
 It walks a tree on several threads through each platform’s native directory interface,
-and on a million-file tree runs about 9× as fast as `du` on macOS and 2.6× as fast on
-Linux, ahead of pdu, diskus, and dust
+and on a generated million-entry tree (875,000 files) it finished ahead of `du` and the
+seven other disk-usage tools measured on Linux and macOS
 ([performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)).
 
 ## Set Up with Any Coding Agent
@@ -263,7 +264,7 @@ limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).
 
-## Long-lived roots
+## Long-Lived Roots
 
 `fdu.opened` is the direct typed interface to the long-lived engine.
 It starts progressive discovery, returns several projections from one coherent version,

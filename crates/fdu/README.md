@@ -1,13 +1,14 @@
 # fdu
 
-**Fastest native du replacement and detailed file analytics for Python and Rust**
+**The fastest du we measured, with `.gitignore`-aware sizes and code and document
+counts, for the command line, Python, and Rust**
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, with reusable metadata and content state.
 It walks a tree on several threads through each platform’s native directory interface,
-and on a million-file tree runs about 9× as fast as `du` on macOS and 2.6× as fast on
-Linux, ahead of pdu, diskus, and dust
+and on a generated million-entry tree (875,000 files) it finished ahead of `du` and the
+seven other disk-usage tools measured on Linux and macOS
 ([performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)).
 
 This crate is the `fdu` command line.
@@ -99,8 +100,8 @@ The API is documented on [docs.rs](https://docs.rs/fdu), and
 
 - [Usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md): every view,
   analyzer, cache policy, selection, and automation contract
-- [Repository README](https://github.com/jlevy/fdu#readme): performance evidence, cost
-  layers, and how the engine works
+- [Repository README](https://github.com/jlevy/fdu#readme): install, examples, speed,
+  and comparison with other tools
 - [0.3.0 release notes](https://github.com/jlevy/fdu/blob/main/docs/project/release-notes/0.3.0.md)
   and [changelog](https://github.com/jlevy/fdu/blob/main/CHANGELOG.md)
 - [Security policy](https://github.com/jlevy/fdu/blob/main/SECURITY.md)

@@ -1324,14 +1324,16 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,239 +1,1 @@
--fdu — the fastest du replacement, with file tree analysis.
+@@ -1,241 +1,1 @@
+-fdu — the fastest du we measured, with .gitignore-aware sizes and code and
+-document counts, for the command line, Python, and Rust.
 -
 -  For every directory in a tree at once, fdu reports its size, file count,
 -  recency, and file kinds, and on request its lines of code and prose volume.
 -  It walks the tree on several threads through each platform's native
--  directory interface; on a million-file tree it runs about 9x as fast as du
--  on macOS and 2.6x as fast on Linux, ahead of pdu, diskus, and dust.
+-  directory interface, and on a generated million-entry tree (875,000 files)
+-  it finished ahead of du and the seven other disk-usage tools measured on
+-  Linux and macOS.
 -  Content metrics are cached between runs, and every capability is also a
 -  Rust and Python API.
 -  Performance measurements: https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md
