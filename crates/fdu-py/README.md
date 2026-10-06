@@ -47,6 +47,25 @@ uv add fdu
 pip install fdu
 ```
 
+Lines of code by language and words by document type, from one scan:
+
+```python
+from pathlib import Path
+
+import fdu
+
+report = fdu.report(
+    Path("/path/to/tree"),
+    fdu.Query(views=(fdu.View.CODE, fdu.View.DOCUMENTS)),
+)
+print(report.render())
+print(report.notes)
+```
+
+The two content views run the `code` and `words` analyzers they show; `print` gives the
+same tables as `fdu . --view=code,documents`, and `report.sections` holds them as typed
+values.
+
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
 roll-ups, per-path provenance, cache management, refresh results, and change feeds.

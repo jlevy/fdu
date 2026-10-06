@@ -67,20 +67,20 @@ fdu requires a path; bare `fdu` prints help and scans nothing.
 
 ```shell
 fdu .                                     # directory tree: allocated sizes, largest first
+fdu . --view=code,documents               # lines of code and words; reads file contents
 fdu . --view=summary                      # one total for the tree
 fdu . --view=languages                    # which languages occupy space
 fdu . --view=recent --limit=10            # the ten most recently modified files
 fdu . --ignored=exclude                   # leave out entries .gitignore rules match
-fdu . --view=code                         # standard lines of code; reads file contents
-fdu . --view=documents                    # words and pages by document format
 fdu . --view=summary,types --format=json  # versioned machine output
 fdu --docs                                # the offline usage guide
 ```
 
 `--view` chooses what is reported.
 Only `code` and `documents` read file contents, since neither has anything to show
-without analysis; every other view reads metadata and `.gitignore` files and opens no
-regular file for its contents unless `--analyze` names an analyzer.
+without analysis; `--view=code` or `--view=documents` gives one alone.
+Every other view reads metadata and `.gitignore` files and opens no regular file for its
+contents unless `--analyze`, the extra control, names an analyzer.
 
 ## As a Library
 

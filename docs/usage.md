@@ -25,7 +25,17 @@ This is the default report:
 fdu reads per-directory `.gitignore` files by default so it can annotate ignored byte
 shares. Reading the rules does not exclude the entries they match.
 
-These commands cover the most common questions:
+For lines of code by language and words by document type, from one scan:
+
+```shell
+fdu . --view=code,documents
+```
+
+`code` and `documents` are the views that read file contents: naming either runs the
+analyzer it shows, so `--view=code` or `--view=documents` gives one report alone.
+Every other view is metadata-only.
+
+These commands cover the other common questions:
 
 ```shell
 fdu . --ignored=exclude
@@ -33,15 +43,15 @@ fdu . --view=summary
 fdu . --view=languages
 fdu . --view=families,types,extensions
 fdu . --view=recent --limit=10
-fdu . --view=code
-fdu . --view=documents
-fdu . --view=code,documents
+```
+
+`--analyze` is the extra control for analysis a view does not imply, such as code lines
+in the language rows or physical lines across every language:
+
+```shell
 fdu . --analyze=code --view=languages
 fdu . --analyze=lines --view=languages
 ```
-
-`code` and `documents` read file contents: naming either runs the analyzer it shows.
-Every other view is metadata-only unless `--analyze` names an analyzer.
 
 ## Choose a View
 

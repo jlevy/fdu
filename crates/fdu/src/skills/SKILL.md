@@ -29,15 +29,20 @@ Start with the report that answers the question:
 
 ```bash
 fdu .                                      # directory-size tree; metadata only
+fdu . --view=code,documents                # lines of code and words, from one scan
+fdu . --view=code                          # code overview with population and coverage
+fdu . --view=code --ignored=exclude        # source overview without ignored content
+fdu . --view=documents                     # words and pages by document format
 fdu . --ignored=exclude                    # skip ignored trees and their contents
 fdu . --view=summary                       # one total with its ignored share
 fdu . --view=languages                     # detected language sizes; metadata only
 fdu . --view=families,types,extensions     # three file-kind breakdowns
 fdu . --view=recent --limit=10             # ten most recently modified files
-fdu . --view=code                          # code overview with population and coverage
-fdu . --view=code --ignored=exclude        # source overview without ignored content
-fdu . --view=documents                     # words and pages by document format
-fdu . --view=code,documents                # both, from one scan and one analysis pass
+```
+
+`--analyze` is the extra control for analysis a view does not imply:
+
+```bash
 fdu . --analyze=code --view=languages      # code lines in the language rows
 fdu . --analyze=lines --view=languages     # physical lines and raw words by language
 ```

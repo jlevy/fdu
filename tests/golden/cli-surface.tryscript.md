@@ -132,11 +132,10 @@ Agent setup:
   uvx --no-build fdu@latest --install-skill
 
 Examples:
-  fdu .                     directory sizes (metadata only)
-  fdu . --ignored=exclude   omit entries covered by .gitignore
-  fdu . --view=summary      one total for the tree
-  fdu . --view=code         standard lines of code by language
-  fdu . --view=documents    words and pages by document format
+  fdu .                         directory sizes (metadata only)
+  fdu . --view=code,documents   lines of code by language, words by document type
+  fdu . --ignored=exclude       omit entries covered by .gitignore
+  fdu . --view=summary          one total for the tree
   fdu . --kind dir --include .venv --modified-before 7d --long
   fdu . --kind dir --include node_modules --modified-before 30d --long
   fdu . --kind dir --include target --modified-before 30d --format paths
@@ -180,15 +179,20 @@ Start with the report that answers the question:
 
 ```bash
 fdu .                                      # directory-size tree; metadata only
+fdu . --view=code,documents                # lines of code and words, from one scan
+fdu . --view=code                          # code overview with population and coverage
+fdu . --view=code --ignored=exclude        # source overview without ignored content
+fdu . --view=documents                     # words and pages by document format
 fdu . --ignored=exclude                    # skip ignored trees and their contents
 fdu . --view=summary                       # one total with its ignored share
 fdu . --view=languages                     # detected language sizes; metadata only
 fdu . --view=families,types,extensions     # three file-kind breakdowns
 fdu . --view=recent --limit=10             # ten most recently modified files
-fdu . --view=code                          # code overview with population and coverage
-fdu . --view=code --ignored=exclude        # source overview without ignored content
-fdu . --view=documents                     # words and pages by document format
-fdu . --view=code,documents                # both, from one scan and one analysis pass
+```
+
+`--analyze` is the extra control for analysis a view does not imply:
+
+```bash
 fdu . --analyze=code --view=languages      # code lines in the language rows
 fdu . --analyze=lines --view=languages     # physical lines and raw words by language
 ```
@@ -713,20 +717,24 @@ START HERE
   A report requires a PATH. Use `.` for the current directory.
 
     fdu .                                      directory sizes (the default)
+    fdu . --view=code,documents                lines of code and words, one scan
+    fdu . --view=code                          standard lines of code by language
+    fdu . --view=documents                     words and pages by document format
     fdu . --ignored=exclude                    omit entries covered by .gitignore
     fdu . --view=summary                       one total for the tree
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
-    fdu . --view=code                          standard lines of code by language
-    fdu . --view=documents                     words and pages by document format
-    fdu . --view=code,documents                both, from one scan
-    fdu . --analyze=code --view=languages      code lines in the language rows
-    fdu . --analyze=lines --view=languages     physical lines and raw words by language
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
+
+  code and documents read file contents; --analyze is the extra control for
+  analysis a view does not imply:
+
+    fdu . --analyze=code --view=languages      code lines in the language rows
+    fdu . --analyze=lines --view=languages     physical lines and raw words by language
 
 VIEWS AND ANALYSIS
   --view chooses the question the report answers. Several views share one scan
