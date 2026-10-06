@@ -664,6 +664,12 @@ fn code_request() -> AnalysisRequest {
     AnalysisRequest { profile: AnalysisSet::NONE.with_code(), ..AnalysisRequest::default() }
 }
 
+/// The analyzers the grouped content query reads: `documents` needs `words` on a held
+/// basis, so a lines-only index can no longer answer the four views this job times.
+fn words_request() -> AnalysisRequest {
+    AnalysisRequest { profile: AnalysisSet::NONE.with_words(), ..AnalysisRequest::default() }
+}
+
 fn document_request() -> AnalysisRequest {
     AnalysisRequest { profile: AnalysisSet::NONE.with_words(), ..AnalysisRequest::default() }
 }
@@ -726,7 +732,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     if !scan.is_complete() {
         return Err(ProbeError("content-query setup scan was partial".into()));
     }
-    let analysis = fdu_core::content::analyze_index(&mut index, basic_request());
+    let analysis = fdu_core::content::analyze_index(&mut index, words_request());
     let query = Query {
         views: vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents],
         ..Query::default()
@@ -3119,7 +3125,7 @@ mod tests {
         let (mut index, scan) =
             fdu_core::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         assert!(scan.is_complete());
-        let analysis = fdu_core::content::analyze_index(&mut index, basic_request());
+        let analysis = fdu_core::content::analyze_index(&mut index, words_request());
         assert!(analysis.is_complete());
         let views =
             vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents];
