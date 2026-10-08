@@ -16,9 +16,9 @@ live change feed, the Rust and Python libraries, speed, and comparison with othe
 - [Live updates](../README.md#live-updates)
 - [Rust library examples](../README.md#as-a-rust-library)
 - [Python package examples](../README.md#as-a-python-module)
-- Release notes: [0.3.0](project/release-notes/0.3.0.md),
-  [0.2.1](project/release-notes/0.2.1.md), [0.2.0](project/release-notes/0.2.0.md), and
-  [0.1.0](project/release-notes/0.1.0.md)
+- Release notes: [0.4.0](project/release-notes/0.4.0.md),
+  [0.3.0](project/release-notes/0.3.0.md), [0.2.1](project/release-notes/0.2.1.md),
+  [0.2.0](project/release-notes/0.2.0.md), and [0.1.0](project/release-notes/0.1.0.md)
 
 ## Understand the Design
 

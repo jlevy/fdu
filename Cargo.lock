@@ -173,7 +173,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "fdu"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anstyle-query",
  "anyhow",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "fdu-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anstyle",
  "libc",
@@ -200,7 +200,7 @@ dependencies = [
 
 [[package]]
 name = "fdu-py"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "fdu",
  "fdu-core",

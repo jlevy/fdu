@@ -1,6 +1,6 @@
 [package]
 name = "fdu-core"
-version = "0.3.0"
+version = "0.4.0"
 description = "The fdu engine: incremental hierarchical tallies over large directory trees"
 readme = "README.md"
 documentation = "https://docs.rs/fdu-core"

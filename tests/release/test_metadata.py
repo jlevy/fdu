@@ -27,7 +27,7 @@ class MetadataTests(unittest.TestCase):
             (ROOT / "crates/fdu-py/pyproject.toml").read_text(encoding="utf-8")
         )
         version = crate["package"]["version"]
-        self.assertEqual(version, "0.3.0")
+        self.assertEqual(version, "0.4.0")
         self.assertEqual(python_crate["package"]["version"], version)
         self.assertEqual(workspace["workspace"]["dependencies"]["fdu"]["version"], version)
         self.assertEqual(pyproject["project"]["name"], "fdu")

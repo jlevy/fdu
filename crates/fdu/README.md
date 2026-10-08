@@ -102,7 +102,7 @@ The API is documented on [docs.rs](https://docs.rs/fdu), and
   analyzer, cache policy, selection, and automation contract
 - [Repository README](https://github.com/jlevy/fdu#readme): install, examples, speed,
   and comparison with other tools
-- [0.3.0 release notes](https://github.com/jlevy/fdu/blob/main/docs/project/release-notes/0.3.0.md)
+- [0.4.0 release notes](https://github.com/jlevy/fdu/blob/main/docs/project/release-notes/0.4.0.md)
   and [changelog](https://github.com/jlevy/fdu/blob/main/CHANGELOG.md)
 - [Security policy](https://github.com/jlevy/fdu/blob/main/SECURITY.md)
 
