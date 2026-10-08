@@ -7,6 +7,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-08
+
+fdu 0.4.0 is a breaking release about what a report asks for and what it says.
+A content view now requests the analysis it shows: `fdu . --view code,documents` counts
+lines of code by language and words by document type from one scan, with no `--analyze`.
+A human report holds only the result on standard output, and every explanation follows
+it on standard error as a consolidated `note:` or `tip:` line, with one runnable tip
+that lifts every display limit.
+`documents` percentages now add up to 100%. On the command line the breaking changes are
+what `--view=documents` and `--view=full` run beside `--analyze=lines` or
+`--analyze=code`; in Rust, `Request` gains a private field, `RequestError` becomes
+`#[non_exhaustive]` with reshaped analysis refusals, and `AxisNames` gains a field.
+No option was removed, and the report, cache, and stream schemas are unchanged.
+The GitHub release text is
+[docs/project/release-notes/0.4.0.md](docs/project/release-notes/0.4.0.md).
+
 ### Added
 
 - Rust: `ViewSpec::implies` and `ViewSpec::shows`, the analyzers a view requests and the
@@ -158,10 +174,10 @@ coverage map has one more possible key, `text_only`. The GitHub release text is
   `linux_dents_attempts`, `linux_dents_successes`, and `linux_dents_fallbacks`, which
   count the Linux native reader’s listings on every route that lists directories; they
   are `None` off Linux and on a Linux build without glibc.
-  The `--diagnostics` trace’s `backend` object carries them as `linux_dents_attempts`,
-  `linux_dents_fallbacks`, and `linux_dents_successes`, ahead of the macOS keys, and
-  `dirs_read` equals the native successes plus `portable_directory_reads`; no existing
-  key changes meaning.
+  The `FDU_SCAN_DIAGNOSTICS=1` trace’s `backend` object carries them as
+  `linux_dents_attempts`, `linux_dents_fallbacks`, and `linux_dents_successes`, ahead of
+  the macOS keys, and `dirs_read` equals the native successes plus
+  `portable_directory_reads`; no existing key changes meaning.
   [The platform tuning guide](docs/project/guides/platform-tuning.md) documents them.
   It is now `#[non_exhaustive]` too, for the reason `Counts` is: Rust code outside the
   engine crate can read its fields but can no longer build it with a struct literal or
