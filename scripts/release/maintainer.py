@@ -33,6 +33,7 @@ import sys
 import tempfile
 import time
 import tomllib
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,7 +43,7 @@ if __package__ in (None, ""):
     # Run as a script: make the repository root importable, as the tests have it.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.atomic_write import write_text_atomic
+from scripts.atomic_write import write_bytes_atomic, write_text_atomic
 from scripts.release import (
     inspect_artifacts,
     publish_gate,
@@ -68,6 +69,13 @@ PACKAGE_MANIFESTS = (
 EVIDENCE_FILES = ("SHA256SUMS", "registry-state.json", "release-manifest.json")
 # Two crates, one source distribution, and five wheels.
 RELEASE_FILE_COUNT = 8
+# A demo video the release commit may carry. The GitHub release attaches it as a twelfth
+# asset, so the README can link `releases/latest/download/fdu-demo.mp4`; it is no
+# registry file, so the manifest and SHA256SUMS never name it.
+DEMO_PATH = "docs/media/fdu-demo.mp4"
+DEMO_ASSET = Path(DEMO_PATH).name
+# The git modes of a regular file; a symlink, a directory, or a submodule is refused.
+REGULAR_FILE_MODES = ("100644", "100755")
 INSTALL_PYTHON = "3.12"
 PENDING_STATUS = 3
 # In checklist order, then the recovery audit; each is also `make release-<step>`.
@@ -128,6 +136,17 @@ class Host:
         if completed.returncode != 0:
             raise CommandError(argv, completed.returncode, completed.stderr)
         return completed.stdout + completed.stderr if stderr else completed.stdout
+
+    def run_bytes(self, argv: Sequence[str], *, cwd: Path | None = None) -> bytes:
+        """`run` for output that is not text, such as a committed video, byte for byte."""
+        try:
+            completed = subprocess.run(list(argv), cwd=cwd, capture_output=True, check=False)
+        except FileNotFoundError:
+            raise not_installed(argv) from None
+        if completed.returncode != 0:
+            stderr = completed.stderr.decode("utf-8", errors="replace")
+            raise CommandError(argv, completed.returncode, stderr)
+        return completed.stdout
 
     def attach(self, argv: Sequence[str], *, cwd: Path | None = None) -> int:
         """Run a command on the maintainer's terminal and return its exit status."""
@@ -278,6 +297,28 @@ def show(host: Host, release: Release, path: str) -> str | None:
         return host.run(["git", "show", f"{release.commit}:{path}"], cwd=release.root)
     except CommandError:
         return None
+
+
+def show_bytes(host: Host, release: Release, path: str) -> bytes | None:
+    """
+    Read one regular file's exact bytes at the release commit, or None when it has none.
+
+    Unlike `show`, a failure is never taken for absence: a commit git cannot read would
+    otherwise look like a commit without the file. So the commit's tree entry is listed
+    first; no entry is None, an entry that is not a regular file is refused, and the blob
+    is read by the object ID the tree names.
+    """
+    listing = host.run(
+        ["git", "ls-tree", "-z", "--full-tree", release.commit, "--", path], cwd=release.root
+    )
+    entries = [entry for entry in listing.split("\0") if entry]
+    if not entries:
+        return None
+    meta, _, name = entries[0].partition("\t")
+    mode, kind, obj = [*meta.split(" "), "", ""][:3]
+    if len(entries) != 1 or name != path or kind != "blob" or mode not in REGULAR_FILE_MODES:
+        raise StepError(f"{path} at COMMIT is not a regular file: {kind} with mode {mode}")
+    return host.run_bytes(["git", "cat-file", "blob", obj], cwd=release.root)
 
 
 def remote_refs(host: Host, release: Release, *refs: str) -> dict[str, str]:
@@ -439,6 +480,22 @@ def changelog_check(host: Host, release: Release) -> Check:
     return Check("CHANGELOG", heading is not None, detail)
 
 
+def demo_check(host: Host, release: Release) -> Check:
+    """
+    Name the asset count the commit's demo video makes, and fail on a demo the announcement
+    could not attach, which would otherwise stop it only after the registries publish.
+    """
+    content = show_bytes(host, release, DEMO_PATH)
+    if content is None:
+        return Check(
+            "demo video", True, f"no {DEMO_PATH} at COMMIT: the release attaches eleven files"
+        )
+    detail = (
+        f"{DEMO_PATH} at COMMIT, {len(content)} bytes: the release attaches it as a twelfth file"
+    )
+    return Check("demo video", True, detail)
+
+
 def unpublished_checks(host: Host, release: Release) -> list[Check]:
     """
     Each registry must answer 404 for this version.
@@ -576,6 +633,7 @@ def preflight(
         ("Cargo versions at COMMIT", lambda: cargo_versions(host, release)),
         ("release notes", lambda: notes_check(host, release, previous)),
         ("CHANGELOG", lambda: changelog_check(host, release)),
+        ("demo video", lambda: demo_check(host, release)),
         (f"tag {release.tag}", lambda: tag_absent_check(host, release)),
         ("registries", lambda: unpublished_checks(host, release)),
         ("private vulnerability reporting", lambda: reporting_check(host, release)),
@@ -1047,7 +1105,8 @@ def published(
     published manifest's files, and returns a `gh release create` fallback command.
     Current workflows announce automatically; do not run the fallback for them.
     `by_hand` audits the files a hand publication uploaded, already in
-    `$RELEASE/published`, instead of a publishing run's.
+    `$RELEASE/published`, instead of a publishing run's. Either way, the release commit's
+    demo video, if it has one, is staged beside them.
     """
     if not (release.directory / "notes.md").exists():
         raise StepError("run the body step first: the announcement uses its notes.md")
@@ -1063,6 +1122,7 @@ def published(
         run_id = publishing_run(host, release, run_id)
         verify_run(host, release, run_id, publishing=True)
         target = fetch_run(host, release, run_id, "published", f"release-evidence-{release.tag}")
+    stage_demo(host, release)
     states = registry_states(host, release, target / "evidence" / "release-manifest.json")
     if registry_state.exit_status(states, require_identical=True) != 0:
         raise StepError(
@@ -1103,15 +1163,78 @@ def audit(host: Host, release: Release, *, run_id: int | None) -> list[Check]:
     ]
 
 
+def staged_media(release: Release) -> list[Path]:
+    """
+    The files staged in `$RELEASE/published/media`: none, or the demo video.
+
+    Only `stage_demo` writes there, so anything else, or a symlink that a write would
+    follow out of the directory, is refused rather than attached.
+    """
+    media = release.directory / "published" / "media"
+    if not media.exists() and not media.is_symlink():
+        return []
+    if media.is_symlink() or not media.is_dir():
+        raise StepError(f"{media} must be a directory that only the release steps write")
+    held = sorted(media.iterdir())
+    strays = [
+        path.name
+        for path in held
+        if path.name != DEMO_ASSET or path.is_symlink() or not path.is_file()
+    ]
+    if strays:
+        raise StepError(
+            f"{media} holds {', '.join(strays)}; only the release commit's {DEMO_ASSET}, "
+            "as a regular file, belongs there"
+        )
+    return held
+
+
+def stage_demo(host: Host, release: Release) -> Path | None:
+    """
+    Make `$RELEASE/published/media` hold exactly the release commit's demo video.
+
+    A commit with `docs/media/fdu-demo.mp4` attaches it as a twelfth asset and one without
+    keeps the eleven, so the files a release attaches are a function of the commit's tree,
+    never of what a directory happens to hold. The bytes come from the commit, as the
+    release notes do, not from a working tree. A demo staged earlier is rewritten from the
+    commit, or removed when the commit has none.
+    """
+    media = release.directory / "published" / "media"
+    target = media / DEMO_ASSET
+    staged_media(release)
+    content = show_bytes(host, release, DEMO_PATH)
+    if content is None:
+        if target.exists():
+            target.unlink()
+            print(f"removed {target}: COMMIT has no {DEMO_PATH}")
+        if media.exists():
+            media.rmdir()
+        return None
+    media.mkdir(exist_ok=True)
+    write_bytes_atomic(target, content)
+    digest = inspect_artifacts.digest(target)
+    print(f"staged {DEMO_ASSET} from COMMIT:{DEMO_PATH}, {len(content)} bytes, sha256 {digest}")
+    return target
+
+
 def expected_assets(release: Release) -> dict[str, Path]:
-    """The eleven files a GitHub release attaches, by name."""
+    """
+    The files a GitHub release attaches, by name: eleven, and the demo video as a twelfth
+    when the release commit carries one. Run `stage_demo` first.
+    """
     published_dir = release.directory / "published"
     paths = [
         release.directory / "registry-state.json",
         published_dir / "evidence" / "release-manifest.json",
         published_dir / "evidence" / "SHA256SUMS",
         *sorted((published_dir / "files").iterdir()),
+        *staged_media(release),
     ]
+    shared = sorted(
+        name for name, count in Counter(path.name for path in paths).items() if count > 1
+    )
+    if shared:
+        raise StepError(f"two release files share the name {', '.join(shared)}")
     return {path.name: path for path in paths}
 
 
@@ -1180,6 +1303,8 @@ def announced(host: Host, release: Release, *, cargo: bool) -> list[Check]:
     if missing:
         detail = f"run the body and published steps first; missing {', '.join(missing)}"
         return [Check("release directory", False, detail)]
+    # The expected assets follow the release commit, whatever an earlier pass staged.
+    stage_demo(host, release)
     record = gh_json(host, f"repos/{release.repository}/releases/tags/{release.tag}")
     if record is None:
         return [Check("GitHub release", False, f"no release on {release.tag} yet")]

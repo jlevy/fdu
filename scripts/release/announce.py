@@ -55,6 +55,8 @@ def announce(host: Host, release: Release) -> None:
     """Audit before writes; publish only after every draft asset has the expected hash."""
     maintainer.require_pushed_tag(host, release)
     maintainer.verify_kept(release, release.directory / "published")
+    # A demo video committed at the tag is a twelfth asset; without one there are eleven.
+    maintainer.stage_demo(host, release)
     notes = (release.directory / "notes.md").read_text(encoding="utf-8")
     source = maintainer.show(host, release, release.notes_path)
     if source is None:

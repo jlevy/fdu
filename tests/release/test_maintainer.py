@@ -9,6 +9,7 @@ upload. So each test also proves the step it exercises never reaches them.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -50,7 +51,11 @@ NOTES = (
     "<!-- This document follows common-doc-guidelines.md.\n-->\n"
 )
 
-Response = str | Exception | Callable[[list[str]], str]
+Response = str | bytes | Exception | Callable[[list[str]], str | bytes]
+# A committed demo video's bytes: a NUL, a CRLF, and bytes that are not UTF-8, so a text
+# read or a newline translation anywhere on the way would change them.
+DEMO = b"\x00\x00\x00\x18ftypmp42\r\n\xff\xfe\x00mdat\n"
+DEMO_OBJECT = "d" * 40
 
 
 def forbidden(argv: Sequence[str]) -> str | None:
@@ -102,7 +107,8 @@ class FakeHost(Host):
         """Answer every command starting with `prefix`; the latest registration wins."""
         self.handlers.append((tuple(prefix), response))
 
-    def run(self, argv: Sequence[str], *, cwd: Path | None = None, stderr: bool = False) -> str:
+    def answer(self, argv: Sequence[str]) -> str | bytes:
+        """The scripted output for a command, refusing a maintainer-only or unscripted one."""
         command = list(argv)
         reason = forbidden(command)
         if reason is not None:
@@ -114,6 +120,16 @@ class FakeHost(Host):
                     raise response
                 return response(command) if callable(response) else response
         raise AssertionError(f"unexpected command: {command}")
+
+    def run(self, argv: Sequence[str], *, cwd: Path | None = None, stderr: bool = False) -> str:
+        output = self.answer(argv)
+        assert isinstance(output, str), f"{list(argv)} is scripted as bytes, not text"
+        return output
+
+    def run_bytes(self, argv: Sequence[str], *, cwd: Path | None = None) -> bytes:
+        output = self.answer(argv)
+        assert isinstance(output, bytes), f"{list(argv)} is scripted as text, not bytes"
+        return output
 
     def attach(self, argv: Sequence[str], *, cwd: Path | None = None) -> int:
         reason = forbidden(list(argv))
@@ -184,8 +200,12 @@ class ReleaseCase(unittest.TestCase):
         self.release.directory.mkdir()
         self.host = FakeHost()
         self.files = workspace_files()
+        # Binary files at the release commit, as `git ls-tree` and `git cat-file` give them.
+        self.blobs: dict[str, bytes] = {}
         self.remote: dict[str, str] = {}
         self.host.on(["git", "show"], self.git_show)
+        self.host.on(["git", "ls-tree"], self.ls_tree)
+        self.host.on(["git", "cat-file", "blob"], self.cat_file)
         self.host.on(["git", "ls-remote", "origin"], self.ls_remote)
         self.host.on(
             ["git", "ls-remote", "--tags", "--refs", "origin", "v*"],
@@ -202,6 +222,18 @@ class ReleaseCase(unittest.TestCase):
         if path not in self.files:
             raise failure(f"fatal: path '{path}' does not exist in '{commit}'")
         return self.files[path]
+
+    def ls_tree(self, argv: list[str]) -> str:
+        self.assertEqual(argv[:4], ["git", "ls-tree", "-z", "--full-tree"])
+        self.assertEqual(argv[4:6], [COMMIT, "--"], "every file is read from the release commit")
+        return "".join(
+            f"100644 blob {DEMO_OBJECT}\t{path}\0" for path in argv[6:] if path in self.blobs
+        )
+
+    def cat_file(self, argv: list[str]) -> bytes:
+        self.assertEqual(argv[3:], [DEMO_OBJECT], "the blob is read by the ID its tree names")
+        (content,) = self.blobs.values()
+        return content
 
     def ls_remote(self, argv: list[str]) -> str:
         return "".join(f"{self.remote[ref]}\t{ref}\n" for ref in argv[3:] if ref in self.remote)
@@ -317,9 +349,28 @@ class PreflightTests(ReleaseCase):
     def test_a_ready_release_passes_every_check_and_writes_nothing(self) -> None:
         checks = self.preflight()
         self.assertEqual(self.failed(checks), [])
-        self.assertEqual(len(checks), 12)
+        self.assertEqual(len(checks), 13)
+        self.assertEqual(
+            checks["demo video"].detail,
+            f"no {maintainer.DEMO_PATH} at COMMIT: the release attaches eleven files",
+        )
         self.assertEqual(self.host.commands("git", "push"), [])
         self.assertEqual(self.host.commands("gh", "workflow"), [])
+        self.assertFalse((self.release.directory / "published").exists())
+
+    def test_a_committed_demo_video_is_named_and_one_it_cannot_attach_fails(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        checks = self.preflight()
+        self.assertEqual(self.failed(checks), [])
+        self.assertEqual(
+            checks["demo video"].detail,
+            f"{maintainer.DEMO_PATH} at COMMIT, {len(DEMO)} bytes: "
+            "the release attaches it as a twelfth file",
+        )
+        self.host.on(["git", "ls-tree"], f"120000 blob {DEMO_OBJECT}\t{maintainer.DEMO_PATH}\0")
+        checks = self.preflight()
+        self.assertEqual(self.failed(checks), ["demo video"])
+        self.assertIn("not a regular file", checks["demo video"].detail)
 
     def test_a_published_version_fails_its_own_line_only(self) -> None:
         self.host.urls[f"https://crates.io/api/v1/crates/fdu/{VERSION}"] = b"{}"
@@ -973,6 +1024,33 @@ class PublishedTests(ReleaseCase):
         )
         state = json.loads((self.release.directory / "state.json").read_text(encoding="utf-8"))
         self.assertEqual(state["publish_run"], 88)
+        self.assertFalse((self.release.directory / "published" / "media").exists())
+
+    def test_a_commit_s_demo_video_is_staged_and_attached_as_a_twelfth_asset(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        command = self.published()
+        demo = self.release.directory / "published" / "media" / "fdu-demo.mp4"
+        self.assertEqual(demo.read_bytes(), DEMO)
+        attached = [arg for arg in command if arg.startswith(str(self.release.directory))]
+        self.assertEqual(len(attached), 13)  # the notes file and twelve assets
+        self.assertEqual(attached[-1], str(demo))
+        self.assertIn(
+            f"staged fdu-demo.mp4 from COMMIT:{maintainer.DEMO_PATH}", self.output.getvalue()
+        )
+
+    def test_a_hand_publication_stages_the_commit_s_demo_video_too(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        published = self.release.directory / "published"
+        (published / "files").mkdir(parents=True)
+        (published / "evidence").mkdir()
+        write_release_set(published / "files")
+        record_evidence(published / "files", published / "evidence")
+        self.serve(published / "evidence" / "release-manifest.json")
+        command = self.quietly(
+            lambda: maintainer.published(self.host, self.release, run_id=None, by_hand=True)
+        )
+        self.assertEqual((published / "media" / "fdu-demo.mp4").read_bytes(), DEMO)
+        self.assertIn(str(published / "media" / "fdu-demo.mp4"), command)
 
     def test_a_registry_that_lacks_the_files_writes_no_audit(self) -> None:
         def missing_pypi(argv: list[str]) -> str:
@@ -1100,6 +1178,7 @@ class AnnouncedTests(ReleaseCase):
         with redirect_stdout(io.StringIO()):
             self.assertEqual(maintainer.report(list(checks.values())), 0)
         self.assertEqual(len(self.assets), 11)
+        self.assertEqual(self.host.commands("git", "cat-file"), [])
         installs = self.host.commands("uv", "tool", "run")
         self.assertEqual([call[-2] for call in installs], [f"fdu@{VERSION}", "fdu@latest"])
         self.assertTrue(all("--no-config" in call and "--no-build" in call for call in installs))
@@ -1149,6 +1228,175 @@ class AnnouncedTests(ReleaseCase):
     def test_no_release_yet_fails_once(self) -> None:
         self.host.on(["gh", "api", f"repos/{REPO}/releases/tags/{TAG}"], failure("HTTP 404"))
         self.assertEqual(self.failed(), ["GitHub release"])
+
+    def demo_asset(self, content: bytes = DEMO) -> dict[str, Any]:
+        """GitHub's record of an attached `fdu-demo.mp4` holding `content`."""
+        digest = hashlib.sha256(content).hexdigest()
+        return {"name": "fdu-demo.mp4", "size": len(content), "digest": f"sha256:{digest}"}
+
+    def test_the_commit_s_demo_video_is_a_twelfth_verified_asset(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        self.assets.append(self.demo_asset())
+        with redirect_stdout(io.StringIO()):
+            checks = self.announced()
+        self.assertTrue(checks["release assets"].ok, checks["release assets"].detail)
+        self.assertEqual(checks["release assets"].detail.split(" ")[0], "12")
+
+    def test_a_demo_video_the_commit_lacks_is_unexpected(self) -> None:
+        self.assets.append(self.demo_asset())
+        detail = self.announced()["release assets"].detail
+        self.assertEqual(detail, "unexpected fdu-demo.mp4")
+        self.assertFalse((self.release.directory / "published" / "media").exists())
+
+    def test_a_demo_video_of_other_bytes_or_none_at_all_fails(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.announced()["release assets"].detail, "missing fdu-demo.mp4")
+            self.assets.append(self.demo_asset(DEMO + b"\0"))
+            detail = self.announced()["release assets"].detail
+        self.assertEqual(detail, "fdu-demo.mp4 size differs; fdu-demo.mp4 digest differs")
+        self.assets[-1] = self.demo_asset(DEMO[::-1])
+        with redirect_stdout(io.StringIO()):
+            detail = self.announced()["release assets"].detail
+        self.assertEqual(detail, "fdu-demo.mp4 digest differs")
+
+
+class DemoStagingTests(ReleaseCase):
+    """
+    `$RELEASE/published/media` mirrors the release commit's demo video and holds nothing
+    else, so the release's expected files are a function of the commit's tree.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.published = self.release.directory / "published"
+        (self.published / "files").mkdir(parents=True)
+        (self.published / "evidence").mkdir()
+        write_release_set(self.published / "files")
+        record_evidence(self.published / "files", self.published / "evidence")
+        (self.release.directory / "registry-state.json").write_text("{}\n", encoding="utf-8")
+        self.media = self.published / "media"
+
+    def stage(self) -> Path | None:
+        return self.quietly(lambda: maintainer.stage_demo(self.host, self.release))
+
+    def test_a_commit_with_the_demo_expects_twelve_files_with_its_exact_bytes(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        staged = self.stage()
+        self.assertEqual(staged, self.media / "fdu-demo.mp4")
+        expected = maintainer.expected_assets(self.release)
+        self.assertEqual(len(expected), 12)
+        self.assertEqual(expected["fdu-demo.mp4"].read_bytes(), DEMO)
+        digest = hashlib.sha256(DEMO).hexdigest()
+        self.assertIn(f"{len(DEMO)} bytes, sha256 {digest}", self.output.getvalue())
+        # Staging again rewrites the same bytes and changes nothing else.
+        self.stage()
+        self.assertEqual(sorted(path.name for path in self.media.iterdir()), ["fdu-demo.mp4"])
+
+    def test_a_commit_without_the_demo_expects_exactly_eleven_and_no_media(self) -> None:
+        self.assertIsNone(self.stage())
+        self.assertEqual(len(maintainer.expected_assets(self.release)), 11)
+        self.assertFalse(self.media.exists())
+        self.assertEqual(self.output.getvalue(), "")
+
+    def test_a_demo_staged_for_a_commit_without_one_is_removed(self) -> None:
+        self.media.mkdir()
+        (self.media / "fdu-demo.mp4").write_bytes(DEMO)
+        self.assertIsNone(self.stage())
+        self.assertFalse(self.media.exists())
+        self.assertEqual(len(maintainer.expected_assets(self.release)), 11)
+        self.assertIn(f"has no {maintainer.DEMO_PATH}", self.output.getvalue())
+
+    def test_a_stale_demo_of_other_bytes_is_replaced_by_the_commit_s(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        self.media.mkdir()
+        (self.media / "fdu-demo.mp4").write_bytes(b"an older cut")
+        self.stage()
+        self.assertEqual((self.media / "fdu-demo.mp4").read_bytes(), DEMO)
+
+    def test_anything_else_in_media_is_refused_rather_than_attached(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        self.media.mkdir()
+        (self.media / "notes.txt").write_text("not a release file\n", encoding="utf-8")
+        with self.assertRaisesRegex(StepError, "holds notes.txt"):
+            self.stage()
+        with self.assertRaisesRegex(StepError, "holds notes.txt"):
+            maintainer.expected_assets(self.release)
+        self.assertFalse((self.media / "fdu-demo.mp4").exists())
+
+    def test_a_symlink_is_never_written_through(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        outside = self.base / "outside.mp4"
+        outside.write_bytes(b"someone else's file")
+        self.media.mkdir()
+        (self.media / "fdu-demo.mp4").symlink_to(outside)
+        with self.assertRaisesRegex(StepError, "holds fdu-demo.mp4"):
+            self.stage()
+        self.assertEqual(outside.read_bytes(), b"someone else's file")
+        shutil.rmtree(self.media)
+        self.media.symlink_to(self.base)
+        with self.assertRaisesRegex(StepError, "must be a directory"):
+            self.stage()
+        self.assertFalse((self.base / "fdu-demo.mp4").exists())
+
+    def test_a_demo_that_is_not_a_regular_file_is_refused(self) -> None:
+        for entry in (
+            f"120000 blob {DEMO_OBJECT}\t{maintainer.DEMO_PATH}\0",
+            f"040000 tree {DEMO_OBJECT}\t{maintainer.DEMO_PATH}\0",
+            f"160000 commit {DEMO_OBJECT}\t{maintainer.DEMO_PATH}\0",
+        ):
+            self.host.on(["git", "ls-tree"], entry)
+            with self.assertRaisesRegex(StepError, "not a regular file"):
+                self.stage()
+        self.assertEqual(self.host.commands("git", "cat-file"), [])
+        self.assertFalse(self.media.exists())
+
+    def test_a_commit_git_cannot_read_is_an_error_not_a_missing_demo(self) -> None:
+        self.host.on(["git", "ls-tree"], failure("fatal: Not a valid object name"))
+        with self.assertRaises(CommandError):
+            self.stage()
+
+    def test_two_assets_of_one_name_are_refused(self) -> None:
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        self.stage()
+        (self.published / "files" / "fdu-demo.mp4").write_bytes(DEMO)
+        with self.assertRaisesRegex(StepError, "fdu-demo.mp4"):
+            maintainer.expected_assets(self.release)
+
+
+class ShowBytesTests(unittest.TestCase):
+    """The binary read of a committed file, against real git."""
+
+    def test_exact_bytes_none_when_absent_and_a_symlink_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            checkout = Path(scratch) / "checkout"
+            subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+            demo = checkout / maintainer.DEMO_PATH
+            demo.parent.mkdir(parents=True)
+            demo.write_bytes(DEMO)
+            (checkout / "docs" / "link.mp4").symlink_to("media/fdu-demo.mp4")
+            subprocess.run(["git", "-C", str(checkout), "add", "-A"], check=True)
+            git = ["git", "-c", "user.name=M", "-c", "user.email=m@example.com"]
+            git += ["-c", "commit.gpgsign=false", "-C", str(checkout)]
+            subprocess.run([*git, "commit", "-q", "-m", "c"], check=True)
+            commit = subprocess.run(
+                ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            # A working-tree edit must not reach the release: the commit is read.
+            demo.write_bytes(b"uncommitted")
+            release = Release(VERSION, commit, Path(scratch) / "release", checkout)
+            self.assertEqual(maintainer.show_bytes(Host(), release, maintainer.DEMO_PATH), DEMO)
+            self.assertIsNone(maintainer.show_bytes(Host(), release, "docs/media/absent.mp4"))
+            with self.assertRaisesRegex(StepError, "not a regular file"):
+                maintainer.show_bytes(Host(), release, "docs/link.mp4")
+            with self.assertRaisesRegex(StepError, "not a regular file"):
+                maintainer.show_bytes(Host(), release, "docs/media")
+            unknown = Release(VERSION, OTHER, Path(scratch) / "release", checkout)
+            with self.assertRaises(CommandError):
+                maintainer.show_bytes(Host(), unknown, maintainer.DEMO_PATH)
 
 
 class CleanupTests(ReleaseCase):
@@ -1311,6 +1559,8 @@ class WorkflowContractTests(unittest.TestCase):
                     host.attach(argv)
                 with self.assertRaisesRegex(AssertionError, "maintainer's step"):
                     host.run(argv)
+                with self.assertRaisesRegex(AssertionError, "maintainer's step"):
+                    host.run_bytes(argv)
 
 
 class MakefileTests(unittest.TestCase):
