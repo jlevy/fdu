@@ -1002,11 +1002,12 @@ command writes none; compare `default-tree` runs across this change with that in
 [performance index](../specs/active/plan-2026-10-05-fdu-performance-index.md) landed
 with [#176](https://github.com/jlevy/fdu/pull/176): thirteen macOS history cells timing
 the milestone builds through 0.3.0, published as an exploratory macOS score.
-Its follow-ups come before a new round: the Linux cells (`fdu-iwmq`), a quiet re-time at
-20 rounds and a confirming stage before any score is quoted (`fdu-bkj2`), and the warm
-revalidation that took longer than its own cold scan (`fdu-92bg`). 0.4.0 changes the
-report path, not the walker; its non-regression against 0.3.0 is `fdu-vl8a`, and the
-`content-query` re-baseline is `fdu-mvnp`.
+Its follow-ups run beside the Linux queue below, which this note does not reorder: the
+Linux cells (`fdu-iwmq`), a placebo cell of 0.3.0 against itself (`fdu-8kad`) and then a
+quiet re-time at 20 rounds and a non-exploratory stage before any score is quoted
+(`fdu-bkj2`), and the warm revalidation that took longer than its own cold scan
+(`fdu-92bg`). 0.4.0 changes the report path, not the walker; its non-regression against
+0.3.0 is `fdu-vl8a`, and the `content-query` re-baseline is `fdu-mvnp`.
 
 **Start here: what 0.3.0 carries.** The Linux work of 2026-09-29 and 2026-09-30 ships in
 0.3.0: the overnight round ([#161](https://github.com/jlevy/fdu/pull/161)) and the pdu

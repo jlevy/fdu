@@ -261,9 +261,10 @@ Both halves are in the score, so a platform-specific change shows too.
   the page and every figure quoting it say so (“exploratory, uncontrolled host”), as the
   [performance loop’s host-pressure regimes](../../guides/performance-loop.md#host-pressure-regimes)
   require. A score quoted in release notes or a README must come from cells timed quiet
-  or controlled-interactive, at 20 rounds, and recorded at a confirming stage
-  (`--stage discovery` or `held-out`; the driver defaults to `exploratory`); the page
-  labels a score with any cell short of 20 rounds exploratory and names the shortfall
+  or controlled-interactive, at 20 rounds, and recorded at a stage other than
+  `exploratory` (`--stage discovery` or `held-out`; the driver defaults to
+  `exploratory`, and the projection rejects only that stage by name); the page labels a
+  score with any cell short of 20 rounds exploratory and names the shortfall
   (“exploratory, 12 rounds”), as it does a score with any cell at the exploratory stage.
 - **Where.** macOS cells run on the maintainer’s Mac.
   Linux cells run on a Linux host, for example a cloud session handed the same builds
@@ -350,7 +351,8 @@ A full refresh times every component for every build on both platforms, which ta
 hours of machine time.
 Release notes quote the unified score with its interval, coverage, platform, and regime,
 and link the components; only a score whose every cell was timed quiet or
-controlled-interactive, at 20 rounds, at a confirming stage, is quoted there.
+controlled-interactive, at 20 rounds, at a stage other than `exploratory`, is quoted
+there.
 
 ## Open Questions
 

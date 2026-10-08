@@ -56,10 +56,10 @@ it.
 - **Linux, 4-vCPU virtualized guest, ext4, warm cache, quiet:** In the probe’s
   `default-tree` job, the 0.3.0 release engine takes 48.00% [−50.45%, −44.79%] less time
   than 0.2.1’s on the Linux v6.12 source tree, 14.09% less on a directory-dense
-  `node_modules` tree, and 14.57% less on a generated million-entry tree; the installed
-  `fdu PATH` takes about 49%, 17% and 17% less in the same run’s tool cells.
-  On all three it leads pdu’s default, `pdu --max-depth 2` and diskus, the narrowest
-  lead being +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree
+  `node_modules` tree, and 14.57% less on a generated million-entry tree; in the same
+  session’s tool cells, 0.2.1’s installed `fdu PATH` took 95%, 20% and 21% longer than
+  the release’s. On all three it leads pdu’s default, `pdu --max-depth 2` and diskus,
+  the narrowest lead being +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree
   ([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
   Most of that is two rounds: the
   [overnight round](#the-linux-overnight-round-2026-09-29), −39.00% end to end on the
@@ -72,15 +72,14 @@ it.
   last derived (exp-141, recorded uncontrolled), before the 0.2.1 and 0.3.0 work.
 - **macOS, the performance index, one M1 Pro, APFS, warm cache, uncontrolled:** Over all
   twelve components of [the index](#reading-the-charted-page), 0.3.0 scores 1.71×
-  [1.68×, 1.74×] better than 0.2.0 and 1.14× [1.12×, 1.15×] better than 0.2.1. Against
-  0.2.1 the default tree is 15.5% [11.6%, 22.3%] slower, a first run with fdu’s caches
-  empty 13.2% [8.0%, 17.8%] slower, and peak memory, averaged over the components, 1.48×
-  0.3.0’s, most of it removed by H172 (1.44× before it, 1.06× after).
-  Much of the gain since 0.2.0 recovers the cost that reading `.gitignore` added at
-  0.1.0 (`fdu-inph`). The cells are exploratory: 10 of 13 ran 12 rounds, CPU was above
-  the quiet gate at 3–99% of their sample boundaries, and the intervals cover variation
-  within each cell’s session only.
-  Linux, half the full index, is unmeasured.
+  [1.68×, 1.74×] better than 0.2.0 and 1.14× [1.12×, 1.15×] better than 0.2.1. On the
+  Linux v6.12 source tree, 0.2.1’s default tree took 15.5% [11.6%, 22.3%] longer than
+  0.3.0’s and its first run with fdu’s caches empty 13.2% [8.0%, 17.8%] longer, and its
+  peak memory, averaged over the components, was 1.48× 0.3.0’s. Much of the gain since
+  0.2.0 recovers the cost that reading `.gitignore` added at 0.1.0 (`fdu-inph`). The
+  cells are exploratory: 10 of 13 ran 12 rounds, CPU was above the quiet gate at 3–99%
+  of their sample boundaries, and the intervals cover variation within each cell’s
+  session only. Linux, half the full index, is unmeasured.
 - **macOS, experiments and peers, uncontrolled:** A pre-0.2.0 build (`a5c0ab46`) built
   its reusable index and a ten-row tree in 6.4 s on the generated million-entry tree,
   ahead of every peer, with dumac taking 9% longer
@@ -115,9 +114,15 @@ whole cell.
 - **Release milestones:** The index’s history cells time every milestone build through
   0.3.0 on the Linux v6.12 tree and the generated million-entry tree, interleaved
   against 0.3.0 (uncontrolled, exploratory).
-  On the full macOS index 0.2.1 costs 1.136× [1.118×, 1.154×] what 0.3.0 does; adjacent
-  milestones after it differ by less than the host could resolve, except in memory,
-  where H172 took the memory component from 1.44× to 1.06× of 0.3.0’s. 0.3.0’s
+  On the full macOS index 0.2.1 costs 1.14× [1.12×, 1.15×] what 0.3.0 does.
+  Two steps after it are resolved: the H171 milestone took that to 1.09× [1.07×, 1.10×],
+  most of it in `warm-revalidate` (+19.2% to +3.3% of 0.3.0’s) and the opened root’s
+  second report (+8.1% to +2.0%); and the pdu track’s milestone still costs 1.05×
+  [1.04×, 1.07×], with a default tree 10.0% [4.2%, 12.4%] slower than 0.3.0’s, though
+  the release added nothing expected to speed the walk (a placebo cell, `fdu-8kad`).
+  Memory fell twice: at the milestone carrying H172 with H175, H176, and F6e, from 1.44×
+  to 1.06× of 0.3.0’s, and at the release, which bounds content analysis memory, where
+  the content views’ peak RSS fell from 143–145 to 118–119 MiB. 0.3.0’s
   `warm-revalidate`, timed whole-process with the probe’s oracle, took 478 ms on the
   kernel tree against 303 ms for its `cold-open-save` and 164 ms for the default tree;
   whether the oracle explains that or the cached path loses to a cold scan, which the
@@ -228,7 +233,9 @@ the walker that allocated them, [#150](https://github.com/jlevy/fdu/pull/150)), 
 and H163 (allocation-free matching and per-directory control chains,
 [#155](https://github.com/jlevy/fdu/pull/155)). The real-tree tool cells of 2026-09-29
 start from its engine (exp-175, exp-176), and exp-202’s generated-tree cell timed 0.2.1
-beside pdu and diskus: level with `pdu --max-depth 2`, +0.8% [−2.4%, +1.7%]. The other
+beside pdu and diskus: level with `pdu --max-depth 2`, +0.8% [−2.4%, +1.7%], a figure
+derived by pairing the two tools’ samples of equal ordinal rather than a harness pair
+([`derived-pairs.txt`](../experiments/evidence/exp-202/derived-pairs.txt)). The other
 peers of [the Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) have not
 been re-measured on 0.2.1 or later.
 
@@ -276,8 +283,8 @@ own host.
 | Tier and job | Platform | Subject | Latest | Host pressure | Source |
 | --- | --- | --- | --- | --- | --- |
 | CLI indexed tree, `--cache off` | macOS | generated, 1.0M entries | 6.4 s; dumac +9%; pre-0.2.0 build `a5c0ab46`, 2026-09-28 | uncontrolled | [macOS comparison](report-2026-09-26-fdu-live-tool-comparison.md) |
-| CLI indexed tree, `--cache off` | Linux | generated, 1.0M | 1.25 s; pdu 1.02 s; pre-0.2.1 engine, 2026-09-28 | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
-| CLI summary, `--no-gitignore` | Linux | generated, 1.0M | 0.94 s; fastest measured; pre-0.2.1 engine, 2026-09-28 | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
+| CLI indexed tree, `--cache off` | Linux | generated, 1.0M | 1.25 s; pdu 1.02 s; pre-0.2.0 build `7acface5`, 2026-09-28 | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
+| CLI summary, `--no-gitignore` | Linux | generated, 1.0M | 0.94 s; fastest measured; pre-0.2.0 build `7acface5`, 2026-09-28 | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
 | CLI default, against pdu and diskus | Linux | `linux-v6.12`, 92k | 0.110 s; pdu’s default +15% [+12%, +19%], pdu `--max-depth 2` +10% [+2%, +12%], diskus +17% [+3%, +20%]; from 2.4× pdu’s default | quiet | exp-175, exp-202 |
 | CLI default, against pdu and diskus | Linux | `node-modules-dense`, 80k | 0.106 s; pdu’s default +18% [+15%, +23%], pdu `--max-depth 2` +12% [+2%, +19%], diskus +12% [+9%, +17%]; from 1.12× pdu’s default | quiet | exp-176, exp-202 |
 | CLI default, against pdu and diskus | Linux | generated, 1.0M | 0.951 s; pdu `--max-depth 2` +19% [+15%, +20%], pdu’s default +25% [+21%, +28%], diskus +24% [+20%, +28%]; from pdu `--max-depth 2` 2.5% ahead on `ebc06c78` | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md), exp-202 |
@@ -348,8 +355,11 @@ changed from phase to phase.
 Each verdict carries the paired change its record states on its primary job, in wall
 time unless another metric is named; the ledger has every other job and metric.
 Records name their host pressure consistently from exp-105 on, and only some do before
-it. A round below that names no host pressure has none recorded: its figures are paired
-evidence from a host of unknown load, not claims.
+it: campaign 2 (exp-066 to exp-070), streaming parity (exp-071, exp-073), the H86
+composite (exp-100 to exp-102), and Linux campaign 1 (exp-064, exp-065) record
+uncontrolled cells, and campaign 1 has quiet re-runs (exp-007, exp-009, exp-010). Where
+a round below names no host pressure, read its record before quoting a figure from it as
+a claim.
 
 ### Campaign 1: Walker, Snapshot, Revalidation (2026-08-10 to 2026-08-13)
 
@@ -1181,16 +1191,18 @@ These do not overturn a verdict; they say what a verdict rests on.
   H180, and H183 are portable code and run there; H169’s reader is Linux glibc only.
   Nor has any of the pdu track’s: H186, H188, and H189 are portable, and H185 is a no-op
   there, since the macOS listing carries every child’s attributes.
-  The index’s history cells time them only as milestone builds, where each step is
-  within what the host could resolve except H172’s cut to memory, so their individual
-  macOS effects are unknown.
-- **Every index score includes the probe’s oracle:** The four probe jobs, 12.5% of the
-  weight, are timed whole-process with the probe’s verification walk on, because builds
-  before 0.1.0 cannot turn it off; separating that cost is part of `fdu-92bg`.
+  The index’s history cells time them only as milestone builds, several changes to a
+  step: the H171 step and the memory cut at the step carrying H172 are resolved, but no
+  single change’s macOS effect is separated.
+- **Every full index score includes the probe’s oracle:** The four probe jobs, 12.5% of
+  the weight, are timed whole-process with the probe’s verification walk on, because
+  builds before 0.1.0 cannot turn it off; separating that cost is part of `fdu-92bg`.
+  The partial score has no probe job.
 - **The index’s intervals cover one session per cell:** Each combines its cells’ paired
   intervals as independent, and memory adds its point value only.
-  They do not include session-to-session drift, which on this host moves a build by
-  about 10%.
+  They do not include drift between sessions.
+  The default-tree and cold-cache cells time nearly the same command from 0.2.0 on, in
+  different sessions, and their ratios to 0.3.0 differ by 0.8 to 6.7 points.
 - **H169’s tree-route gain is below its prediction:** It was accepted on the
   `--no-controls` summary, whose −6.25% on `node-modules-dense` and −7.90% on
   `linux-v6.12` also fell short of the predicted −8% to −12%, the second by a tenth of a
@@ -1260,7 +1272,7 @@ recorded as closed.
 
 | Tier | Platform | Status |
 | --- | --- | --- |
-| Index | Linux | 1.78× the floor against 1.4×, RSS 5.20× against 3× (exp-141); bare-metal remeasure open (`fdu-lf3v`, `fdu-tk1b`) |
+| Index | Linux | 1.78× the floor against 1.4×, RSS 5.20× against 3× (exp-141); bare-metal remeasure open (`fdu-lf3v`, `fdu-tk1b`); re-derive the ×floor (`fdu-z2h6`) |
 | Aggregate, `.gitignore` off | Linux | 1.59× on `linux-v6.12` and 1.86× on `/usr` against 1.25× (exp-141), before H147 and H72; re-derive |
 | Content cache hit | Linux | Two consecutive leftover determinations named no new 3% cut (exp-144, exp-155); closure not recorded |
 | Any tier | macOS | No floor denominator: the floor program is Linux-only (`fdu-33ri`, `fdu-9hdc`) |
@@ -1293,10 +1305,12 @@ Grouped by topic; the order to run them in is
      wall to buy after exp-200; **H179**, which after H185 applies only to the
      full-index route; **H164**’s tree route (`fdu-emqf`) and **H174** (`fdu-sfse`).
 - **The performance index:** The Linux cells, half the full index (Phase 2, `fdu-iwmq`);
-  a quiet re-time of the macOS cells at 20 rounds and a confirming stage before any
-  score is quoted (`fdu-bkj2`); the oracle’s share of the probe jobs and the warm
-  revalidation that took longer than its own cold scan (`fdu-92bg`); and timings with
-  `.gitignore` off, to separate its cost from speed (`fdu-inph`).
+  a placebo cell of 0.3.0 against itself, to explain the step from the pdu track’s
+  milestone to the release (`fdu-8kad`); a quiet re-time of the macOS cells at 20 rounds
+  and a non-exploratory stage before any score is quoted (`fdu-bkj2`); the oracle’s
+  share of the probe jobs and the warm revalidation that took longer than its own cold
+  scan (`fdu-92bg`); and timings with `.gitignore` off, to separate its cost from speed
+  (`fdu-inph`).
 - **The 0.4.0 report path:** A paired non-regression of the release candidate against
   0.3.0 on the default tree, summary, and content views (`fdu-vl8a`), and a new
   `content-query` baseline, since its setup now analyzes words (`fdu-mvnp`).
@@ -1346,12 +1360,12 @@ the experiment bars that do not count toward the chosen metric.
   pre-work binary, over cold cache, default tree, scale, and memory, a coverage of 40%.
 - **Exploratory, uncontrolled host, 12 rounds:** 10 of the 13 cells ran 12 rounds rather
   than 20, and between 3% and 99% of each cell’s sample boundaries found CPU above the
-  25% quiet gate, so differences of about 10% between adjacent builds are within the
-  noise. The intervals combine each cell’s paired interval within its own session and do
-  not include that drift.
-  A score quoted in release notes waits on a quiet re-time at 20 rounds and a confirming
-  stage (`fdu-bkj2`): the page marks a score exploratory while any cell behind it is
-  uncontrolled, short of 20 rounds, or at the exploratory stage.
+  25% quiet gate, so a difference of up to about 10% between adjacent builds may be
+  noise. The intervals combine each cell’s paired interval within its own session, so
+  they do not include drift between sessions.
+  A score quoted in release notes waits on a quiet re-time at 20 rounds and a
+  non-exploratory stage (`fdu-bkj2`): the page marks a score exploratory while any cell
+  behind it is uncontrolled, short of 20 rounds, or at the exploratory stage.
   Linux, half of the full index, is not yet measured (`fdu-iwmq`).
 
 The scale and cold-cache cells:
@@ -1374,9 +1388,10 @@ timing; the five content cells were timed before the content check existed, so t
 content totals were checked in an untimed re-run after timing (`answer_check.rechecked`
 in each cell).
 The scale and cold-cache cells predate the driver: a scratch driver around
-`benchmarks.realtree.compare_tools` timed them, and they record no `answer_check`, only
-the harness’s `semantic_mismatches: 0`. `make perf-report-check` re-derives every cell
-from its committed run artifact.
+`benchmarks.realtree.compare_tools` timed them, and they record their answer checks per
+capability group, builds with and without `.gitignore` support, under
+`subject.answer_check_groups`: identical totals, zero exit codes, and no cache writes.
+`make perf-report-check` re-derives every cell from its committed run artifact.
 
 The bottom panel is every experiment’s paired change on its own primary metric: green
 for the 52 changes kept at least 3% better, each counted once (47 on wall time, 3 on
