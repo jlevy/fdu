@@ -3,16 +3,20 @@ type: is
 id: is-01m4d4r3ea9eezr4664nfm1nn4
 title: "Evidence report: fix the macOS contradiction, add the index to the headline, and refresh stale pointers (review 2026-10-07)"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
+delegate: claude-code@spud10
 labels:
   - performance
   - docs
   - review
 dependencies: []
+hold: null
+hold_until: null
 created_at: 2026-10-08T06:55:54.313Z
-updated_at: 2026-10-08T06:55:54.313Z
+updated_at: 2026-10-08T15:23:54.052Z
+started_at: 2026-10-08T15:23:54.039Z
 ---
 Review of docs/project/reports/report-2026-08-20-fdu-performance-evidence.md at main 99595252 (2026-10-07). Every count and every figure checked (~180) matches its artifact; perf-report-check, perf-evidence-check and perf-ledger-check exit 0; the macOS index (1.7084 [1.6817, 1.7355], partial 4.7320) recomputes independently. The problems are in the text:
 
