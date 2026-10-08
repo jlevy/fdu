@@ -5,14 +5,14 @@ title: Record the 0.4.0 Linux demo from the release candidate and embed it in RE
 kind: task
 status: open
 priority: 1
-version: 2
+version: 3
 labels:
   - release
   - docs
 dependencies: []
 parent_id: is-01m47z5n33np3b15yena1k3hqt
 created_at: 2026-10-08T06:55:32.944Z
-updated_at: 2026-10-08T07:01:53.360Z
+updated_at: 2026-10-08T16:08:23.985Z
 ---
 Maintainer decision 2026-10-07: the 0.4.0 demo video is GitHub-hosted and lands before the tag.
 
@@ -28,4 +28,4 @@ Blocked on disk space: ~1.8-3.8 GiB free on the internal SSD; needs a release bu
 
 ## Notes
 
-Existing take (2026-10-05 23:37 PDT, this Mac): ~/Downloads/fdu-video/linux.{mp4,gif,cast,receipt.json}, copies plus the lossless master in /Volumes/spud-ext1/agent-scratch/fdu-video/. Recorded from the pre-merge fdu-view-implies worktree (now gone), 36 s, 3004x1972, verify ok; tree 0.183 s, cold analysis 7.3 s, cached 0.76 s. It is stale for 0.4.0: it predates 6fa83ad1 (2026-10-06 01:33), so it prints 'note: percentages are shares of document words' where main prints 'shares of code lines (CODE), document words (DOCUMENTS)'. Re-record from the release candidate. The kernel tree is already cloned at /Volumes/spud-ext1/agent-scratch/demo-trees/linux (1.7 GiB, USB drive); linux.yaml asks for the internal SSD.
+Take 2 accepted (2026-10-08 09:03): ~/Downloads/fdu-video-0.4.0/linux.{mp4,gif,cast,receipt.json}, from claude/release-0.4.0-prep (fdu 0.4.0-dev+g237696eb5), tree on the internal SSD; 39.4 s, 3004x1972, H.264 High 5.2 BT.709, verify ok; tree 0.212 s, cold analysis 8.444 s, cached 0.773 s. Take 1 (same day) ran at load ~8-15 and showed 15.2 s / 1.18 s, so it was discarded: an interleaved 6-pair diagnostic of native v0.3.0 vs this build on the same tree put cold analysis at +1.1% (range -24..+22%), cached -1.4%, tree -10%, medians 8.4-9.5 s / 0.8 s / 0.13-0.15 s. fdu-nlgx seams are not visible in the delivered frames (zoomed bars show only row gaps). Next: upload the MP4 to GitHub, embed the URL in README.md and docs/project/release-notes/0.4.0.md on #185.
