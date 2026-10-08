@@ -56,6 +56,10 @@ Response = str | bytes | Exception | Callable[[list[str]], str | bytes]
 # read or a newline translation anywhere on the way would change them.
 DEMO = b"\x00\x00\x00\x18ftypmp42\r\n\xff\xfe\x00mdat\n"
 DEMO_OBJECT = "d" * 40
+# What `git cat-file` gives for a file Git LFS tracks: a pointer, not the video.
+LFS_POINTER = (
+    b"version https://git-lfs.github.com/spec/v1\noid sha256:" + b"4" * 64 + b"\nsize 4465668\n"
+)
 
 
 def forbidden(argv: Sequence[str]) -> str | None:
@@ -156,6 +160,22 @@ class FakeHost(Host):
 
 def failure(stderr: str = "fatal: no such ref") -> CommandError:
     return CommandError(["fake"], 1, stderr)
+
+
+def isolate_git(case: unittest.TestCase) -> None:
+    """
+    Run real git for the rest of a test with none of the invoking environment's git.
+
+    A suite run from a git hook inherits `GIT_DIR`, which would point every command,
+    `Host()`'s included, at the hook's repository and commit into it; a user's global
+    hooks or templates could fail or alter a throwaway commit. So `GIT_*` goes, global
+    and system config are ignored, and the tests commit with `--no-verify`.
+    """
+    scrubbed = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    scrubbed |= {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    patcher = mock.patch.dict(os.environ, scrubbed, clear=True)
+    patcher.start()
+    case.addCleanup(patcher.stop)
 
 
 def workspace_files(version: str = VERSION) -> dict[str, str]:
@@ -271,6 +291,16 @@ class NotesTests(unittest.TestCase):
             ["2 HTML comments, where only the guideline footer belongs"],
         )
 
+    def test_a_download_link_left_on_the_previous_tag_is_named(self) -> None:
+        demo = f"https://github.com/{REPO}/releases/download/{{}}/fdu-demo.mp4"
+        current = NOTES.replace("Report", f"[Demo]({demo.format(TAG)})\n\nReport")
+        self.assertEqual(maintainer.notes_problems(current, VERSION, PREVIOUS, REPO), [])
+        stale = NOTES.replace("Report", f"[Demo]({demo.format('v' + PREVIOUS)})\n\nReport")
+        self.assertEqual(
+            maintainer.notes_problems(stale, VERSION, PREVIOUS, REPO),
+            [f"a link pins v{PREVIOUS}, not {TAG}"],
+        )
+
     def test_a_link_to_a_moving_branch_is_named(self) -> None:
         moving = NOTES.replace(f"blob/{TAG}/SECURITY.md", "blob/main/SECURITY.md")
         self.assertEqual(
@@ -371,6 +401,42 @@ class PreflightTests(ReleaseCase):
         checks = self.preflight()
         self.assertEqual(self.failed(checks), ["demo video"])
         self.assertIn("not a regular file", checks["demo video"].detail)
+
+    def test_a_demo_that_is_an_lfs_pointer_or_not_an_mp4_fails_before_the_tag(self) -> None:
+        for content, problem in (
+            (LFS_POINTER, "is a Git LFS pointer"),
+            (b"GIF89a\x01\x00\x01\x00", "is not an MP4"),
+        ):
+            self.blobs[maintainer.DEMO_PATH] = content
+            checks = self.preflight()
+            self.assertEqual(self.failed(checks), ["demo video"])
+            self.assertIn(problem, checks["demo video"].detail)
+
+    def test_a_link_to_the_demo_fails_when_the_commit_has_none(self) -> None:
+        latest = f"https://github.com/{REPO}/releases/latest/download/fdu-demo.mp4"
+        tagged = f"https://github.com/{REPO}/releases/download/{TAG}/fdu-demo.mp4"
+        notes = self.files[f"docs/project/release-notes/{VERSION}.md"]
+        self.files["README.md"] = f"# fdu\n\n[![Demo](docs/media/fdu-demo.gif)]({latest})\n"
+        checks = self.preflight()
+        self.assertEqual(self.failed(checks), ["demo video"])
+        self.assertIn("README.md links", checks["demo video"].detail)
+        self.assertIn(f"has no {maintainer.DEMO_PATH}", checks["demo video"].detail)
+        self.files["README.md"] = "# fdu\n"
+        self.files[f"docs/project/release-notes/{VERSION}.md"] = notes.replace(
+            "Report", f"[Demo]({tagged})\n\nReport"
+        )
+        checks = self.preflight()
+        self.assertEqual(self.failed(checks), ["demo video"])
+        self.assertIn(f"docs/project/release-notes/{VERSION}.md links", checks["demo video"].detail)
+        # With the demo committed, both links are what the release attaches.
+        self.files["README.md"] = f"# fdu\n\n[Demo]({latest})\n"
+        self.blobs[maintainer.DEMO_PATH] = DEMO
+        self.assertEqual(self.failed(self.preflight()), [])
+
+    def test_a_link_to_another_release_s_demo_does_not_need_one_here(self) -> None:
+        older = f"https://github.com/{REPO}/releases/download/v{PREVIOUS}/fdu-demo.mp4"
+        self.files["README.md"] = f"# fdu\n\n[The {PREVIOUS} demo]({older})\n"
+        self.assertEqual(self.failed(self.preflight()), [])
 
     def test_a_published_version_fails_its_own_line_only(self) -> None:
         self.host.urls[f"https://crates.io/api/v1/crates/fdu/{VERSION}"] = b"{}"
@@ -885,6 +951,7 @@ class SigningRecipeTests(unittest.TestCase):
     """The guide's per-command signing and this program's verification, with real git."""
 
     def test_a_tag_signed_per_command_verifies_only_against_its_key(self) -> None:
+        isolate_git(self)
         with tempfile.TemporaryDirectory() as scratch:
             base = Path(scratch)
             for name in ("signing", "other"):
@@ -905,8 +972,9 @@ class SigningRecipeTests(unittest.TestCase):
                 )
             origin, checkout = base / "origin.git", base / "checkout"
             git = ["git", "-c", "user.name=Maintainer", "-c", "user.email=maintainer@example.com"]
-            subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
-            subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+            init = ["git", "init", "-q", "--initial-branch=main"]
+            subprocess.run([*init, "--bare", str(origin)], check=True)
+            subprocess.run([*init, str(checkout)], check=True)
             for path, text in workspace_files().items():
                 (checkout / path).parent.mkdir(parents=True, exist_ok=True)
                 (checkout / path).write_text(text, encoding="utf-8")
@@ -919,6 +987,7 @@ class SigningRecipeTests(unittest.TestCase):
                     "-c",
                     "commit.gpgsign=false",
                     "commit",
+                    "--no-verify",
                     "-q",
                     "-m",
                     "c",
@@ -1351,6 +1420,17 @@ class DemoStagingTests(ReleaseCase):
         self.assertEqual(self.host.commands("git", "cat-file"), [])
         self.assertFalse(self.media.exists())
 
+    def test_an_lfs_pointer_or_a_file_that_is_not_an_mp4_is_never_staged(self) -> None:
+        for content, problem in (
+            (LFS_POINTER, "is a Git LFS pointer, not the video"),
+            (b"\x00\x00\x00\x18moov", "is not an MP4"),
+            (b"", "is not an MP4"),
+        ):
+            self.blobs[maintainer.DEMO_PATH] = content
+            with self.assertRaisesRegex(StepError, problem):
+                self.stage()
+            self.assertFalse(self.media.exists())
+
     def test_a_commit_git_cannot_read_is_an_error_not_a_missing_demo(self) -> None:
         self.host.on(["git", "ls-tree"], failure("fatal: Not a valid object name"))
         with self.assertRaises(CommandError):
@@ -1368,9 +1448,12 @@ class ShowBytesTests(unittest.TestCase):
     """The binary read of a committed file, against real git."""
 
     def test_exact_bytes_none_when_absent_and_a_symlink_refused(self) -> None:
+        isolate_git(self)
         with tempfile.TemporaryDirectory() as scratch:
             checkout = Path(scratch) / "checkout"
-            subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+            subprocess.run(
+                ["git", "init", "-q", "--initial-branch=main", str(checkout)], check=True
+            )
             demo = checkout / maintainer.DEMO_PATH
             demo.parent.mkdir(parents=True)
             demo.write_bytes(DEMO)
@@ -1378,7 +1461,7 @@ class ShowBytesTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(checkout), "add", "-A"], check=True)
             git = ["git", "-c", "user.name=M", "-c", "user.email=m@example.com"]
             git += ["-c", "commit.gpgsign=false", "-C", str(checkout)]
-            subprocess.run([*git, "commit", "-q", "-m", "c"], check=True)
+            subprocess.run([*git, "commit", "--no-verify", "-q", "-m", "c"], check=True)
             commit = subprocess.run(
                 ["git", "-C", str(checkout), "rev-parse", "HEAD"],
                 check=True,

@@ -76,6 +76,8 @@ DEMO_PATH = "docs/media/fdu-demo.mp4"
 DEMO_ASSET = Path(DEMO_PATH).name
 # The git modes of a regular file; a symlink, a directory, or a submodule is refused.
 REGULAR_FILE_MODES = ("100644", "100755")
+# How a file Git LFS tracks starts as git stores it: a pointer, not the content.
+LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/"
 INSTALL_PYTHON = "3.12"
 PENDING_STATUS = 3
 # In checklist order, then the recovery audit; each is also `make release-<step>`.
@@ -429,6 +431,8 @@ def notes_problems(notes: str, version: str, previous: str | None, repository: s
     # content moves after the release.
     refs = set(re.findall(rf"github\.com/{slug}/(?:blob|tree)/([^/\s)#?]+)/", notes))
     refs |= set(re.findall(rf"github\.com/{slug}/releases/tag/([^/\s)#?]+)", notes))
+    # A release asset, such as the demo video, is linked under the tag that attached it.
+    refs |= set(re.findall(rf"github\.com/{slug}/releases/download/([^/\s)#?]+)/", notes))
     problems.extend(f"a link pins {other}, not {tag}" for other in sorted(refs - {tag}))
     compares = re.findall(rf"github\.com/{slug}/compare/({semver})\.\.\.({semver})", notes)
     expected = (f"v{previous}", tag) if previous is not None else None
@@ -480,13 +484,56 @@ def changelog_check(host: Host, release: Release) -> Check:
     return Check("CHANGELOG", heading is not None, detail)
 
 
+def committed_demo(host: Host, release: Release) -> bytes | None:
+    """
+    The release commit's demo video, or None when it has none.
+
+    The release attaches these bytes as they are, so a Git LFS pointer, or anything without
+    the `ftyp` box every MP4 opens with, is refused rather than published as the video.
+    """
+    content = show_bytes(host, release, DEMO_PATH)
+    if content is None:
+        return None
+    if content.startswith(LFS_POINTER_PREFIX):
+        raise StepError(f"{DEMO_PATH} at COMMIT is a Git LFS pointer, not the video")
+    if content[4:8] != b"ftyp":
+        raise StepError(f"{DEMO_PATH} at COMMIT is not an MP4: it has no `ftyp` box at byte 4")
+    return content
+
+
+def links_demo(text: str, release: Release) -> bool:
+    """
+    Whether a document links the demo video this release attaches: the latest release's
+    copy, as a README does, or this tag's, as its notes do. A link to another release's
+    copy does not depend on this one.
+    """
+    slug, tag, asset = (re.escape(name) for name in (release.repository, release.tag, DEMO_ASSET))
+    pattern = rf"github\.com/{slug}/releases/(?:latest/download|download/{tag})/{asset}"
+    return re.search(pattern, text) is not None
+
+
 def demo_check(host: Host, release: Release) -> Check:
     """
     Name the asset count the commit's demo video makes, and fail on a demo the announcement
     could not attach, which would otherwise stop it only after the registries publish.
+
+    A README or notes link to the demo also fails when the commit has none: the link would
+    404, and the release could not attach the video later, since its files are exactly the
+    commit's.
     """
-    content = show_bytes(host, release, DEMO_PATH)
+    content = committed_demo(host, release)
     if content is None:
+        linking = [
+            path
+            for path in ("README.md", release.notes_path)
+            if links_demo(show(host, release, path) or "", release)
+        ]
+        if linking:
+            detail = (
+                f"{' and '.join(linking)} links {DEMO_ASSET}, but COMMIT has no {DEMO_PATH}, "
+                "so the link would 404 and the release could not attach the video later"
+            )
+            return Check("demo video", False, detail)
         return Check(
             "demo video", True, f"no {DEMO_PATH} at COMMIT: the release attaches eleven files"
         )
@@ -1202,7 +1249,7 @@ def stage_demo(host: Host, release: Release) -> Path | None:
     media = release.directory / "published" / "media"
     target = media / DEMO_ASSET
     staged_media(release)
-    content = show_bytes(host, release, DEMO_PATH)
+    content = committed_demo(host, release)
     if content is None:
         if target.exists():
             target.unlink()

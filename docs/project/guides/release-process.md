@@ -243,9 +243,12 @@ The GitHub release attaches those and three evidence files, `release-manifest.js
 When the release commit carries `docs/media/fdu-demo.mp4`, the GitHub release attaches
 it as a twelfth file, `fdu-demo.mp4`; a commit without one attaches exactly eleven, so
 earlier releases still audit as eleven.
-The README links `releases/latest/download/fdu-demo.mp4` and the notes link the copy
-under their own tag, so the video a reader sees is the one committed with the release
-they install, never whatever `main` holds later.
+A README link to the demo uses `releases/latest/download/fdu-demo.mp4`, and a notes link
+uses the copy under the notes’ own tag, `releases/download/v$VERSION/fdu-demo.mp4`, so
+the video a reader sees is the one committed with the release they install, never
+whatever `main` holds later.
+Since the release attaches only what its commit holds, a commit that links the demo this
+way must carry it, and preflight checks that it does.
 It is no registry file: the manifest and `SHA256SUMS` never name it, and no crate or
 wheel carries it. The announcement reads its bytes from the tagged commit, not a working
 tree, and checks its GitHub digest like every other asset’s. So the expected set is a
@@ -541,9 +544,9 @@ answer is marked stale clearly enough in plain text is an open decision (`fdu-md
 | --- | --- |
 | `COMMIT on origin/main` | The commit is an ancestor of origin’s `main`. |
 | `Cargo versions at COMMIT` | All three package manifests and both workspace pins name `VERSION`. |
-| `release notes` | `docs/project/release-notes/$VERSION.md` exists at the commit, its repository links name `v$VERSION` (never a branch such as `main`), its compare link starts from the previous release’s tag, and it holds one HTML comment. |
+| `release notes` | `docs/project/release-notes/$VERSION.md` exists at the commit, its repository and release-asset download links name `v$VERSION` (never a branch such as `main`), its compare link starts from the previous release’s tag, and it holds one HTML comment. |
 | `CHANGELOG` | The commit’s CHANGELOG has a `## [$VERSION] - YYYY-MM-DD` heading. |
-| `demo video` | `docs/media/fdu-demo.mp4` is absent at the commit or is a regular file there; the line says whether the release attaches eleven files or twelve. A symlink or directory at that path fails here, where it would otherwise stop the announcement after the registries publish. |
+| `demo video` | `docs/media/fdu-demo.mp4` is absent at the commit, or is a regular file there that is an MP4 rather than a Git LFS pointer; the line says whether the release attaches eleven files or twelve. Without the demo, neither `README.md` nor the notes may link `releases/latest/download/fdu-demo.mp4` or `releases/download/v$VERSION/fdu-demo.mp4`, which would 404. A demo the announcement could not attach fails here, where it would otherwise stop the announcement after the registries publish. |
 | `tag v$VERSION` | Origin has no such tag. |
 | `crates.io fdu-core`, `crates.io fdu`, `PyPI fdu` | Each registry answers 404 for this version. The names exist since `0.1.0`, so only the version proves anything. |
 | `private vulnerability reporting` | GitHub’s private reporting form, which SECURITY.md and the notes point to, is enabled. If not, a maintainer enables it with `gh api -X PUT repos/jlevy/fdu/private-vulnerability-reporting`. |
