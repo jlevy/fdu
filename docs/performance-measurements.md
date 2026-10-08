@@ -144,7 +144,10 @@ has versions, CPU time, and the protocol.
 ## macOS
 
 On 2026-09-28, an M1 Pro’s internal APFS SSD, the same generated million-entry tree,
-with a pre-0.2.0 build of fdu (`a5c0ab46`) under heavy background load.
+with a pre-0.2.0 build of fdu (`a5c0ab46`) under heavy background load: an exploratory
+session on an uncontrolled host, which the
+[performance loop](project/guides/performance-loop.md#host-pressure-regimes) treats as
+exploration rather than a claim.
 That build made a reusable index and rendered a ten-row tree; its default `fdu PATH`
 measured the same within 0.1%. No macOS comparison has run on the current engine; the
 planned cells are exp-203 onward in the

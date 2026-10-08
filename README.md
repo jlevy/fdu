@@ -15,6 +15,12 @@ JSON output and a live change feed.
 For interactive browsing and deletion, or line counts in hundreds of languages, another
 tool fits better: see [when to use each](#comparison-to-alternatives).
 
+[![fdu on the Linux kernel source: the usage tree, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/releases/latest/download/fdu-demo.mp4)
+
+*fdu 0.4.0 on the Linux kernel source (1.7 GiB, 95,938 files), recorded in real time on
+an M1 Pro: one run of each command, not a benchmark.
+Click for the full-resolution video.*
+
 <!-- The speed claim above is repeated, without numbers, in crates/fdu/README.md,
 crates/fdu-py/README.md, crates/fdu/src/skills/SKILL.md, and the --docs guide in
 crates/fdu/src/cli.rs, whose output tests/golden/cli-surface.tryscript.md and
@@ -425,7 +431,7 @@ Time to report on the generated million-entry tree, 875,000 files and 2.99 GB of
 allocated space, with warm filesystem caches, as a multiple of fdu’s time (lower is
 faster):
 
-| Tool | Linux | macOS |
+| Tool | Linux | macOS, exploratory |
 | --- | ---: | ---: |
 | **fdu** | **1.00×** (0.95 s) | **1.00×** (6.4 s) |
 | [pdu](https://github.com/KSXGitHub/parallel-disk-usage) `--max-depth 2` | 1.19× | — |
@@ -446,11 +452,14 @@ and understate 0.3.0’s lead.
 On the two real trees, every tool took 29% to 38% longer in the 0.3.0 session than
 earlier that day, and about ten points of the 19% gap to `pdu --max-depth 2` on this
 tree are probably that session rather than fdu.
-macOS is one session on an M1 Pro’s APFS SSD, on 2026-09-28, with a pre-0.2.0 build on a
-heavily loaded host; pdu ran there as `--max-depth 1`. Windows has no measurements.
-fdu’s default report covers about 920,000 files and 3.1 GB a second on Linux (fdu
-0.3.0), and 137,000 files and 0.47 GB a second on macOS (the pre-0.2.0 build); these are
-metadata rates, since sizing a file reads none of its contents.
+macOS is one exploratory session on an M1 Pro’s APFS SSD, on 2026-09-28, with a
+pre-0.2.0 build on a heavily loaded, uncontrolled host; pdu ran there as
+`--max-depth 1`. It is exploration, not a claim the project’s
+[performance loop](docs/project/guides/performance-loop.md#host-pressure-regimes) would
+accept, and dumac, the closest tool there, was measured only on macOS. Windows has no
+measurements. fdu’s default report covers about 920,000 files and 3.1 GB a second on
+Linux (fdu 0.3.0), and 137,000 files and 0.47 GB a second on macOS (the pre-0.2.0
+build); these are metadata rates, since sizing a file reads none of its contents.
 [Performance Measurements](docs/performance-measurements.md) has each run’s intervals,
 memory, and what each tool returns.
 
