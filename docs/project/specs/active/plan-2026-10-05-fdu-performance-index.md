@@ -1,13 +1,15 @@
 # Feature: The fdu Performance Index
 
-**Date:** 2026-10-05 (last updated 2026-10-06)
+**Date:** 2026-10-05 (last updated 2026-10-08)
 
 **Author:** fdu project, with Claude Code assistance
 
-**Status:** In review.
-The maintainer has set the suite and weights below; Phase 1 is implemented in
-[#176](https://github.com/jlevy/fdu/pull/176), which publishes an interim macOS score
-labeled with the components it covers.
+**Status:** Phase 1 merged; Phase 2 open.
+The maintainer has set the suite and weights below.
+Phase 1 merged with [#176](https://github.com/jlevy/fdu/pull/176), which publishes an
+exploratory macOS score labeled with the components it covers, and froze version 1 of
+the manifest. Phase 2, the Linux cells, is `fdu-iwmq`; a quotable macOS score waits on
+`fdu-bkj2`.
 
 ## Overview
 
@@ -31,8 +33,8 @@ chart to any single component.
   the score. Today the 1M-tree line cannot show Linux, summary, cache, or `.gitignore`
   work, which is why the green bars and the line disagree.
 - **No chaining across sessions.** Every ratio comes from one interleaved session.
-  Compounding per-experiment effects claims more than 20,000×, so the index never does
-  it.
+  Compounding per-experiment effects claims about 7,700× over the 47 kept wall-time
+  changes, and far more if remeasurements are counted again, so the index never does it.
 - **Fixed before measuring.** The suite, the commands, the weights, and the reference
   build are recorded before a component’s cell runs, and change only by a versioned
   revision.
@@ -259,8 +261,11 @@ Both halves are in the score, so a platform-specific change shows too.
   the page and every figure quoting it say so (“exploratory, uncontrolled host”), as the
   [performance loop’s host-pressure regimes](../../guides/performance-loop.md#host-pressure-regimes)
   require. A score quoted in release notes or a README must come from cells timed quiet
-  or controlled-interactive, at 20 rounds; the page labels a score with any cell short
-  of 20 rounds exploratory and names the shortfall (“exploratory, 12 rounds”).
+  or controlled-interactive, at 20 rounds, and recorded at a stage other than
+  `exploratory` (`--stage discovery` or `held-out`; the driver defaults to
+  `exploratory`, and the projection rejects only that stage by name); the page labels a
+  score with any cell short of 20 rounds exploratory and names the shortfall
+  (“exploratory, 12 rounds”), as it does a score with any cell at the exploratory stage.
 - **Where.** macOS cells run on the maintainer’s Mac.
   Linux cells run on a Linux host, for example a cloud session handed the same builds
   and manifest.
@@ -346,7 +351,8 @@ A full refresh times every component for every build on both platforms, which ta
 hours of machine time.
 Release notes quote the unified score with its interval, coverage, platform, and regime,
 and link the components; only a score whose every cell was timed quiet or
-controlled-interactive, at 20 rounds, is quoted there.
+controlled-interactive, at 20 rounds, at a stage other than `exploratory`, is quoted
+there.
 
 ## Open Questions
 
