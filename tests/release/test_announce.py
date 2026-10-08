@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from unittest.mock import patch
 from scripts.release import announce, maintainer
 from scripts.release.maintainer import CommandError, Host, Release, StepError
 from scripts.release.registry_state import RegistryState
+from tests.release.test_maintainer import DEMO
 from tests.release.test_publish_gate import VERSION, record_evidence, write_release_set
 
 
@@ -24,8 +26,17 @@ class GitHub(Host):
         self.record = None
         self.writes = []
         self.interrupt = False
+        # Binary files at the release commit, keyed by path.
+        self.tree = {}
 
     def run(self, argv, **kwargs):
+        if argv[:2] == ["git", "ls-tree"]:
+            assert argv[2:6] == ["-z", "--full-tree", self.release.commit, "--"], argv
+            return "".join(
+                f"100644 blob {hashlib.sha1(self.tree[path]).hexdigest()}\t{path}\0"
+                for path in argv[6:]
+                if path in self.tree
+            )
         if argv[:2] == ["gh", "api"]:
             if "/releases/tags/" in argv[-1] and (self.record is None or self.record["draft"]):
                 raise CommandError(argv, 1, "HTTP 404")
@@ -63,6 +74,14 @@ class GitHub(Host):
             raise AssertionError(argv)
         return ""
 
+    def run_bytes(self, argv, **kwargs):
+        if argv[:3] != ["git", "cat-file", "blob"]:
+            raise AssertionError(argv)
+        (content,) = (
+            blob for blob in self.tree.values() if hashlib.sha1(blob).hexdigest() == argv[3]
+        )
+        return content
+
 
 class AnnouncementTests(unittest.TestCase):
     def setUp(self):
@@ -96,9 +115,53 @@ class AnnouncementTests(unittest.TestCase):
         announce.announce(self.host, self.release)
         self.assertFalse(self.host.record["draft"])
         self.assertEqual(len(self.host.record["assets"]), 11)
+        self.assertFalse((self.release.directory / "published/media").exists())
         writes = copy.deepcopy(self.host.writes)
         announce.announce(self.host, self.release)
         self.assertEqual(self.host.writes, writes)
+
+    def test_a_commit_s_demo_video_is_uploaded_and_verified_as_a_twelfth_asset(self):
+        self.host.tree[maintainer.DEMO_PATH] = DEMO
+        announce.announce(self.host, self.release)
+        self.assertFalse(self.host.record["draft"])
+        assets = {asset["name"]: asset for asset in self.host.record["assets"]}
+        self.assertEqual(len(assets), 12)
+        digest = f"sha256:{hashlib.sha256(DEMO).hexdigest()}"
+        self.assertEqual(
+            assets["fdu-demo.mp4"], {"name": "fdu-demo.mp4", "size": len(DEMO), "digest": digest}
+        )
+        (upload,) = [argv for argv in self.host.writes if argv[2] == "upload"]
+        self.assertIn(str(self.release.directory / "published/media/fdu-demo.mp4"), upload)
+        writes = copy.deepcopy(self.host.writes)
+        announce.announce(self.host, self.release)
+        self.assertEqual(self.host.writes, writes)
+
+    def test_a_demo_video_the_commit_lacks_is_refused(self):
+        announce.announce(self.host, self.release)
+        demo = {"name": "fdu-demo.mp4", "size": len(DEMO), "digest": "sha256:" + "0" * 64}
+        for draft in (False, True):
+            self.host.record["draft"] = draft
+            self.host.record["assets"] = [*self.host.record["assets"][:11], demo]
+            self.host.writes.clear()
+            with self.assertRaisesRegex(StepError, "unexpected assets"):
+                announce.announce(self.host, self.release)
+            self.assertEqual(self.host.writes, [])
+
+    def test_a_demo_video_asset_of_other_bytes_is_refused(self):
+        self.host.tree[maintainer.DEMO_PATH] = DEMO
+        self.host.interrupt = True
+        with self.assertRaises(CommandError):
+            announce.announce(self.host, self.release)
+        good = hashlib.sha256(DEMO).hexdigest()
+        for size, digest in ((len(DEMO) + 1, good), (len(DEMO), "0" * 64)):
+            self.host.record["assets"] = [
+                {"name": "fdu-demo.mp4", "size": size, "digest": f"sha256:{digest}"}
+            ]
+            self.host.writes.clear()
+            with self.assertRaisesRegex(StepError, "conflicts with verified files: fdu-demo.mp4"):
+                announce.announce(self.host, self.release)
+            self.assertEqual(self.host.writes, [])
+            self.assertTrue(self.host.record["draft"])
 
     def test_interrupted_upload_resumes_only_missing_assets(self):
         self.host.interrupt = True

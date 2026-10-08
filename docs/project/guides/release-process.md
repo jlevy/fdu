@@ -155,9 +155,11 @@ If the release commit changes, start again with a new directory.
    make release-published
    ```
 
-9. **Check the announcement.** Open the GitHub release and confirm the notes and eleven
-   attached files. The workflow creates it automatically; the command printed by
-   `make release-published` is a fallback for releases from older workflows only.
+9. **Check the announcement.** Open the GitHub release and confirm the notes and the
+   attached files: eleven, or twelve when the release commit carries
+   `docs/media/fdu-demo.mp4` (see [Artifacts](#artifacts)). The workflow creates it
+   automatically; the command printed by `make release-published` is a fallback for
+   releases from older workflows only.
    If the announcement job fails, rerun that failed job as described below.
    No local artifact download is needed to create the release.
 
@@ -175,7 +177,8 @@ If the release commit changes, start again with a new directory.
     Record the release commit, tag, rehearsal and publishing run links, GitHub release
     link, stability results, and post-publish checks in the release bead or a committed
     release report. For the first release using automatic announcement, explicitly record
-    that `Announce on GitHub` succeeded and all eleven assets were verified.
+    that `Announce on GitHub` succeeded and all eleven assets were verified, and for the
+    first release carrying the demo video, that all twelve were.
     Keep that durable record before moving disposable `$RELEASE` files to the trash,
     then close the release bead.
 
@@ -236,6 +239,22 @@ That fallback is not the same promise as a zero-build `uvx` install.
 So every release is eight files: two crates, one source distribution, and five wheels.
 The GitHub release attaches those and three evidence files, `release-manifest.json`,
 `SHA256SUMS`, and `registry-state.json`.
+
+When the release commit carries `docs/media/fdu-demo.mp4`, the GitHub release attaches
+it as a twelfth file, `fdu-demo.mp4`; a commit without one attaches exactly eleven, so
+earlier releases still audit as eleven.
+A README link to the demo uses `releases/latest/download/fdu-demo.mp4`, and a notes link
+uses the copy under the notes’ own tag, `releases/download/v$VERSION/fdu-demo.mp4`, so
+the video a reader sees is the one committed with the release they install, never
+whatever `main` holds later.
+Since the release attaches only what its commit holds, a commit that links the demo this
+way must carry it, and preflight checks that it does.
+It is no registry file: the manifest and `SHA256SUMS` never name it, and no crate or
+wheel carries it. The announcement reads its bytes from the tagged commit, not a working
+tree, and checks its GitHub digest like every other asset’s. So the expected set is a
+function of the release commit’s tree, and “exactly these files” stays exact: a demo the
+commit lacks is an unexpected asset, and one whose bytes differ from the commit’s is a
+digest mismatch.
 
 ### Compatibility
 
@@ -525,8 +544,9 @@ answer is marked stale clearly enough in plain text is an open decision (`fdu-md
 | --- | --- |
 | `COMMIT on origin/main` | The commit is an ancestor of origin’s `main`. |
 | `Cargo versions at COMMIT` | All three package manifests and both workspace pins name `VERSION`. |
-| `release notes` | `docs/project/release-notes/$VERSION.md` exists at the commit, its repository links name `v$VERSION` (never a branch such as `main`), its compare link starts from the previous release’s tag, and it holds one HTML comment. |
+| `release notes` | `docs/project/release-notes/$VERSION.md` exists at the commit, its repository and release-asset download links name `v$VERSION` (never a branch such as `main`), its compare link starts from the previous release’s tag, and it holds one HTML comment. |
 | `CHANGELOG` | The commit’s CHANGELOG has a `## [$VERSION] - YYYY-MM-DD` heading. |
+| `demo video` | `docs/media/fdu-demo.mp4` is absent at the commit, or is a regular file there that is an MP4 rather than a Git LFS pointer; the line says whether the release attaches eleven files or twelve. Without the demo, neither `README.md` nor the notes may link `releases/latest/download/fdu-demo.mp4` or `releases/download/v$VERSION/fdu-demo.mp4`, which would 404. A demo the announcement could not attach fails here, where it would otherwise stop the announcement after the registries publish. |
 | `tag v$VERSION` | Origin has no such tag. |
 | `crates.io fdu-core`, `crates.io fdu`, `PyPI fdu` | Each registry answers 404 for this version. The names exist since `0.1.0`, so only the version proves anything. |
 | `private vulnerability reporting` | GitHub’s private reporting form, which SECURITY.md and the notes point to, is enabled. If not, a maintainer enables it with `gh api -X PUT repos/jlevy/fdu/private-vulnerability-reporting`. |
@@ -748,8 +768,9 @@ After `publish` succeeds, `announce` downloads that body and the same run’s ei
 packages, manifest, and checksums with `actions/download-artifact`. It verifies the
 files again, compares the body with the committed notes, and requires every registry to
 hold identical bytes.
-It creates a draft, uploads the eleven assets, verifies their GitHub SHA-256 digests,
-and only then makes the release public.
+When the tagged commit carries the demo video, it copies those bytes from the commit
+into `published/media`. It creates a draft, uploads the eleven assets, or twelve with
+the demo, verifies their GitHub SHA-256 digests, and only then makes the release public.
 Only this job has `contents: write`; it has no OIDC grant, registry credentials, or
 project dependency installation.
 The protected environment approval in the publishing job authorizes this dependent
@@ -768,10 +789,11 @@ already published.
 `make release-published` finds the one publishing run dispatched on the tag, checks that
 it built `COMMIT` and that its publish job succeeded, and downloads and verifies its
 files into `$RELEASE/published` as step 4 did for the rehearsal.
-They are what the registries hold, and what the announcement attaches.
-It then audits every registry against that run’s manifest and writes
-`$RELEASE/registry-state.json` only when all of them are `identical`. If a registry is
-still catching up with an upload, run it again in a few minutes; anything else goes to
+They are what the registries hold, and what the announcement attaches, with the commit’s
+demo video, if any, staged beside them in `$RELEASE/published/media`. It then audits
+every registry against that run’s manifest and writes `$RELEASE/registry-state.json`
+only when all of them are `identical`. If a registry is still catching up with an
+upload, run it again in a few minutes; anything else goes to
 [Recover From a Partial Publication](#recover-from-a-partial-publication).
 `ARGS="--run <run-id>"` names the run when more than one publishing run exists.
 
@@ -787,6 +809,8 @@ gh release create "v$VERSION" --verify-tag --title "fdu $VERSION" \
   "$RELEASE"/published/files/*
 ```
 
+When the release commit carries the demo video, the printed command also names
+`$RELEASE/published/media/fdu-demo.mp4`, so copy the printed command, not this one.
 The body is `$RELEASE/notes.md`, derived from the release commit’s notes, and
 `make release-verify-tag` confirmed the tag names that commit, so the body is the tagged
 text. The rehearsal’s evidence copy of `registry-state.json` is the audit from before
@@ -797,8 +821,10 @@ publishing and is not attached.
 `make release-announced` checks, from outside any checkout:
 
 - the GitHub release is final, titled `fdu $VERSION`, carries `notes.md` as its body,
-  and attaches exactly the eleven files in `$RELEASE`, byte for byte where GitHub
-  reports a digest;
+  and attaches exactly the eleven files in `$RELEASE`, with the demo video as a twelfth
+  when the release commit carries one, byte for byte where GitHub reports a digest.
+  The step stages the demo from the commit again first, so a file left in `$RELEASE`
+  cannot change what is expected;
 - docs.rs has built both crates;
 - `uv tool run --no-config --no-build --isolated --python 3.12 fdu@$VERSION --version`
   and the same with `fdu@latest` print `fdu $VERSION`. `--no-config` sets aside a
@@ -1160,7 +1186,7 @@ The earlier workflow-level comparison, which shaped `release.yml`, is in the
 | Dry run before publishing | `release.yml` with `tag=dry-run` on `main` | Rehearsal on `release/v$VERSION` pinned at the commit | A dispatch takes a ref, not a commit; pinning makes the rehearsed commit the tagged one. |
 | Publishing trigger | Tag push publishes; agents authorized to run it end to end | Dispatch on the tag with `publish=true`, then a reviewer approves the environment, then the workflow publishes registries and announces on GitHub; an agent tags or approves only on the maintainer’s explicit go-ahead for that release | Publishing is irreversible, so it takes the maintainer’s decision for that release, never a standing authorization or a tag push alone. |
 | Registries | Separate crate and PyPI workflows | One job, one approval, audited before the first write | A conflict on either registry stops both before anything is written. |
-| GitHub release | Created by a job with `contents: write`, generated notes | Created after registry verification by a separate job with `contents: write`, using the checked-in notes and verified artifacts | The release becomes public only with all eleven verified assets; retries resume a draft and reject conflicts. |
+| GitHub release | Created by a job with `contents: write`, generated notes | Created after registry verification by a separate job with `contents: write`, using the checked-in notes and verified artifacts | The release becomes public only with all eleven verified assets, or twelve when the release commit carries the demo video; retries resume a draft and reject conflicts. |
 | Post-publish verification | Version-specific registry checks and `uvx` smoke | The same, plus asset digests, docs.rs, and `--require-identical` | Borrowed and extended. |
 | Semver checks (`rust-release-rules`) | Run in CI | The release workflow’s `semver` job, which the publish job needs, and `make semver-check` | Checked where publishing happens, on the version being released; a new `0.x` series is not checked, since it may break. |
 
