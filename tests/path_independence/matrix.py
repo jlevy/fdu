@@ -181,15 +181,22 @@ ROOT_SETS: dict[str, tuple[str, ...]] = {"pair": ("src", "docs")}
 
 # What the roots phase asks of each root set, by how its answer merges: the summary sums,
 # an unbounded flat listing is the union of each root's rows, an unbounded tree has the
-# sum as its total and each root's own tree, extension buckets sum, and the default tree
-# is the folded tier's answer over several roots.
+# sum as its total and each root's own tree, extension buckets sum, the default tree is
+# the folded tier's answer over several roots, and language rows with line counts sum
+# their files, sizes, and lines.
 ROOT_REQUESTS: dict[str, Spec] = {
     "r_summary": spec(views=["summary"]),
     "r_files": spec(views=["files"], limit="all"),
     "r_full_tree": spec(views=["tree"], depth="all", min_share="0%", limit="all"),
     "r_extensions": spec(views=["extensions"], min_share="0%", limit="all"),
     "r_default": spec(views=["tree"]),
+    "r_languages": spec(views=["languages"], analyze="lines", min_share="0%", limit="all"),
 }
+
+# The root requests that analyze content, which `auto` caches, so one root answered from
+# its sidecar and another analyzed cold can sit in one report: the roots phase warms only
+# the first root under `auto` and holds the several-root answer to the cold one.
+ROOT_CONTENT_REQUESTS = frozenset({"r_languages"})
 
 # The views with no metadata meaning. Naming one requests the analyzer it shows, so a
 # request that names one is a content request on every delivery: a watch refuses it as it

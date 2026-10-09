@@ -346,6 +346,23 @@ def merged_facts(request_id: str, singles: list[dict[str, Any]]) -> Any:
             }
             for extension, rows in sorted(buckets.items())
         }
+    if request_id == "r_languages":
+        merged_rows: dict[str, dict[str, Any]] = {}
+        for section in sections:
+            metrics = section["metrics"]
+            for row in [metrics["total"], *metrics["rows"]]:
+                merged = merged_rows.setdefault(
+                    row["id"], {"files": 0, "bytes": 0, "allocated": 0, "metrics": {}}
+                )
+                for key in ("files", "bytes", "allocated"):
+                    merged[key] += int(row[key])
+                for metric, value in (row.get("metrics") or {}).items():
+                    held = merged["metrics"].get(metric, 0)
+                    # A value a root could not measure stays unknown in the sum.
+                    merged["metrics"][metric] = (
+                        None if value is None or held is None else held + int(value)
+                    )
+        return dict(sorted(merged_rows.items()))
     if request_id in ("r_full_tree", "r_default"):
         nodes = [section["tree"] for section in sections]
         facts: dict[str, Any] = {"tree": None, "total": _total_of(nodes)}
@@ -377,6 +394,17 @@ def several_facts(request_id: str, answer: dict[str, Any]) -> Any:
                 else {"files": row["ignored"]["files"], "bytes": row["ignored"]["bytes"]},
             }
             for row in section["extensions"]
+        }
+    if request_id == "r_languages":
+        metrics = section["metrics"]
+        return {
+            row["id"]: {
+                "files": row["files"],
+                "bytes": row["bytes"],
+                "allocated": row["allocated"],
+                "metrics": dict(row.get("metrics") or {}),
+            }
+            for row in sorted([metrics["total"], *metrics["rows"]], key=lambda row: row["id"])
         }
     if request_id in ("r_full_tree", "r_default"):
         total = section.get("total")
@@ -861,6 +889,27 @@ class MatrixRun:
             key = case_key("roots", matrix.CLI_ROUTE, matrix.STALE_OK, "per-root-on", "-", label)
             verdict = compare(oracle, measured, policy=matrix.STALE_OK, must_serve=True)
             results.append(CaseResult(key, verdict, oracle, measured, history))
+
+            if request_id in matrix.ROOT_CONTENT_REQUESTS:
+                # A mixed history: the first root's analysis is cached by an `auto` run of
+                # it alone, the second's is not, so one report reads one root's sidecar and
+                # analyzes the other cold, and must still say what the cold report says.
+                xdg = self.ws.fresh(f"roots-mixed-{set_id}-{request_id}")
+                history = (run_cli(self.surfaces, roots[0], request, "auto", xdg).command,)
+                measured = run_cli(self.surfaces, roots, request, "auto", xdg)
+                self.ws.discard(xdg)
+                key = case_key("roots", matrix.CLI_ROUTE, "auto", "first-root-auto", "-", label)
+                verdict = compare(oracle, measured, policy="auto")
+                if verdict.kind == "same" and content_tier_source(measured) != "cached":
+                    # The weakest content source across roots: only a sidecar read for the
+                    # first root makes it `cached`, so anything else means the history
+                    # warmed nothing and the case proved no mix.
+                    verdict = Verdict(
+                        "differs",
+                        ("provenance.tiers.content.source",),
+                        (f"expected cached, got {content_tier_source(measured)}",),
+                    )
+                results.append(CaseResult(key, verdict, oracle, measured, history))
 
             if self.surfaces.python is not None:
                 xdg = self.ws.fresh(f"roots-py-{set_id}-{request_id}")
