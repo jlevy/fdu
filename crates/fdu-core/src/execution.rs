@@ -3534,8 +3534,7 @@ mod tests {
                 420,
                 ScanConfig { read_controls: false, ..ScanConfig::default() },
             ),
-            // The folded walk takes directory kinds from the listing (H185) except under
-            // `--one-filesystem`, where descent reads each directory's device. Only Unix has
+            // Under `--one-filesystem` descent reads each directory's device. Only Unix has
             // that identity: elsewhere the scope is refused before any walk, as
             // `ScanConfig::unsupported_axis` states, so there is no walk to compare.
             #[cfg(unix)]
