@@ -17,14 +17,16 @@ stack 141 (#137, #138, #139, and #142) landed for 0.2.0, whose
 0.2.0 is tagged and published on crates.io, PyPI, and GitHub (2026-09-28). 0.2.1 is
 tagged and published (2026-09-29); its
 [release notes](docs/project/release-notes/0.2.1.md) say what it changed.
-0.3.0 is prepared for the maintainer’s approval as one linear stack (#157, #158, #161,
-#162, #164, #163, then the release pull request); its
-[release notes](docs/project/release-notes/0.3.0.md) say what it changes.
+0.3.0 is tagged and published (2026-09-30); its
+[release notes](docs/project/release-notes/0.3.0.md) say what it changed.
+0.4.0 (notes after the result; content views imply their analysis) is prepared for the
+maintainer’s approval as one release pull request; its
+[release notes](docs/project/release-notes/0.4.0.md) say what it changes.
 
 | Workstream | Owner | Remaining work / governing document |
 | --- | --- | --- |
 | 0.2.0 release | `fdu-0gqc`, maintainer | `fdu-0gqc` owns post-merge verification of the landed work and does not tag or publish. The maintainer then runs the [installed-CLI QA playbook](tests/qa/cli-installed-e2e.qa.md) and its peer-agreement phase on the release commit, and the [release process](docs/project/guides/release-process.md): rehearse, tag, and publish. |
-| 0.3.0 release | `fdu-pe9p`, maintainer | The stack merges bottom to top with merge commits; the maintainer then runs the [release process](docs/project/guides/release-process.md) from its step 3 on the release commit: preflight, rehearse, tag, and publish; the stability pass (step 2) recorded for this release must pass before the tag. The Linux parity work planned as 0.2.2 ([plan](docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md), `fdu-8a8r`) ships in 0.3.0, since its API changes are breaking. |
+| 0.4.0 release | `fdu-xmcm`, maintainer | The release pull request merges with a merge commit; the maintainer then runs the [release process](docs/project/guides/release-process.md) on the release commit: the stability pass, preflight, rehearse, tag, and publish. Before the tag: the demo video recorded from the candidate and embedded in the README and notes (`fdu-5dt6`), the README speed claim’s macOS basis (`fdu-vpxt`), and the report path’s non-regression against 0.3.0 (`fdu-vl8a`). |
 | Output-design manual acceptance | `fdu-kwjc` | [Recorded candidate checks](docs/project/reports/report-2026-09-27-manual-acceptance.md): 30 of 33 passed or corrected; light/dark visual judgment, fresh-session skill discovery, and upgrade after this increment publishes remain open. |
 | Published 0.1.0 verification | `fdu-gjc2`, `fdu-yfej`, `fdu-vxvm` | Record the remaining [published-channel first-user checks](docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md). |
 | Release automation | `fdu-zr73` | [Packaging follow-ups](docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md), including registry propagation retry (`fdu-zx9y`). |
