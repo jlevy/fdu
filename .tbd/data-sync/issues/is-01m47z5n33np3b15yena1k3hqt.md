@@ -5,7 +5,7 @@ title: "Release fdu 0.4.0: notes epilogue + content views imply analysis"
 kind: epic
 status: open
 priority: 1
-version: 27
+version: 28
 labels: []
 dependencies: []
 child_order_hints:
@@ -34,8 +34,9 @@ child_order_hints:
   - is-01m4fn9paq6cpqznw00ycka7qc
   - is-01m4fn9prqtf3qkq29agaa0q0j
   - is-01m4fs9fy2v3dpsxe85edw5z38
+  - is-01m4ftg7y0q3zkgcje4wdvpzfy
 created_at: 2026-10-06T06:42:14.754Z
-updated_at: 2026-10-09T07:33:24.545Z
+updated_at: 2026-10-09T07:54:34.290Z
 ---
 Bring stack #174 -> #177 (plus the document-shares fix) through review, merge, release prep (version, CHANGELOG date, release notes), the release checklist (stability pass incl. correctness runbook, preflight, rehearsal, body), tag and publish (maintainer go-ahead), and a final demo video from the released build.
 
