@@ -14,7 +14,7 @@ use std::time::SystemTime;
 
 use crate::query::{
     Delivery, Report, ReportSource, Request, Roots, RootsRequest, SizeMetric, SortKey, SummaryPart,
-    SummaryRow, TreeStatus, ViewSpec, read_indexes, report_summary,
+    SummaryRow, TreeStatus, ViewSpec, read_indexes, report_summary, summary_totals_fit,
 };
 use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Progress, Result, execute};
 
@@ -767,13 +767,16 @@ fn read_states(
     progress: Option<&Progress>,
 ) -> Result<Report> {
     if states.iter().all(|state| matches!(state, RootState::Summary(_))) {
-        let parts = states
+        let parts: Vec<SummaryPart> = states
             .into_iter()
             .filter_map(|state| match state {
                 RootState::Summary(part) => Some(*part),
                 RootState::Folded(_) | RootState::Full(_) => None,
             })
             .collect();
+        // As the indexed reader does: every sum across roots below is exact only if the
+        // combined totals are representable.
+        summary_totals_fit(&parts)?;
         return Ok(report_summary(parts, roots, request, SystemTime::now()));
     }
     let indexes: Vec<std::sync::Arc<crate::Index>> = states

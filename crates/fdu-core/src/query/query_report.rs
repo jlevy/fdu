@@ -1941,20 +1941,30 @@ impl<'a> RootRead<'a> {
 /// may not be, and every count, size, and share across roots is a part of it, so checking
 /// it once here is what makes every sum below exact rather than wrapped or saturated.
 fn combined_totals_fit(reads: &[RootRead<'_>]) -> crate::Result<()> {
+    totals_fit(reads.iter().filter_map(|read| {
+        let (all, _) = read.index.partition_scalars_of(EntryId::ROOT)?;
+        Some((read.index.root_path(), [all.files, all.dirs, all.bytes, all.allocated]))
+    }))
+}
+
+/// [`combined_totals_fit`] for the summary tier, whose roots kept a reduced row each rather
+/// than an index; each row is its whole root, since that tier filters nothing.
+pub(crate) fn summary_totals_fit(parts: &[SummaryPart]) -> crate::Result<()> {
+    totals_fit(parts.iter().map(|part| {
+        let row = part.summary;
+        (part.root.as_path(), [row.files, row.dirs, row.bytes, row.allocated])
+    }))
+}
+
+/// Refuse totals, each root's files, directories, bytes, and allocated bytes, whose sum
+/// no `u64` holds, naming the root whose addition overflowed.
+fn totals_fit<'a>(roots: impl Iterator<Item = (&'a Path, [u64; 4])>) -> crate::Result<()> {
+    const COUNTERS: [&str; 4] = ["files", "directories", "bytes", "allocated bytes"];
     let mut sums = [0_u64; 4];
-    for read in reads {
-        let Some((all, _)) = read.index.partition_scalars_of(EntryId::ROOT) else {
-            continue;
-        };
-        let counters = [
-            (all.files, "files"),
-            (all.dirs, "directories"),
-            (all.bytes, "bytes"),
-            (all.allocated, "allocated bytes"),
-        ];
-        for (sum, (value, counter)) in sums.iter_mut().zip(counters) {
+    for (root, values) in roots {
+        for ((sum, value), counter) in sums.iter_mut().zip(values).zip(COUNTERS) {
             *sum = sum.checked_add(value).ok_or_else(|| crate::Error::UnrepresentableTotal {
-                path: read.index.root_path().to_path_buf(),
+                path: root.to_path_buf(),
                 counter,
             })?;
         }
@@ -7734,6 +7744,21 @@ mod tests {
         pooled.add_assign(alone[1].logical_word_stats);
         assert_eq!(merged.logical_word_stats, pooled);
         assert_eq!(merged.files, alone[0].files + alone[1].files);
+    }
+
+    /// Roots whose combined totals no `u64` holds are refused, naming the root whose
+    /// addition overflowed and the counter, as one root's unrepresentable total is.
+    #[test]
+    fn combined_totals_past_u64_are_refused_naming_the_root() {
+        let roots = [(Path::new("/a"), [1, 1, u64::MAX - 5, 10]), (Path::new("/b"), [1, 1, 5, 10])];
+        totals_fit(roots.into_iter()).expect("exactly u64::MAX fits");
+        let over = [(Path::new("/a"), [1, 1, u64::MAX - 5, 10]), (Path::new("/b"), [1, 1, 6, 10])];
+        match totals_fit(over.into_iter()) {
+            Err(crate::Error::UnrepresentableTotal { path, counter }) => {
+                assert_eq!((path, counter), (PathBuf::from("/b"), "bytes"));
+            }
+            other => panic!("expected an unrepresentable total, got {other:?}"),
+        }
     }
 
     /// The ignored share of a sum is unknown when any term's is, never a partial sum.

@@ -24,7 +24,9 @@ pub use query_report::{
     SummaryRow, TreeDisplayLimits, TreeNode, TreeOmission, TreeOmissionReason, TreeRemainder,
     TreeTotal, TypeRow, ViewSpec, document_words, pages, report, report_roots,
 };
-pub(crate) use query_report::{SummaryPart, read_indexes, report_in, report_summary};
+pub(crate) use query_report::{
+    SummaryPart, read_indexes, report_in, report_summary, summary_totals_fit,
+};
 pub(crate) use query_request::Rejection;
 pub use query_request::{
     Basis, BasisHolder, Delivery, NamedRoot, ReadSpec, Request, RequestDefaults, RequestError,
