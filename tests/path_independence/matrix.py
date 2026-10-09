@@ -172,6 +172,25 @@ REQUESTS: dict[str, Spec] = {
     "v_summary_a_lines": spec(views=["summary"], analyze="lines"),
 }
 
+# Several roots reported as one: disjoint subtrees of the fixture, named in this order. A
+# report over them must be the sum of the reports over each, so the roots phase holds the
+# several-root answer to a merge of the single-root ones, then to itself through a
+# snapshot served per root and through the Python surface. The root `.gitignore` is read
+# by neither, as it is not when either subtree is scanned alone: that is the sum rule.
+ROOT_SETS: dict[str, tuple[str, ...]] = {"pair": ("src", "docs")}
+
+# What the roots phase asks of each root set, by how its answer merges: the summary sums,
+# an unbounded flat listing is the union of each root's rows, an unbounded tree has the
+# sum as its total and each root's own tree, extension buckets sum, and the default tree
+# is the folded tier's answer over several roots.
+ROOT_REQUESTS: dict[str, Spec] = {
+    "r_summary": spec(views=["summary"]),
+    "r_files": spec(views=["files"], limit="all"),
+    "r_full_tree": spec(views=["tree"], depth="all", min_share="0%", limit="all"),
+    "r_extensions": spec(views=["extensions"], min_share="0%", limit="all"),
+    "r_default": spec(views=["tree"]),
+}
+
 # The views with no metadata meaning. Naming one requests the analyzer it shows, so a
 # request that names one is a content request on every delivery: a watch refuses it as it
 # refuses `--analyze`. The engine's table is `ViewSpec::implies`.

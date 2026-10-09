@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 66 sessions differ, and every one of them has a named cause.
+# 68 sessions differ, and every one of them has a named cause.
 #
-#  28  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  30  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
 #      platform separator, and [AGE] for an age measured from the run's own instant.
 #      The Python replay prints the sandbox root, a literal separator, and the age.
@@ -238,6 +238,42 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ A Row’s Age Is the Same on Every Route
   ✓ A Row’s Age Is the Same on Every Route
   ✓ A Row’s Age Is the Same on Every Route
+  ✓ Several Roots Report as One
+  ✗ Several Roots Report as One
+@@ -1,5 +1,5 @@
+ ██████████   100%       700 B  2mo  (total) 2 files
+-██████░░░░    57%       400 B   1y    ages[SEP]installed/ 1 file
++██████░░░░    57%       400 B   1y    ages/installed/ 1 file
+ ██████░░░░    57%       400 B   1y      pkg/ 1 file
+-████░░░░░░    43%       300 B  2mo    ages[SEP]docs/ 1 file
++████░░░░░░    43%       300 B  2mo    ages/docs/ 1 file
+ ████░░░░░░    43%       300 B  2mo      notes.md
+    stderr:
+@@ -1,2 +1,2 @@
+ note: display limits: depth 1
+-tip: show more: --depth=all
++tip: show more: depth=all
+  ✗ Several Roots Report as One
+@@ -1,4 +1,4 @@
+-project[SEP]dist[SEP]acorn-0.1.0.tar.gz
+-project[SEP]README.md
+-extension-levels[SEP]archive.tar.gz
+-extension-levels[SEP]release.v2.zip
++project/dist/acorn-0.1.0.tar.gz
++project/README.md
++extension-levels/archive.tar.gz
++extension-levels/release.v2.zip
+    stderr:
+@@ -1,2 +1,2 @@
+ note: display limits: 4 of 11 rows shown
+-tip: show more: --limit=all
++tip: show more: limit=all
+  ✓ Several Roots Report as One
+  ✓ Several Roots Report as One
+  ✓ Several Roots Report as One
+  ✓ Several Roots Report as One
+  ✓ Several Roots Report as One
+  ✓ Several Roots Report as One
 FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Scan Without a Cache
 @@ -1,10 +1,10 @@
@@ -1764,6 +1800,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 +fdu: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
+  ✓ Watching Keeps One Root
+  ✓ Watching Keeps One Root
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
   ✓ Reject It as the Root

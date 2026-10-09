@@ -1055,6 +1055,21 @@ $ fdu --watch --scan-depth 2 .
 ? 2
 ```
 
+## Watching Keeps One Root
+
+A watch keeps one tree current, so a second PATH is refused before anything is read.
+
+```console
+$ node -e "for (const d of ['one', 'two']) require('node:fs').mkdirSync(d)"
+? 0
+```
+
+```console
+$ fdu --watch one two
+! fdu: --watch takes one PATH; 2 were given
+? 2
+```
+
 ## A Missing Root Is a Fatal Filesystem Error
 
 ```console
