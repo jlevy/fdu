@@ -5,14 +5,14 @@ title: Record the 0.4.0 Linux demo from the release candidate and embed it in RE
 kind: task
 status: open
 priority: 1
-version: 5
+version: 6
 labels:
   - release
   - docs
 dependencies: []
 parent_id: is-01m47z5n33np3b15yena1k3hqt
 created_at: 2026-10-08T06:55:32.944Z
-updated_at: 2026-10-09T02:05:25.394Z
+updated_at: 2026-10-09T03:55:36.841Z
 ---
 Maintainer decision 2026-10-07: the 0.4.0 demo video is GitHub-hosted and lands before the tag.
 
@@ -28,4 +28,4 @@ Blocked on disk space: ~1.8-3.8 GiB free on the internal SSD; needs a release bu
 
 ## Notes
 
-2026-10-09: #185 merged with the 164-column take. Maintainer asked for 140 columns, no margin, after grouped rows stack their measures (fdu-r7lw); re-record from that build in the follow-up PR.
+2026-10-09: maintainer approved the 140-column, --margin 0, stacked-rows take; committed on #187 as 803046ef (2468x1844, 38.2 s; tree 0.209 s, cold 9.116 s, cached 0.807 s). Close when #187 merges.
