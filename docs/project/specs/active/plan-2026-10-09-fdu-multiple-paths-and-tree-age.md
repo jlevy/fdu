@@ -409,20 +409,39 @@ release is not.
 
 Canonical paths alone miss aliases: on macOS, `/Users` and `/System/Volumes/Data/Users`
 are the same directory through a firmlink, and Linux bind mounts behave the same way.
-On Unix the check compares each root’s device and inode against the chain of every other
-root’s ancestors; elsewhere, and in addition, canonical paths are compared component by
-component. The check is conservative: `fdu / /mnt/usb --one-filesystem` is refused even
-though the scope would not have descended into the second root.
+On Unix the check compares each root’s device and inode against every other root’s and
+against the chain of every other root’s ancestors; elsewhere, and in addition, canonical
+paths are compared component by component.
+The check is conservative: `fdu / /mnt/usb --one-filesystem` is refused even though the
+scope would not have descended into the second root.
+
+What no path or ancestor shows is an inner root that is itself an alias into the outer
+root’s tree: a bind mount, or `/usr/local` beside `/System/Volumes/Data` on macOS, whose
+own ancestors never pass through the outer root (review A3 on #192). On Unix each root’s
+walk therefore compares the directories it enters with the other roots’ identities, on
+every tier: the full and folded indexes keep every directory they entered, a cache-only
+load reads the snapshot’s, and the summary fold, which keeps none, states every
+directory over several roots and checks each as it arrives.
+A walk that enters another root refuses the report as overlapping, naming both labels
+and where it met it (`RequestError::RootReachedInside`); a walk that only lists it, at
+the scan depth or across a filesystem boundary, counted nothing twice and is not
+refused.
 
 #### Caches
 
 `Delivery.cache_path` names one snapshot file, derived today from the one root.
-A report over several roots takes the cache directory instead (explicit or default), and
-the engine derives each root’s snapshot path with `default_cache_path_in`, the function
-the command line uses for one root.
-A delivery that names a single explicit snapshot file is refused with several roots.
-Each root that defers a snapshot write returns its own pending save, and the caller
-completes them all.
+A report over several roots takes a cache directory instead, as a delivery field,
+`Delivery.cache_dir`, and the engine derives each root’s snapshot path with
+`default_cache_path_in`, the function the command line uses for one root.
+`None` in either field means no cache there, never a default: a surface that caches by
+default passes its resolved default directory (review A4 on #192), and every route
+resolves a directory to its root’s file before it reads or writes
+(`Delivery::for_root`). A delivery that names a single explicit snapshot file is refused
+with several roots, and one that names both a file and a directory is refused
+everywhere. No root’s snapshot is written until every root has been walked, since the
+cache directory can lie inside a later root, whose walk would then count a write in
+progress (review B3); the writes then run together on at most as many threads as the
+machine runs at once, and the caller joins them in one handle.
 
 #### Execution
 
@@ -606,9 +625,26 @@ Decided during implementation:
   root’s already are, so every sum across roots is exact.
 - `TreeStatus::errors` holds `StatusIssue { root, issue }`, an explicit pairing, rather
   than a parallel list of root positions.
-- One root through `prepare_roots_report` is `prepare_report` with the snapshot path
-  derived from the cache directory; validating the roots first means `--stale-ok` over a
-  file now fails as not a directory rather than as a missing snapshot.
+- One root through `prepare_roots_report` is `prepare_report` over the validated
+  canonical path, with the snapshot path derived from the delivery’s cache directory.
+  Validating the roots before the walk means `--stale-ok` over a file now fails as not a
+  directory rather than as a missing snapshot.
+  The refusals keep one root’s old order (review B1 on #192): a root that cannot be
+  resolved, then a delivery no route can carry, then a root that is not a directory,
+  then overlap (`RootsRequest::resolve`, used by the command line and Python).
+  A malformed watch option, which the command line parses, now comes before a missing
+  root, with the rest of the request’s parsing.
+- Every root’s walk reads the canonical path validation resolved, and the read refuses a
+  state built from any other directory (`RootMismatch`, review B2), so a symlink
+  retargeted mid-run cannot put another directory into the report.
+  `report_roots` refuses indexes of different scopes (`RootScopesDiffer`, review B4).
+- A PATH that names a file is still refused, now in the command line’s words with what
+  to type instead:
+  `fdu: notes.txt is a file; fdu reports on directories (to name only the directories here: fdu */)`
+  (review A5 on #192). `fdu *` stops at the first file; accepting a file as a root is
+  `fdu-ejw5`.
+- Roots run one after another, each with its own walker pool; the cost of many small
+  roots against one walk of their parent, and one pool across roots, are `fdu-ich9`.
 
 ## Testing Strategy
 

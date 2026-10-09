@@ -82,13 +82,30 @@ $ fdu docs src
   `docs/guide.md`.
 - Each root reads its own `.gitignore` files, as it would alone; a rule in a shared
   parent applies to neither.
+- Globs containing `/`, and the documentation and vendored classification, read each
+  root’s own relative paths, not the labelled text: over `fdu docs src`,
+  `--exclude 'project/**'` excludes `docs/project`, while `--exclude 'docs/**'` excludes
+  nothing, since neither root holds a `docs` directory.
+  A file at the top of `docs` is not classified as documentation, as it is not when
+  `docs` is scanned alone.
+- Every PATH is a directory: `fdu *` stops at the first file it meets, and `fdu */`
+  names only the directories here.
 - A root equal to or inside another is refused, naming both, since its paths would count
-  twice: `fdu src src/core` exits 2. The check sees through a symlink, a macOS firmlink
-  (`/Users` and `/System/Volumes/Data/Users`), and a bind mount on Unix; on Windows it
-  compares canonical paths only.
-  It is conservative: `fdu / /mnt/usb --one-filesystem` is refused although the walk
-  would not have entered the second.
-- Each root’s snapshot lives where that root’s own would, under one cache directory.
+  twice: `fdu src src/core` exits 2. Before any walk the check compares canonical paths,
+  which sees through a symlink, and on Unix device and inode numbers, which sees a root
+  whose own path runs through an alias of another (`/Users/me` beside
+  `/System/Volumes/Data/Users` on macOS). A root that is itself an alias into another
+  root’s tree, such as a bind mount, or `/usr/local` beside `/System/Volumes/Data` on
+  macOS, is found on Unix when the walk of the other root enters it, and the report is
+  refused then; a walk that stops above it, at `--scan-depth` or at a filesystem
+  boundary under `--one-filesystem`, counted nothing twice and is not refused.
+  Windows compares canonical paths only, so an alias such as a `subst` drive goes
+  unnoticed there. The check before the walk is conservative:
+  `fdu / /mnt/usb --one-filesystem` is refused although the walk would not have entered
+  the second.
+- Roots are walked one after another, so many small roots each pay a walk’s fixed cost.
+- Each root’s snapshot lives where that root’s own would, under one cache directory, and
+  none is written until every root has been walked.
 - `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
 
 Machine formats keep every path relative to its root and say which root it is under

@@ -171,8 +171,11 @@ same schema, with these differences; a report over one root has none of them.
 - Every share and bound is over the union: a row’s share is of `total`, and the row
   limit counts the total as the first row.
 
-A root node never counts its root’s own time, as a single report’s root does not, so it
-equals the root node of that root’s own report.
+A root node never counts its root’s own time, as a single report’s root does not, so its
+sizes, counts, `mtime_ns`, and `complete` equal those of the root node of that root’s
+own report.
+Its `name` is the root’s label, and its children are those whose share of the
+combined total reaches the threshold, so it can show fewer rows than that report does.
 
 ## Code Overview
 

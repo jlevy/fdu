@@ -30,10 +30,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   together, once. The tree shows a `(total)` row and each root as a row named by how it
   was given, every share of the total; flat listings print each path after its root’s
   label, as `find docs src` does.
-  A root equal to or inside another is refused, naming both, including an alias through
-  a symlink, a macOS firmlink, or a bind mount.
-  Each root’s snapshot lives where its own would.
-  `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+  A root equal to or inside another is refused, naming both: by canonical path, which
+  sees through a symlink, and on Unix by device and inode, which sees a root whose path
+  runs through an alias of another.
+  A root that is itself an alias into another’s tree, a bind mount or a macOS firmlink
+  such as `/usr/local` beside `/System/Volumes/Data`, is refused on Unix when the other
+  root’s walk enters it; Windows compares paths only.
+  Every PATH is a directory; a file is refused naming the command that lists only the
+  directories, `fdu */`. Roots are walked one after another, and each root’s snapshot
+  lives where its own would, written once every root has been walked, on a bounded
+  number of threads. `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
 - Machine output over several roots: the envelope’s `root` is null and `roots` lists
   each root’s `label` and canonical `path`; a tree section has `tree: null`, a `total`
   row, and `trees`, one tree per root, each with its own `remainder`; list rows, status
@@ -45,11 +51,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ReportRoot`; `TreeSection` gains `total` (`TreeTotal`) and `trees` (`RootTree`);
   `FileRow`, `OperationError`, and `RefusedControl` gain `root`.
 - Rust: `Roots` and `NamedRoot` name a report’s roots and validate them before any scan;
-  `RootsRequest` shares one request across them; `report_roots` reads one report from
-  one index per root; and `prepare_roots_report`, with its progress and scan-diagnostics
-  variants, runs each root’s plan and returns each root’s pending save and telemetry
-  (`RootsPrepared`). `PerformanceSummary::sum` totals them.
-  `RequestError` gains `NoRoots`, `RootsOverlap`, and `RootsRepeated`.
+  `RootsRequest` shares one request across them, and `RootsRequest::resolve` validates
+  paths, request, and delivery in the order one root always failed in; `report_roots`
+  reads one report from one index per root, refusing indexes of different scopes; and
+  `prepare_roots_report`, with its progress and scan-diagnostics variants, runs each
+  root’s plan and returns the roots’ pending saves in one handle, with each root’s
+  telemetry (`RootsPrepared`). `PerformanceSummary::sum` totals them,
+  `PendingSave::join_all` names each failed write, `labelled_path` is the one rule text
+  uses for a path under one of several roots, and `ReportSource::weaker` ranks sources.
+  `Delivery::cache_dir` names a directory in which each root’s snapshot is named, and
+  `Delivery::for_root` resolves it for one root; every route honors it.
+  `RequestError` gains `NoRoots`, `RootsOverlap`, `RootsRepeated`, `RootReachedInside`,
+  `RootScopesDiffer`, and `CacheLocationTwice`.
 
 ### Changed
 
@@ -80,7 +93,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `StatusIssue { root, issue }` rather than `Issue`; `FileRow` and `RefusedControl` gain
   `root`; `Section::Tree` gains `roots`; `ProgressSnapshot` gains `root`, and over
   several roots a run’s phase starts over at each root while its counters keep adding.
+- **Breaking (Rust):** `Delivery` gains `cache_dir`, so its struct literals name it.
 - **Breaking (Python):** `Report.root` is `Path | None`.
+- A PATH that is a file is refused before anything reads its snapshot, naming it as
+  given: `fdu README.md --stale-ok` and Python’s
+  `fdu.report("README.md", stale_ok=True)` now fail because it is not a directory (exit
+  1, `OSError`) rather than because it has no snapshot.
+  A delivery no route can carry is still refused first, as before:
+  `fdu README.md --cache off --stale-ok` exits 2 for its delivery.
 - The `PATH` argument is `PATH...`; help reads `Usage: fdu [OPTIONS] <PATH>...`. The
   progress line names the root being walked and its position, `src (2/3)`, and the
   `perf:` line sums every root’s walk and names each root’s tier when they differ.
