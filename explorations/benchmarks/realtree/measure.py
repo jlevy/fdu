@@ -401,7 +401,9 @@ PROBE_JOBS: Dict[str, Job] = {
             "The default tree through the door the command line and Python take for one "
             "or more PATHs, `RootsRequest::resolve` then `prepare_roots_report`, over the "
             "subject as its one root, with the rendered text tree. Beside `default-tree` "
-            "it prices that door: validating the root and naming its snapshot. The probe's "
+            "it prices that door: resolving and validating the root. It names no "
+            "snapshot, since its delivery has no cache location; under `auto` a one-shot "
+            "metadata report would neither read nor write one. The probe's "
             "`--child-roots` runs it over each subdirectory instead, which this job does "
             "not, since the tallies would not be the subject's."
         ),

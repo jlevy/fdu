@@ -1106,13 +1106,15 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 /// subdirectory of the one root, as `fdu ROOT/*/` names them.
 ///
 /// Over one root this measures what `default-tree` and `summary` measure plus that door:
-/// validating the root and naming its snapshot (review C3 on #192). Over several it is the
+/// resolving and validating the root (review C3 on #192). Over several it is the
 /// several-root report, every root's walk one after another and one read; set beside a
 /// run over their parent it prices each root's fixed cost (review C2, `fdu-ich9`). The
 /// component includes resolving the roots, as the command line pays it before any walk.
 ///
-/// The cache is `auto` with no location, which is what the command line's default plans
-/// for a metadata report: neither reads nor writes a snapshot.
+/// The cache is `auto` with no location, so no snapshot is named (review D8 on #192). The
+/// command line passes its default cache directory and names one, a hash of the root's
+/// path, but under `auto` a one-shot metadata report neither reads nor writes it, so the
+/// walk measured is the same.
 ///
 /// The oracle is `tallies`, read off the total row over several roots and off the root
 /// node or summary row over one, so one root's run checks against an independent walk as
