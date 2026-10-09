@@ -583,8 +583,9 @@ Exit status 0 is complete success.
 Status 1 is a fatal filesystem or cache failure.
 Status 2 is invalid usage or a partial result; useful partial output remains on stdout.
 Every request fdu refuses is invalid usage, whatever the reason: a value no grammar
-accepts, a rule between two flags, and a scan scope this build cannot honour, such as
-`--one-filesystem` where the platform has no device identity.
+accepts, a rule between two flags, a scan scope this build cannot honour, such as
+`--one-filesystem` where the platform has no device identity, and roots that overlap,
+whether the paths show it before any walk or a walk finds it.
 `--allow-partial` accepts an operationally partial result and returns 0.
 
 `--watch` streams changes from a retained index.

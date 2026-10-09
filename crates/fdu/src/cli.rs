@@ -471,6 +471,21 @@ fn usage(error: &anyhow::Error) -> anyhow::Error {
     anyhow::Error::new(UsageError(error.to_string()))
 }
 
+/// An error from a report's walks, in this command's words.
+///
+/// An overlap a walk found, entering another root through an alias, is the refusal the
+/// same overlap found before the walk is, and exits 2 as that one does (review D1 on
+/// #192): which check sees it depends only on whether the paths show it. Every other
+/// error is the engine's, a root that changed between validation and its walk included.
+fn walk_error(error: fdu_core::Error) -> anyhow::Error {
+    match error {
+        fdu_core::Error::InvalidRequest(refusal @ RequestError::RootReachedInside { .. }) => {
+            usage(&refused(&refusal))
+        }
+        other => other.into(),
+    }
+}
+
 /// Whether an error was raised by argument validation.
 fn is_usage_error(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| cause.downcast_ref::<UsageError>().is_some())
@@ -934,7 +949,7 @@ impl Cli {
         // polling beside the walk would be part of what it measures. A run that does not
         // draw takes the plain door and pays nothing for the indicator, not even a handle.
         let (prepared, scan_diagnostics) = if collect_scan_diagnostics {
-            prepare_roots_report_with_scan_diagnostics(&request, &delivery)?
+            prepare_roots_report_with_scan_diagnostics(&request, &delivery).map_err(walk_error)?
         } else if progress_plan.draw {
             // The one place the line is stopped on this route: right after the engine
             // returns, with a report or with an error, and before a byte reaches either
@@ -946,9 +961,9 @@ impl Cli {
                 Ticker::start(progress_plan, progress.clone(), report_started, progress_io);
             let prepared = prepare_roots_report_with_progress(&request, &delivery, &progress);
             ticker.stop();
-            (prepared?, Vec::new())
+            (prepared.map_err(walk_error)?, Vec::new())
         } else {
-            (prepare_roots_report(&request, &delivery)?, Vec::new())
+            (prepare_roots_report(&request, &delivery).map_err(walk_error)?, Vec::new())
         };
         let RootsPrepared { report, pending: pending_saves, performance } = prepared;
         // One line per root that walked, in the roots' order.
@@ -2854,6 +2869,36 @@ mod tests {
         ]);
         assert_eq!(status, 1, "{err}");
         assert!(err.contains(&format!("I/O error at {}", missing.display())), "{err}");
+    }
+
+    /// An overlap a walk finds is refused as one found before the walk is, exit 2 (review
+    /// D1 on #192). On macOS `/private` is a firmlink onto the data volume, whose own path
+    /// never runs through `/System/Volumes/Data`, so only the walk of the data volume, deep
+    /// enough to enter `private`, finds it. Probed rather than assumed, so a host without
+    /// the firmlink skips with a message.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_overlap_the_walk_finds_exits_as_a_refused_request() {
+        use std::os::unix::fs::MetadataExt;
+        let identity = |path: &str| {
+            std::fs::metadata(path).map(|metadata| (metadata.dev(), metadata.ino())).ok()
+        };
+        let (outer, inner) = ("/System/Volumes/Data", "/private");
+        let reached = "/System/Volumes/Data/private";
+        if identity(reached).is_none() || identity(reached) != identity(inner) {
+            eprintln!("skipped: {inner} is not a firmlink into {outer} on this host");
+            return;
+        }
+        let (status, out, err) =
+            run_args(&["fdu", "--cache", "off", "--scan-depth", "2", outer, inner].map(OsStr::new));
+        assert_eq!(status, 2, "{err}");
+        assert!(out.is_empty(), "{out}");
+        assert!(
+            err.contains(&format!(
+                "{inner} is inside {outer}, which reaches it as {reached}; name one or the other"
+            )),
+            "{err}"
+        );
     }
 
     /// Several roots report as one: a total row, root rows by label, labelled paths.
