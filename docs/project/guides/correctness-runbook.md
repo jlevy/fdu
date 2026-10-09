@@ -196,66 +196,72 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-This run was on 2026-09-30, for the 0.3.0 release candidate, `e808f9604`, the head of
-the release branch `claude/release-0.3.0`, whose tree is `df899f7da`; a release commit
-on `main` with that tree inherits the result by tree identity.
-It used the `fdu` of the candidate wheel, built from `e808f9604` and installed with
-`uv tool install` into an isolated tool directory (`fdu 0.3.0-dev+ge808f9604`). The
+This run was on 2026-10-09, for the 0.4.0 release.
+`make release-stability` ran it on `f405067db`, the head of #189’s branch, whose tree is
+`2c728b23c`; the release commit, `c041ed1c8`, the merge of #189 into `main`, has the
+same tree and inherits the result by tree identity.
+It used the `fdu` of the candidate wheel, built from `f405067db` and installed with
+`uv tool install` into an isolated tool directory (`fdu 0.4.0-dev+gf405067db`). The
 gates on the same commit, `make check`, `make cross-lint`, `make semver-check`, and
 `make release-rehearse`, all exited 0, as the Current Status of the
 [QA playbook](../../../tests/qa/cli-installed-e2e.qa.md) records.
-The 0.2.1 record this one replaces, for the same kind of host, is in this file’s
-history.
 
 **Regime.**
 
-- **Host.** A 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18), otherwise
-  quiet.
-- **Filesystem.** ext4, which is case-sensitive.
+- **Host.** Bare metal: an Apple M1 Pro with 10 CPUs and 32 GiB of memory, macOS 26.5.2
+  (Darwin 25.5.0). It was not quiet: other agents’ jobs ran throughout, with a load
+  average of roughly 10 to 18, swap nearly full, and 1 to 4 GiB of disk free.
+- **Filesystem.** The internal APFS SSD, which is case-insensitive.
   The trees were under a short `/tmp` path.
-- **Privilege.** Both trees were built as root, so the device nodes exist.
-  The refusal pass ran as `nobody` (`setpriv --reuid=65534`), so its unreadable file and
-  unlistable directory refused; the complete-tree passes ran as root.
+- **Privilege.** Both trees were built, and every pass ran, as an unprivileged user, so
+  the refusal tree’s unreadable file and unlistable directory refused without `setpriv`,
+  and no device nodes could be made.
 - **Cache state.** A fresh cache directory for every case.
 
-This run says nothing about the macOS or Windows walk.
+This run says nothing about the Linux or Windows walk.
 
-**Kinds.** Both trees held all 16 kinds the builder makes, including `chardev`,
-`blockdev`, and `non-utf8-name`, which the macOS run could not build.
-The builder reports `permission-denied-effective` as absent on a tree built as root, but
-every case of the `nobody` pass came back partial, so the refusals were effective.
-The two case-colliding names stayed two files.
+**Kinds.** The refusal tree held 14 of the 17 kinds the builder makes, and the served
+tree 13, since it omits the refusals by design.
+Neither held `chardev` or `blockdev`, which need root, or `non-utf8-name`, which APFS
+refuses, and the two case-colliding names became one file.
+Every case of the refusal pass came back partial, so the refusals were effective.
 `fdu-579b` has not yet decided how hard links are attributed, so their result shows only
 that warm and cold agree, not that either is right.
 
+There are 26 cases now, three more than 0.3.0’s 23: the content views `view-code`,
+`view-documents`, and `view-code-documents`, which 0.4.0 makes imply their analysis.
+The cross-warm matrix is 8 warmers by 9 asks.
+
 | Pass | Result |
 | --- | --- |
-| `--refusals-only`, refusal tree, as `nobody` | 23 of 23 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants |
-| `warm_cold.py`, complete tree | 23 of 23 served `cache_only` and labelled `stale`; each analysis case’s warm content tier `revalidated`; 0 mismatches |
-| `cross_warm.py`, complete tree | 30 of 30 pairs matched the cold answer, and `analysis.analyze` named the requested set every time; 0 violations |
+| `--refusals-only`, refusal tree, as an unprivileged user | 26 of 26 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
+| `warm_cold.py`, complete tree | 26 of 26 served `cache_only` and labelled `stale`; each of the 9 analysis cases’ warm runs revalidated; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
+| `cross_warm.py`, complete tree | 72 of 72 pairs matched the cold answer; 0 violations; exit status 0 |
 
 Each pass was checked by breaking it:
 
-- **No snapshot stored.** A wrapper turned `--cache on` into `--cache off`. Both scripts
-  exited 1. The 17 metadata cases reported `NO-SNAPSHOT`, the 6 analysis cases
-  `NOT-WARM(scanned)`, and `cross_warm.py` failed its 6 same-analyzer pairs as
-  `NOT-WARM(scanned)`.
-- **Partial answer stored.** Run as `nobody`, a wrapper answered `--stale-ok` with the
-  cold output relabeled `cache_only`. All 23 cases reported `PARTIAL-STORED`, and
-  `--refusals-only` exited 1.
+- **No snapshot stored.** A wrapper turned `--cache on` into `--cache off`.
+  `warm_cold.py` exited 1 and caught all 26 cases: the 17 metadata cases reported
+  `NO-SNAPSHOT`, the 9 analysis cases `NOT-WARM(scanned)`. `cross_warm.py` exited 1,
+  failing all 17 same-analyzer pairs as `NOT-WARM(scanned)`.
+- **Partial answer stored.** A wrapper answered `--stale-ok` with the cold output
+  relabeled `cache_only`. All 26 cases reported `PARTIAL-STORED`, and `--refusals-only`
+  exited 1.
 
 Every case of every pass, and the commands that ran them, are in the
+[0.4.0 stability-pass report](../reports/report-2026-10-09-release-0.4.0-stability-pass.md).
+
+### Previous Run: 0.3.0 on Linux
+
+On 2026-09-30, against `e808f9604`, the 0.3.0 release candidate, the candidate wheel ran
+all three passes on a 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18) on
+ext4, the refusal pass as `nobody` and the others as root.
+Each passed with zero failures, 23 cases each and 30 cross-warm pairs, and each was also
+checked by breaking it.
+Both trees held all 16 kinds the builder then made, the device nodes and the name that
+is not valid UTF-8 among them, and the case-colliding names stayed two files.
+The full record is in this file’s history and in the
 [0.3.0 stability-pass report](../reports/report-2026-09-30-release-0.3.0-stability-pass.md).
-
-### Previous Run: 0.2.0 on macOS
-
-On 2026-09-28, against release commit `6ec77163a` for 0.2.0, the `make build` debug
-binary ran all three passes on bare-metal Apple silicon (macOS 26.5.2, internal APFS) as
-a regular user, and each passed with the same case counts and zero failures; each was
-also checked by breaking it.
-That tree lacked device nodes, which need root, and the name that is not valid UTF-8,
-which APFS refuses, and its case-colliding names became one file.
-The full record is in this file’s history.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
