@@ -147,7 +147,7 @@ impl PyIndex {
     /// Error details from the most recent scan or refresh.
     #[getter]
     fn errors(&self) -> Vec<String> {
-        self.tree_status().errors.into_iter().map(|issue| issue.message).collect()
+        self.tree_status().errors.into_iter().map(|detail| detail.issue.message).collect()
     }
 
     /// Coverage, currency, origin, and structured non-fatal errors.
@@ -610,7 +610,8 @@ fn set_tree_status(
     }
     target.set_item("coverage", coverage)?;
     let errors = PyList::empty(py);
-    for issue in &status.errors {
+    // An index has one root, so every issue is its own and carries no root position.
+    for issue in status.errors.iter().map(|detail| &detail.issue) {
         let item = PyDict::new(py);
         if let Some(path) = &issue.path {
             item.set_item("path", path.as_os_str())?;

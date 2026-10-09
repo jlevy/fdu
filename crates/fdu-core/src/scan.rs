@@ -9088,11 +9088,13 @@ mod tests {
             coverage.refusals,
             vec![
                 crate::control::RefusedControl {
-                    root: 0, path: PathBuf::from("guarded/.gitignore"),
+                    root: 0,
+                    path: PathBuf::from("guarded/.gitignore"),
                     reason: crate::control::ControlRefusalReason::LineLimit,
                 },
                 crate::control::RefusedControl {
-                    root: 0, path: PathBuf::from("huge/.gitignore"),
+                    root: 0,
+                    path: PathBuf::from("huge/.gitignore"),
                     reason: crate::control::ControlRefusalReason::Budget,
                 },
             ]
@@ -9191,7 +9193,8 @@ mod tests {
             &dir.path().join("huge/.gitignore"),
             &b"x\n".repeat(crate::control::DEFAULT_CONTROL_BUDGET / 2),
         );
-        let refused = |path: &str, reason| RefusedControl { root: 0, path: PathBuf::from(path), reason };
+        let refused =
+            |path: &str, reason| RefusedControl { root: 0, path: PathBuf::from(path), reason };
         let (bounded, _) = scan_into_index(dir.path(), &default).expect("default scan");
         assert_eq!(observed_coverage(&bounded).refused, 2);
 
@@ -9264,7 +9267,8 @@ mod tests {
             assert_eq!(
                 coverage.refusals[0],
                 crate::control::RefusedControl {
-                    root: 0, path: PathBuf::from("a-guard/.gitignore"),
+                    root: 0,
+                    path: PathBuf::from("a-guard/.gitignore"),
                     reason: crate::control::ControlRefusalReason::LineLimit,
                 }
             );
@@ -12832,7 +12836,10 @@ mod tests {
             &mut ScanReport { errors, ..ScanReport::default() },
         );
 
-        assert_eq!(status.errors, index.issues());
+        assert_eq!(
+            status.errors.iter().map(|detail| detail.issue.clone()).collect::<Vec<_>>(),
+            index.issues()
+        );
         assert_eq!(status.errors_omitted, index.state().issues.omitted);
         assert_eq!(status.errors.len(), crate::MAX_RETAINED_ISSUES);
         assert_eq!(status.errors_omitted, 2);

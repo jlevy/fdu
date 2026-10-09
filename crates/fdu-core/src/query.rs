@@ -20,9 +20,9 @@ pub use query_glob::Pattern;
 pub use query_report::{
     AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, FileRow,
     IgnoredSize, IgnoredTally, MetricGroup, MetricRow, MetricShare, MetricSummary, Pages, Query,
-    Report, ReportMetricValues, ReportSource, Section, ShareMetric, SummaryRow, TreeDisplayLimits,
-    TreeNode, TreeOmission, TreeOmissionReason, TreeRemainder, TypeRow, ViewSpec, document_words,
-    pages, report,
+    Report, ReportMetricValues, ReportSource, RootTree, RootTrees, Section, ShareMetric,
+    SummaryRow, TreeDisplayLimits, TreeNode, TreeOmission, TreeOmissionReason, TreeRemainder,
+    TreeTotal, TypeRow, ViewSpec, document_words, pages, report, report_roots,
 };
 pub(crate) use query_report::{report_in, report_summary};
 pub(crate) use query_request::Rejection;
@@ -36,7 +36,7 @@ pub use query_selection::{
     Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, ShareThreshold,
     SizeMetric, SortKey,
 };
-pub use query_status::{ReportProvenance, TierProvenance, TierState, TreeStatus};
+pub use query_status::{ReportProvenance, StatusIssue, TierProvenance, TierState, TreeStatus};
 #[cfg(test)]
 pub(crate) use query_subtrees::assert_maintained_activity;
 pub(crate) use query_values::{MONTH_SECONDS, YEAR_SECONDS, format_rfc3339_nanos};

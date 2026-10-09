@@ -1531,9 +1531,9 @@ mod tests {
         let setup_race = format!("{:?}", crate::InvalidateReason::WatchSetupRace);
         let errors = &observed_report.status.errors;
         let setup_race_only = !errors.is_empty()
-            && errors.iter().all(|issue| {
-                issue.kind == crate::IssueKind::ObservationGap
-                    && issue.message.ends_with(&setup_race)
+            && errors.iter().all(|detail| {
+                detail.issue.kind == crate::IssueKind::ObservationGap
+                    && detail.issue.message.ends_with(&setup_race)
             });
         assert!(
             observed_report.status.complete || setup_race_only,

@@ -306,6 +306,13 @@ impl Roots {
         Ok(Self { roots })
     }
 
+    /// Roots as given, unvalidated, for a test whose indexes name directories no
+    /// filesystem holds.
+    #[cfg(test)]
+    pub(crate) fn named(roots: Vec<NamedRoot>) -> Self {
+        Self { roots }
+    }
+
     /// Every root, in the caller's order.
     pub fn as_slice(&self) -> &[NamedRoot] {
         &self.roots

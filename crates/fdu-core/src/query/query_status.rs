@@ -144,7 +144,8 @@ impl TreeStatus {
             );
         }
         let retained = u64::try_from(details.len()).unwrap_or(u64::MAX);
-        let errors = details.into_iter().map(|(_, issue)| StatusIssue::of_one_root(issue)).collect();
+        let errors =
+            details.into_iter().map(|(_, issue)| StatusIssue::of_one_root(issue)).collect();
         let complete = state.coverage == Coverage::Complete
             && content_failures == 0
             && !content_tier_partial
@@ -184,7 +185,8 @@ impl TreeStatus {
             retain_first_detail(&mut details, (issue.path.clone().unwrap_or_default(), issue));
         }
         let retained = u64::try_from(details.len()).unwrap_or(u64::MAX);
-        let errors = details.into_iter().map(|(_, issue)| StatusIssue::of_one_root(issue)).collect();
+        let errors =
+            details.into_iter().map(|(_, issue)| StatusIssue::of_one_root(issue)).collect();
         Self {
             complete,
             coverage: if complete {
@@ -314,11 +316,18 @@ impl ReportProvenance {
         parts.fold(first, |merged, part| Self {
             source: weaker_source(merged.source, part.source),
             freshness: least_fresh(merged.freshness, part.freshness),
-            scan_started_at: merged.scan_started_at.zip(part.scan_started_at).map(|(a, b)| a.min(b)),
+            scan_started_at: merged
+                .scan_started_at
+                .zip(part.scan_started_at)
+                .map(|(a, b)| a.min(b)),
             generated_at: merged.generated_at.min(part.generated_at),
             tiers: TierProvenance {
                 entries: merged_tier(merged.tiers.entries, part.tiers.entries),
-                content: merged.tiers.content.zip(part.tiers.content).map(|(a, b)| merged_tier(a, b)),
+                content: merged
+                    .tiers
+                    .content
+                    .zip(part.tiers.content)
+                    .map(|(a, b)| merged_tier(a, b)),
             },
         })
     }
@@ -496,8 +505,11 @@ mod tests {
         assert!(!status.complete);
         assert_eq!(status.errors.len(), crate::MAX_RETAINED_ISSUES);
         assert_eq!(status.errors_omitted, 2);
-        let retained_paths: Vec<_> =
-            status.errors.iter().map(|detail| detail.issue.path.as_deref().expect("path")).collect();
+        let retained_paths: Vec<_> = status
+            .errors
+            .iter()
+            .map(|detail| detail.issue.path.as_deref().expect("path"))
+            .collect();
         assert_eq!(retained_paths[0], std::path::Path::new("file-00.txt"));
         assert_eq!(retained_paths[63], std::path::Path::new("file-63.txt"));
         assert!(retained_paths.windows(2).all(|pair| pair[0] < pair[1]));

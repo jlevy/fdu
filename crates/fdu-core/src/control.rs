@@ -1536,7 +1536,8 @@ mod tests {
                 rules: 0,
                 refused: 1,
                 refusals: vec![RefusedControl {
-                    root: 0, path: PathBuf::from("a/.gitignore"),
+                    root: 0,
+                    path: PathBuf::from("a/.gitignore"),
                     reason: ControlRefusalReason::Budget,
                 }],
             }
@@ -1622,7 +1623,8 @@ mod tests {
         assert_eq!(
             table.refusals().collect::<Vec<_>>(),
             vec![RefusedControl {
-                root: 0, path: PathBuf::from("b/.gitignore"),
+                root: 0,
+                path: PathBuf::from("b/.gitignore"),
                 reason: ControlRefusalReason::LineLimit,
             }]
         );

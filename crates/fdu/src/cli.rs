@@ -1850,7 +1850,7 @@ fn write_report_diagnostics(
         writeln!(diagnostic, "{}", paint(warning, STYLE_WARNING, color))?;
     }
     if !report.status.complete {
-        for warning in status_warnings(&report.status) {
+        for warning in status_warnings(&report.status, report.roots.as_deref()) {
             writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color))?;
         }
     }
@@ -1868,15 +1868,28 @@ fn write_report_diagnostics(
 /// last line says how many it dropped, so the terminal is never told less than the
 /// machine formats' `errors_omitted`. An issue whose message does not name its path (a
 /// content read failure carries only the operating system's text) is prefixed with it.
-fn status_warnings(status: &fdu_core::query::TreeStatus) -> Vec<String> {
+///
+/// Over several roots a path is printed after its root's label, as every text path is, so
+/// `docs/a.md` and `src/a.md` stay apart; a message that already names its path names it
+/// absolutely, which needs no label.
+fn status_warnings(
+    status: &fdu_core::query::TreeStatus,
+    roots: Option<&[fdu_core::query::NamedRoot]>,
+) -> Vec<String> {
     let mut warnings: Vec<String> = status
         .errors
         .iter()
-        .map(|issue| match &issue.path {
-            Some(path) if !path.as_os_str().is_empty() && !names_path(&issue.message, path) => {
-                format!("warn: {}: {}", path.display(), issue.message)
+        .map(|detail| {
+            let issue = &detail.issue;
+            match &issue.path {
+                Some(path) if !path.as_os_str().is_empty() && !names_path(&issue.message, path) => {
+                    let shown = roots
+                        .and_then(|roots| roots.get(detail.root))
+                        .map_or_else(|| path.clone(), |root| root.label.join(path));
+                    format!("warn: {}: {}", shown.display(), issue.message)
+                }
+                _ => format!("warn: {}", issue.message),
             }
-            _ => format!("warn: {}", issue.message),
         })
         .collect();
     if status.errors_omitted > 0 {
@@ -2243,27 +2256,34 @@ mod tests {
     /// bound dropped closes the list (fdu-peil).
     #[test]
     fn status_warnings_name_missing_paths_and_the_omitted_count() {
-        let issue = |path: Option<&str>, message: &str| fdu_core::Issue {
-            kind: fdu_core::IssueKind::ProviderFailure,
-            path: path.map(PathBuf::from),
-            message: message.to_string(),
-            os_error: None,
+        let rooted = |root, path: Option<&str>, message: &str| fdu_core::query::StatusIssue {
+            root,
+            issue: fdu_core::Issue {
+                kind: fdu_core::IssueKind::ProviderFailure,
+                path: path.map(PathBuf::from),
+                message: message.to_string(),
+                os_error: None,
+            },
         };
+        let issue = |path: Option<&str>, message: &str| rooted(0, path, message);
         let status = |errors, errors_omitted| fdu_core::query::TreeStatus {
             complete: false,
             coverage: fdu_core::Coverage::Partial(fdu_core::CoverageReason::Failed),
             errors,
             errors_omitted,
         };
-        let complete = status_warnings(&status(
-            vec![
-                issue(Some("docs/a.md"), "Permission denied (os error 13)"),
-                issue(Some("src"), "I/O error at /abs/src: Permission denied (os error 13)"),
-                issue(None, "content analysis results became stale"),
-                issue(Some("d"), "Permission denied (os error 13)"),
-            ],
-            0,
-        ));
+        let complete = status_warnings(
+            &status(
+                vec![
+                    issue(Some("docs/a.md"), "Permission denied (os error 13)"),
+                    issue(Some("src"), "I/O error at /abs/src: Permission denied (os error 13)"),
+                    issue(None, "content analysis results became stale"),
+                    issue(Some("d"), "Permission denied (os error 13)"),
+                ],
+                0,
+            ),
+            None,
+        );
         assert_eq!(
             complete,
             [
@@ -2273,13 +2293,36 @@ mod tests {
                 "warn: d: Permission denied (os error 13)",
             ]
         );
-        let one = status_warnings(&status(vec![issue(None, "x")], 1));
+        let one = status_warnings(&status(vec![issue(None, "x")], 1), None);
         assert_eq!(
             one.last().map(String::as_str),
             Some("warn: 1 more error omitted; details are kept for the first 64")
         );
-        let many = status_warnings(&status(Vec::new(), 1_234));
+        let many = status_warnings(&status(Vec::new(), 1_234), None);
         assert_eq!(many, ["warn: 1,234 more errors omitted; details are kept for the first 64"]);
+
+        // Over several roots, a path the message leaves out follows its root's label.
+        let roots = [
+            fdu_core::query::NamedRoot { label: "docs".into(), path: "/abs/docs".into() },
+            fdu_core::query::NamedRoot { label: "src".into(), path: "/abs/src".into() },
+        ];
+        let labelled = status_warnings(
+            &status(
+                vec![
+                    rooted(0, Some("a.md"), "Permission denied (os error 13)"),
+                    rooted(1, Some("a.md"), "Permission denied (os error 13)"),
+                ],
+                0,
+            ),
+            Some(&roots),
+        );
+        assert_eq!(
+            labelled,
+            [
+                "warn: docs/a.md: Permission denied (os error 13)",
+                "warn: src/a.md: Permission denied (os error 13)",
+            ]
+        );
     }
 
     /// One population axis parses all modes and rejects misspellings.
@@ -2375,7 +2418,8 @@ mod tests {
         };
         assert!(footer(&observed(1, Vec::new())).contains("; 0 gitignore rules (1 file); "));
         let refused = RefusedControl {
-            root: 0, path: PathBuf::from(".gitignore"),
+            root: 0,
+            path: PathBuf::from(".gitignore"),
             reason: ControlRefusalReason::LineLimit,
         };
         assert!(

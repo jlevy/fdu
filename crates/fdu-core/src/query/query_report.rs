@@ -1545,13 +1545,13 @@ pub(crate) fn display_notes(
     root_display_notes(query, content, ignore_rules, None)
 }
 
-/// [`display_notes`] for a report over the roots `labels` names, which a note that names a
-/// directory puts before it, as text puts a label before every path; `None` for one root.
+/// [`display_notes`] for a report over `roots`, whose labels a note that names a directory
+/// puts before it, as text puts a label before every path; `None` for one root.
 fn root_display_notes(
     query: &Query,
     content: AnalysisSet,
     ignore_rules: &ControlCoverage,
-    labels: Option<&[NamedRoot]>,
+    roots: Option<&[NamedRoot]>,
 ) -> (Vec<String>, Vec<String>) {
     let mut notes = Vec::new();
     let mut tips = Vec::new();
@@ -1579,7 +1579,7 @@ fn root_display_notes(
             content.union(needed).request_label()
         ));
     }
-    if let Some((note, tip)) = refused_controls_note(ignore_rules, query.axes, labels) {
+    if let Some((note, tip)) = refused_controls_note(ignore_rules, query.axes, roots) {
         notes.push(note);
         tips.extend(tip);
     }
@@ -1767,7 +1767,46 @@ pub(crate) fn report_in(
     generated_at: std::time::SystemTime,
     identity: NameIdentity,
 ) -> crate::Result<Report> {
-    read_roots(&[index], request, generated_at, identity)
+    read_roots(&[index], None, request, generated_at, identity)
+}
+
+/// Build one report over several roots from one index per root, in the roots' order.
+///
+/// The report is the sum of the reports over each root, merged before any display bound:
+/// sizes, counts, rows, shares, and bounds are taken over the union, once. A tree has a
+/// total row and one tree per root, rows and issues carry the position of their root in
+/// [`Report::roots`], and every path stays relative to its own root. With one root this is
+/// [`report`], unchanged: no total, no labels, and [`Report::root`] set.
+///
+/// Pure, as [`report`] is. A caller that already holds an index per root, from
+/// [`open`](crate::open) or [`scan_into_index`](crate::scan::scan_into_index), composes
+/// them here; a one-shot caller uses
+/// [`prepare_roots_report`](crate::prepare_roots_report), which walks each root first.
+///
+/// # Errors
+///
+/// [`Error::InvalidRequest`](crate::Error::InvalidRequest) with
+/// [`RequestError::RootMismatch`] when the indexes are not the roots' indexes, one for one
+/// and in order, and whatever [`report`] refuses of any of them.
+pub fn report_roots(
+    indexes: &[&Index],
+    roots: &Roots,
+    request: &Request,
+    generated_at: std::time::SystemTime,
+) -> crate::Result<Report> {
+    let named = roots.as_slice();
+    for position in 0..indexes.len().max(named.len()) {
+        let held = indexes.get(position).map(|index| index.root_path().to_path_buf());
+        let requested = named.get(position).map(|root| root.path.clone());
+        if held != requested {
+            return Err(crate::Error::InvalidRequest(RequestError::RootMismatch {
+                held: held.unwrap_or_default(),
+                requested: requested.unwrap_or_default(),
+            }));
+        }
+    }
+    let labels = roots.is_several().then_some(roots);
+    read_roots(indexes, labels, request, generated_at, NameIdentity::Native)
 }
 
 /// One root's part of a read: its index, and everything the reader derives from that index
@@ -1777,6 +1816,8 @@ pub(crate) fn report_in(
 /// root is what lets every section be one accumulation per index and one finalization over
 /// them all, so a report over one root is the report over several with one input.
 struct RootRead<'a> {
+    /// Position among the report's roots; 0 for a report over one root.
+    root: usize,
     /// The root's index.
     index: &'a Index,
     /// The filtered traversal, when the selection needs one.
@@ -1796,7 +1837,12 @@ struct RootRead<'a> {
 
 impl<'a> RootRead<'a> {
     /// Validate `request` against what `index` holds and derive what its sections read.
-    fn new(index: &'a Index, request: &Request, identity: NameIdentity) -> crate::Result<Self> {
+    fn new(
+        root: usize,
+        index: &'a Index,
+        request: &Request,
+        identity: NameIdentity,
+    ) -> crate::Result<Self> {
         // What this index holds is what it can be read for. Every surface validates before
         // it scans, in the vocabulary its own caller uses; this is the library path, and the
         // last one, so nothing produces an answer from an unvalidated request.
@@ -1834,6 +1880,7 @@ impl<'a> RootRead<'a> {
             query.views.iter().copied().filter(|view| needs_unfiltered_entry_rows(*view)).count();
         let unfiltered_rows = (walked.is_none() && row_consumers > 1).then(|| every_entry(index));
         Ok(Self {
+            root,
             index,
             walked,
             directories,
@@ -1916,19 +1963,32 @@ fn combined_totals_fit(reads: &[RootRead<'_>]) -> crate::Result<()> {
 /// Every section accumulates over each root's [`RootRead`] and finalizes once, so display
 /// bounds apply after the merge, against the combined total, and a report over one root is
 /// this with one input.
+///
+/// `roots` names the roots of a report over several, one per index; `None` reads a report
+/// over one root, which has no labels and keeps [`Report::root`].
 fn read_roots(
     indexes: &[&Index],
+    roots: Option<&Roots>,
     request: &Request,
     generated_at: std::time::SystemTime,
     identity: NameIdentity,
 ) -> crate::Result<Report> {
+    debug_assert!(
+        roots.map_or(indexes.len() == 1, |roots| roots.as_slice().len() == indexes.len()),
+        "one index per root, and labels exactly when there are several"
+    );
     let reads = indexes
         .iter()
-        .map(|index| RootRead::new(index, request, identity))
+        .enumerate()
+        .map(|(root, index)| RootRead::new(root, index, request, identity))
         .collect::<crate::Result<Vec<_>>>()?;
     combined_totals_fit(&reads)?;
-    debug_assert_eq!(reads.len(), 1, "several roots are read once their report has a shape");
+    let labels = roots.map(Roots::as_slice);
     let index = reads[0].index;
+    debug_assert!(
+        reads.iter().all(|read| read.index.scope() == index.scope()),
+        "every root of one request is read under one scope"
+    );
 
     let query = &request.query;
     let content = request.basis.content;
@@ -1950,14 +2010,15 @@ fn read_roots(
             if let Some(summary) = shared_metric_summary {
                 return Section::Metrics { view: *view, summary: Box::new(summary) };
             }
-            build_section(*view, &reads, query, content)
+            build_section(*view, &reads, labels, query, content)
         })
         .collect();
 
     let age_reference_ns = crate::query::system_time_to_nanos(request.now);
     measure_ages(&mut sections, age_reference_ns);
-    let ignore_rules = index.control_coverage();
-    let (mut notes, mut tips) = display_notes(query, content, &ignore_rules);
+    let ignore_rules =
+        merge_ignore_rules(reads.iter().map(|read| read.index.control_coverage()).collect());
+    let (mut notes, mut tips) = root_display_notes(query, content, &ignore_rules, labels);
     if content.includes_words() {
         // Of the files the report's views show, not of every record the index holds: a
         // selection that leaves a Markdown file out says nothing of it. Each metric view's
@@ -2009,29 +2070,93 @@ fn read_roots(
         notes,
         tips,
         axes: query.axes,
-        status: TreeStatus::of(index, request),
-        provenance: ReportProvenance::of(index, content, generated_at),
+        status: TreeStatus::merge(
+            reads.iter().map(|read| TreeStatus::of(read.index, request)).collect(),
+        ),
+        provenance: ReportProvenance::merge(
+            reads
+                .iter()
+                .map(|read| ReportProvenance::of(read.index, content, generated_at))
+                .collect(),
+        ),
         scope: index.scope(),
         requested_analysis: content,
         requested_views: query.views.clone(),
         omitted_views: query.omitted_views.clone(),
-        root: index.root_path().to_path_buf(),
+        root: roots.is_none().then(|| index.root_path().to_path_buf()),
+        roots: roots.map(|roots| roots.as_slice().to_vec()),
         size: query.selection.size,
         sort_metric: match query.selection.sort {
             Some(SortKey::Metric(name)) => Some(name),
             _ => None,
         },
-        analysis: index.content().and_then(|held| {
-            let wanted = index.content_identity(content);
-            let projected = held.admit(&wanted)?;
-            Some(ContentReportMetadata {
+        analysis: merge_analysis(reads.iter().map(|read| {
+            read.content(content).map(|projected| ContentReportMetadata {
                 profile: projected.identity().analysis,
                 provenance: projected.identity().record_provenance(),
             })
-        }),
+        })),
         ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
+    })
+}
+
+/// The `.gitignore` coverage of several roots as one: counts add, and refusals keep root
+/// order, each marked with its root, within the shared retention bound.
+///
+/// One request reads every root under one scope, so either all of them observed control
+/// state or none did. Were that ever to change, a root that observed nothing would make
+/// the whole report unobserved, since no rule read under the others says anything of it.
+/// Over one root this is that root's coverage.
+fn merge_ignore_rules(parts: Vec<ControlCoverage>) -> ControlCoverage {
+    debug_assert!(
+        parts.iter().all(|part| matches!(part, ControlCoverage::Observed(_)))
+            || parts.iter().all(|part| matches!(part, ControlCoverage::NotObserved)),
+        "every root of one request observes control state or none does"
+    );
+    let mut merged: Option<crate::control::ControlObservation> = None;
+    for (root, part) in parts.into_iter().enumerate() {
+        let ControlCoverage::Observed(mut observed) = part else {
+            return ControlCoverage::NotObserved;
+        };
+        for refusal in &mut observed.refusals {
+            refusal.root = root;
+        }
+        match &mut merged {
+            None => merged = Some(observed),
+            Some(total) => {
+                total.applied += observed.applied;
+                total.rules += observed.rules;
+                total.refused += observed.refused;
+                let room = crate::MAX_RETAINED_ISSUES.saturating_sub(total.refusals.len());
+                total.refusals.extend(observed.refusals.into_iter().take(room));
+            }
+        }
+    }
+    merged.map_or(ControlCoverage::NotObserved, ControlCoverage::Observed)
+}
+
+/// The analyzer identity of several roots as one: each analyzer once, in first-seen order.
+///
+/// One request reads every root with one analyzer set and one set of type rules, so their
+/// fingerprints agree; a root whose index holds no admissible records adds nothing, and
+/// the report has none only when no root does.
+fn merge_analysis(
+    parts: impl Iterator<Item = Option<ContentReportMetadata>>,
+) -> Option<ContentReportMetadata> {
+    parts.flatten().reduce(|mut merged, part| {
+        debug_assert_eq!(
+            merged.provenance.type_rules_fingerprint, part.provenance.type_rules_fingerprint,
+            "every root of one request is classified by one set of type rules"
+        );
+        merged.profile = merged.profile.union(part.profile);
+        for analyzer in part.provenance.analyzers {
+            if !merged.provenance.analyzers.iter().any(|(id, _)| *id == analyzer.0) {
+                merged.provenance.analyzers.push(analyzer);
+            }
+        }
+        merged
     })
 }
 
@@ -2085,7 +2210,8 @@ pub(crate) fn report_summary(
         requested_analysis: AnalysisSet::NONE,
         requested_views: query.views.clone(),
         omitted_views: query.omitted_views.clone(),
-        root: root.to_path_buf(),
+        root: Some(root.to_path_buf()),
+        roots: None,
         size: query.selection.size,
         sort_metric: match query.selection.sort {
             Some(SortKey::Metric(name)) => Some(name),
@@ -2204,10 +2330,17 @@ fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>) {
                     row.age_ns = age(Some(row.mtime_ns), row.complete);
                 }
             }
-            Section::Tree { root: Some(root), .. } => {
+            Section::Tree { root, roots, .. } => {
                 // Iterative, as every tree traversal here is: a deep tree must not
                 // exhaust the stack.
-                let mut stack: Vec<&mut TreeNode> = vec![&mut **root];
+                let mut stack: Vec<&mut TreeNode> =
+                    root.iter_mut().map(|root| &mut **root).collect();
+                if let Some(roots) = roots {
+                    if let Some(total) = &mut roots.total {
+                        total.age_ns = age(total.mtime_ns, Some(total.complete));
+                    }
+                    stack.extend(roots.trees.iter_mut().map(|tree| &mut tree.tree));
+                }
                 while let Some(node) = stack.pop() {
                     node.age_ns = age(node.mtime_ns, node.complete);
                     stack.extend(node.children.iter_mut());
@@ -2377,6 +2510,7 @@ fn walk(
                 && (selection.modified.is_unbounded()
                     || subtree.is_none_or(|subtree| subtree.complete));
             let row = FileRow {
+                root: 0,
                 path: child_path.clone(),
                 kind,
                 bytes: measured.size,
@@ -2516,18 +2650,29 @@ fn entry_rows<'a>(
 fn build_section(
     view: ViewSpec,
     reads: &[RootRead<'_>],
+    labels: Option<&[NamedRoot]>,
     query: &Query,
     content: AnalysisSet,
 ) -> Section {
     if query.tree_for(view) {
-        let (root, omissions) = tree_section(reads, query, content);
         let limits = TreeDisplayLimits {
             depth: query.depth_for(view),
             min_share: query.min_share_for(),
             breadth: query.breadth_for(),
             rows: query.limit_for(view),
         };
-        return Section::Tree { view, limits, root: root.map(Box::new), omissions };
+        if let Some(labels) = labels {
+            let (roots, omissions) = root_trees(reads, labels, query, content);
+            return Section::Tree {
+                view,
+                limits,
+                root: None,
+                omissions,
+                roots: Some(Box::new(roots)),
+            };
+        }
+        let (root, omissions) = tree_section(reads, query, content);
+        return Section::Tree { view, limits, root: root.map(Box::new), omissions, roots: None };
     }
     match view {
         ViewSpec::Code => Section::Code(Box::new(code_overview(reads, query, content))),
@@ -2547,7 +2692,7 @@ fn build_section(
         | ViewSpec::Files
         | ViewSpec::Largest
         | ViewSpec::Recent => {
-            let (rows, total) = file_rows(view, reads, query, content);
+            let (rows, total) = file_rows(view, reads, labels, query, content);
             Section::Files { view, rows, total }
         }
     }
@@ -2724,6 +2869,7 @@ fn extension_rows(reads: &[RootRead<'_>], query: &Query) -> (Vec<TypeRow>, usize
             mtime: |_: &TypeRow| None,
             name: borrowed_name(|row: &TypeRow| std::borrow::Cow::Borrowed(row.extension.as_str())),
             content_metric: |_: &TypeRow, _: &MetricDef| None,
+            rank: |_: &TypeRow| 0,
         },
     );
     let total = truncate(&mut rows, query.limit_for(ViewSpec::Extensions));
@@ -3046,6 +3192,7 @@ impl MetricAccumulator {
                 mtime: |_: &MetricRow| None,
                 name: borrowed_name(|row: &MetricRow| std::borrow::Cow::Borrowed(row.id.as_str())),
                 content_metric: MetricRow::metric_value,
+                rank: |_: &MetricRow| 0,
             },
         );
         let before_share = rows.len();
@@ -3262,35 +3409,54 @@ pub fn pages(row: &MetricRow, words_per_page: u64) -> Option<Pages> {
 fn file_rows(
     view: ViewSpec,
     reads: &[RootRead<'_>],
+    labels: Option<&[NamedRoot]>,
     query: &Query,
     content: AnalysisSet,
 ) -> (Vec<FileRow>, usize) {
-    debug_assert_eq!(reads.len(), 1, "several roots' rows merge once rows name their root");
-    root_file_rows(view, &reads[0], query, content)
+    let ranks = label_ranks(labels);
+    if let [read] = reads {
+        return root_file_rows(view, read, &ranks, query, content);
+    }
+    // Each root's rows are bounded on their own first. That is exact for a sorted top-k:
+    // the comparator orders a root's rows among themselves as it orders them alone, since
+    // the root's rank ties within it, so no row the merged bound keeps can have been cut
+    // by its own root's.
+    let mut rows = Vec::new();
+    let mut total = 0;
+    for read in reads {
+        let (part, count) = root_file_rows(view, read, &ranks, query, content);
+        rows.extend(part);
+        total += count;
+    }
+    sort_file_rows(&mut rows, query, view, &ranks);
+    truncate(&mut rows, query.limit_for(view));
+    (rows, total)
 }
 
-/// One root's rows for a flat view: classified, sorted, and bounded on their own.
-fn root_file_rows(
-    view: ViewSpec,
-    read: &RootRead<'_>,
-    query: &Query,
-    content: AnalysisSet,
-) -> (Vec<FileRow>, usize) {
-    let (index, walked) = (read.index, read.walked.as_ref());
-    let mut rows = read.entry_rows().into_owned();
-    if view.files_only() {
-        rows.retain(|row| row.kind == EntryKind::File);
+/// Each root's rank in label order, by position: where its rows fall among the roots' when
+/// rows are otherwise equal or ordered by name.
+///
+/// Text prints a path after its root's label, so ordering by label and then by path is what
+/// reads as sorted; ordering by the relative path alone would interleave the roots. Labels
+/// that compare equal keep the caller's order. One root has rank 0.
+fn label_ranks(labels: Option<&[NamedRoot]>) -> Vec<usize> {
+    let Some(labels) = labels else { return vec![0] };
+    let mut order: Vec<usize> = (0..labels.len()).collect();
+    order.sort_by(|left, right| {
+        labels[*left].label.to_string_lossy().cmp(&labels[*right].label.to_string_lossy())
+    });
+    let mut ranks = vec![0; labels.len()];
+    for (rank, root) in order.into_iter().enumerate() {
+        ranks[root] = rank;
     }
-    if let Some(SortKey::Metric(name)) = query.selection.sort {
-        let sources = walked.map_or(rows.as_slice(), |walked| walked.members.as_slice());
-        let values = metric_sort_values(index, content, sources, name);
-        for row in &mut rows {
-            row.sort_value = values.get(&row.path).copied();
-        }
-    }
+    ranks
+}
 
+/// Order flat rows by the view's key, ranking rows of different roots by label where names
+/// decide ([`label_ranks`]).
+fn sort_file_rows(rows: &mut [FileRow], query: &Query, view: ViewSpec, ranks: &[usize]) {
     sort_rows(
-        &mut rows,
+        rows,
         query,
         view,
         SortAccessors {
@@ -3302,8 +3468,39 @@ fn root_file_rows(
             mtime: |row: &FileRow| Some(row.mtime_ns),
             name: borrowed_name(|row: &FileRow| row.path.to_string_lossy()),
             content_metric: |row: &FileRow, _: &MetricDef| row.sort_value,
+            rank: |row: &FileRow| ranks[row.root],
         },
     );
+}
+
+/// One root's rows for a flat view: classified, sorted, and bounded on their own.
+fn root_file_rows(
+    view: ViewSpec,
+    read: &RootRead<'_>,
+    ranks: &[usize],
+    query: &Query,
+    content: AnalysisSet,
+) -> (Vec<FileRow>, usize) {
+    let (index, walked) = (read.index, read.walked.as_ref());
+    let mut rows = read.entry_rows().into_owned();
+    if view.files_only() {
+        rows.retain(|row| row.kind == EntryKind::File);
+    }
+    // Every row is built with root 0, which is already right for the first root.
+    if read.root != 0 {
+        for row in &mut rows {
+            row.root = read.root;
+        }
+    }
+    if let Some(SortKey::Metric(name)) = query.selection.sort {
+        let sources = walked.map_or(rows.as_slice(), |walked| walked.members.as_slice());
+        let values = metric_sort_values(index, content, sources, name);
+        for row in &mut rows {
+            row.sort_value = values.get(&row.path).copied();
+        }
+    }
+
+    sort_file_rows(&mut rows, query, view, ranks);
     let total = truncate(&mut rows, query.limit_for(view));
     let held = index.content().and_then(|tier| tier.admit(&index.content_identity(content)));
     for row in &mut rows {
@@ -3433,6 +3630,7 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 continue;
             };
             rows.push(FileRow {
+                root: 0,
                 path: child_path.clone(),
                 kind,
                 bytes: attrs.size,
@@ -3484,6 +3682,87 @@ fn tree_section(
             .expect("a positive row cap keeps the root");
     }
     (Some(root), top)
+}
+
+/// The tree section of a report over several roots: a total row and one tree per root,
+/// beside the root rows the row limit cut.
+///
+/// Each root's tree is the one its root alone would have, built by the same expansion with
+/// the combined total as its share denominator, so a row's share is of the whole report
+/// and `--depth` counts below each root. Every root is a row, whatever its share and with
+/// no breadth bound, because the caller named it; the roots are ordered by the tree sorter
+/// with their labels as names, so a metric sort, which measures no root, puts them in label
+/// order. The row limit applies once, over the assembled pre-order with the total as the
+/// first row, so `--limit 1` shows only the total and `--limit 0` nothing.
+fn root_trees(
+    reads: &[RootRead<'_>],
+    labels: &[NamedRoot],
+    query: &Query,
+    content: AnalysisSet,
+) -> (RootTrees, Vec<TreeOmission>) {
+    let summary = sum_roots(reads.iter().map(RootRead::summary));
+    let grand = match query.selection.size {
+        SizeMetric::Apparent => summary.bytes,
+        SizeMetric::Allocated => summary.allocated,
+    };
+    let limit = query.limit_for(ViewSpec::Tree);
+    let mut rows: Vec<(TreeNode, usize)> = reads
+        .iter()
+        .map(|read| {
+            let recency =
+                read.recency().expect("a tree view reads recency from its pass or its walk");
+            let label = labels[read.root].label.to_string_lossy().into_owned();
+            let mut node = tree_root(read, recency, label);
+            if limit != Bound::Limit(0) {
+                let metric_values = tree_metric_values(read, query, content);
+                let walked = read.walked.as_ref();
+                expand(read.index, query, walked, &metric_values, recency, grand, &mut node);
+            }
+            (node, read.root)
+        })
+        .collect();
+    sort_rows_by(
+        &mut rows,
+        query,
+        ViewSpec::Tree,
+        SortAccessors {
+            size: |(row, _): &(TreeNode, usize), metric| match metric {
+                SizeMetric::Apparent => row.bytes,
+                SizeMetric::Allocated => row.allocated,
+            },
+            count: |(row, _): &(TreeNode, usize)| row.files,
+            mtime: |(row, _): &(TreeNode, usize)| row.mtime_ns,
+            name: borrowed_name(|(row, _): &(TreeNode, usize)| {
+                std::borrow::Cow::Borrowed(row.name.as_str())
+            }),
+            content_metric: |_: &(TreeNode, usize), _: &MetricDef| None,
+            rank: |_: &(TreeNode, usize)| 0,
+        },
+    );
+    let total = TreeTotal {
+        bytes: summary.bytes,
+        allocated: summary.allocated,
+        files: summary.files,
+        dirs: summary.dirs,
+        ignored: summary.ignored,
+        newest_mtime_ns: summary.newest_mtime_ns,
+        mtime_ns: rows.iter().fold(None, |newest, (row, _)| newer(newest, row.mtime_ns)),
+        complete: rows.iter().all(|(row, _)| row.complete == Some(true)),
+        age_ns: None,
+    };
+    let order: Vec<usize> = rows.iter().map(|(_, root)| *root).collect();
+    let forest: Vec<(TreeNode, bool)> =
+        rows.into_iter().map(|(node, root)| (node, reads[root].listed_in_full())).collect();
+    let mut top = Vec::new();
+    let (total, kept) = match limit {
+        Bound::Limit(0) => (None, cap_tree_forest(forest, 0, &mut top)),
+        // The total is the first row, so the trees share what is left of the cap.
+        Bound::Limit(cap) => (Some(total), cap_tree_forest(forest, cap - 1, &mut top)),
+        Bound::All => (Some(total), forest.into_iter().map(|(node, _)| node).collect()),
+    };
+    // A row cap keeps a prefix of the trees in order, so the kept trees are the first roots.
+    let trees = kept.into_iter().zip(order).map(|(tree, root)| RootTree { root, tree }).collect();
+    (RootTrees { total, trees }, top)
 }
 
 /// One root's tree row, before its children: the root's totals under the selection, its
@@ -3972,6 +4251,7 @@ fn child_rows(
             content_metric: |(row, _): &(TreeNode, EntryId), _: &MetricDef| {
                 metric_values.get(&row.path).copied()
             },
+            rank: |_: &(TreeNode, EntryId)| 0,
         },
     );
     (rows, below_share)
@@ -3987,12 +4267,15 @@ fn truncate<T>(rows: &mut Vec<T>, limit: Bound) -> usize {
 }
 
 /// Sort rows by the effective key for a view.
-struct SortAccessors<S, C, M, N, V> {
+struct SortAccessors<S, C, M, N, V, R> {
     size: S,
     count: C,
     mtime: M,
     name: N,
     content_metric: V,
+    /// The rank of the row's root ([`label_ranks`]), which decides before the name does;
+    /// constant for rows of one root, so it never reorders them among themselves.
+    rank: R,
 }
 
 fn sort_rows<T>(
@@ -4005,6 +4288,7 @@ fn sort_rows<T>(
         impl Fn(&T) -> Option<i64>,
         impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
+        impl Fn(&T) -> usize,
     >,
 ) {
     sort_rows_by(rows, query, view, accessors);
@@ -4033,11 +4317,17 @@ fn sort_rows_by<T>(
         impl Fn(&T) -> Option<i64>,
         impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
+        impl Fn(&T) -> usize,
     >,
 ) {
-    let SortAccessors { size, count, mtime, name, content_metric } = accessors;
+    let SortAccessors { size, count, mtime, name, content_metric, rank } = accessors;
     let key = query.selection.sort.unwrap_or_else(|| view.default_sort());
     let metric = query.selection.size;
+    // A row's name is its path under its root, so the root's rank comes first wherever the
+    // name decides: rows read as sorted by label and then path.
+    let named = |left: &T, right: &T| {
+        rank(left).cmp(&rank(right)).then_with(|| name(left).cmp(&name(right)))
+    };
 
     rows.sort_by(|left, right| {
         let ordering = match key {
@@ -4045,7 +4335,7 @@ fn sort_rows_by<T>(
             SortKey::Size => size(right, metric).cmp(&size(left, metric)),
             SortKey::Count => count(right).cmp(&count(left)),
             SortKey::Mtime => mtime(right).cmp(&mtime(left)),
-            SortKey::Name => name(left).cmp(&name(right)),
+            SortKey::Name => named(left, right),
             SortKey::Metric(metric_name) => {
                 let definition =
                     crate::content::METRICS.iter().find(|entry| entry.name == metric_name);
@@ -4063,7 +4353,7 @@ fn sort_rows_by<T>(
         };
         // A name tiebreak keeps equal rows in a deterministic order, which is what makes
         // the goldens stable across runs and platforms.
-        ordering.then_with(|| name(left).cmp(&name(right)))
+        ordering.then_with(|| named(left, right))
     });
 
     if query.selection.reverse && !matches!(key, SortKey::Metric(_)) {
@@ -5335,11 +5625,13 @@ mod tests {
                 rules: 0,
                 refused: 1,
                 refusals: vec![RefusedControl {
-                    root: 0, path: Path::new("vendor").join(".gitignore"),
+                    root: 0,
+                    path: Path::new("vendor").join(".gitignore"),
                     reason,
                 }],
             });
-            let (note, tip) = refused_controls_note(&coverage, &AxisNames::FLAGS).expect("refusal");
+            let (note, tip) =
+                refused_controls_note(&coverage, &AxisNames::FLAGS, None).expect("refusal");
             assert!(
                 note.starts_with(
                     "note: ignore classification incomplete: 1 ignore file not applied"
@@ -5360,14 +5652,15 @@ mod tests {
                 refused,
                 refusals: (0..crate::MAX_RETAINED_ISSUES)
                     .map(|i| RefusedControl {
-                        root: 0, path: Path::new(&format!("d{i:02}")).join(".gitignore"),
+                        root: 0,
+                        path: Path::new(&format!("d{i:02}")).join(".gitignore"),
                         reason: ControlRefusalReason::Budget,
                     })
                     .collect(),
             })
         };
-        let (note, tip) =
-            refused_controls_note(&coverage(defaults, 1000), &AxisNames::FLAGS).expect("truncated");
+        let (note, tip) = refused_controls_note(&coverage(defaults, 1000), &AxisNames::FLAGS, None)
+            .expect("truncated");
         assert!(note.contains("995 more"));
         assert!(!note.contains("d05"));
         let tip = tip.expect("both bounded limits may explain unlisted refusals");
@@ -5375,16 +5668,20 @@ mod tests {
         let (_, tip) = refused_controls_note(
             &coverage(ControlLimits { line_limit: None, ..defaults }, 1000),
             &AxisNames::FLAGS,
+            None,
         )
         .expect("truncated");
         assert!(!tip.expect("budget remedy").contains("--gitignore-line-limit"));
         let (_, tip) = refused_controls_note(
             &coverage(ControlLimits { budget: None, line_limit: None }, 64),
             &AxisNames::FLAGS,
+            None,
         )
         .expect("retained refusal");
         assert!(tip.is_none(), "do not suggest raising unbounded limits");
-        assert!(refused_controls_note(&ControlCoverage::NotObserved, &AxisNames::FLAGS).is_none());
+        assert!(
+            refused_controls_note(&ControlCoverage::NotObserved, &AxisNames::FLAGS, None).is_none()
+        );
     }
 
     #[test]
@@ -6201,6 +6498,7 @@ mod tests {
         ];
         let request = query(&views, Selection::default());
         let read = RootRead {
+            root: 0,
             index: &index,
             walked: None,
             directories: None,
@@ -6577,7 +6875,7 @@ mod tests {
         assert!(report.status.complete);
         assert!(report.provenance.scan_started_at.is_some());
         assert_eq!(report.provenance.generated_at, generated_at());
-        assert_eq!(report.root, Path::new("/root"));
+        assert_eq!(report.root.as_deref(), Some(Path::new("/root")));
     }
 
     #[test]
@@ -7149,5 +7447,580 @@ mod tests {
             );
         }
         assert_eq!(summary_of(&run(&index, &query(&views, Selection::default()))).files, 1);
+    }
+
+    // ---- several roots --------------------------------------------------------------
+
+    /// An index at `root` holding `entries`, each a path, a kind, and for a file its size
+    /// and time.
+    fn rooted(root: &str, entries: &[(&str, EntryKind, u64, i64)]) -> Index {
+        let mut index = Index::new(root);
+        index
+            .apply(&Observation::new(
+                entries
+                    .iter()
+                    .map(|(path, kind, size, mtime)| match kind {
+                        EntryKind::File => upsert(path, *kind, attrs(*size, *mtime)),
+                        _ => upsert(path, *kind, Attrs { mtime_ns: *mtime, ..Attrs::default() }),
+                    })
+                    .collect(),
+            ))
+            .expect("apply");
+        index
+    }
+
+    /// Two disjoint roots, `/docs` and `/src`, labelled `docs` and `src`.
+    fn two_roots() -> (Index, Index, Roots) {
+        use EntryKind::{Dir, File};
+        let docs = rooted(
+            "/docs",
+            &[
+                ("guide.md", File, 300, 30),
+                ("api", Dir, 0, 35),
+                ("api/index.md", File, 40, 50),
+                ("logo.png", File, 9, 7),
+            ],
+        );
+        let src = rooted(
+            "/src",
+            &[
+                ("main.rs", File, 100, 10),
+                ("lib.rs", File, 200, 20),
+                ("deep", Dir, 0, 3),
+                ("deep/nested.rs", File, 50, 40),
+                ("notes.md", File, 5, 5),
+            ],
+        );
+        (docs, src, labelled(&[("docs", "/docs"), ("src", "/src")]))
+    }
+
+    fn labelled(roots: &[(&str, &str)]) -> Roots {
+        Roots::named(
+            roots
+                .iter()
+                .map(|(label, path)| NamedRoot { label: label.into(), path: path.into() })
+                .collect(),
+        )
+    }
+
+    fn run_roots(indexes: &[&Index], roots: &Roots, query: &Query) -> Report {
+        let request = crate::test_support::read_of(indexes[0], query.clone());
+        report_roots(indexes, roots, &request, generated_at()).expect("answerable")
+    }
+
+    fn root_trees_of(report: &Report) -> (&RootTrees, &[TreeOmission]) {
+        match report.sections.first().expect("a section") {
+            Section::Tree { root: None, roots: Some(roots), omissions, .. } => (roots, omissions),
+            other => panic!("expected the trees of several roots, got {other:?}"),
+        }
+    }
+
+    /// Every display bound off, so a section shows everything it counts.
+    fn unbounded() -> Selection {
+        Selection {
+            min_share: Some(ShareThreshold::parse("0%").expect("share")),
+            limit: Some(Bound::All),
+            depth: Some(Bound::All),
+            ..Selection::default()
+        }
+    }
+
+    /// A tree's rows in pre-order with their size and share-bearing fields, for comparing
+    /// trees that differ only in their root's name.
+    fn shape(root: &TreeNode) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            out.push(format!(
+                "{} {} {} {} {:?} {:?} {:?}",
+                node.path.display(),
+                node.bytes,
+                node.files,
+                node.dirs,
+                node.mtime_ns,
+                node.age_ns,
+                node.omissions
+            ));
+            stack.extend(node.children.iter().rev());
+        }
+        out
+    }
+
+    /// A report over several roots is the sum of the reports over each: every additive
+    /// value adds, every maximum is the maximum, and each root's tree is its own.
+    #[test]
+    fn several_roots_report_the_sum_of_their_single_root_reports() {
+        let (docs, src, roots) = two_roots();
+        let both = [&docs, &src];
+
+        let summary =
+            summary_of(&run_roots(&both, &roots, &query(&[ViewSpec::Summary], unbounded())));
+        let (one, two) = (
+            summary_of(&run(&docs, &query(&[ViewSpec::Summary], unbounded()))),
+            summary_of(&run(&src, &query(&[ViewSpec::Summary], unbounded()))),
+        );
+        assert_eq!(
+            (summary.files, summary.dirs, summary.bytes, summary.allocated),
+            (
+                one.files + two.files,
+                one.dirs + two.dirs,
+                one.bytes + two.bytes,
+                one.allocated + two.allocated
+            )
+        );
+        assert_eq!(summary.newest_mtime_ns, Some(50));
+
+        let types =
+            types_of(&run_roots(&both, &roots, &query(&[ViewSpec::Extensions], unbounded())));
+        let mut expected = BTreeMap::<String, (u64, u64)>::new();
+        for index in [&docs, &src] {
+            for row in types_of(&run(index, &query(&[ViewSpec::Extensions], unbounded()))) {
+                let sum = expected.entry(row.extension).or_default();
+                sum.0 += row.files;
+                sum.1 += row.bytes;
+            }
+        }
+        let merged: BTreeMap<String, (u64, u64)> =
+            types.into_iter().map(|row| (row.extension, (row.files, row.bytes))).collect();
+        assert_eq!(merged, expected);
+        assert_eq!(merged[".md"], (3, 345), "one bucket counts both roots' Markdown");
+
+        let files = files_of(&run_roots(&both, &roots, &query(&[ViewSpec::Files], unbounded())));
+        let mut union: Vec<(usize, PathBuf)> = Vec::new();
+        for (root, index) in [&docs, &src].into_iter().enumerate() {
+            union.extend(
+                files_of(&run(index, &query(&[ViewSpec::Files], unbounded())))
+                    .into_iter()
+                    .map(|row| (root, row.path)),
+            );
+        }
+        let mut listed: Vec<(usize, PathBuf)> =
+            files.iter().map(|row| (row.root, row.path.clone())).collect();
+        listed.sort();
+        union.sort();
+        assert_eq!(listed, union, "every row of each root, once, with its root");
+
+        let report = run_roots(&both, &roots, &query(&[ViewSpec::Tree], unbounded()));
+        assert_eq!(report.root, None);
+        assert_eq!(report.roots.as_deref(), Some(roots.as_slice()));
+        let (trees, top) = root_trees_of(&report);
+        assert!(top.is_empty());
+        let total = trees.total.expect("a total row");
+        assert_eq!(
+            (total.bytes, total.files, total.dirs),
+            (summary.bytes, summary.files, summary.dirs)
+        );
+        assert_eq!(total.mtime_ns, Some(50), "the newest activity under any root");
+        assert!(total.complete);
+        assert_eq!(total.age_ns, Some(i128::from(report.age_reference_ns.expect("now")) - 50));
+        for (index, label) in [(&docs, "docs"), (&src, "src")] {
+            let alone = tree_of(&run(index, &query(&[ViewSpec::Tree], unbounded())));
+            let tree = trees
+                .trees
+                .iter()
+                .find(|tree| tree.tree.name == label)
+                .unwrap_or_else(|| panic!("{label} is a row"));
+            assert_eq!(report.roots.as_ref().expect("roots")[tree.root].label, Path::new(label));
+            assert_eq!(shape(&tree.tree), shape(&alone), "{label}'s tree is its own");
+        }
+    }
+
+    /// Pooled word statistics merge as sufficient statistics: the combined total's logical
+    /// words come from the merged pool, not from adding two rounded estimates.
+    #[test]
+    fn several_roots_pool_their_word_statistics() {
+        let directories: Vec<tempfile::TempDir> =
+            (0..2).map(|_| tempfile::tempdir().expect("tempdir")).collect();
+        fs::write(directories[0].path().join("a.md"), "# Title\n\nshort words here\n").expect("a");
+        fs::write(directories[0].path().join("b.txt"), "x ".repeat(40)).expect("b");
+        fs::write(
+            directories[1].path().join("c.md"),
+            "incomprehensibilities notwithstanding extraordinarily\n",
+        )
+        .expect("c");
+        let indexes: Vec<Index> = directories
+            .iter()
+            .map(|directory| {
+                let root = directory.path().canonicalize().expect("canonical");
+                let (mut index, _) =
+                    crate::scan::scan_into_index(&root, &crate::ScanConfig::default())
+                        .expect("scan");
+                crate::content::analyze_index(
+                    &mut index,
+                    crate::content::AnalysisRequest {
+                        profile: AnalysisSet::ALL,
+                        ..crate::content::AnalysisRequest::default()
+                    },
+                );
+                index
+            })
+            .collect();
+        let roots = Roots::named(
+            indexes
+                .iter()
+                .enumerate()
+                .map(|(position, index)| NamedRoot {
+                    label: format!("r{position}").into(),
+                    path: index.root_path().to_path_buf(),
+                })
+                .collect(),
+        );
+        let documents = |report: &Report| match report.sections.first() {
+            Some(Section::Metrics { summary, .. }) => summary.total.clone(),
+            other => panic!("expected documents, got {other:?}"),
+        };
+        let words = query(&[ViewSpec::Documents], unbounded());
+        let request = |index: &Index| {
+            let mut request = crate::test_support::read_of(index, words.clone());
+            request.basis.content = AnalysisSet::ALL;
+            request
+        };
+        let alone: Vec<MetricRow> = indexes
+            .iter()
+            .map(|index| documents(&report(index, &request(index), generated_at()).expect("one")))
+            .collect();
+        let both = report_roots(
+            &indexes.iter().collect::<Vec<_>>(),
+            &roots,
+            &request(&indexes[0]),
+            generated_at(),
+        )
+        .expect("both");
+        let merged = documents(&both);
+        let mut pooled = alone[0].logical_word_stats;
+        pooled.add_assign(alone[1].logical_word_stats);
+        assert_eq!(merged.logical_word_stats, pooled);
+        assert_eq!(merged.files, alone[0].files + alone[1].files);
+    }
+
+    /// The ignored share of a sum is unknown when any term's is, never a partial sum.
+    #[test]
+    fn a_sum_of_roots_withholds_an_ignored_share_any_root_withholds() {
+        let known = SummaryRow {
+            files: 2,
+            bytes: 10,
+            ignored: Some(IgnoredTally { files: 1, dirs: 0, bytes: 4, allocated: 4 }),
+            newest_mtime_ns: Some(3),
+            ..SummaryRow::default()
+        };
+        let unknown = SummaryRow { ignored: None, newest_mtime_ns: None, ..known };
+        let both = sum_roots([known, known]);
+        assert_eq!(both.ignored.map(|share| share.bytes), Some(8));
+        assert_eq!((both.files, both.bytes, both.newest_mtime_ns), (4, 20, Some(3)));
+        assert_eq!(sum_roots([known, unknown]).ignored, None);
+        assert_eq!(sum_roots([unknown, known]).newest_mtime_ns, Some(3));
+        assert_eq!(format!("{:?}", sum_roots([known])), format!("{known:?}"));
+    }
+
+    /// A flat view's top rows over several roots are exactly the top rows of their union,
+    /// under every key and direction, although each root is bounded on its own first.
+    #[test]
+    fn a_bounded_flat_view_over_several_roots_is_the_top_of_their_union() {
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move |bound: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % bound
+        };
+        let names = ["a", "b", "c", "dd", "e"];
+        let indexes: Vec<Index> = (0..3)
+            .map(|root| {
+                let entries: Vec<(String, EntryKind, u64, i64)> = (0..12)
+                    .map(|file| {
+                        let name =
+                            format!("{}{file}", names[usize::try_from(next(5)).expect("small")]);
+                        (
+                            name,
+                            EntryKind::File,
+                            next(6) * 100,
+                            i64::try_from(next(4)).expect("small"),
+                        )
+                    })
+                    .collect();
+                let borrowed: Vec<(&str, EntryKind, u64, i64)> = entries
+                    .iter()
+                    .map(|(name, kind, size, mtime)| (name.as_str(), *kind, *size, *mtime))
+                    .collect();
+                rooted(&format!("/r{root}"), &borrowed)
+            })
+            .collect();
+        // Labels whose order differs from the argument order, so rank is not position.
+        let roots = labelled(&[("zeta", "/r0"), ("alpha", "/r1"), ("mid", "/r2")]);
+        let both: Vec<&Index> = indexes.iter().collect();
+        let key = |row: &FileRow| {
+            format!("{}/{}", roots.as_slice()[row.root].label.display(), row.path.display())
+        };
+        for sort in [SortKey::Size, SortKey::Name, SortKey::Count, SortKey::Mtime] {
+            for reverse in [false, true] {
+                let selection = |limit| Selection {
+                    sort: Some(sort),
+                    reverse,
+                    limit: Some(limit),
+                    ..Selection::default()
+                };
+                let everything = files_of(&run_roots(
+                    &both,
+                    &roots,
+                    &query(&[ViewSpec::Files], selection(Bound::All)),
+                ));
+                for limit in [1, 4, 9, 20] {
+                    let top = files_of(&run_roots(
+                        &both,
+                        &roots,
+                        &query(&[ViewSpec::Files], selection(Bound::Limit(limit))),
+                    ));
+                    let expected: Vec<String> = everything.iter().take(limit).map(key).collect();
+                    assert_eq!(
+                        top.iter().map(key).collect::<Vec<_>>(),
+                        expected,
+                        "{sort:?} reverse={reverse} limit={limit}"
+                    );
+                }
+                if sort == SortKey::Name && !reverse {
+                    let listed: Vec<String> = everything.iter().map(key).collect();
+                    let mut sorted = listed.clone();
+                    sorted.sort_by_key(|path| {
+                        let (label, rest) = path.split_once('/').expect("labelled");
+                        (label.to_owned(), rest.to_owned())
+                    });
+                    assert_eq!(listed, sorted, "name order is label, then path");
+                    assert!(listed[0].starts_with("alpha/"), "{listed:?}");
+                }
+            }
+        }
+    }
+
+    /// Several roots under one tree: every root is a row whatever its share, `--depth`
+    /// counts below each root, `--breadth` never hides a root, shares are of the total, and
+    /// the row limit applies once with the total as the first row.
+    #[test]
+    fn a_tree_over_several_roots_bounds_once_and_shows_every_root() {
+        use EntryKind::{Dir, File};
+        // `big/x` is 1.5% of `big`, but 0.5% of the total, so the 1% default omits it.
+        let big = rooted("/big", &[("x", File, 15, 1), ("y", File, 985, 2)]);
+        let other = rooted("/other", &[("d", Dir, 0, 3), ("d/z", File, 2_000, 4)]);
+        let empty = rooted("/empty", &[]);
+        let roots = labelled(&[("big", "/big"), ("other", "/other"), ("empty", "/empty")]);
+        let all = [&big, &other, &empty];
+        // Apparent bytes, so each file's size is exactly what the shares above say.
+        let tree = |selection: Selection| {
+            let selection = Selection { size: SizeMetric::Apparent, ..selection };
+            run_roots(&all, &roots, &query(&[ViewSpec::Tree], selection))
+        };
+        let names = |trees: &RootTrees| {
+            trees.trees.iter().map(|tree| tree.tree.name.clone()).collect::<Vec<_>>()
+        };
+
+        let report = tree(Selection::default());
+        let (trees, top) = root_trees_of(&report);
+        assert!(top.is_empty());
+        assert_eq!(names(trees), ["other", "big", "empty"], "by size, the empty root included");
+        let big_tree = &trees.trees[1].tree;
+        assert_eq!(trees.trees[1].root, 0);
+        assert_eq!(
+            big_tree.children.iter().map(|child| child.name.as_str()).collect::<Vec<_>>(),
+            ["y"],
+            "x is under 1% of the total though not of its root"
+        );
+        assert!(
+            TreeRemainder::from_tree(Some(big_tree), &[]).is_some(),
+            "its remainder is its own"
+        );
+        assert_eq!(trees.trees[2].tree.bytes, 0);
+
+        let reversed = tree(Selection { reverse: true, ..Selection::default() });
+        assert_eq!(names(root_trees_of(&reversed).0), ["empty", "big", "other"]);
+        let by_name = tree(Selection { sort: Some(SortKey::Name), ..Selection::default() });
+        assert_eq!(names(root_trees_of(&by_name).0), ["big", "empty", "other"]);
+
+        let shallow = tree(Selection { depth: Some(Bound::Limit(0)), ..Selection::default() });
+        let (trees, _) = root_trees_of(&shallow);
+        assert_eq!(trees.trees.len(), 3, "depth counts below each root");
+        assert!(trees.trees.iter().all(|tree| tree.tree.children.is_empty()));
+        let narrow = tree(Selection { breadth: Some(Bound::Limit(1)), ..unbounded() });
+        assert_eq!(root_trees_of(&narrow).0.trees.len(), 3, "breadth bounds no root");
+
+        let only_total = tree(Selection { limit: Some(Bound::Limit(1)), ..Selection::default() });
+        let (trees, top) = root_trees_of(&only_total);
+        assert!(trees.total.is_some() && trees.trees.is_empty());
+        assert_eq!((top.len(), top[0].entries, top[0].reason), (1, 3, TreeOmissionReason::Rows));
+        assert_eq!(top[0].bytes, Some(3_000));
+        let first = tree(Selection { limit: Some(Bound::Limit(2)), ..Selection::default() });
+        let (trees, top) = root_trees_of(&first);
+        assert_eq!(names(trees), ["other"]);
+        assert!(trees.trees[0].tree.children.is_empty(), "its children are past the cap");
+        assert_eq!(top[0].entries, 2);
+        let none = tree(Selection { limit: Some(Bound::Limit(0)), ..Selection::default() });
+        let (trees, top) = root_trees_of(&none);
+        assert!(trees.total.is_none() && trees.trees.is_empty());
+        assert_eq!((top[0].entries, top[0].bytes), (3, Some(3_000)));
+    }
+
+    /// A metric sort measures no root, so roots fall back to their labels, as rows with no
+    /// value sort last among rows that have one.
+    #[test]
+    fn a_metric_sort_orders_roots_by_label() {
+        let (mut docs, mut src, _) = two_roots();
+        let code = AnalysisSet::NONE.with_code();
+        for index in [&mut docs, &mut src] {
+            index.prepare_content_analysis(crate::content::AnalysisRequest {
+                profile: code,
+                ..crate::content::AnalysisRequest::default()
+            });
+        }
+        let by_lines =
+            Selection { sort: Some(SortKey::Metric("code_lines")), ..Selection::default() };
+        let mut request =
+            crate::test_support::read_of(&src, query(&[ViewSpec::Tree], by_lines.clone()));
+        request.basis.content = code;
+        // `src` is the larger root, so a size sort lists it first; by label it is second.
+        let roots = labelled(&[("src", "/src"), ("docs", "/docs")]);
+        let names = |report: &Report| {
+            root_trees_of(report)
+                .0
+                .trees
+                .iter()
+                .map(|tree| tree.tree.name.clone())
+                .collect::<Vec<_>>()
+        };
+        let report =
+            report_roots(&[&src, &docs], &roots, &request, generated_at()).expect("sorted");
+        assert_eq!(names(&report), ["docs", "src"]);
+        request.query.selection = Selection { sort: None, ..by_lines };
+        let report = report_roots(&[&src, &docs], &roots, &request, generated_at()).expect("sized");
+        assert_eq!(names(&report), ["src", "docs"]);
+    }
+
+    #[test]
+    fn report_roots_over_one_root_is_the_single_root_report() {
+        let index = sample();
+        let one = labelled(&[("root", "/root")]);
+        for views in
+            [&[ViewSpec::Tree][..], &[ViewSpec::Files], &[ViewSpec::Summary, ViewSpec::Extensions]]
+        {
+            let query = query(views, Selection::default());
+            let request = crate::test_support::read_of(&index, query);
+            let alone = report(&index, &request, generated_at()).expect("one");
+            let through = report_roots(&[&index], &one, &request, generated_at()).expect("roots");
+            for format in [crate::report_format::Format::Json, crate::report_format::Format::Text] {
+                assert_eq!(
+                    crate::report_format::render(&through, format, false).expect("render"),
+                    crate::report_format::render(&alone, format, false).expect("render"),
+                    "{views:?} {format:?}"
+                );
+            }
+            assert!(through.roots.is_none() && through.root.is_some());
+        }
+    }
+
+    #[test]
+    fn report_roots_refuses_indexes_that_are_not_the_roots() {
+        let (docs, src, roots) = two_roots();
+        let request =
+            crate::test_support::read_of(&docs, query(&[ViewSpec::Tree], Selection::default()));
+        for indexes in [&[&src, &docs][..], &[&docs]] {
+            assert!(matches!(
+                report_roots(indexes, &roots, &request, generated_at()),
+                Err(crate::Error::InvalidRequest(RequestError::RootMismatch { .. }))
+            ));
+        }
+    }
+
+    /// Coverage over several roots adds its counts and keeps each refusal's root, and a
+    /// note naming a refused file's directory puts that root's label before it.
+    #[test]
+    fn ignore_coverage_over_several_roots_adds_and_labels_its_refusals() {
+        use crate::control::{
+            ControlLimits, ControlObservation, ControlRefusalReason, RefusedControl,
+        };
+        let observed = |refused: Vec<&str>| {
+            ControlCoverage::Observed(ControlObservation {
+                limits: ControlLimits::default(),
+                applied: 2,
+                rules: 5,
+                refused: refused.len() as u64,
+                refusals: refused
+                    .into_iter()
+                    .map(|path| RefusedControl {
+                        root: 0,
+                        path: PathBuf::from(path),
+                        reason: ControlRefusalReason::Budget,
+                    })
+                    .collect(),
+            })
+        };
+        let merged =
+            merge_ignore_rules(vec![observed(vec!["a/.gitignore"]), observed(vec![".gitignore"])]);
+        let ControlCoverage::Observed(merged) = merged else { panic!("observed") };
+        assert_eq!((merged.applied, merged.rules, merged.refused), (4, 10, 2));
+        assert_eq!(
+            merged
+                .refusals
+                .iter()
+                .map(|refusal| (refusal.root, refusal.path.clone()))
+                .collect::<Vec<_>>(),
+            [(0, PathBuf::from("a/.gitignore")), (1, PathBuf::from(".gitignore"))]
+        );
+        let roots = labelled(&[("docs", "/docs"), ("src", "/src")]);
+        let (note, _) = refused_controls_note(
+            &ControlCoverage::Observed(merged),
+            &AxisNames::FLAGS,
+            Some(roots.as_slice()),
+        )
+        .expect("a note");
+        assert!(note.ends_with("affected: docs/a, src"), "{note}");
+        let many: Vec<String> = (0..40).map(|i| format!("d{i}/.gitignore")).collect();
+        let many: Vec<&str> = many.iter().map(String::as_str).collect();
+        let ControlCoverage::Observed(bounded) =
+            merge_ignore_rules(vec![observed(many.clone()), observed(many)])
+        else {
+            panic!("observed")
+        };
+        assert_eq!((bounded.refused, bounded.refusals.len()), (80, crate::MAX_RETAINED_ISSUES));
+        assert!(!bounded.lists_every_refusal());
+        assert_eq!(
+            merge_ignore_rules(vec![ControlCoverage::NotObserved, ControlCoverage::NotObserved]),
+            ControlCoverage::NotObserved
+        );
+    }
+
+    /// Status over several roots: complete when every root is, the first incomplete root's
+    /// coverage, errors in root order within the retention bound, every drop counted.
+    #[test]
+    fn status_over_several_roots_merges_in_root_order_within_the_bound() {
+        let failed = |paths: &[&str], omitted| TreeStatus {
+            complete: false,
+            coverage: crate::Coverage::Partial(crate::CoverageReason::Inaccessible),
+            errors: paths
+                .iter()
+                .map(|path| {
+                    crate::query::StatusIssue::of_one_root(crate::Issue::provider_failure(
+                        Some(Path::new(path)),
+                        "denied".to_owned(),
+                    ))
+                })
+                .collect(),
+            errors_omitted: omitted,
+        };
+        let complete = TreeStatus {
+            complete: true,
+            coverage: crate::Coverage::Complete,
+            errors: Vec::new(),
+            errors_omitted: 0,
+        };
+        let merged = TreeStatus::merge(vec![complete.clone(), failed(&["a", "b"], 3)]);
+        assert!(!merged.complete);
+        assert_eq!(merged.coverage, crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+        assert_eq!(merged.errors.iter().map(|detail| detail.root).collect::<Vec<_>>(), [1, 1]);
+        assert_eq!(merged.errors_omitted, 3);
+        let paths: Vec<String> = (0..40).map(|i| format!("p{i:02}")).collect();
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        let bounded = TreeStatus::merge(vec![failed(&paths, 1), failed(&paths, 2)]);
+        assert_eq!(bounded.errors.len(), crate::MAX_RETAINED_ISSUES);
+        assert_eq!(bounded.errors[39].root, 0);
+        assert_eq!(bounded.errors[40].root, 1);
+        assert_eq!(bounded.errors_omitted, 1 + 2 + (80 - 64));
+        assert!(TreeStatus::merge(vec![complete.clone(), complete]).complete);
     }
 }
