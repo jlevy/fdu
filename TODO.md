@@ -20,15 +20,16 @@ tagged and published (2026-09-29); its
 0.3.0 is tagged and published (2026-09-30); its
 [release notes](docs/project/release-notes/0.3.0.md) say what it changed.
 0.4.0 (notes after the result; content views imply their analysis; grouped rows stack
-their measures) is prepared on `main`: #185 set the version, CHANGELOG, and notes; #186
-and #189 attach the demo video as a release asset declared by digest; #187 and #188
-stack grouped rows, drop their documentation count, and set the demo to 140 columns.
-Its [release notes](docs/project/release-notes/0.4.0.md) say what it changes.
+their measures) is tagged and published (2026-10-09), the first release with the demo
+video attached; its [release notes](docs/project/release-notes/0.4.0.md) say what it
+changed, and its
+[release record](docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
+holds the stability pass and the checks after publishing.
 
 | Workstream | Owner | Remaining work / governing document |
 | --- | --- | --- |
 | 0.2.0 release | `fdu-0gqc`, maintainer | `fdu-0gqc` owns post-merge verification of the landed work and does not tag or publish. The maintainer then runs the [installed-CLI QA playbook](tests/qa/cli-installed-e2e.qa.md) and its peer-agreement phase on the release commit, and the [release process](docs/project/guides/release-process.md): rehearse, tag, and publish. |
-| 0.4.0 release | `fdu-xmcm`, maintainer | The release commit is `main` once #189 merges. The [release process](docs/project/guides/release-process.md) then runs on it: the stability pass, preflight (with `DEMO=` the recording), rehearse, body, tag, `make release-demo` to put the MP4 in the draft release, and publish. The report path’s recorded non-regression against 0.3.0 moved after the release (`fdu-vl8a`, 0.4.1). |
+| 0.4.0 follow-ups | `fdu-chcx`, `fdu-ep8f` | The 0.4.1 patch epic, `fdu-chcx`: totals that do not match first (`fdu-x3pq`, `fdu-ao6i`; hard-link attribution, `fdu-579b`, is larger), then the 0.4.0 review residue and the report path’s recorded non-regression against 0.3.0 (`fdu-vl8a`). Fitting human reports to narrower terminals is `fdu-ep8f`. |
 | Output-design manual acceptance | `fdu-kwjc` | [Recorded candidate checks](docs/project/reports/report-2026-09-27-manual-acceptance.md): 30 of 33 passed or corrected; light/dark visual judgment, fresh-session skill discovery, and upgrade after this increment publishes remain open. |
 | Published 0.1.0 verification | `fdu-gjc2`, `fdu-yfej`, `fdu-vxvm` | Record the remaining [published-channel first-user checks](docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md). |
 | Release automation | `fdu-zr73` | [Packaging follow-ups](docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md), including registry propagation retry (`fdu-zx9y`). |

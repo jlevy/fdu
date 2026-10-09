@@ -1,12 +1,13 @@
 # 0.3.0 Stability Pass — 2026-09-30
 
 This is the full record of the 0.3.0 release checklist’s stability pass (step 2 of the
-[release process](../guides/release-process.md#the-steps)). The summaries live beside
+[release process](../guides/release-process.md#the-steps)). The summaries lived beside
 the procedures, in the
-[QA playbook’s Current Status](../../../tests/qa/cli-installed-e2e.qa.md#current-status-last-update-2026-09-30)
-and the
-[correctness runbook’s Last Recorded Run](../guides/correctness-runbook.md#last-recorded-run);
-this report keeps every table they summarize, and says how to run the pass again.
+[QA playbook’s Current Status](../../../tests/qa/cli-installed-e2e.qa.md) and the
+[correctness runbook’s Last Recorded Run](../guides/correctness-runbook.md#last-recorded-run),
+until the [0.4.0 record](report-2026-10-09-release-0.4.0-stability-pass.md) replaced
+them; they remain in those files’ history.
+This report keeps every table they summarize, and says how to run the pass again.
 The release engine’s performance standing is
 [exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md).
 
