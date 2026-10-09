@@ -157,3 +157,29 @@ impl CaseLookups {
         }
     }
 }
+
+/// Write `bytes` to `path`, creating its directories, and stamp its modification time
+/// `seconds` after the epoch. Its directory's own time is left as the write left it.
+pub(crate) fn stamped_file(path: &std::path::Path, bytes: &[u8], seconds: u64) {
+    std::fs::create_dir_all(path.parent().expect("a file has a parent")).expect("parents");
+    std::fs::write(path, bytes).expect("write");
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|file| {
+            file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+        })
+        .expect("stamp");
+}
+
+/// Wait until the clock is past `directory`'s own modification time, so that the next
+/// entry created, removed, or renamed inside it moves that time whatever the
+/// filesystem's timestamp granularity. Without this a fixture built in the same tick as
+/// its change could leave a stale directory time indistinguishable from a fresh one.
+pub(crate) fn wait_past_modification(directory: &std::path::Path) {
+    let modified =
+        std::fs::metadata(directory).and_then(|metadata| metadata.modified()).expect("mtime");
+    while std::time::SystemTime::now() <= modified + std::time::Duration::from_millis(20) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}

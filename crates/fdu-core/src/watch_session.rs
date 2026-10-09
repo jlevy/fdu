@@ -1986,4 +1986,87 @@ mod tests {
         assert!(batch.changes.iter().any(|change| change.kind == ChangeKind::Invalidate));
         assert!(text(&mut session).is_none());
     }
+
+    /// Apply every hint scripted so far, however the worker batched them: the flush is a
+    /// barrier behind which each one is queued as an intent, and each intent is applied.
+    fn drain(session: &mut Session) -> Vec<Change> {
+        session.watcher.flush_capture().expect("flush the scripted hints");
+        let mut changes = Vec::new();
+        while let Some(batch) = session.next_batch(Duration::ZERO).expect("apply a batch") {
+            changes.extend(batch.changes);
+        }
+        changes
+    }
+
+    /// Hold the session's index to a cold walk of the same tree, now.
+    fn assert_matches_cold_walk(session: &Session, root: &std::path::Path, label: &str) {
+        session
+            .index
+            .read_with(|index| {
+                crate::query::assert_same_as_cold_walk(index, root, &session.scan, label);
+            })
+            .expect("read the session's index");
+    }
+
+    /// An old file and a newer one in `logs/`, and `logs/`'s own time behind the clock.
+    fn logs_fixture() -> tempfile::TempDir {
+        use crate::test_support::{stamped_file, wait_past_modification};
+
+        let root = tempfile::tempdir().expect("root");
+        stamped_file(&root.path().join("logs/a.log"), b"a", 1_000_000_000);
+        stamped_file(&root.path().join("logs/b.log"), b"b", 1_020_000_000);
+        std::fs::create_dir(root.path().join("archive")).expect("archive");
+        wait_past_modification(&root.path().join("logs"));
+        wait_past_modification(&root.path().join("archive"));
+        root
+    }
+
+    /// A directory's own time moves when an entry inside it is removed, and no backend
+    /// names the directory in that event; a cold walk reads the new time, so the watched
+    /// tree must too (B1 on #191). Removing a directory's newest file makes it young.
+    #[test]
+    fn a_removal_ages_its_directory_as_a_cold_walk_does() {
+        let root = logs_fixture();
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        std::fs::remove_file(root.path().join("logs/b.log")).expect("remove the newest file");
+        sender.send("remove\tlogs/b.log\n").expect("script the removal");
+        let changes = drain(&mut session);
+        assert_matches_cold_walk(&session, root.path(), "the newest file removed");
+        assert!(
+            changes.iter().any(|change| change.path == std::path::Path::new("logs")
+                && change.kind == ChangeKind::Upsert
+                && change.entry_kind == Some(EntryKind::Dir)),
+            "the directory's new time is a change record of the same shape: {changes:?}"
+        );
+    }
+
+    /// A rename inside the tree moves both directories' own times: the one the name left
+    /// and the one it arrived in, which keeps the file's old time (B1 on #191).
+    #[test]
+    fn a_rename_ages_both_directories_as_a_cold_walk_does() {
+        let root = logs_fixture();
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        std::fs::rename(root.path().join("logs/b.log"), root.path().join("archive/b.log"))
+            .expect("rename across directories");
+        sender
+            .send("rename-from\tlogs/b.log\nrename-to\tarchive/b.log\n")
+            .expect("script both sides of the rename");
+        drain(&mut session);
+        assert_matches_cold_walk(&session, root.path(), "a file renamed across directories");
+    }
+
+    /// A file moved in from outside the tree keeps its archive time, and its directory
+    /// reads as just changed, as `mv ~/Downloads/report.pdf docs/` leaves it (B1 on #191).
+    #[test]
+    fn a_move_in_ages_its_directory_as_a_cold_walk_does() {
+        let root = logs_fixture();
+        let outside = tempfile::tempdir().expect("outside the watched tree");
+        let report = outside.path().join("report.pdf");
+        crate::test_support::stamped_file(&report, b"pdf", 990_000_000);
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        std::fs::rename(&report, root.path().join("archive/report.pdf")).expect("move it in");
+        sender.send("rename-to\tarchive/report.pdf\n").expect("script the arrival");
+        drain(&mut session);
+        assert_matches_cold_walk(&session, root.path(), "an old file moved in");
+    }
 }
