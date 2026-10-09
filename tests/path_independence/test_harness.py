@@ -203,7 +203,9 @@ class CompareTests(unittest.TestCase):
             )
 
         earlier = timed(100, 60, 70)
-        self.assertEqual(compare(cli(earlier), cli(timed(500, 460, 470)), policy="auto").kind, "same")
+        self.assertEqual(
+            compare(cli(earlier), cli(timed(500, 460, 470)), policy="auto").kind, "same"
+        )
         self.assertEqual(earlier["reports"][0]["tree"]["children"][0]["age_ns"], 70)
         self.assertEqual(
             compare(cli(earlier), cli(timed(500, 460, 469)), policy="auto").paths,
