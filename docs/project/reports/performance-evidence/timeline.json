@@ -933,6 +933,36 @@
    "subject": "36ce9b22af9a:77355:4304d9d4071f",
    "tool": "dust",
    "wall_ns": 179290479
+  },
+  {
+   "entries": 77355,
+   "id": "exp-214",
+   "per_entry_ns": 6978.729022041239,
+   "platform": "macOS",
+   "run": "docs/project/experiments/evidence/exp-214/run.json.gz",
+   "subject": "36ce9b22af9a:77355:4304d9d4071f",
+   "tool": "dust",
+   "wall_ns": 539839583.5
+  },
+  {
+   "entries": 77355,
+   "id": "exp-215",
+   "per_entry_ns": 2797.031006399069,
+   "platform": "macOS",
+   "run": "docs/project/experiments/evidence/exp-215/run.json.gz",
+   "subject": "36ce9b22af9a:77355:4304d9d4071f",
+   "tool": "dust",
+   "wall_ns": 216364333.5
+  },
+  {
+   "entries": 36526,
+   "id": "exp-216",
+   "per_entry_ns": 11209.922958988118,
+   "platform": "macOS",
+   "run": "docs/project/experiments/evidence/exp-216/run.json.gz",
+   "subject": "0d6ac3b56b76:36526:0305e6b87619",
+   "tool": "dust",
+   "wall_ns": 409453646
   }
  ],
  "experiments": [
@@ -51903,6 +51933,1888 @@
    "subject": "36ce9b22af9a:77355:4304d9d4071f",
    "title": "macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "3f195a2b probe: #192 after reviews A, B, and C, clean tree (sha256 2495b561)",
+   "change_pct": -7.178,
+   "commit": "3f195a2b",
+   "compares": true,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "23d11b19 probe: the age column head and the base of #192, built in a clean worktree (sha256 2c738e89)",
+   "date": "2026-10-09",
+   "decision": "rejected",
+   "entries": 77355,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [
+    "H195"
+   ],
+   "id": "exp-214",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 183050749.5,
+        "control": 177311728.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.511,
+        "ci95_high_pct": 25.511,
+        "ci95_low_pct": -3.782,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 729620000,
+        "control": 726082500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 2.498,
+        "ci95_high_pct": 18.758,
+        "ci95_low_pct": -5.234,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 12402688,
+        "control": 11378688
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 7.219,
+        "ci95_high_pct": 33.698,
+        "ci95_low_pct": -0.993,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 699123500,
+        "control": 695734000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.451,
+        "ci95_high_pct": 19.201,
+        "ci95_low_pct": -5.401,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 31080000,
+        "control": 29574500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 4.439,
+        "ci95_high_pct": 7.949,
+        "ci95_low_pct": 0.682,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 189121438,
+        "control": 184736333.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.844,
+        "ci95_high_pct": 25.239,
+        "ci95_low_pct": -4.536,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2444.850856441083,
+      "control": 2388.1628013703057
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 162799812.5,
+        "control": 158333792
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.807,
+        "ci95_high_pct": 9.022,
+        "ci95_low_pct": -10.033,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 805993500,
+        "control": 812676000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.983,
+        "ci95_high_pct": 3.713,
+        "ci95_low_pct": -9.998,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 27746304,
+        "control": 28008448
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.471,
+        "ci95_high_pct": 3.436,
+        "ci95_low_pct": -2.734,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 582769000,
+        "control": 574310000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.908,
+        "ci95_high_pct": 5.502,
+        "ci95_low_pct": -12.573,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 221876500,
+        "control": 224204500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -1.324,
+        "ci95_high_pct": -0.618,
+        "ci95_low_pct": -2.825,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 341252396,
+        "control": 349256438
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -2.25,
+        "ci95_high_pct": 2.731,
+        "ci95_low_pct": -11.464,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4411.510516450133,
+      "control": 4514.982069678754
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "content-query",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 11130276958.5,
+        "control": 12869070583.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -6.82,
+        "ci95_high_pct": -1.221,
+        "ci95_low_pct": -15.152,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 24205823000,
+        "control": 23959181000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.758,
+        "ci95_high_pct": 9.189,
+        "ci95_low_pct": -3.854,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 984752128,
+        "control": 982040576
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.196,
+        "ci95_high_pct": 1.816,
+        "ci95_low_pct": -0.598,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 8916161500,
+        "control": 8456708000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 9.912,
+        "ci95_high_pct": 33.769,
+        "ci95_low_pct": -7.147,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 15010187500,
+        "control": 15248580000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -2.164,
+        "ci95_high_pct": -0.702,
+        "ci95_low_pct": -2.324,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 16918012270.5,
+        "control": 18253543583
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -7.859,
+        "ci95_high_pct": -3.057,
+        "ci95_low_pct": -20.625,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 218706.12462672096,
+      "control": 235971.0889147437
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 182393062.5,
+        "control": 196092499.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -6.891,
+        "ci95_high_pct": 5.162,
+        "ci95_low_pct": -12.752,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 637062500,
+        "control": 611228500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 2.486,
+        "ci95_high_pct": 11.16,
+        "ci95_low_pct": -1.296,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 12124160,
+        "control": 12345344
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.759,
+        "ci95_high_pct": 3.199,
+        "ci95_low_pct": -9.224,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 594606500,
+        "control": 570158000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.589,
+        "ci95_high_pct": 11.619,
+        "ci95_low_pct": -1.509,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 42857000,
+        "control": 42119000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 1.313,
+        "ci95_high_pct": 5.046,
+        "ci95_low_pct": -0.968,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 190929604,
+        "control": 207385437.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -7.178,
+        "ci95_high_pct": -0.117,
+        "ci95_low_pct": -11.594,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2468.2257643332687,
+      "control": 2680.957113308771
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "index-second-report",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 135291.5,
+        "control": 132854.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.138,
+        "ci95_high_pct": 3.256,
+        "ci95_low_pct": -2.353,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 910981500,
+        "control": 907214500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.582,
+        "ci95_high_pct": 3.172,
+        "ci95_low_pct": -5.154,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 27484160,
+        "control": 27893760
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.385,
+        "ci95_high_pct": -0.301,
+        "ci95_low_pct": -3.913,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 690068500,
+        "control": 686975000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.25,
+        "ci95_high_pct": 3.825,
+        "ci95_low_pct": -6.501,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 221615000,
+        "control": 222173000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.779,
+        "ci95_high_pct": 1.603,
+        "ci95_low_pct": -0.797,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 358828750,
+        "control": 358332395.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.105,
+        "ci95_high_pct": 2.274,
+        "ci95_low_pct": -0.931,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4638.727296231659,
+      "control": 4632.310716825027
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "opened-second-report",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 157291.5,
+        "control": 158791.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.267,
+        "ci95_high_pct": 1.21,
+        "ci95_low_pct": -3.502,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1346415000,
+        "control": 1415631000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.176,
+        "ci95_high_pct": 1.403,
+        "ci95_low_pct": -5.87,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 114466816,
+        "control": 116097024
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.133,
+        "ci95_high_pct": -0.807,
+        "ci95_low_pct": -1.951,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 469544000,
+        "control": 494103500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -4.025,
+        "ci95_high_pct": 2.958,
+        "ci95_low_pct": -13.097,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 889557000,
+        "control": 894680000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.475,
+        "ci95_high_pct": 0.359,
+        "ci95_low_pct": -2.334,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1399900792,
+        "control": 1517621979.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -2.08,
+        "ci95_high_pct": 11.298,
+        "ci95_low_pct": -16.486,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 18097.09510697434,
+      "control": 19618.92546700278
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "render-json",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 261980083.5,
+        "control": 288554021
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -9.941,
+        "ci95_high_pct": 5.061,
+        "ci95_low_pct": -20.777,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1704685500,
+        "control": 1728826500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.869,
+        "ci95_high_pct": 8.422,
+        "ci95_low_pct": -4.687,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 130129920,
+        "control": 130498560
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.324,
+        "ci95_high_pct": -0.075,
+        "ci95_low_pct": -1.112,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 998735000,
+        "control": 997271500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 5.807,
+        "ci95_high_pct": 15.87,
+        "ci95_low_pct": -6.436,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 705494000,
+        "control": 710953500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -1.238,
+        "ci95_high_pct": 0.227,
+        "ci95_low_pct": -2.636,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1469927604,
+        "control": 1588911104
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -8.385,
+        "ci95_high_pct": 0.761,
+        "ci95_low_pct": -14.067,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 19002.36059724646,
+      "control": 20540.509391765238
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "render-yaml",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 265371645.5,
+        "control": 234067187.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 6.884,
+        "ci95_high_pct": 36.847,
+        "ci95_low_pct": -10.487,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1848104000,
+        "control": 1910079500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.068,
+        "ci95_high_pct": 1.182,
+        "ci95_low_pct": -8.823,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 130670592,
+        "control": 130318336
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.779,
+        "ci95_high_pct": 1.094,
+        "ci95_low_pct": -0.296,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1123638000,
+        "control": 1202005500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -6.491,
+        "ci95_high_pct": -0.062,
+        "ci95_low_pct": -13.801,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 736295000,
+        "control": 720130500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.145,
+        "ci95_high_pct": 5.265,
+        "ci95_low_pct": -2.891,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1663605792,
+        "control": 1469604874.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 7.674,
+        "ci95_high_pct": 24.992,
+        "ci95_low_pct": -10.311,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 21506.118440954044,
+      "control": 18998.18853984875
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 214,
+   "path": "exp-214-macos-h195-one-root-through-the-several-roots-reader-non-inf.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "not a speed decision: several roots ship regardless; on an uncontrolled host (load 26 to 34 on 10 cores) wall is non-inferior at +3% on cold-scan-index (the placebo, -2.25% [-11.46%, +2.73%]), default-tree, index-second-report (+0.10% [-0.93%, +2.27%]), content-query, and render-json, with the retained reads flat in component; aggregate-summary (+1.84% [-4.54%, +25.24%]), opened-second-report, and render-yaml are unresolved, so H195 is neither confirmed nor refuted there and those three rerun quiet with H193 (fdu-088k)",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 539839583.5
+    }
+   ],
+   "run_artifact": "docs/project/experiments/evidence/exp-214/run.json.gz",
+   "subject": "36ce9b22af9a:77355:4304d9d4071f",
+   "title": "macOS: H195 one root through the several-roots reader, non-inferior on five jobs and unresolved on three under load",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "d0621141 probe: #192 before review (sha256 e40a5173; binding stated in the record body)",
+   "change_pct": 4.914,
+   "commit": "d0621141",
+   "compares": true,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "b2968074 probe (sha256 c4e01629, exp-213 candidate; engine as 23d11b19; the run variant notes are empty, so the binding is stated in the record body)",
+   "date": "2026-10-09",
+   "decision": "rejected",
+   "entries": 77355,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [
+    "H195"
+   ],
+   "id": "exp-215",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 193709646,
+        "control": 189165729
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 4.489,
+        "ci95_high_pct": 14.324,
+        "ci95_low_pct": -13.443,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 539133000,
+        "control": 553897500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.469,
+        "ci95_high_pct": 14.235,
+        "ci95_low_pct": -10.491,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 16490496,
+        "control": 16965632
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.997,
+        "ci95_high_pct": 6.479,
+        "ci95_low_pct": -10.822,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 510369500,
+        "control": 526044000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 1.505,
+        "ci95_high_pct": 15.056,
+        "ci95_low_pct": -10.761,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 27634500,
+        "control": 27749000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.402,
+        "ci95_high_pct": 4.159,
+        "ci95_low_pct": -0.045,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 206123479.5,
+        "control": 223963458
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.834,
+        "ci95_high_pct": 16.905,
+        "ci95_low_pct": -22.653,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2664.6432615861936,
+      "control": 2895.268024044987
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 279087979,
+        "control": 280737208.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -2.536,
+        "ci95_high_pct": 11.715,
+        "ci95_low_pct": -8.659,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1310519500,
+        "control": 1222779500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 2.521,
+        "ci95_high_pct": 8.735,
+        "ci95_low_pct": -1.769,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 27435008,
+        "control": 27426816
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.537,
+        "ci95_high_pct": 4.598,
+        "ci95_low_pct": -2.314,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1075051000,
+        "control": 992729000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.253,
+        "ci95_high_pct": 9.656,
+        "ci95_low_pct": -3.517,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 223200000,
+        "control": 224364500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.646,
+        "ci95_high_pct": 2.644,
+        "ci95_low_pct": -3.54,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 485949666.5,
+        "control": 498495895.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 2.816,
+        "ci95_high_pct": 5.393,
+        "ci95_low_pct": -1.655,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 6282.071831167992,
+      "control": 6444.262109753733
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 180884229,
+        "control": 178443395.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 6.105,
+        "ci95_high_pct": 36.884,
+        "ci95_low_pct": -16.423,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 484452000,
+        "control": 446211000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 8.122,
+        "ci95_high_pct": 16.351,
+        "ci95_low_pct": 3.923,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 12689408,
+        "control": 13361152
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -6.582,
+        "ci95_high_pct": 2.867,
+        "ci95_low_pct": -10.623,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 443773500,
+        "control": 406829500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 9.083,
+        "ci95_high_pct": 18.06,
+        "ci95_low_pct": 3.899,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 39678500,
+        "control": 38465000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 2.311,
+        "ci95_high_pct": 6.079,
+        "ci95_low_pct": -0.872,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 204193396,
+        "control": 203025625.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 4.914,
+        "ci95_high_pct": 31.569,
+        "ci95_low_pct": -14.375,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2639.6922758709843,
+      "control": 2624.596024820632
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "index-second-report",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 131229,
+        "control": 133958.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.705,
+        "ci95_high_pct": 2.094,
+        "ci95_low_pct": -8.097,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 865567000,
+        "control": 880915000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.044,
+        "ci95_high_pct": 3.601,
+        "ci95_low_pct": -4.279,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 27500544,
+        "control": 28295168
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.135,
+        "ci95_high_pct": 0.66,
+        "ci95_low_pct": -5.13,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 646937500,
+        "control": 659752000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.595,
+        "ci95_high_pct": 2.808,
+        "ci95_low_pct": -4.713,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 219537500,
+        "control": 220267500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.232,
+        "ci95_high_pct": 3.111,
+        "ci95_low_pct": -2.515,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 364954458.5,
+        "control": 355509500
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 2.6,
+        "ci95_high_pct": 3.798,
+        "ci95_low_pct": -1.184,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4717.916857346002,
+      "control": 4595.817982030897
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "opened-second-report",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 261187,
+        "control": 154146
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 26.445,
+        "ci95_high_pct": 192.358,
+        "ci95_low_pct": -19.477,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1477336500,
+        "control": 1477727500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.637,
+        "ci95_high_pct": 3.44,
+        "ci95_low_pct": -16.044,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 116572160,
+        "control": 116613120
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.071,
+        "ci95_high_pct": 0.759,
+        "ci95_low_pct": -0.98,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 489404500,
+        "control": 490465500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.676,
+        "ci95_high_pct": 8.146,
+        "ci95_low_pct": -35.782,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 984862500,
+        "control": 996117500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.696,
+        "ci95_high_pct": 1.006,
+        "ci95_low_pct": -1.609,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 5552616729,
+        "control": 5783896458.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -6.959,
+        "ci95_high_pct": 6.103,
+        "ci95_low_pct": -17.511,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 71780.96734535582,
+      "control": 74770.81582961671
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "render-json",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 334946187.5,
+        "control": 319763333.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.825,
+        "ci95_high_pct": 29.901,
+        "ci95_low_pct": -24.566,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1224890000,
+        "control": 1285027000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 7.439,
+        "ci95_high_pct": 14.087,
+        "ci95_low_pct": -5.591,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 131923968,
+        "control": 131874816
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.266,
+        "ci95_high_pct": 1.6,
+        "ci95_low_pct": -1.421,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 576518500,
+        "control": 627326000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 14.839,
+        "ci95_high_pct": 30.097,
+        "ci95_low_pct": -9.898,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 665727000,
+        "control": 657702000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 1.23,
+        "ci95_high_pct": 2.946,
+        "ci95_low_pct": -1.285,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1440726979.5,
+        "control": 1244392750
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 7.783,
+        "ci95_high_pct": 19.036,
+        "ci95_low_pct": -11.356,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 18624.87207678883,
+      "control": 16086.77848878547
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "warm-snapshot-load",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 93591020.5,
+        "control": 29746478.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": 32.063,
+        "ci95_high_pct": 249.149,
+        "ci95_low_pct": -25.073,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 77432395.5,
+        "control": 71807917
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 7.99,
+        "ci95_high_pct": 44.699,
+        "ci95_low_pct": -2.444,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 238185000,
+        "control": 239507500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.13,
+        "ci95_high_pct": 1.432,
+        "ci95_low_pct": -1.616,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 31670272,
+        "control": 31784960
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.077,
+        "ci95_high_pct": 0.104,
+        "ci95_low_pct": -0.671,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 7557000,
+        "control": 8554500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -7.951,
+        "ci95_high_pct": 13.083,
+        "ci95_low_pct": -13.174,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 230039500,
+        "control": 231198500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.311,
+        "ci95_high_pct": 1.001,
+        "ci95_low_pct": -1.386,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 334523333,
+        "control": 271849270.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 2.6,
+        "ci95_high_pct": 38.364,
+        "ci95_low_pct": -6.911,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4324.521142783272,
+      "control": 3514.3076788830717
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 215,
+   "path": "exp-215-macos-an-early-look-at-one-root-through-the-several-roots-re.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "inconclusive, and recorded so it is not read as evidence either way: run before H195 was registered, on a host at load 25 to 43 over 10 cores; every wall interval includes zero and is wider than the +3% margin, default-tree +4.91% [-14.38%, +31.57%]; superseded by exp-214 at the reviewed head",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 216364333.5
+    }
+   ],
+   "run_artifact": "docs/project/experiments/evidence/exp-215/run.json.gz",
+   "subject": "36ce9b22af9a:77355:4304d9d4071f",
+   "title": "macOS: an early look at one root through the several-roots reader, unresolved on an overloaded host",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "3f195a2b probe, each of the store 625 crate directories as a root (--child-roots, same binary)",
+   "change_pct": 570.249,
+   "commit": "3f195a2b",
+   "compares": true,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "3f195a2b probe, the store as one root (sha256 2495b561)",
+   "date": "2026-10-09",
+   "decision": "rejected",
+   "entries": 36526,
+   "family": "macOS:0d6ac3b56b76",
+   "hypotheses": [
+    "H196"
+   ],
+   "id": "exp-216",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "roots-default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1703340250,
+        "control": 216608479
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 620.884,
+        "ci95_high_pct": 760.178,
+        "ci95_low_pct": 552.887,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 764594000,
+        "control": 557769000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 44.098,
+        "ci95_high_pct": 47.457,
+        "ci95_low_pct": 24.579,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 21798912,
+        "control": 9576448
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 127.459,
+        "ci95_high_pct": 131.572,
+        "ci95_low_pct": 124.225,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 630687000,
+        "control": 516208000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 29.54,
+        "ci95_high_pct": 32.323,
+        "ci95_low_pct": 11.722,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 126907500,
+        "control": 40473500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 209.16,
+        "ci95_high_pct": 241.149,
+        "ci95_low_pct": 203.779,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1719502166.5,
+        "control": 234484312.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 570.249,
+        "ci95_high_pct": 732.482,
+        "ci95_low_pct": 506.615,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 47076.11472649619,
+      "control": 6419.654834912118
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "roots-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 752878458,
+        "control": 188457729.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 321.843,
+        "ci95_high_pct": 407.231,
+        "ci95_low_pct": 140.401,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 854482000,
+        "control": 630938000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 32.76,
+        "ci95_high_pct": 47.25,
+        "ci95_low_pct": 17.521,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 11493376,
+        "control": 7733248
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 49.957,
+        "ci95_high_pct": 67.579,
+        "ci95_low_pct": 34.228,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 746924000,
+        "control": 591173000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 21.985,
+        "ci95_high_pct": 36.77,
+        "ci95_low_pct": 8.533,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 108437000,
+        "control": 38867500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 187.539,
+        "ci95_high_pct": 211.513,
+        "ci95_low_pct": 171.323,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 762396146.5,
+        "control": 201176354
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 313.111,
+        "ci95_high_pct": 391.035,
+        "ci95_low_pct": 137.007,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 20872.697434704045,
+      "control": 5507.757597327931
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": null,
+   "number": 216,
+   "path": "exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md",
+   "platform": "macOS",
+   "primary_job": "roots-default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "not a speed decision: it measures what several roots cost; roots-default-tree wall 234.5 to 1719.5 ms, +570% [+507%, +732%], about 2.4 ms a root, and roots-summary +313% [+137%, +391%], about 0.9 ms a root, against 190 ms predicted; far past the 10% bar, so one walker pool across roots (fdu-ich9) earns its hypothesis; user CPU and minor faults point at per-root fixed costs, unattributed",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 409453646
+    }
+   ],
+   "run_artifact": "docs/project/experiments/evidence/exp-216/run.json.gz",
+   "subject": "0d6ac3b56b76:36526:0305e6b87619",
+   "title": "macOS: H196 several roots pay about 2.4 ms a root, 625 small roots seven times one walk of their parent",
+   "trials": 12
   }
  ],
  "history": [
@@ -55954,6 +57866,8 @@
   "rich-summary-open-pipeline": "summary",
   "rich-summary-report": "summary",
   "rich-summary-shared-openers": "summary",
+  "roots-default-tree": "default-tree",
+  "roots-summary": "summary",
   "selected-allocated-total": "summary",
   "text-prose": "documents",
   "warm-revalidate": "warm-metadata",
@@ -56237,6 +58151,30 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 3750189949,
+   "directories": 3427,
+   "entries": 77355,
+   "experiments": [
+    "exp-209",
+    "exp-210",
+    "exp-211",
+    "exp-212",
+    "exp-213",
+    "exp-214",
+    "exp-215"
+   ],
+   "files": 73928,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "36ce9b22af9a:77355:4304d9d4071f",
+   "labels": [
+    "rustup"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1759236097,
    "directories": 5769,
    "entries": 92474,
@@ -56324,28 +58262,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "Linux",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 3750189949,
-   "directories": 3427,
-   "entries": 77355,
-   "experiments": [
-    "exp-209",
-    "exp-210",
-    "exp-211",
-    "exp-212",
-    "exp-213"
-   ],
-   "files": 73928,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "36ce9b22af9a:77355:4304d9d4071f",
-   "labels": [
-    "rustup"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
    "synthetic": false
   },
   {
@@ -57093,6 +59009,24 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 428929970,
+   "directories": 5451,
+   "entries": 36526,
+   "experiments": [
+    "exp-216"
+   ],
+   "files": 31075,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "0d6ac3b56b76:36526:0305e6b87619",
+   "labels": [
+    "cargo-registry-src"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
   }
  ],
  "totals": {
@@ -57102,16 +59036,16 @@
    "baseline": 17,
    "blocked": 2,
    "in-progress": 4,
-   "rejected": 66,
+   "rejected": 69,
    "superseded": 6
   },
-  "experiments": 205,
+  "experiments": 208,
   "first_date": "2026-08-10",
-  "hypotheses": 139,
+  "hypotheses": 141,
   "last_date": "2026-10-09",
   "platforms": {
    "Linux": 63,
-   "macOS": 142
+   "macOS": 145
   }
  },
  "version": "fdu.performance.timeline/1"

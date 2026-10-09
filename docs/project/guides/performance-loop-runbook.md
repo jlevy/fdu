@@ -1138,7 +1138,11 @@ rebuild them from this list and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-214** and **H195**; exp-202 is the 0.3.0 release standing.
+**Ids.** Next free are **exp-217** and **H197**; exp-202 is the 0.3.0 release standing.
+H195 and exp-214–215 are the several-roots single-root guard on
+[#192](https://github.com/jlevy/fdu/pull/192): exp-214 the registered paired run at the
+final head, exp-215 an earlier exploratory run that preceded the registration.
+H196 and exp-216 are several roots’ per-root fixed cost on the same pull request.
 exp-203–208 are reserved for the platform review’s macOS cells (M1–M6 in
 [its protocol](../research/research-2026-09-29-platform-review-of-the-linux-round.md)),
 which assigned them before any ran.

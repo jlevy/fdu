@@ -5979,6 +5979,7 @@ mod tests {
                 rules: 0,
                 refused: 1,
                 refusals: vec![crate::control::RefusedControl {
+                    root: 0,
                     path: PathBuf::from("a/.gitignore"),
                     reason: crate::control::ControlRefusalReason::LineLimit,
                 }],

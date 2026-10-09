@@ -147,6 +147,36 @@ Each omission belongs to its first excluding bound, so these disjoint child subt
 be counted without double counting.
 The root denominator and aggregate totals are unchanged by display bounds.
 
+## Several Roots
+
+A report over several roots (`fdu docs src`, or `fdu.report([...])` in Python) has the
+same schema, with these differences; a report over one root has none of them.
+
+- The envelope’s `root` is null, and `roots` lists each root in the caller’s order:
+  `label`, the path as given and normalized by its components (with `label_raw` when it
+  is not Unicode), and `path`, the canonical directory (with `path_raw`). Exactly one of
+  `root` and `roots` is set.
+- List rows, `status.errors` items, and `ignore_rules.refusals` items begin with `root`,
+  the position of their root in `roots`. Their `path` stays relative to that root, so
+  `roots[root].path` joined with `path` names the entry, and an absolute label never
+  makes a relative path absolute.
+- A tree section has `tree: null`, then `total`, then `trees`. `total` is the merged
+  root row: the tree node fields from `bytes` through `modified_at`, with no `name`,
+  `path`, or `kind`, since no entry is the total; it is null when the row limit is zero.
+  Its `mtime_ns` is the newest of the roots’ and `complete` holds when every root is.
+  `trees` holds, in display order, `{root, tree, remainder}` for each root the row limit
+  kept: `tree` is that root’s ordinary tree, its root node named by the label with an
+  empty `path`, and `remainder` what its own bounds hid.
+  The section’s `omissions` and `remainder` describe the root rows the row limit cut.
+- Every share and bound is over the union: a row’s share is of `total`, and the row
+  limit counts the total as the first row.
+
+A root node never counts its root’s own time, as a single report’s root does not, so its
+sizes, counts, `mtime_ns`, and `complete` equal those of the root node of that root’s
+own report.
+Its `name` is the root’s label, and its children are those whose share of the
+combined total reaches the threshold, so it can show fewer rows than that report does.
+
 ## Code Overview
 
 `--view=code`, and `--analyze=code` with no view, give a `view: code` section with a

@@ -139,8 +139,10 @@ pub use crate::opened::{
 // strategy, not a front end. A caller wanting one report without retaining an index was
 // previously required to compile the command line to get it (fdu-z7sp).
 pub use crate::execution::{
-    Load, OutcomeClass, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
-    prepare_report_with_progress, prepare_report_with_scan_diagnostics, throughput_rates,
+    Load, OutcomeClass, PerformanceSummary, Plan, RootsPrepared, Route, Verify, plan,
+    prepare_report, prepare_report_with_progress, prepare_report_with_scan_diagnostics,
+    prepare_roots_report, prepare_roots_report_with_progress,
+    prepare_roots_report_with_scan_diagnostics, throughput_rates,
 };
 pub use crate::progress::{Progress, ProgressPhase, ProgressSnapshot};
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
@@ -188,6 +190,7 @@ impl OpenFixture {
                 cache: self.policy,
                 stale_ok: self.stale_ok,
                 cache_path: self.cache_path.clone(),
+                cache_dir: None,
                 accept_partial: false,
                 watch: None,
                 workers: query::Workers {
@@ -316,16 +319,24 @@ const BACKGROUND_RELEASE_MIN_ENTRIES: u64 = 4 * 1024;
 /// without notice, so a release still running at exit can die holding the process heap's
 /// lock while DLL detach code allocates, and the saving was never measured there.
 pub(crate) fn release_index(index: std::sync::Arc<Index>) {
-    let Some(index) = std::sync::Arc::into_inner(index) else {
-        return;
-    };
-    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES || crate::counters::enabled() || cfg!(windows) {
+    release_indexes(vec![index]);
+}
+
+/// [`release_index`] for the indexes of one report's roots, together.
+///
+/// The threshold is on their total: several roots each under it would otherwise each free
+/// inline, putting their sum back on the caller's thread before its answer, which is the
+/// cost the threshold exists to move (review C5 on #192). One thread frees them all, so a
+/// report over many small roots starts one thread, not one per root.
+pub(crate) fn release_indexes(indexes: Vec<std::sync::Arc<Index>>) {
+    let last: Vec<Index> = indexes.into_iter().filter_map(std::sync::Arc::into_inner).collect();
+    let entries = last.iter().map(Index::len).fold(0_u64, u64::saturating_add);
+    if entries < BACKGROUND_RELEASE_MIN_ENTRIES || crate::counters::enabled() || cfg!(windows) {
         return;
     }
-    let spawned = std::thread::Builder::new()
-        .name("fdu-index-release".to_string())
-        .spawn(move || drop(index));
-    // On failure the builder drops the closure, and with it the index, on this thread.
+    let spawned =
+        std::thread::Builder::new().name("fdu-index-release".to_string()).spawn(move || drop(last));
+    // On failure the builder drops the closure, and with it the indexes, on this thread.
     drop(spawned);
 }
 
@@ -335,10 +346,14 @@ pub(crate) fn release_index(index: std::sync::Arc<Index>) {
 /// two readers of the same data. The handle exists so the process can join before it
 /// exits: an abandoned write would leave a half-written snapshot for the next run to
 /// reject, turning a warm start into a cold one for no reason.
+///
+/// One handle can hold the writes of several roots' snapshots, which a report over several
+/// roots starts together once every root has been walked ([`prepare_roots_report`]).
 #[derive(Debug)]
 #[must_use = "join the save before exiting or the snapshot may be abandoned"]
 pub struct PendingSave {
-    workers: Vec<(&'static str, std::thread::JoinHandle<Result<()>>)>,
+    /// Each writer thread, with what it writes and the outcome of every write it makes.
+    workers: Vec<(&'static str, std::thread::JoinHandle<Vec<Result<()>>>)>,
 }
 
 impl PendingSave {
@@ -352,21 +367,26 @@ impl PendingSave {
         self.workers.iter().any(|(name, _)| *name == "metadata")
     }
 
-    /// Wait for the write to finish, returning its result.
+    /// Wait for the write to finish, returning its result: the first failure, when any
+    /// write failed.
     ///
     /// A failed save is the caller's to report, not to die on: the answer already
     /// rendered is still correct, and only the next run's warmth is lost.
-    pub fn join(mut self) -> Result<()> {
-        let mut first_error = None;
+    pub fn join(self) -> Result<()> {
+        self.join_all().into_iter().next().map_or(Ok(()), Err)
+    }
+
+    /// Wait for every write to finish, returning each one that failed, in the order the
+    /// writes were started: one per root's snapshot or sidecar that could not be written.
+    pub fn join_all(mut self) -> Vec<Error> {
+        let mut errors = Vec::new();
         for (name, worker) in self.workers.drain(..) {
-            let outcome = worker
-                .join()
-                .unwrap_or_else(|_| Err(Error::Snapshot(format!("{name} cache writer panicked"))));
-            if first_error.is_none() {
-                first_error = outcome.err();
-            }
+            let outcomes = worker.join().unwrap_or_else(|_| {
+                vec![Err(Error::Snapshot(format!("{name} cache writer panicked")))]
+            });
+            errors.extend(outcomes.into_iter().filter_map(Result::err));
         }
-        first_error.map_or(Ok(()), Err)
+        errors
     }
 }
 
@@ -476,7 +496,9 @@ pub fn open_with_pending_save(
     let mut query = query::Query::default();
     query.selection.ignored = basis.scope.population;
     let request = query::Request::new(basis.clone(), query, std::time::SystemTime::now());
-    let plan = plan(&request, delivery, Route::Retained).map_err(Error::InvalidRequest)?;
+    // A cache directory names this root's snapshot, as on every route.
+    let delivery = delivery.for_root(&basis.root)?;
+    let plan = plan(&request, &delivery, Route::Retained).map_err(Error::InvalidRequest)?;
     execute(&plan, &request.basis, false, None)
         .map(|(index, report, pending, _diagnostics)| (index, report, pending))
 }
@@ -499,6 +521,7 @@ pub fn refresh(
     let mut query = query::Query::default();
     query.selection.ignored = basis.scope.population;
     let request = query::Request::new(basis.clone(), query, std::time::SystemTime::now());
+    let delivery = &delivery.for_root(&basis.root)?;
     let plan = plan(&request, delivery, Route::Refresh).map_err(Error::InvalidRequest)?;
     validate_basis_root(index.root_path(), basis)?;
     request.validate_read(&query::Basis::held_by(index)).map_err(Error::InvalidRequest)?;
@@ -645,6 +668,28 @@ pub(crate) fn execute(
     collect_scan_diagnostics: bool,
     progress: Option<&Progress>,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
+    let (index, report, save, diagnostics) =
+        execute_deferring(plan, basis, collect_scan_diagnostics, progress)?;
+    let pending = save.map_or_else(PendingSave::none, |save| save.spawn(progress));
+    Ok((index, report, pending, diagnostics))
+}
+
+/// What [`execute_deferring`] returns: the index, what the open did, the cache writes it
+/// decided on and has not started, and any scan diagnostics.
+pub(crate) type Deferred =
+    (std::sync::Arc<Index>, OpenReport, Option<SaveJob>, Option<scan::ScanDiagnostics>);
+
+/// [`execute`], returning the cache writes it decided on rather than starting them.
+///
+/// A report over several roots starts every root's writes only once every root has been
+/// walked, since a cache directory can lie inside a later root, whose walk would then count
+/// a write in progress and no longer be the walk of that root alone (review B3 on #192).
+pub(crate) fn execute_deferring(
+    plan: &Plan,
+    basis: &query::Basis,
+    collect_scan_diagnostics: bool,
+    progress: Option<&Progress>,
+) -> Result<Deferred> {
     // Every index this returns is one its caller may keep, persist, or mutate, which a
     // folded index must never be: only the one-shot tree arm builds one, and it never
     // comes here. Nothing below builds one either (`scan::scan_into_folded_index`).
@@ -763,7 +808,7 @@ pub(crate) fn execute(
                 content_cache,
                 projected: relation == Serves::ProjectControlsOff,
             },
-            PendingSave::none(),
+            None,
             None,
         ));
     }
@@ -798,7 +843,7 @@ pub(crate) fn execute(
         // The index is shared read-only from here, so the debt a completed write clears
         // is cleared by the blocking [`open`] once it has joined the write.
         let index = std::sync::Arc::new(index);
-        let pending = spawn_save(&index, &plan.delivery, plan.writes(facts), progress);
+        let save = SaveJob::new(&index, &plan.delivery, plan.writes(facts));
         return Ok((
             index,
             OpenReport {
@@ -808,7 +853,7 @@ pub(crate) fn execute(
                 content_cache,
                 projected,
             },
-            pending,
+            save,
             None,
         ));
     }
@@ -829,7 +874,7 @@ pub(crate) fn execute(
     let facts =
         run_facts(&index, basis, plan, true, true, false, || stored_entries(delivery, &root));
     let index = std::sync::Arc::new(index);
-    let pending = spawn_save(&index, &plan.delivery, plan.writes(facts), progress);
+    let save = SaveJob::new(&index, &plan.delivery, plan.writes(facts));
     Ok((
         index,
         OpenReport {
@@ -839,7 +884,7 @@ pub(crate) fn execute(
             content_cache,
             projected: false,
         },
-        pending,
+        save,
         scan_diagnostics,
     ))
 }
@@ -957,7 +1002,8 @@ fn load_content(
     content::load_content_cache(index, &wanted, &content::content_cache_path(snapshot_path))
 }
 
-/// Start the cache writes a completed open still needs, each tier under its own rule.
+/// The cache writes a completed open still needs, each tier under its own rule, decided
+/// and not yet started.
 ///
 /// The snapshot is written only after a complete pass
 /// ([`stored_state::entries_writable`]): a snapshot recording a partial view would be
@@ -965,61 +1011,125 @@ fn load_content(
 /// The content sidecar keeps the records the pass verified
 /// ([`stored_state::content_tier_writable`]); a partial pass may replace it only beside a
 /// stored snapshot of the same entry tier.
-fn spawn_save(
-    index: &std::sync::Arc<Index>,
-    delivery: &query::Delivery,
+pub(crate) struct SaveJob {
+    /// The index to write, read-only from here, so the writer and the caller's rendering
+    /// are two readers of one index rather than of two copies. This used to deep-clone --
+    /// every boxed entry, both stored copies of every name, and every `BTreeMap` -- on the
+    /// caller's thread, before rendering could start, on every cache-writing run. Sharing
+    /// is what buys the independence a clone was buying.
+    index: std::sync::Arc<Index>,
+    cache_path: PathBuf,
     writes: SaveTargets,
-    progress: Option<&Progress>,
-) -> PendingSave {
-    let Some(cache_path) = delivery.cache_path.clone().filter(|_| !writes.none()) else {
+}
+
+impl SaveJob {
+    /// The writes `writes` authorizes at the delivery's location, or `None` when there is
+    /// nothing to write or nowhere to write it.
+    fn new(
+        index: &std::sync::Arc<Index>,
+        delivery: &query::Delivery,
+        writes: SaveTargets,
+    ) -> Option<Self> {
+        let cache_path = delivery.cache_path.clone().filter(|_| !writes.none())?;
+        Some(Self { index: std::sync::Arc::clone(index), cache_path, writes })
+    }
+
+    /// Start the writes, the snapshot and its sidecar each on its own thread.
+    fn spawn(self, progress: Option<&Progress>) -> PendingSave {
+        // Entered here, on the caller's thread, rather than by the writers: a run that
+        // returns with a pending save is saving from the caller's point of view from this
+        // moment, and a poller sees the phase without waiting for a thread to be scheduled.
+        if let Some(progress) = progress {
+            progress.enter(ProgressPhase::Saving);
+        }
+        let Self { index: snapshot_source, cache_path, writes } = self;
+        let mut workers = Vec::with_capacity(2);
+        if writes.metadata {
+            let metadata_source = std::sync::Arc::clone(&snapshot_source);
+            let metadata_path = cache_path.clone();
+            if let Ok(worker) =
+                std::thread::Builder::new().name("fdu-snapshot".to_string()).spawn(move || {
+                    let _counter_guard = counters::thread_flush_guard();
+                    let saved = snapshot::save(&metadata_source, &metadata_path);
+                    // The caller joins this thread; a writer holding the last reference would
+                    // otherwise make that join wait for the whole index to be freed.
+                    release_index(metadata_source);
+                    vec![saved]
+                })
+            {
+                workers.push(("metadata", worker));
+            }
+        }
+        if writes.content {
+            let content_path = content::content_cache_path(&cache_path);
+            if let Ok(worker) =
+                std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
+                    let _counter_guard = counters::thread_flush_guard();
+                    let saved = content::save_content_cache(&snapshot_source, &content_path);
+                    release_index(snapshot_source);
+                    vec![saved]
+                })
+            {
+                workers.push(("content", worker));
+            }
+        }
+        // A machine that cannot spawn either thread can still answer; it just answers cold
+        // next time.
+        PendingSave { workers }
+    }
+
+    /// Make the writes on this thread, the snapshot first, and let go of the index.
+    fn run(self) -> Vec<Result<()>> {
+        let Self { index, cache_path, writes } = self;
+        let mut outcomes = Vec::with_capacity(2);
+        if writes.metadata {
+            outcomes.push(snapshot::save(&index, &cache_path));
+        }
+        if writes.content {
+            outcomes.push(content::save_content_cache(
+                &index,
+                &content::content_cache_path(&cache_path),
+            ));
+        }
+        release_index(index);
+        outcomes
+    }
+}
+
+/// Start several roots' writes together, on at most as many threads as the machine runs
+/// at once, each writing its share of the roots one after another.
+///
+/// Bounded because every write ends in a full sync, which the device serializes: a thread
+/// per root, hundreds for `fdu */` under `--cache on`, would only queue there (review C6
+/// on #192). Started by a report over several roots once every root has been walked, so no
+/// write can land inside a root while it is walked (review B3).
+pub(crate) fn spawn_saves(saves: Vec<SaveJob>, progress: Option<&Progress>) -> PendingSave {
+    if saves.is_empty() {
         return PendingSave::none();
-    };
-    // Entered here, on the caller's thread, rather than by the writers: a run that
-    // returns with a pending save is saving from the caller's point of view from this
-    // moment, and a poller sees the phase without waiting for a thread to be scheduled.
+    }
     if let Some(progress) = progress {
         progress.enter(ProgressPhase::Saving);
     }
-
-    // The index is read-only from here, so the writer and the caller's rendering are two
-    // readers of one index rather than of two copies. This used to deep-clone — every
-    // boxed entry, both stored copies of every name, and every `BTreeMap` — on the
-    // caller's thread, before rendering could start, on every cache-writing run.
-    // Sharing is what buys the independence a clone was buying; a run with nothing to
-    // write still returns above rather than reaching this point.
-    let snapshot_source = std::sync::Arc::clone(index);
-    let mut workers = Vec::with_capacity(2);
-    if writes.metadata {
-        let metadata_source = std::sync::Arc::clone(&snapshot_source);
-        let metadata_path = cache_path.clone();
-        if let Ok(worker) =
-            std::thread::Builder::new().name("fdu-snapshot".to_string()).spawn(move || {
-                let _counter_guard = counters::thread_flush_guard();
-                let saved = snapshot::save(&metadata_source, &metadata_path);
-                // The caller joins this thread; a writer holding the last reference would
-                // otherwise make that join wait for the whole index to be freed.
-                release_index(metadata_source);
-                saved
-            })
-        {
-            workers.push(("metadata", worker));
-        }
+    let width = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(saves.len());
+    let mut lanes: Vec<Vec<SaveJob>> = (0..width).map(|_| Vec::new()).collect();
+    for (position, save) in saves.into_iter().enumerate() {
+        lanes[position % width].push(save);
     }
-    if writes.content {
-        let content_path = content::content_cache_path(&cache_path);
-        if let Ok(worker) =
-            std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
-                let _counter_guard = counters::thread_flush_guard();
-                let saved = content::save_content_cache(&snapshot_source, &content_path);
-                release_index(snapshot_source);
-                saved
-            })
-        {
-            workers.push(("content", worker));
-        }
-    }
-    // A machine that cannot spawn either thread can still answer; it just answers cold
-    // next time.
+    let workers = lanes
+        .into_iter()
+        .filter_map(|lane| {
+            std::thread::Builder::new()
+                .name("fdu-snapshot".to_string())
+                .spawn(move || {
+                    let _counter_guard = counters::thread_flush_guard();
+                    lane.into_iter().flat_map(SaveJob::run).collect()
+                })
+                .ok()
+                .map(|worker| ("snapshots", worker))
+        })
+        .collect();
     PendingSave { workers }
 }
 
@@ -1071,12 +1181,18 @@ fn resolve_cache_dir(
 pub fn default_cache_path_in(root: &Path, explicit: Option<&Path>) -> Result<Option<PathBuf>> {
     let Some(directory) = default_cache_dir(explicit)? else { return Ok(None) };
     let canonical = root.canonicalize().map_err(|error| Error::io(root, error))?;
+    Ok(Some(snapshot_path_in(&directory, &canonical)))
+}
+
+/// The metadata snapshot for the root at `canonical` in the resolved cache `directory`:
+/// [`default_cache_path_in`] for a root already canonical, which reads nothing.
+pub(crate) fn snapshot_path_in(directory: &Path, canonical: &Path) -> PathBuf {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for byte in canonical.as_os_str().as_encoded_bytes() {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x1000_0000_01b3);
     }
-    Ok(Some(CachePaths::for_root_hash(&directory, hash).metadata))
+    CachePaths::for_root_hash(directory, hash).metadata
 }
 
 /// Conventional metadata snapshot path for callers without an explicit destination.

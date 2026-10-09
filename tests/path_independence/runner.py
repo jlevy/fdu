@@ -128,6 +128,11 @@ def case_key(phase: str, route: str, policy: str, history: str, mutation: str, r
 ROOT_PLACEHOLDER = "<root>"
 
 
+def root_placeholder(position: int) -> str:
+    """The placeholder for the root at `position` of a report over several roots."""
+    return f"<root:{position}>"
+
+
 def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Split an answer into compared content and excluded provenance.
 
@@ -138,6 +143,21 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     root = answer.get("root")
     if isinstance(root, str) and root:
         encoded = json.dumps(answer).replace(json.dumps(root)[1:-1], ROOT_PLACEHOLDER)
+        answer = json.loads(encoded)
+    # Several roots are named in `roots`, each by a label (here the absolute path the
+    # harness gave) and its canonical path; each spelling becomes that root's placeholder.
+    roots = answer.get("roots")
+    if isinstance(roots, list):
+        encoded = json.dumps(answer)
+        spellings = [
+            (json.dumps(str(entry[field]))[1:-1], root_placeholder(position))
+            for position, entry in enumerate(roots)
+            for field in ("path", "label")
+            if isinstance(entry, dict) and entry.get(field)
+        ]
+        # Longest first, so a root's path is never replaced inside a longer one.
+        for spelling, placeholder in sorted(spellings, key=lambda pair: -len(pair[0])):
+            encoded = encoded.replace(spelling, placeholder)
         answer = json.loads(encoded)
     # Keep the invocation intact for evidence while removing delivery-only facts.
     content = json.loads(json.dumps(answer))
@@ -159,9 +179,14 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         for row in section.get("files", []):
             residual(row)
         # Every tree node carries the activity it counts and its age, so the folded tier a
-        # cold tree takes and the full index a warm one reads are compared row by row.
+        # cold tree takes and the full index a warm one reads are compared row by row; over
+        # several roots, so do the total row and every root's tree.
         tree = section.get("tree")
         nodes = [tree] if isinstance(tree, dict) else []
+        total = section.get("total")
+        if isinstance(total, dict):
+            residual(total)
+        nodes += [entry["tree"] for entry in section.get("trees", []) if isinstance(entry, dict)]
         while nodes:
             node = nodes.pop()
             residual(node)
@@ -241,6 +266,177 @@ def _aligned_diff(
 
 
 _ELEMENT = re.compile(r'\[(?:\d+|[a-z_]+=(?:-?\d+|"(?:[^"\\]|\\.)*"))\]')
+
+
+def _sum_ignored(shares: list[Any], keys: tuple[str, ...]) -> dict[str, int] | None:
+    """The ignored share of a sum: unknown when any part's is."""
+    if any(share is None for share in shares):
+        return None
+    return {key: sum(int(share[key]) for share in shares) for key in keys}
+
+
+def _newest(values: list[Any]) -> int | None:
+    known = [int(value) for value in values if value is not None]
+    return max(known) if known else None
+
+
+def _total_of(nodes: list[dict[str, Any]]) -> dict[str, Any]:
+    """The total row several root rows sum to, without its age, which each run measures
+    from its own instant."""
+    return {
+        "bytes": sum(int(node["bytes"]) for node in nodes),
+        "allocated": sum(int(node["allocated"]) for node in nodes),
+        "files": sum(int(node["files"]) for node in nodes),
+        "dirs": sum(int(node["dirs"]) for node in nodes),
+        "ignored": _sum_ignored(
+            [node["ignored"] for node in nodes], ("files", "dirs", "bytes", "allocated")
+        ),
+        "newest_mtime_ns": _newest([node["newest_mtime_ns"] for node in nodes]),
+        "mtime_ns": _newest([node["mtime_ns"] for node in nodes]),
+        "complete": all(node["complete"] is True for node in nodes),
+    }
+
+
+def merged_facts(request_id: str, singles: list[dict[str, Any]]) -> Any:
+    """What a report over several roots must say, merged from each root's own report.
+
+    `singles` are the normalized single-root answers in the roots' order. Each request in
+    `matrix.ROOT_REQUESTS` merges by one rule: additive values sum, maxima take the
+    maximum, an unknown ignored share stays unknown, rows keep their root, and each
+    root's tree is its own, named by its root.
+    """
+    sections = [answer["reports"][0] for answer in singles]
+    if request_id == "r_summary":
+        rows = [section["summary"] for section in sections]
+        return {
+            "files": sum(int(row["files"]) for row in rows),
+            "dirs": sum(int(row["dirs"]) for row in rows),
+            "bytes": sum(int(row["bytes"]) for row in rows),
+            "allocated": sum(int(row["allocated"]) for row in rows),
+            "ignored": _sum_ignored(
+                [row["ignored"] for row in rows], ("files", "dirs", "bytes", "allocated")
+            ),
+            "newest_mtime_ns": _newest([row["newest_mtime_ns"] for row in rows]),
+        }
+    if request_id == "r_files":
+        merged = [
+            {"root": position, **row}
+            for position, section in enumerate(sections)
+            for row in section["files"]
+        ]
+        return sorted(merged, key=lambda row: (row["root"], row["path"]))
+    if request_id == "r_extensions":
+        buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for section in sections:
+            for row in section["extensions"]:
+                buckets[row["extension"]].append(row)
+        # A root's ignored parts are known for every bucket or for none, so a root with no
+        # rows says nothing; every root that has rows must know them.
+        known = all(
+            all(row["ignored"] is not None for row in section["extensions"]) for section in sections
+        )
+        return {
+            extension: {
+                "files": sum(int(row["files"]) for row in rows),
+                "bytes": sum(int(row["bytes"]) for row in rows),
+                "allocated": sum(int(row["allocated"]) for row in rows),
+                "ignored": _sum_ignored([row["ignored"] for row in rows], ("files", "bytes"))
+                if known
+                else None,
+            }
+            for extension, rows in sorted(buckets.items())
+        }
+    if request_id == "r_languages":
+        merged_rows: dict[str, dict[str, Any]] = {}
+        for section in sections:
+            metrics = section["metrics"]
+            for row in [metrics["total"], *metrics["rows"]]:
+                merged = merged_rows.setdefault(
+                    row["id"], {"files": 0, "bytes": 0, "allocated": 0, "metrics": {}}
+                )
+                for key in ("files", "bytes", "allocated"):
+                    merged[key] += int(row[key])
+                for metric, value in (row.get("metrics") or {}).items():
+                    held = merged["metrics"].get(metric, 0)
+                    # A value a root could not measure stays unknown in the sum.
+                    merged["metrics"][metric] = (
+                        None if value is None or held is None else held + int(value)
+                    )
+        return dict(sorted(merged_rows.items()))
+    if request_id in ("r_full_tree", "r_default"):
+        nodes = [section["tree"] for section in sections]
+        facts: dict[str, Any] = {"tree": None, "total": _total_of(nodes)}
+        if request_id == "r_full_tree":
+            facts["trees"] = {
+                str(position): {**node, "name": root_placeholder(position)}
+                for position, node in enumerate(nodes)
+            }
+        return facts
+    raise KeyError(request_id)
+
+
+def several_facts(request_id: str, answer: dict[str, Any]) -> Any:
+    """The facts `merged_facts` derives, as a normalized report over several roots
+    states them."""
+    section = answer["reports"][0]
+    if request_id == "r_summary":
+        return section["summary"]
+    if request_id == "r_files":
+        return sorted(section["files"], key=lambda row: (row["root"], row["path"]))
+    if request_id == "r_extensions":
+        return {
+            row["extension"]: {
+                "files": row["files"],
+                "bytes": row["bytes"],
+                "allocated": row["allocated"],
+                "ignored": None
+                if row["ignored"] is None
+                else {"files": row["ignored"]["files"], "bytes": row["ignored"]["bytes"]},
+            }
+            for row in section["extensions"]
+        }
+    if request_id == "r_languages":
+        metrics = section["metrics"]
+        return {
+            row["id"]: {
+                "files": row["files"],
+                "bytes": row["bytes"],
+                "allocated": row["allocated"],
+                "metrics": dict(row.get("metrics") or {}),
+            }
+            for row in sorted([metrics["total"], *metrics["rows"]], key=lambda row: row["id"])
+        }
+    if request_id in ("r_full_tree", "r_default"):
+        total = section.get("total")
+        facts: dict[str, Any] = {
+            "tree": section.get("tree"),
+            "total": None
+            if total is None
+            else {
+                key: value for key, value in total.items() if key not in ("age_ns", "modified_at")
+            },
+        }
+        if request_id == "r_full_tree":
+            facts["trees"] = {str(entry["root"]): entry["tree"] for entry in section["trees"]}
+        return facts
+    raise KeyError(request_id)
+
+
+def merge_verdict(request_id: str, oracle: Invocation, singles: list[Invocation]) -> Verdict:
+    """Judge a report over several roots against the merge of its single-root reports."""
+    if oracle.outcome == "failure" or any(single.outcome == "failure" for single in singles):
+        outcomes = ",".join(invocation.outcome for invocation in (oracle, *singles))
+        return Verdict("outcome_class", (f"<roots:{outcomes}>",))
+    assert oracle.answer is not None
+    expected = merged_facts(
+        request_id, [normalize(single.answer)[0] for single in singles if single.answer]
+    )
+    observed = several_facts(request_id, normalize(oracle.answer)[0])
+    diff = json_diff(expected, observed)
+    if not diff:
+        return Verdict("same")
+    sample = tuple(f"{p}: {json.dumps(a)} -> {json.dumps(b)}" for p, a, b in diff[:12])
+    return Verdict("differs", tuple(sorted({generalize(p) for p, _, _ in diff})), sample)
 
 
 def generalize(path: str) -> str:
@@ -346,17 +542,27 @@ def _cache_env(xdg: Path) -> dict[str, str]:
 
 
 def run_cli(
-    surfaces: Surfaces, root: Path, request: matrix.Spec, policy: str, xdg: Path
+    surfaces: Surfaces,
+    root: Path | list[Path],
+    request: matrix.Spec,
+    policy: str,
+    xdg: Path,
 ) -> Invocation:
-    """Ask `request` on the command line."""
-    argv = [str(surfaces.fdu_bin), str(root), "--format", "json", *matrix.cache_args(policy)]
-    argv += matrix.cli_args(request)
+    """Ask `request` on the command line, over one root or, given a list, several."""
+    roots = root if isinstance(root, list) else [root]
+    argv = [str(surfaces.fdu_bin), *map(str, roots), "--format", "json"]
+    argv += [*matrix.cache_args(policy), *matrix.cli_args(request)]
     done = subprocess.run(argv, capture_output=True, text=True, env=_cache_env(xdg), check=False)
     try:
         answer = json.loads(done.stdout)
     except json.JSONDecodeError:
         answer = None
-    command = " ".join([*argv[:1], "<root>", *argv[2:]])
+    named = (
+        [root_placeholder(position) for position in range(len(roots))]
+        if isinstance(root, list)
+        else [ROOT_PLACEHOLDER]
+    )
+    command = " ".join([*argv[:1], *named, *argv[1 + len(roots) :]])
     return Invocation(matrix.CLI_ROUTE, command, done.returncode, done.stderr.strip(), answer)
 
 
@@ -494,16 +700,18 @@ def _read_jsonl_report(stream: Iterable[str]) -> dict[str, Any]:
 
 def run_py(
     surfaces: Surfaces,
-    root: Path,
+    root: Path | list[Path],
     request: matrix.Spec,
     policy: str,
     xdg: Path,
     route: str,
 ) -> Invocation:
-    """Ask `request` through the Python package on `route`."""
+    """Ask `request` through the Python package on `route`; several roots, given a list,
+    on the one route that takes them, `fdu.report`."""
     assert surfaces.python is not None and route in matrix.PY_ROUTES
+    assert not isinstance(root, list) or route == "py-report"
     job = {
-        "root": str(root),
+        "root": [str(path) for path in root] if isinstance(root, list) else str(root),
         "mode": route.removeprefix("py-"),
         "cache": policy,
         "spec": request,
@@ -598,6 +806,7 @@ class MatrixRun:
         )
         result.cases += self.phase_cold()
         result.cold_answers = sum(1 for inv in self.cold.values() if inv.outcome != "failure")
+        result.cases += self.phase_roots()
         result.cases += self.phase_warm()
         result.cases += self.phase_cache_contract()
         result.cases += self.phase_implied()
@@ -638,6 +847,88 @@ class MatrixRun:
             return [CaseResult(key, verdict, oracle, measured)]
 
         return _parallel(one, self.tier.requests)
+
+    def phase_roots(self) -> list[CaseResult]:
+        """Several roots as one report, against the merge of each root's report.
+
+        A cold several-root answer must be the merge `merged_facts` derives from the
+        single-root cold answers. Then the same answer must come back from per-root
+        snapshots, each left by a one-root `--cache on` run and served together by
+        `--stale-ok`, and from `fdu.report` with a list of roots.
+        """
+        cases = [
+            (set_id, request_id)
+            for set_id in matrix.ROOT_SETS
+            for request_id in matrix.ROOT_REQUESTS
+        ]
+
+        def one(case: tuple[str, str]) -> list[CaseResult]:
+            set_id, request_id = case
+            roots = [self.facts.root / name for name in matrix.ROOT_SETS[set_id]]
+            request = matrix.ROOT_REQUESTS[request_id]
+            label = f"{set_id}:{request_id}"
+            xdg = self.ws.fresh(f"roots-cold-{set_id}-{request_id}")
+            oracle = run_cli(self.surfaces, roots, request, "off", xdg)
+            singles = [run_cli(self.surfaces, root, request, "off", xdg) for root in roots]
+            self.ws.discard(xdg)
+            results = [
+                CaseResult(
+                    case_key("roots", "merge", "off", "-", "-", label),
+                    merge_verdict(request_id, oracle, singles),
+                    oracle,
+                    None,
+                )
+            ]
+
+            xdg = self.ws.fresh(f"roots-serve-{set_id}-{request_id}")
+            history = tuple(
+                run_cli(self.surfaces, root, request, "on", xdg).command for root in roots
+            )
+            measured = run_cli(self.surfaces, roots, request, matrix.STALE_OK, xdg)
+            self.ws.discard(xdg)
+            key = case_key("roots", matrix.CLI_ROUTE, matrix.STALE_OK, "per-root-on", "-", label)
+            verdict = compare(oracle, measured, policy=matrix.STALE_OK, must_serve=True)
+            results.append(CaseResult(key, verdict, oracle, measured, history))
+
+            if request_id in matrix.ROOT_CONTENT_REQUESTS:
+                # A mixed history: the first root's analysis is cached by an `auto` run of
+                # it alone, the second's is not, so one report reads one root's sidecar and
+                # analyzes the other cold, and must still say what the cold report says.
+                xdg = self.ws.fresh(f"roots-mixed-{set_id}-{request_id}")
+                history = (run_cli(self.surfaces, roots[0], request, "auto", xdg).command,)
+                measured = run_cli(self.surfaces, roots, request, "auto", xdg)
+                self.ws.discard(xdg)
+                key = case_key("roots", matrix.CLI_ROUTE, "auto", "first-root-auto", "-", label)
+                verdict = compare(oracle, measured, policy="auto")
+                source = ((measured.answer or {}).get("provenance") or {}).get("source")
+                if verdict.kind == "same" and (
+                    source != "warm_revalidate" or content_tier_source(measured) == "scanned"
+                ):
+                    # The weakest source across roots: the first root's snapshot and sidecar
+                    # make the report a revalidated one, so a cold scan, or a content tier
+                    # read entirely from the files, means the history warmed nothing and the
+                    # case proved no mix.
+                    verdict = Verdict(
+                        "differs",
+                        ("provenance.source",),
+                        (
+                            f"expected a warm first root, got {source} / "
+                            f"{content_tier_source(measured)}",
+                        ),
+                    )
+                results.append(CaseResult(key, verdict, oracle, measured, history))
+
+            if self.surfaces.python is not None:
+                xdg = self.ws.fresh(f"roots-py-{set_id}-{request_id}")
+                measured = run_py(self.surfaces, roots, request, "off", xdg, "py-report")
+                self.ws.discard(xdg)
+                key = case_key("roots", "py-report", "off", "-", "-", label)
+                results.append(
+                    CaseResult(key, compare(oracle, measured, policy="off"), oracle, measured)
+                )
+            return results
+
+        return _parallel(one, cases)
 
     def _warm(self, root: Path, warmer_id: str, xdg: Path, route: str = matrix.CLI_ROUTE) -> str:
         request, policy = matrix.WARMERS[warmer_id]

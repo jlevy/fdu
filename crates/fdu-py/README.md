@@ -67,6 +67,16 @@ The two content views run the `code` and `words` analyzers they show; `print` gi
 same tables as `fdu . --view=code,documents`, and `report.sections` holds them as typed
 values.
 
+`fdu.report` also takes a sequence of disjoint paths, reported as one, as `fdu docs src`
+does: every size, row, share, and bound is over the union.
+`report.root` is then `None` and `report.roots` names each root
+(`ReportRoot(label, path)`); file rows, status errors, and refused `.gitignore` files
+carry `root`, the position of their root in `roots`, so
+`report.roots[row.root].path / row.path` names the entry; and a tree section has a
+`total` and one `RootTree` per root.
+A `str` or `Path` is always one root.
+`fdu.open` and `fdu.scan` take one root.
+
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
 roll-ups, per-path provenance, cache management, refresh results, and change feeds.

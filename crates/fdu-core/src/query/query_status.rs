@@ -14,13 +14,62 @@ pub struct TreeStatus {
     pub complete: bool,
     /// Coverage of the least complete requested tier.
     pub coverage: Coverage,
-    /// Bounded, path-ordered operational failure details.
-    pub errors: Vec<Issue>,
+    /// Bounded operational failure details, ordered by root and then by path.
+    pub errors: Vec<StatusIssue>,
     /// Further failure details omitted by the shared retention bound.
     pub errors_omitted: u64,
 }
 
+/// One operational failure in a report's status, with the root it was met under.
+///
+/// The issue's path stays relative to that root, as every report path does, so
+/// [`Report::roots`](crate::query::Report::roots)`[root]` joined with it names the entry
+/// exactly. [`Issue`] itself gains no root: it is the engine contract's, shared with opened
+/// roots and commits, which have one root by construction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StatusIssue {
+    /// Position of the issue's root among the report's roots; 0 for a report over one root.
+    pub root: usize,
+    /// What failed, and where under its root.
+    pub issue: Issue,
+}
+
+impl StatusIssue {
+    /// An issue met under a report's only root.
+    pub(crate) const fn of_one_root(issue: Issue) -> Self {
+        Self { root: 0, issue }
+    }
+}
+
 impl TreeStatus {
+    /// The status of a report over several roots, from each root's status in their order.
+    ///
+    /// Complete when every root is; the coverage is the first incomplete root's. Errors
+    /// keep root order and, within a root, the path order each part already has, bounded by
+    /// the shared retention limit; every detail that bound drops is counted beside those
+    /// each part already dropped.
+    pub(crate) fn merge(parts: Vec<Self>) -> Self {
+        let complete = parts.iter().all(|part| part.complete);
+        let coverage = parts
+            .iter()
+            .find(|part| !part.complete)
+            .or_else(|| parts.first())
+            .map_or(Coverage::Complete, |part| part.coverage);
+        let mut errors = Vec::new();
+        let mut errors_omitted = 0_u64;
+        for (root, part) in parts.into_iter().enumerate() {
+            errors_omitted = errors_omitted.saturating_add(part.errors_omitted);
+            for detail in part.errors {
+                if errors.len() < crate::MAX_RETAINED_ISSUES {
+                    errors.push(StatusIssue { root, issue: detail.issue });
+                } else {
+                    errors_omitted = errors_omitted.saturating_add(1);
+                }
+            }
+        }
+        Self { complete, coverage, errors, errors_omitted }
+    }
+
     /// Derive status from the same immutable index snapshot used to build report rows.
     pub fn of(index: &Index, request: &Request) -> Self {
         let state = index.state();
@@ -95,7 +144,8 @@ impl TreeStatus {
             );
         }
         let retained = u64::try_from(details.len()).unwrap_or(u64::MAX);
-        let errors = details.into_iter().map(|(_, issue)| issue).collect();
+        let errors =
+            details.into_iter().map(|(_, issue)| StatusIssue::of_one_root(issue)).collect();
         let complete = state.coverage == Coverage::Complete
             && content_failures == 0
             && !content_tier_partial
@@ -135,7 +185,8 @@ impl TreeStatus {
             retain_first_detail(&mut details, (issue.path.clone().unwrap_or_default(), issue));
         }
         let retained = u64::try_from(details.len()).unwrap_or(u64::MAX);
-        let errors = details.into_iter().map(|(_, issue)| issue).collect();
+        let errors =
+            details.into_iter().map(|(_, issue)| StatusIssue::of_one_root(issue)).collect();
         Self {
             complete,
             coverage: if complete {
@@ -252,6 +303,44 @@ impl ReportProvenance {
             tiers: TierProvenance { entries, content: None },
         }
     }
+
+    /// The provenance of a report over several roots, from each root's.
+    ///
+    /// The weakest source and the least fresh tier, as one report already takes them across
+    /// its tiers, so one root answered from a snapshot makes the whole answer a cached one.
+    /// Times are the earliest, since the answer is no newer than its oldest part, and
+    /// unknown when any part's is. A content tier is reported only when every root has one.
+    pub(crate) fn merge(parts: Vec<Self>) -> Self {
+        let mut parts = parts.into_iter();
+        let first = parts.next().expect("a report reads at least one root");
+        parts.fold(first, |merged, part| Self {
+            source: merged.source.weaker(part.source),
+            freshness: least_fresh(merged.freshness, part.freshness),
+            scan_started_at: merged
+                .scan_started_at
+                .zip(part.scan_started_at)
+                .map(|(a, b)| a.min(b)),
+            generated_at: merged.generated_at.min(part.generated_at),
+            tiers: TierProvenance {
+                entries: merged_tier(merged.tiers.entries, part.tiers.entries),
+                content: merged
+                    .tiers
+                    .content
+                    .zip(part.tiers.content)
+                    .map(|(a, b)| merged_tier(a, b)),
+            },
+        })
+    }
+}
+
+/// One tier's state over two roots: the weaker source, the less fresh state, and the
+/// earlier observation, unknown when either is.
+fn merged_tier(left: TierState, right: TierState) -> TierState {
+    TierState {
+        source: left.source.max(right.source),
+        freshness: least_fresh(left.freshness, right.freshness),
+        observed_at_ns: left.observed_at_ns.zip(right.observed_at_ns).map(|(a, b)| a.min(b)),
+    }
 }
 
 fn least_fresh(left: Freshness, right: Freshness) -> Freshness {
@@ -301,7 +390,7 @@ mod tests {
         assert!(!status.complete);
         assert_eq!(status.coverage, crate::Coverage::Partial(crate::CoverageReason::Failed));
         assert_eq!(
-            status.errors[0].message,
+            status.errors[0].issue.message,
             "content analysis results became stale before they could be retained"
         );
     }
@@ -340,7 +429,7 @@ mod tests {
         assert!(!first_status.complete);
         assert_eq!(first_status.errors.len(), 1);
         assert_eq!(
-            first_status.errors[0].path.as_deref(),
+            first_status.errors[0].issue.path.as_deref(),
             Some(std::path::Path::new("failed.txt"))
         );
 
@@ -378,7 +467,7 @@ mod tests {
         assert!(!status.complete);
         assert_eq!(status.errors.len(), 40);
         assert_eq!(status.errors_omitted, 0);
-        assert_eq!(status.errors[0].path.as_deref(), Some(std::path::Path::new("denied-00")));
+        assert_eq!(status.errors[0].issue.path.as_deref(), Some(std::path::Path::new("denied-00")));
     }
 
     #[test]
@@ -405,8 +494,11 @@ mod tests {
         assert!(!status.complete);
         assert_eq!(status.errors.len(), crate::MAX_RETAINED_ISSUES);
         assert_eq!(status.errors_omitted, 2);
-        let retained_paths: Vec<_> =
-            status.errors.iter().map(|issue| issue.path.as_deref().expect("path")).collect();
+        let retained_paths: Vec<_> = status
+            .errors
+            .iter()
+            .map(|detail| detail.issue.path.as_deref().expect("path"))
+            .collect();
         assert_eq!(retained_paths[0], std::path::Path::new("file-00.txt"));
         assert_eq!(retained_paths[63], std::path::Path::new("file-63.txt"));
         assert!(retained_paths.windows(2).all(|pair| pair[0] < pair[1]));
@@ -421,6 +513,85 @@ mod tests {
                 .count(),
             66,
             "the diagnostic bound must not discard retained failure state"
+        );
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use super::{ReportProvenance, TierProvenance, TierState};
+    use crate::query::ReportSource;
+    use crate::{Freshness, Source};
+
+    fn part(
+        source: ReportSource,
+        entries: (Source, Freshness, Option<i64>),
+        content: Option<(Source, Freshness, Option<i64>)>,
+        started: Option<u64>,
+        generated: u64,
+    ) -> ReportProvenance {
+        let tier =
+            |(source, freshness, observed_at_ns)| TierState { source, freshness, observed_at_ns };
+        ReportProvenance {
+            source,
+            freshness: entries.1,
+            scan_started_at: started.map(|seconds| UNIX_EPOCH + Duration::from_secs(seconds)),
+            generated_at: UNIX_EPOCH + Duration::from_secs(generated),
+            tiers: TierProvenance { entries: tier(entries), content: content.map(tier) },
+        }
+    }
+
+    /// Several roots' provenance with mixed sources: the weakest source, the least fresh
+    /// tier, the earliest times and unknown when any root's is, and a content tier only
+    /// when every root has one (review A7 on #192).
+    #[test]
+    fn provenance_over_mixed_roots_takes_the_weakest_part_of_each() {
+        let cold = part(
+            ReportSource::ColdScan,
+            (Source::Scanned, Freshness::Fresh, Some(30)),
+            Some((Source::Scanned, Freshness::Fresh, Some(31))),
+            Some(30),
+            40,
+        );
+        let warm = part(
+            ReportSource::WarmRevalidate,
+            (Source::Revalidated, Freshness::Fresh, Some(20)),
+            Some((Source::Cached, Freshness::Fresh, Some(21))),
+            Some(20),
+            41,
+        );
+        let cached = part(
+            ReportSource::CacheOnly,
+            (Source::Cached, Freshness::Stale, Some(10)),
+            None,
+            None,
+            42,
+        );
+
+        let both = ReportProvenance::merge(vec![cold.clone(), warm.clone()]);
+        assert_eq!(both.source, ReportSource::WarmRevalidate);
+        assert_eq!(both.freshness, Freshness::Fresh);
+        assert_eq!(both.scan_started_at, Some(UNIX_EPOCH + Duration::from_secs(20)));
+        assert_eq!(both.generated_at, UNIX_EPOCH + Duration::from_secs(40));
+        assert_eq!(both.tiers.entries.source, Source::Revalidated);
+        assert_eq!(both.tiers.entries.observed_at_ns, Some(20));
+        let content = both.tiers.content.expect("every root has a content tier");
+        assert_eq!((content.source, content.observed_at_ns), (Source::Cached, Some(21)));
+
+        let all = ReportProvenance::merge(vec![cold, warm, cached]);
+        assert_eq!(all.source, ReportSource::CacheOnly);
+        assert_eq!(all.freshness, Freshness::Stale);
+        assert_eq!(all.scan_started_at, None, "unknown when any root's is");
+        assert_eq!(all.tiers.entries.source, Source::Cached);
+        assert_eq!(all.tiers.entries.observed_at_ns, Some(10));
+        assert_eq!(all.tiers.content, None, "one root has no content tier");
+
+        assert_eq!(ReportSource::ColdScan.weaker(ReportSource::CacheOnly), ReportSource::CacheOnly);
+        assert_eq!(
+            ReportSource::WarmRevalidate.weaker(ReportSource::ColdScan),
+            ReportSource::WarmRevalidate
         );
     }
 }

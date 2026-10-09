@@ -317,6 +317,8 @@ impl Session {
         mut delivery: Delivery,
         progress: Option<&crate::Progress>,
     ) -> Result<Self> {
+        // A cache directory names this root's snapshot, as on every route.
+        delivery = delivery.for_root(&request.basis.root)?;
         delivery.watch.get_or_insert_with(WatchDelivery::default);
         let plan =
             crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
@@ -406,8 +408,8 @@ impl Session {
         // What no delivery can carry, before anything stored is read and before the
         // backend is bound: this is the rule each surface used to keep for itself, so a
         // library caller could watch what `--watch` has always refused.
-        let delivery =
-            Delivery { watch: Some(delivery.watch.unwrap_or_default()), ..delivery.clone() };
+        let delivery = delivery.for_root(&root)?;
+        let delivery = Delivery { watch: Some(delivery.watch.unwrap_or_default()), ..delivery };
         crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
         crate::validate_basis_root(&root, &request.basis)?;
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
@@ -1070,6 +1072,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::Auto,
             cache_path: Some(cache_path.clone()),
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval }),
             workers: crate::query::Workers::default(),
@@ -1100,6 +1103,42 @@ mod tests {
             crate::PathState::Present { .. }
         ));
         assert!(matches!(session.persist_due(started + interval * 2), SaveOutcome::Skipped));
+    }
+
+    /// A watch keeps its snapshot where one root's report would: a cache directory names
+    /// the file for the session's root, and a start under `On` writes it there (review D9
+    /// on #192).
+    #[test]
+    fn a_watch_names_its_snapshot_in_a_cache_directory() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        std::fs::write(root.path().join("file.txt"), b"content").expect("file");
+        let expected = crate::default_cache_path_in(root.path(), Some(cache.path()))
+            .expect("path")
+            .expect("a directory names a path");
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: ScanConfig::default().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            stale_ok: false,
+            cache: crate::CachePolicy::On,
+            cache_path: None,
+            cache_dir: Some(cache.path().to_path_buf()),
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let _session = Session::start(request, delivery).expect("session");
+        assert!(expected.exists(), "the start wrote where the directory names");
+        assert!(crate::snapshot::load(&expected).expect("read snapshot").is_some());
     }
 
     #[test]
@@ -1139,6 +1178,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::On,
             cache_path: Some(cache_path.clone()),
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval }),
             workers: crate::query::Workers::default(),
@@ -1178,6 +1218,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
             workers: crate::query::Workers::default(),
@@ -1274,6 +1315,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
             workers: crate::query::Workers::default(),
@@ -1326,6 +1368,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
             workers: crate::query::Workers::default(),
@@ -1397,6 +1440,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
             workers: crate::query::Workers::default(),
@@ -1516,6 +1560,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::Auto,
             cache_path: Some(cache.path().join("snapshot")),
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
             workers: crate::query::Workers::default(),
@@ -1558,9 +1603,9 @@ mod tests {
         let setup_race = format!("{:?}", crate::InvalidateReason::WatchSetupRace);
         let errors = &observed_report.status.errors;
         let setup_race_only = !errors.is_empty()
-            && errors.iter().all(|issue| {
-                issue.kind == crate::IssueKind::ObservationGap
-                    && issue.message.ends_with(&setup_race)
+            && errors.iter().all(|detail| {
+                detail.issue.kind == crate::IssueKind::ObservationGap
+                    && detail.issue.message.ends_with(&setup_race)
             });
         assert!(
             observed_report.status.complete || setup_race_only,
@@ -1666,6 +1711,7 @@ mod tests {
             stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
+            cache_dir: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
             workers: crate::query::Workers::default(),

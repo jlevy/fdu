@@ -409,20 +409,47 @@ release is not.
 
 Canonical paths alone miss aliases: on macOS, `/Users` and `/System/Volumes/Data/Users`
 are the same directory through a firmlink, and Linux bind mounts behave the same way.
-On Unix the check compares each root’s device and inode against the chain of every other
-root’s ancestors; elsewhere, and in addition, canonical paths are compared component by
-component. The check is conservative: `fdu / /mnt/usb --one-filesystem` is refused even
-though the scope would not have descended into the second root.
+On Unix the check compares each root’s device and inode against every other root’s and
+against the chain of every other root’s ancestors; elsewhere, and in addition, canonical
+paths are compared component by component.
+The check is conservative: `fdu / /mnt/usb --one-filesystem` is refused even though the
+scope would not have descended into the second root.
+
+What no path or ancestor shows is an inner root that is itself an alias into the outer
+root’s tree: a bind mount, or `/usr/local` beside `/System/Volumes/Data` on macOS, whose
+own ancestors never pass through the outer root (review A3 on #192). On Unix each root’s
+walk therefore compares the directories it enters with the other roots’ identities, on
+every tier: the full and folded indexes keep every directory they entered, a cache-only
+load reads the snapshot’s, and the summary tier, whose fold keeps none, states every
+directory over several roots and checks each as it arrives in a watch beside the fold.
+One root’s fold holds no alias state and checks nothing per entry for it (review D4). A
+snapshot read without touching the tree holds each directory’s identity as of its walk,
+so a match there is refused only after one stat shows the directory is still that root,
+since an inode reused or a device renumbered since could match a root the snapshot never
+reached (review D5). `report_roots` runs the same check over the indexes a caller
+composes, with no filesystem read (review D3). A walk that enters another root refuses
+the report as overlapping, naming both labels and where it met it
+(`RequestError::RootReachedInside`), and the command line exits 2, as for an overlap the
+paths show (review D1); a walk that only lists it, at the scan depth or across a
+filesystem boundary, counted nothing twice and is not refused.
 
 #### Caches
 
 `Delivery.cache_path` names one snapshot file, derived today from the one root.
-A report over several roots takes the cache directory instead (explicit or default), and
-the engine derives each root’s snapshot path with `default_cache_path_in`, the function
-the command line uses for one root.
-A delivery that names a single explicit snapshot file is refused with several roots.
-Each root that defers a snapshot write returns its own pending save, and the caller
-completes them all.
+A report over several roots takes a cache directory instead, as a delivery field,
+`Delivery.cache_dir`, and the engine derives each root’s snapshot path with
+`default_cache_path_in`, the function the command line uses for one root.
+`None` in either field means no cache there, never a default: a surface that caches by
+default passes its resolved default directory (review A4 on #192), and every route
+resolves a directory to its root’s file before it reads or writes
+(`Delivery::for_root`). `plan` counts a directory as a cache location, as the file it
+names would be, so a delivery planned before it is resolved describes the route that
+runs (review D7). A delivery that names a single explicit snapshot file is refused with
+several roots, and one that names both a file and a directory is refused everywhere.
+No root’s snapshot is written until every root has been walked, since the cache
+directory can lie inside a later root, whose walk would then count a write in progress
+(review B3); the writes then run together on at most as many threads as the machine runs
+at once, and the caller joins them in one handle.
 
 #### Execution
 
@@ -582,14 +609,80 @@ Two stacked pull requests on gh-stack, the age column first.
 
 ### Phase 2: Several Roots (second pull request)
 
-- [ ] Named-roots type, labels, validation, overlap refusal by identity
-- [ ] Per-root requests and cache paths; execution retains per-root state; pending
+- [x] Named-roots type, labels, validation, overlap refusal by identity
+- [x] Per-root requests and cache paths; execution retains per-root state; pending
   saves; one progress handle; combined outcome
-- [ ] Accumulate/finalize split for each section and the multi-index reader
-- [ ] Tree assembly with a section total, per-root remainders, and bounds applied once
-- [ ] Root indexes on rows and issues; status, provenance, and note merges
-- [ ] Command line `PATH...` and refusals; Python `report(paths)`; parity shim
-- [ ] Goldens over two fixtures, the path-independence cases, docs
+- [x] Accumulate/finalize split for each section and the multi-index reader
+- [x] Tree assembly with a section total, per-root remainders, and bounds applied once
+- [x] Root indexes on rows and issues; status, provenance, and note merges
+- [x] Command line `PATH...` and refusals; Python `report(paths)`; parity shim
+- [x] Goldens over two fixtures, the path-independence cases, docs
+- [x] The performance guard for one root and the cost of many roots (below)
+
+**Performance.** Two measurements on macOS, both on an uncontrolled host at a load
+average near three times its ten cores, so both are exploratory.
+One root first, since every surface now reads it through the several-roots reader and
+door (review C1 on #192): H195, registered before the run, predicted wall non-inferior
+at +3% on every job the refactor reaches.
+[exp-214](../../experiments/exp-214-macos-h195-one-root-through-the-several-roots-reader-non-inf.md)
+holds it on five jobs, `cold-scan-index` (the placebo), `default-tree`,
+`index-second-report`, `content-query`, and `render-json`, with both retained reads flat
+in component, and cannot resolve `aggregate-summary`, `opened-second-report`, or
+`render-yaml` either way; those three rerun on a quiet host with H193 (`fdu-088k`)
+before release. An earlier run at the pre-review head, before the registration, resolved
+nothing
+([exp-215](../../experiments/exp-215-macos-an-early-look-at-one-root-through-the-several-roots-re.md)).
+Then many roots (review C2): H196 put 625 crate directories against their parent, both
+through the several-roots door (`roots-default-tree --child-roots`).
+[exp-216](../../experiments/exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md)
+measured about 2.4 ms a root on the default tree, 1.72 s against 0.23 s for the parent,
+and about 0.9 ms a root on the summary, about eight and three times the estimate.
+So `fdu */` over many small directories is several times slower than `fdu .` over their
+parent; usage says roots are walked one after another, and one walker pool across roots
+is `fdu-ich9`.
+
+Decided during implementation:
+
+- Where the name decides an order (`--sort name`, and every tiebreak), flat rows of
+  different roots rank by label first, then by path, so text that prints `label/path`
+  reads as sorted; ordering by the relative path alone would interleave the roots.
+  Labels that compare equal keep the caller’s order.
+  Each root’s rows are ordered among themselves exactly as alone, which keeps the
+  per-root bound exact for a sorted top-k.
+- A root row keeps the single-root rule that the root’s own time never counts, so
+  `ages/installed` in `fdu ages/installed ages/docs` shows what `fdu ages/installed`
+  shows at its root, not what `fdu ages` shows for `installed/`; a golden pins it.
+- Combined totals that no `u64` holds are refused (`UnrepresentableTotal`), as one
+  root’s already are, so every sum across roots is exact.
+- `TreeStatus::errors` holds `StatusIssue { root, issue }`, an explicit pairing, rather
+  than a parallel list of root positions.
+  A `.gitignore` refusal carries its root as a field instead (`RefusedControl::root`):
+  `Issue` is the engine contract’s, shared with commits and opened roots, so its root
+  goes on a report-level wrapper, while a refusal is the control table’s record inside
+  `ControlCoverage`, which an index and a report share whole, and wrapping it would need
+  a report-level copy of `ControlObservation` (review A9 on #192). Modeling “exactly one
+  of `root` and `roots`” and the tree’s rows as enums is `fdu-couf`, with the one-shot
+  API consolidation (review A10).
+- One root through `prepare_roots_report` is `prepare_report` over the validated
+  canonical path, with the snapshot path derived from the delivery’s cache directory.
+  Validating the roots before the walk means `--stale-ok` over a file now fails as not a
+  directory rather than as a missing snapshot.
+  The refusals keep one root’s old order (review B1 on #192): a root that cannot be
+  resolved, then a delivery no route can carry, then a root that is not a directory,
+  then overlap (`RootsRequest::resolve`, used by the command line and Python).
+  A malformed watch option, which the command line parses, now comes before a missing
+  root, with the rest of the request’s parsing.
+- Every root’s walk reads the canonical path validation resolved, and the read refuses a
+  state built from any other directory (`RootMismatch`, review B2), so a symlink
+  retargeted mid-run cannot put another directory into the report.
+  `report_roots` refuses indexes of different scopes (`RootScopesDiffer`, review B4).
+- A PATH that names a file is still refused, now in the command line’s words with what
+  to type instead:
+  `fdu: notes.txt is a file; fdu reports on directories (to name only the directories here: fdu */)`
+  (review A5 on #192). `fdu *` stops at the first file; accepting a file as a root is
+  `fdu-ejw5`.
+- Roots run one after another, each with its own walker pool; the cost of many small
+  roots against one walk of their parent, and one pool across roots, are `fdu-ich9`.
 
 ## Testing Strategy
 

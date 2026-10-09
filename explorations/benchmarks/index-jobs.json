@@ -30,6 +30,8 @@
     "rich-summary-open-pipeline": "summary",
     "rich-summary-report": "summary",
     "rich-summary-shared-openers": "summary",
+    "roots-default-tree": "default-tree",
+    "roots-summary": "summary",
     "selected-allocated-total": "summary",
     "text-prose": "documents",
     "warm-revalidate": "warm-metadata",

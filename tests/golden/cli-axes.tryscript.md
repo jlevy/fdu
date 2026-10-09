@@ -26,6 +26,7 @@ patterns:
   JSON_SEP: '(?:/|\\\\)'
   MTIME_NS: '-?\d+'
   SCAN_PATH: '[^\r\n]+'
+  OS_ERROR: '[^\r\n]+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   SOURCE: 'cold_scan|warm_revalidate'
   HUMAN_SIZE: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB)'
@@ -918,4 +919,326 @@ $ fdu --cache off --size apparent --kind dir --long ages
      300 B      2mo docs
      200 B       1y old
 ? 0
+```
+
+## Several Roots Report as One
+
+`fdu project extension-levels` is what `fdu project` and `fdu extension-levels` would
+answer, added: a `(total)` row, then each root as a row named by how it was given, with
+every share of the total.
+
+```console
+$ fdu --cache off --size apparent project extension-levels
+██████████   100%       376 B  [AGE]  (total) 11 files (128 B gitignored)
+███████░░░    72%       269 B  [AGE]    project/ 7 files (128 B gitignored)
+███░░░░░░░    34%       128 B  [AGE]      dist/ 1 file (128 B gitignored)
+███░░░░░░░    34%       128 B  [AGE]        acorn-0.1.0.tar.gz (128 B gitignored)
+█░░░░░░░░░    13%        48 B  [AGE]      README.md
+█░░░░░░░░░    10%        36 B  [AGE]      src/ 2 files
+░░░░░░░░░░     5%        18 B  [AGE]        alpha.rs
+░░░░░░░░░░     5%        18 B  [AGE]        omega.rs
+█░░░░░░░░░     7%        28 B  [AGE]      Makefile
+█░░░░░░░░░     6%        23 B  [AGE]      docs/ 1 file
+█░░░░░░░░░     6%        23 B  [AGE]        FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]      .gitignore
+███░░░░░░░    28%       107 B  [AGE]    extension-levels/ 4 files
+█░░░░░░░░░    11%        40 B  [AGE]      archive.tar.gz
+█░░░░░░░░░     9%        32 B  [AGE]      release.v2.zip
+█░░░░░░░░░     7%        25 B  [AGE]      file.c++
+░░░░░░░░░░     3%        10 B  [AGE]      notes.md~
+! note: totals include gitignored sizes
+! perf: took [PERF_TIME] to walk 11 files (376 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+A root row never counts the root’s own time, as one root never does: `ages/installed`
+reads `1y`, what `fdu ages/installed` shows at its root, where `fdu ages` shows its
+`installed/` row at `3d`. The total is the newest activity under any root.
+
+```console
+$ fdu --cache off --size apparent --depth 1 ages/installed ages/docs
+██████████   100%       700 B  2mo  (total) 2 files
+██████░░░░    57%       400 B   1y    ages[SEP]installed/ 1 file
+██████░░░░    57%       400 B   1y      pkg/ 1 file
+████░░░░░░    43%       300 B  2mo    ages[SEP]docs/ 1 file
+████░░░░░░    43%       300 B  2mo      notes.md
+! note: display limits: depth 1
+! tip: show more: --depth=all
+! perf: took [PERF_TIME] to walk 2 files (700 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+Flat rows are bounded once over every root, and text prints each path after its root’s
+label, as `find project extension-levels` does.
+
+```console
+$ fdu --cache off --view files --kind file --sort size --limit 4 --size apparent project extension-levels
+project[SEP]dist[SEP]acorn-0.1.0.tar.gz
+project[SEP]README.md
+extension-levels[SEP]archive.tar.gz
+extension-levels[SEP]release.v2.zip
+! note: display limits: 4 of 11 rows shown
+! tip: show more: --limit=all
+! perf: took [PERF_TIME] to walk 11 files (376 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+By name, rows of different roots order by label and then by path, so the listing reads
+as sorted; by name rather than by size here, since allocated sizes differ by platform.
+
+```console
+$ fdu --cache off --format paths --kind file --sort name project extension-levels
+extension-levels[SEP]archive.tar.gz
+extension-levels[SEP]file.c++
+extension-levels[SEP]notes.md~
+extension-levels[SEP]release.v2.zip
+project[SEP].gitignore
+project[SEP]Makefile
+project[SEP]README.md
+project[SEP]dist[SEP]acorn-0.1.0.tar.gz
+project[SEP]docs[SEP]FAQ.MD
+project[SEP]src[SEP]alpha.rs
+project[SEP]src[SEP]omega.rs
+? 0
+```
+
+Machine formats name the roots in the envelope, where `root` is null, and keep every
+path relative to its root: the tree section has a `total` and one tree per root, each
+carrying its own remainder.
+
+```console
+$ fdu --cache off --view tree --depth all --size apparent --format json ages/installed ages/docs
+{
+  "schema": "fdu.report/11",
+  "generator": "fdu 0.4.0",
+  "root": null,
+  "roots": [
+    {
+      "label": "ages[JSON_SEP]installed",
+      "path": "[SCAN_PATH]"
+    },
+    {
+      "label": "ages[JSON_SEP]docs",
+      "path": "[SCAN_PATH]"
+    }
+  ],
+  "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true,
+      "population": "include"
+    },
+    "analyze": [],
+    "size": "apparent",
+    "sort_metric": null,
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 0,
+    "rules": 0,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
+  "reports": [
+    {
+      "view": "tree",
+      "limits": {"depth": null, "min_share": "1%", "breadth": null, "rows": null},
+      "tree": null,
+      "total": {
+        "bytes": 700,
+        "allocated": [ALLOCATED],
+        "files": 2,
+        "dirs": 1,
+        "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+        "newest_mtime_ns": [MTIME_NS],
+        "mtime_ns": [MTIME_NS],
+        "complete": true,
+        "age_ns": [AGE_NS],
+        "modified_at": "[RFC3339]"
+      },
+      "trees": [
+        {
+          "root": 0,
+          "tree": {
+            "name": "ages[JSON_SEP]installed",
+            "path": "",
+            "kind": "dir",
+            "entry_ignored": false,
+            "bytes": 400,
+            "allocated": [ALLOCATED],
+            "files": 1,
+            "dirs": 1,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": [MTIME_NS],
+            "mtime_ns": [MTIME_NS],
+            "complete": true,
+            "age_ns": [AGE_NS],
+            "modified_at": "[RFC3339]",
+            "truncated": false,
+            "omissions": [],
+            "children": [
+              {
+                "name": "pkg",
+                "path": "pkg",
+                "kind": "dir",
+                "entry_ignored": false,
+                "bytes": 400,
+                "allocated": [ALLOCATED],
+                "files": 1,
+                "dirs": 0,
+                "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+                "newest_mtime_ns": [MTIME_NS],
+                "mtime_ns": [MTIME_NS],
+                "complete": true,
+                "age_ns": [AGE_NS],
+                "modified_at": "[RFC3339]",
+                "truncated": false,
+                "omissions": [],
+                "children": [
+                  {
+                    "name": "index.js",
+                    "path": "pkg[JSON_SEP]index.js",
+                    "kind": "file",
+                    "entry_ignored": false,
+                    "bytes": 400,
+                    "allocated": [ALLOCATED],
+                    "files": 1,
+                    "dirs": 0,
+                    "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+                    "newest_mtime_ns": [MTIME_NS],
+                    "mtime_ns": [MTIME_NS],
+                    "complete": null,
+                    "age_ns": [AGE_NS],
+                    "modified_at": "[RFC3339]",
+                    "truncated": false,
+                    "omissions": [],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          "remainder": null
+        },
+        {
+          "root": 1,
+          "tree": {
+            "name": "ages[JSON_SEP]docs",
+            "path": "",
+            "kind": "dir",
+            "entry_ignored": false,
+            "bytes": 300,
+            "allocated": [ALLOCATED],
+            "files": 1,
+            "dirs": 0,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": [MTIME_NS],
+            "mtime_ns": [MTIME_NS],
+            "complete": true,
+            "age_ns": [AGE_NS],
+            "modified_at": "[RFC3339]",
+            "truncated": false,
+            "omissions": [],
+            "children": [
+              {
+                "name": "notes.md",
+                "path": "notes.md",
+                "kind": "file",
+                "entry_ignored": false,
+                "bytes": 300,
+                "allocated": [ALLOCATED],
+                "files": 1,
+                "dirs": 0,
+                "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+                "newest_mtime_ns": [MTIME_NS],
+                "mtime_ns": [MTIME_NS],
+                "complete": null,
+                "age_ns": [AGE_NS],
+                "modified_at": "[RFC3339]",
+                "truncated": false,
+                "omissions": [],
+                "children": []
+              }
+            ]
+          },
+          "remainder": null
+        }
+      ],
+      "omissions": [],
+      "remainder": null
+    }
+  ]
+}
+? 0
+```
+
+A root equal to or inside another is refused, naming both as given, because its paths
+would count twice; a missing root fails as one root always has.
+
+```console
+$ fdu --cache off project project/src
+! fdu: project[SEP]src is inside project; name one or the other
+? 2
+```
+
+```console
+$ fdu --cache off project ./project/
+! fdu: .[SEP]project is the same directory as project; name one or the other
+? 2
+```
+
+```console
+$ fdu --cache off project missing
+! fdu: I/O error at missing: [OS_ERROR]
+? 1
+```
+
+Every PATH is a directory, so `fdu *` stops at the first file; the refusal names the
+file as given and the command that names only the directories.
+
+```console
+$ fdu --cache off project project/README.md
+! fdu: project[SEP]README.md is a file; fdu reports on directories (to name only the directories here: fdu */)
+? 1
+```
+
+With one root, a delivery no route can carry is refused before the root is found to be a
+file, as it was before several roots existed.
+
+```console
+$ fdu project/README.md --cache off --stale-ok
+! fdu: --stale-ok answers from the snapshot, which --cache off never reads; drop one of them
+? 2
+```
+
+The cache lifecycle acts on one root’s snapshot, so it takes one PATH.
+
+```console
+$ fdu --cache-status project extension-levels
+! fdu: --cache-status takes one PATH; 2 were given
+? 2
 ```

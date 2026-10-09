@@ -333,6 +333,34 @@ across views, and never sum remainders across views whose contents may overlap.
 The tip names each lifted bound once, in a fixed order, as one command line (or one
 call’s keyword arguments on the Python surface).
 
+### Several Roots
+
+A tree over several roots has no single root row.
+Its first row is `(total)`, the merged root rows, at depth zero with no trailing slash
+and a full bar; each root follows one level in, named by its label (`docs/`, `/`, `.`),
+then its own rows. Every share is of the total.
+Each root’s remainder line sits below that root’s rows at its children’s depth, and the
+root rows the row limit cut get one remainder line at the roots’ depth.
+Under `--limit 0` there is no total row, and the one remainder line covers every root,
+as it covers one root.
+The age column is as wide as the widest cell of the whole section: the total row and
+every root’s tree.
+
+```text
+██████████   100%      40 MiB     2m  (total) 1,212 files
+██████░░░░    62%      25 MiB     2m    docs/ 496 files
+█░░░░░░░░░    14%     5.4 MiB             … and 108 more files
+████░░░░░░    38%      15 MiB     2m    src/ 716 files
+```
+
+Flat text, `paths`, and `long` print each path after its root’s label, `docs/guide.md`,
+and a status warning names a path the same way.
+The display-limit note says `below 1% of total`, and a zero total
+`total size is zero, so shares are undefined`. The `perf:` line sums every root’s walk
+and names each root’s tier when they differ: `cold scan (docs), cache only (src)`. The
+progress line names the root being walked and its position, `src (2/3)`, eliding a long
+label and keeping the position whole.
+
 A complete recursive export is a normal use case:
 
 ```shell

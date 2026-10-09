@@ -1,8 +1,9 @@
 """Ask one request through the installed fdu Python package and print a JSON envelope.
 
 Usage: pyrun.py '<job>', where job is
-    {"root": str, "mode": "report" | "open" | "scan", "cache": str, "spec": {...}}
-where cache is a cache policy or "stale-ok", and the caller has set the cache home.
+    {"root": str | list[str], "mode": "report" | "open" | "scan", "cache": str, "spec": {...}}
+where cache is a cache policy or "stale-ok", and the caller has set the cache home. A list
+of roots, which `fdu.report` alone takes, asks one report over several.
 
 The envelope is {"ok": true, "answer": {...}}; {"ok": false, "kind": ..., "error": "..."}
 when the request raised, where kind is "fdu" for fdu.FduError, "refused" for ValueError,

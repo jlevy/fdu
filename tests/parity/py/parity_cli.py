@@ -140,6 +140,8 @@ class Args:
 
     def __init__(self) -> None:
         self.root: str | None = None
+        #: Every PATH, in order; several report as one.
+        self.roots: list[str] = []
         self.scan_depth: int | None = None
         self.one_filesystem = False
         self.gitignore_budget: str | None = None
@@ -294,10 +296,16 @@ def parse_args(argv: list[str]) -> Args:
         else:
             raise UsageError(f"unexpected argument '{token}' found")
 
-    if len(positional) > 1:
-        raise UsageError(f"unexpected argument '{positional[1]}' found")
+    args.roots = positional
     args.root = positional[0] if positional else None
     return args
+
+
+def one_path_for(args: Args, flag: str) -> None:
+    """Refuse a second PATH for a flag that acts on one root, as the command line does."""
+
+    if len(args.roots) > 1:
+        raise UsageError(f"{flag} takes one PATH; {len(args.roots)} were given")
 
 
 def _duration(value: str) -> float:
@@ -541,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cache_status is not None or args.cache_clear is not None:
+        one_path_for(args, "--cache-clear" if args.cache_clear is not None else "--cache-status")
         return run_cache_lifecycle(args)
 
     if args.root is None:
@@ -549,13 +558,15 @@ def main(argv: list[str] | None = None) -> int:
         return _decline("a bare invocation")
 
     if args.watch:
+        one_path_for(args, "--watch")
         return run_watch(args)
 
     # fdu.report, not fdu.open().report(): the command line runs one-shot, retaining the
     # least state the request needs, and a session would retain an index and write a
-    # snapshot the command would not have left behind (fdu-4msv).
+    # snapshot the command would not have left behind (fdu-4msv). Several PATHs are one
+    # report, as on the command line.
     report = fdu.report(
-        args.root or ".",
+        args.roots if len(args.roots) > 1 else args.root,
         build_query(args),
         cache=args.cache,
         stale_ok=args.stale_ok,

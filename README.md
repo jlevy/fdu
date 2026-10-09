@@ -141,6 +141,7 @@ Only `code` and `documents` read file contents; every other view reads metadata 
 | Ten most recently changed working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
 | Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
 | Stay on one filesystem, like `du -x` (macOS and Linux) | `fdu . --one-filesystem` |
+| Several paths as one report, with a total | `fdu docs src` |
 | Machine output | `fdu . --format=json` |
 | Keep the tree live | `fdu . --watch` |
 

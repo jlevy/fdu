@@ -489,7 +489,7 @@ Every option belongs to exactly one axis:
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
+| Scope | What is scanned and cached? | `PATH...`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read beyond what the views imply, and which metrics are measured? | `--analyze` |
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
@@ -510,6 +510,14 @@ observed and cached, so stored state for one scope serves every selection and vi
 that scope; selection filters the retained index at view time and is never part of the
 cache key. That is why narrowing a filter never costs a rescan, and it is the same
 reasoning as tagging ignored entries rather than pruning them.
+
+Several paths are one scope with several disjoint roots, not a new axis: `fdu docs src`
+answers what `fdu docs` and `fdu src` would, added, with every display bound applied
+once to the sum.
+Each root keeps its own identity, snapshot, and `.gitignore` reading, so
+a root answers the same alone and beside others; a root equal to or inside another is
+refused rather than collapsed, because accepting overlap later is additive and changing
+what a total means after release is not.
 
 ### Intuitive by Default, Everything by Composition
 
@@ -651,6 +659,13 @@ The reader therefore receives the whole request, content axis included, and stat
 index retains beyond that request is projected away by the stored-state model before
 anything is rendered.
 
+A report over several roots reads several indexes, one per root, and is still one pure
+reader: `report_roots(indexes, roots, request, generated_at)`. Each section accumulates
+over every index and finalizes once, so shares and bounds are taken over the union, and
+a report over one root is the same reader with one input.
+Pooled statistics such as logical words merge as sufficient statistics inside the
+reader, which is why two rendered reports cannot simply be added afterwards.
+
 ### Fastest Answer the Data Allows, Never Silently Stale
 
 Cache behavior is one explicit policy axis, and every machine-format report carries its
@@ -764,6 +779,8 @@ a listing of paths and nothing else.
 
 A watch run evaluates the same selection and views as a one-shot run, re-applied as
 changes arrive. There is no separate watch grammar to learn.
+A watch keeps one root current: several would need a watcher each and one merged stream,
+so `--watch` refuses a second PATH (`fdu-ijpo` records the design it would need).
 
 A watch session serves only the tiers it keeps current: a tier it cannot maintain, such
 as content analysis without live re-analysis, is refused when the session starts rather

@@ -363,6 +363,97 @@ def test_tree_remainder_keeps_recursive_files_and_nullable_totals() -> None:
     assert report_from_dict(_envelope([_tree_section(None)])).sections[0].remainder is None
 
 
+def test_a_report_over_several_roots_decodes_its_roots_total_and_trees() -> None:
+    node: dict[str, object] = {
+        "name": "src",
+        "path": "",
+        "kind": "dir",
+        "entry_ignored": False,
+        "bytes": 30,
+        "allocated": 4096,
+        "files": 2,
+        "dirs": 0,
+        "ignored": None,
+        "newest_mtime_ns": 5,
+        "mtime_ns": 7,
+        "complete": True,
+        "age_ns": 3,
+        "modified_at": None,
+        "truncated": False,
+        "omissions": [],
+        "children": [],
+    }
+    tree = _tree_section(None)
+    tree["total"] = {
+        "bytes": 40,
+        "allocated": 8192,
+        "files": 3,
+        "dirs": 0,
+        "ignored": None,
+        "newest_mtime_ns": 5,
+        "mtime_ns": 7,
+        "complete": True,
+        "age_ns": 3,
+        "modified_at": "1970-01-01T00:00:00.000000007Z",
+    }
+    tree["trees"] = [{"root": 1, "tree": node, "remainder": None}]
+    files = {
+        "view": "files",
+        "bound": None,
+        "files": [
+            {
+                "root": 1,
+                "path": "a.rs",
+                "kind": "file",
+                "bytes": 30,
+                "allocated": 4096,
+                "mtime_ns": 7,
+                "files": None,
+                "dirs": None,
+                "complete": None,
+                "age_ns": 3,
+                "modified_at": None,
+                "ignored": False,
+                "sort_value": None,
+                "classification": None,
+            }
+        ],
+    }
+    wire = _envelope([tree, files])
+    wire["root"] = None
+    wire["roots"] = [
+        {"label": "docs", "path": "/abs/docs"},
+        {"label": "src", "path": "/abs/src"},
+    ]
+    wire["status"] = {
+        "complete": False,
+        "coverage": {"kind": "partial", "reason": "inaccessible"},
+        "errors": [{"root": 1, "path": "x", "kind": "provider_failure", "message": "denied"}],
+        "errors_omitted": 0,
+    }
+    report = report_from_dict(wire)
+    assert report.root is None
+    assert report.roots == (
+        fdu.ReportRoot(label=Path("docs"), path=Path("/abs/docs")),
+        fdu.ReportRoot(label=Path("src"), path=Path("/abs/src")),
+    )
+    section = report.sections[0]
+    assert isinstance(section, TreeSection)
+    assert section.tree is None
+    assert section.total is not None and section.total.files == 3 and section.total.complete
+    assert section.total.modified_at == datetime(1970, 1, 1, tzinfo=UTC)
+    assert [(tree.root, tree.tree.name) for tree in section.trees] == [(1, "src")]
+    files = report.sections[1]
+    assert isinstance(files, fdu.FilesSection)
+    row = files.files[0]
+    assert row.root == 1
+    assert report.roots[row.root].path / row.path == Path("/abs/src/a.rs")
+    assert report.status.errors[0].root == 1
+    one = report_from_dict(_envelope([_tree_section(None)]))
+    assert one.root == Path("/root") and one.roots is None
+    assert isinstance(one.sections[0], TreeSection) and one.sections[0].trees == ()
+
+
 def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
     depth = 4_000
     node: dict[str, object] = {

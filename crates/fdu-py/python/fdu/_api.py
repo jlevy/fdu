@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -576,7 +577,7 @@ def scan(
 
 
 def report(
-    root: str | Path,
+    root: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
     query: Query | None = None,
     *,
     cache: CachePolicy = CachePolicy.AUTO,
@@ -612,14 +613,25 @@ def report(
     unless ``analysis`` names an analyzer.
 
     Use :func:`open` when you will ask more than one question; the index is the point.
+
+    ``root`` is one directory, or a sequence of disjoint directories reported as one, as
+    ``fdu docs src`` does: sizes, counts, rows, shares, and bounds are taken over all of
+    them, once. A ``str`` or path-like value is one root, never a sequence of characters.
+    Over several roots :attr:`Report.root` is ``None`` and :attr:`Report.roots` names each
+    with its label; every path stays relative to its root, and rows, status errors, and
+    ``.gitignore`` refusals carry the position of that root in ``roots``. A tree has a
+    total and one tree per root. Each root's snapshot lives in ``cache_dir`` where one
+    root's would. Roots that overlap, or an empty sequence, raise
+    :class:`InvalidArgumentError`. :func:`open` and :func:`scan` take one root.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
     analysis_options = analysis if analysis is not None else AnalysisOptions()
     selected = query if query is not None else Query()
+    roots = _roots(root)
     handle = _call(
         _native.report_once,
-        str(root),
+        roots,
         cache=str(cache),
         stale_ok=stale_ok,
         cache_dir=cache_dir,
@@ -647,6 +659,31 @@ def report(
         warnings=tuple(_call(handle.warnings)),
         _renderer=renderer,
     )
+
+
+def _roots(root: object) -> list[str | os.PathLike[str]]:
+    """A report's roots as the native layer takes them: one path, or each of a sequence.
+
+    ``str`` and path-like values are tested first, since a string is itself a sequence and
+    would otherwise become one root per character. ``bytes`` is refused rather than read
+    as either: the report names roots by text, as every path it prints is.
+    """
+
+    if isinstance(root, (str, os.PathLike)):
+        return [cast("str | os.PathLike[str]", root)]
+    if isinstance(root, (bytes, bytearray)) or not isinstance(root, Sequence):
+        raise TypeError(
+            "report root must be a str or os.PathLike, or a sequence of them, "
+            f"not {type(root).__name__}"
+        )
+    roots: list[str | os.PathLike[str]] = []
+    for item in cast("Sequence[object]", root):
+        if not isinstance(item, (str, os.PathLike)):
+            raise TypeError(
+                f"each report root must be a str or os.PathLike, not {type(item).__name__}"
+            )
+        roots.append(cast("str | os.PathLike[str]", item))
+    return roots
 
 
 def watch_rule(at: datetime | int) -> str:

@@ -160,7 +160,7 @@ mod tests {
         };
         let plan = ProgressPlan {
             draw: true,
-            root: "~".to_string(),
+            roots: vec!["~".to_string()],
             color: false,
             size: fdu_core::query::SizeMetric::Allocated,
         };

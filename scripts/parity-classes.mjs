@@ -183,6 +183,20 @@ const sameWatchedViewRefusal = (removed, added) => {
     `${marker}fdu: view ${view} needs ${analyzer} analysis; this index was opened with analyze none`
   );
 };
+// A PATH that names a file: the command line refuses it by the name it was given with a
+// shell remedy, `fdu */`, and Python raises the engine's own refusal at the canonical
+// path. Pinned whole, one line each side, the Python path ending in the given name.
+const FILE_ROOT_REMEDY =
+  /^(! )?fdu: (.+) is a file; fdu reports on directories \(to name only the directories here: fdu \*\/\)$/;
+const FILE_ROOT_REFUSAL = /^(! )?fdu: I\/O error at (.+): scan root is not a directory$/;
+const sameFileRootRefusal = (removed, added) => {
+  const remedy = FILE_ROOT_REMEDY.exec(removed);
+  const refusal = FILE_ROOT_REFUSAL.exec(added);
+  if (!remedy || !refusal || (remedy[1] ?? '') !== (refusal[1] ?? '')) return false;
+  const given = sameSeparator(remedy[2]);
+  const path = sameSeparator(refusal[2]);
+  return path === given || path.endsWith(`/${given}`);
+};
 const usesBoundTip = (line) =>
   /^(! )?tip: /.test(line) &&
   /(?:--min-share|min_share|--depth|depth|--breadth|breadth|--limit|limit)=/.test(line);
@@ -317,6 +331,22 @@ export const CLASSES = [
       removed.length === 1 &&
       added.length === 1 &&
       sameWatchedViewRefusal(removed[0], added[0]),
+  },
+  {
+    id: 'file-root-remedy',
+    title: 'A file PATH is refused on both surfaces; the command line adds a shell remedy',
+    why: [
+      'fdu reports on directories, so a PATH naming a file is refused on both surfaces, with',
+      'the same exit status. The command line words the refusal for `fdu *`, the way',
+      '`du -sh *` is typed: it names the file as given and suggests `fdu */`, which only a',
+      'shell can expand (review A5 on #192). Python raises the engine\'s refusal, OSError at',
+      'the canonical path, since a caller passing a list has no glob to change. Pinned',
+      'whole: one line each side, the Python path ending in the name the command line gave.',
+    ],
+    matches: ({ removed, added }) =>
+      removed.length === 1 &&
+      added.length === 1 &&
+      sameFileRootRefusal(removed[0], added[0]),
   },
 ];
 
