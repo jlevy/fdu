@@ -593,6 +593,9 @@ any recorded step has failed, and 3 while one is skipped or has not run.
 A failed step keeps the worktree and target for inspection until a rerun of it passes.
 
 **Options.** `python3 scripts/release/stability_pass.py --help` lists them all.
+`ARGS` reaches only the driver: every gate and step runs without what `make` exported to
+it, `MAKEFLAGS` and `ARGS` among them, which a gate’s own `make` would otherwise take as
+its arguments.
 
 - `ARGS="--wheels $RELEASE/rehearsal/files"` installs the rehearsal’s own wheel instead
   of building one, which is closer to what users receive.

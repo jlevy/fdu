@@ -32,6 +32,28 @@ CROSS_TARGETS = sp.cross_targets(ROOT)
 # What `make cross-lint` prints for each target it lints.
 CROSS_LINT = "\n".join(f"== clippy: {target}\n    Finished" for target in CROSS_TARGETS)
 PERMISSION_BITS = "FDU_TEST_ALLOW_NO_PERMISSION_BITS"
+# What a maintainer's shell holds for the pass, exported as the release guide says, and
+# what make exports to the recipe that runs this suite (`make check`, `make release-test`).
+# None of it may decide a test, so `Scratch` sets all of it aside.
+MAINTAINER_EXPORTS = {
+    "COMMIT": "0123456789abcdef0123456789abcdef01234567",
+    "RELEASE": "/maintainer/release",
+    "FDU": "/maintainer/fdu",
+    "FDU_BIN": "/maintainer/fdu",
+    "UV_PYTHON": "3.12",
+    "FDU_TEST_ALLOW_NO_NATIVE_WATCH": "1",
+    **{variable: f"/maintainer/{name}" for name, variable in sp.TREE_VARIABLES.items()},
+    sp.PEER_TREES_VARIABLE: os.pathsep.join(["/maintainer/p1", "/maintainer/p2"]),
+    "MAKEFLAGS": " -- ARGS=--target-dir\\ /maintainer/target",
+    "MFLAGS": "-s",
+    "GNUMAKEFLAGS": "--no-print-directory",
+    "MAKELEVEL": "1",
+    "MAKEOVERRIDES": "${-*-command-variables-*-}",
+    "MAKEFILES": "/maintainer/extra.mk",
+    "MAKE_TERMOUT": "/dev/ttys001",
+    "MAKE_TERMERR": "/dev/ttys001",
+    "ARGS": "--target-dir /maintainer/target --min-free-gb 5",
+}
 
 Script = Callable[[list[str], Mapping[str, str]], tuple[int, str]]
 
@@ -164,10 +186,15 @@ class Scratch(unittest.TestCase):
             (self.base / name).mkdir()
 
         # Whether the host declares its permission bits is a test's own choice, not the
-        # environment's the tests happen to run in.
+        # environment's the tests happen to run in; so are the pass's identity, its trees,
+        # and whatever make exported, which a maintainer's shell holds (fdu-ztwr).
         patch = mock.patch.dict(os.environ, {PERMISSION_BITS: "1"})
         patch.start()
         self.addCleanup(patch.stop)
+        for name in [name for name in os.environ if name in MAINTAINER_EXPORTS]:
+            del os.environ[name]
+        for name in [name for name in os.environ if name.startswith("FDU_QA_")]:
+            del os.environ[name]
 
     def tearDown(self) -> None:
         self.scratch.cleanup()
@@ -928,11 +955,13 @@ class RunTests(Scratch):
             "the trees cannot support the probe; its log says why",
         )
 
-    def run_harness(self, script: Script, **trees: Path) -> dict[str, Any]:
+    def run_harness(
+        self, script: Script, host: FakeHost | None = None, **trees: Path
+    ) -> dict[str, Any]:
         self.install(self.base / "work", self.all_but("harness"))
         named = {"small": self.base / "small", "medium": self.base / "medium", **trees}
         more = [part for name, path in named.items() for part in (f"--{name}", path)]
-        status, state = self.run_pass(FakeHost(script=script), "harness", more=more)
+        status, state = self.run_pass(host or FakeHost(script=script), "harness", more=more)
         return {"exit": status, **state["steps"]["harness"]}
 
     def test_a_harness_that_ran_every_phase_passes(self) -> None:
@@ -999,6 +1028,29 @@ class RunTests(Scratch):
         status = quietly(lambda: sp.main([*argv, "--wrap", "flock -s /lock"], host))
         state = json.loads((work / "state.json").read_text(encoding="utf-8"))
         return status, state, host, work
+
+    def test_the_gates_never_see_the_make_that_started_the_pass(self) -> None:
+        # `make release-stability ARGS="--target-dir ..."` exports ARGS and MAKEFLAGS to
+        # the pass; passed on, they made the gates' own make read the pass's options as
+        # theirs: "semver_check.py: error: unrecognized arguments" (fdu-44cd).
+        made = {name: MAINTAINER_EXPORTS[name] for name in sp.MAKE_VARIABLES}
+        with mock.patch.dict(os.environ, {**made, "KEPT": "yes"}):
+            _, state, host, work = self.run_gates()
+        self.assertEqual({state["steps"][gate]["status"] for gate in sp.GATES}, {"passed"})
+        self.assertEqual(len(host.executed), len(sp.GATES))
+        for args, env in host.executed:
+            self.assertEqual(set(env) & set(sp.MAKE_VARIABLES), set(), args)
+            self.assertEqual(env["KEPT"], "yes")
+            self.assertEqual(env["CARGO_TARGET_DIR"], str(work / "target"))
+
+    def test_the_harness_never_sees_the_make_that_started_the_pass(self) -> None:
+        made = {name: MAINTAINER_EXPORTS[name] for name in sp.MAKE_VARIABLES}
+        host = FakeHost(script=harness_script([("sanity", "ok"), ("large", "ok")]))
+        with mock.patch.dict(os.environ, made):
+            self.run_harness(host.script, large=self.base / "large", host=host)
+        ((args, env),) = host.executed
+        self.assertEqual(set(env) & set(sp.MAKE_VARIABLES), set(), args)
+        self.assertEqual(env["FDU_QA_LARGE"], str(self.base / "large"))
 
     def test_the_gates_run_in_the_worktree_with_their_own_target(self) -> None:
         status, state, host, work = self.run_gates()
@@ -1243,6 +1295,60 @@ class GivenWheelTests(Scratch):
             "Wheel-Version: 1.0\nTag: cp312-abi3-macosx_11_0_arm64\n", encoding="utf-8"
         )
         self.assertEqual(sp.installed_wheel(tools, source), source / names[1])
+
+
+class MakeStateTests(Scratch):
+    """
+    No command the pass starts sees the make that started the pass: whatever a step's
+    environment was built from, the real host leaves out what make exports to a recipe.
+    """
+
+    # Prints which of make's variables the command was given, as a JSON list.
+    SHOW = "import json, os, sys; print(json.dumps(sorted(set(os.environ) & set(sys.argv[1:]))))"
+
+    def test_make_s_exported_state_is_left_out_and_nothing_else(self) -> None:
+        given = {**MAINTAINER_EXPORTS, "PATH": "/bin", "CARGO_TARGET_DIR": "/t"}
+        kept = sp.step_environment(given)
+        self.assertEqual(set(kept) & set(sp.MAKE_VARIABLES), set())
+        self.assertEqual(set(given) - set(kept), set(sp.MAKE_VARIABLES))
+        self.assertEqual(kept["PATH"], "/bin")
+        self.assertEqual(kept["FDU_QA_LARGE"], MAINTAINER_EXPORTS["FDU_QA_LARGE"])
+
+    def test_the_real_host_leaves_it_out_of_every_command(self) -> None:
+        made = {name: MAINTAINER_EXPORTS[name] for name in sp.MAKE_VARIABLES}
+        argv = [sys.executable, "-c", self.SHOW, *sp.MAKE_VARIABLES]
+        log = self.base / "step.log"
+        status = sp.Host().execute(
+            argv, cwd=self.base, env={**os.environ, **made}, log=log, header=[]
+        )
+        self.assertEqual((status, sp.body(log)), (0, "[]"))
+        # A command started with the pass's own environment, as `capture` does by default.
+        with mock.patch.dict(os.environ, made):
+            status, output = sp.Host().capture(argv, cwd=self.base)
+        self.assertEqual((status, output.strip()), (0, "[]"))
+
+
+class AmbientEnvironmentTests(unittest.TestCase):
+    """
+    The release guide tells a maintainer to export the pass's identity and trees, and
+    `make check` runs this suite under make: neither may change a verdict here. With
+    `FDU_QA_LARGE` exported, a harness test once failed `make check`'s release tests, and
+    so the stability pass's own `make check` and `make release-rehearse` gates (fdu-ztwr).
+    """
+
+    def test_the_driver_s_tests_pass_whatever_a_maintainer_exported(self) -> None:
+        loader = unittest.defaultTestLoader
+        cases = (ConfigureTests, PrerequisiteTests, RunTests, GivenWheelTests, ReportTests)
+        suite = unittest.TestSuite(loader.loadTestsFromTestCase(case) for case in cases)
+        result = unittest.TestResult()
+        with mock.patch.dict(os.environ, MAINTAINER_EXPORTS):
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                suite.run(result)
+            # Each test sets the exports aside and puts them back.
+            self.assertEqual(os.environ["FDU_QA_LARGE"], MAINTAINER_EXPORTS["FDU_QA_LARGE"])
+        failed = [str(test) for test, _ in [*result.failures, *result.errors]]
+        self.assertEqual(failed, [])
+        self.assertGreater(result.testsRun, 50)
 
 
 class TimeoutTests(Scratch):

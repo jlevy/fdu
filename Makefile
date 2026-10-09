@@ -593,6 +593,8 @@ semver-check:
 # COMMIT to a dated report under $RELEASE/stability; see the Stability Pass section of
 # docs/project/guides/release-process.md. The QA playbook's FDU_QA_* variables name the
 # trees, and ARGS passes its own options, such as ARGS="--only qa" to rerun one stage.
+# ARGS reaches only the driver: it runs each gate's make without the MAKEFLAGS, ARGS, and
+# other state make exports to this recipe, which a sub-make would take as its own.
 release-stability:
 	$(UV) run --no-project --python 3.12 python scripts/release/stability_pass.py $(ARGS)
 

@@ -120,6 +120,21 @@ STOP_GRACE_SECONDS = 5.0
 HARNESS_PHASES = ("sanity", "views", "cache-analyze", "analyze-extra", "watch", "medium", "large")
 # Host preconditions the Makefile reads, and the interpreter pin; the report states each.
 DECLARED = ("FDU_TEST_ALLOW_NO_PERMISSION_BITS", "FDU_TEST_ALLOW_NO_NATIVE_WATCH", "UV_PYTHON")
+# What make exports to the recipe that runs the pass: its flags, which carry command-line
+# variables such as ARGS to every sub-make, its level and terminal hints, extra makefiles,
+# and ARGS itself, the pass's own options. A gate's `make` must start fresh, or it takes
+# them as its own (fdu-44cd), so no step is given any of them.
+MAKE_VARIABLES = (
+    "MAKEFLAGS",
+    "MFLAGS",
+    "GNUMAKEFLAGS",
+    "MAKELEVEL",
+    "MAKEOVERRIDES",
+    "MAKEFILES",
+    "MAKE_TERMOUT",
+    "MAKE_TERMERR",
+    "ARGS",
+)
 # The harness phases that run only when their tree is named, and the variable that names it.
 HARNESS_TREE_PHASES = {"medium": "FDU_QA_MEDIUM", "large": "FDU_QA_LARGE"}
 
@@ -245,6 +260,11 @@ def utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def step_environment(environ: Mapping[str, str]) -> dict[str, str]:
+    """`environ` without what make exported to the pass (`MAKE_VARIABLES`), for a step."""
+    return {name: value for name, value in environ.items() if name not in MAKE_VARIABLES}
+
+
 class Host:
     """Everything the pass asks of the machine, so a test can answer instead."""
 
@@ -259,12 +279,15 @@ class Host:
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
     ) -> tuple[int, str]:
-        """A command's exit status and its output, stdout then stderr; 127 if it cannot start."""
+        """
+        A command's exit status and its output, stdout then stderr; 127 if it cannot start.
+        Without `env` it has the pass's own environment, less make's (`step_environment`).
+        """
         try:
             result = subprocess.run(
                 [str(arg) for arg in argv],
                 cwd=cwd,
-                env=None if env is None else dict(env),
+                env=step_environment(os.environ if env is None else env),
                 capture_output=True,
                 text=True,
                 errors="replace",
@@ -306,7 +329,8 @@ class Host:
         followed, and once more with the exit status when it ends. A command still running
         after `timeout` seconds has its process group stopped, and that is a `StepError`:
         a hung step fails, and the rest of the pass still runs. A descendant that left the
-        group is not stopped, but it cannot hold the pass by holding the pipe."""
+        group is not stopped, but it cannot hold the pass by holding the pipe. Whatever
+        `env` was built from, the command never sees make's (`step_environment`)."""
         command = [str(arg) for arg in argv]
         head = "\n".join([*header, f"== command: {shlex.join(command)}", f"== start: {utc_now()}"])
         write_text_atomic(log, head + "\n", encoding="utf-8")
@@ -317,7 +341,7 @@ class Host:
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
-                env=dict(env),
+                env=step_environment(env),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -875,7 +899,8 @@ class Context:
         return self.work / "logs" / f"{name}.log"
 
     def env(self, **extra: str) -> dict[str, str]:
-        return {**os.environ, **extra}
+        """A step's environment: the pass's own, less make's, with `extra` set."""
+        return {**step_environment(os.environ), **extra}
 
     def execute(
         self,
@@ -1137,7 +1162,7 @@ def candidate_ready(ctx: Context) -> bool:
 def harness(ctx: Context) -> Outcome:
     out = ctx.work / "qa"
     shutil.rmtree(out, ignore_errors=True)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("FDU_QA_")}
+    env = {k: v for k, v in ctx.env().items() if not k.startswith("FDU_QA_")}
     env.update(FDU=str(ctx.fdu), FDU_QA_OUT=str(out))
     for name, variable in TREE_VARIABLES.items():
         if name in ("small", "medium", "medium_analyze", "large"):
