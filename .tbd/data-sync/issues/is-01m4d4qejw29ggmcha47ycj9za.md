@@ -5,14 +5,14 @@ title: Record the 0.4.0 Linux demo from the release candidate and embed it in RE
 kind: task
 status: open
 priority: 1
-version: 6
+version: 7
 labels:
   - release
   - docs
 dependencies: []
 parent_id: is-01m47z5n33np3b15yena1k3hqt
 created_at: 2026-10-08T06:55:32.944Z
-updated_at: 2026-10-09T03:55:36.841Z
+updated_at: 2026-10-09T04:39:01.989Z
 ---
 Maintainer decision 2026-10-07: the 0.4.0 demo video is GitHub-hosted and lands before the tag.
 
@@ -28,4 +28,4 @@ Blocked on disk space: ~1.8-3.8 GiB free on the internal SSD; needs a release bu
 
 ## Notes
 
-2026-10-09: maintainer approved the 140-column, --margin 0, stacked-rows take; committed on #187 as 803046ef (2468x1844, 38.2 s; tree 0.209 s, cold 9.116 s, cached 0.807 s). Close when #187 merges.
+Final take (2026-10-09 21:31): from d0032b35 (#188, no documentation count), 140x48, --margin 0; tree 0.235 s, cold 10.538 s, cached 0.889 s under host load ~10-18 (three re-takes 10.4/9.6/12.8 s gave nothing better; 0.4.0's diagnostic median cold is 9.5 s). MP4 3,784,222 bytes sha256 31e720b35f96fdc060fa5a33bfa7f62856b3bd8e2160bf39b48724b256a604c5 (kept at ~/fdu-release/media/fdu-demo-0.4.0.mp4 and ~/Downloads/fdu-demo-0.4.0-final/); GIF 1,451,807 bytes, 1234x922, sha256 39a54b05f61af4ea1792c7879d65f0646f49620f00a83a5f4fea9df18a98de8b. Maintainer decision: MP4 release-only (declared by digest in docs/media/fdu-demo.json), GIF in repo.
