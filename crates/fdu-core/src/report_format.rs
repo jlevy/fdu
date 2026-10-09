@@ -74,7 +74,7 @@ use crate::query::{
     CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MONTH_SECONDS, MetricGroup,
     MetricRow, MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow,
     TierState, TreeNode, TypeRow, ViewSpec, YEAR_SECONDS, format_rfc3339, format_rfc3339_nanos,
-    pages,
+    pages, with_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -950,7 +950,7 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
 /// lower-bound maximum rendered as an instant would read as the time it was modified.
 fn emit_instant(sink: &mut impl Sink, nanos: Option<i64>) {
     match nanos {
-        Some(nanos) => emit_scalar(sink, Scalar::Str(&format_rfc3339_nanos(nanos))),
+        Some(nanos) => with_rfc3339_nanos(nanos, |text| emit_scalar(sink, Scalar::Str(text))),
         None => emit_scalar(sink, Scalar::Null),
     }
 }
