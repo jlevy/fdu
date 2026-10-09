@@ -24,6 +24,8 @@
     "markdown-prose": "documents",
     "opened-discovery": "opened-root",
     "opened-second-report": "opened-root",
+    "render-json": "default-tree",
+    "render-yaml": "default-tree",
     "rich-summary-open-pipeline": "summary",
     "rich-summary-report": "summary",
     "rich-summary-shared-openers": "summary",

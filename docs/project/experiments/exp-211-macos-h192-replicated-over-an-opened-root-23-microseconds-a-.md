@@ -40,7 +40,7 @@ experiment:
     warmups: 3
     interleaved: true
     control: "148ef78e probe: main before the age column"
-    candidate: "10ae731f probe: the age column, each directory keeping its newest activity beside its roll-up"
+    candidate: "the exp-210 probe, built from the working tree that became 10ae731f before that commit existed, so only the binary's sha256 ties it to source (review C4 on #191); it predates 1b3ac793 and e25f12e3. The age column, each directory keeping its newest activity beside its roll-up"
     control_binary:
       name: control
       sha256: d2ac70ff129f6c510100a0f58a27677015fec20af2f8d29b732f6e29e2182041
@@ -315,11 +315,11 @@ experiment:
     new_failure_modes: []
     notes: the same change as exp-210
   verdict:
-    decision: accepted
+    decision: rejected
     primary_job: opened-second-report
     primary_metric: component_ns
     change_pct: 17.785
-    reason: "Replicates exp-210 on the same binaries: second tree report over an opened root +17.79% [+15.06%, +21.38%], 23 us, per-row work under the H192 bar; wall -0.80% [-3.83%, +2.54%]; warm-snapshot-load component +1.73% [-5.25%, +13.99%] and wall +0.35% too wide to bound on a loaded host, so exp-210 remains the snapshot-load evidence."
+    reason: "not a speed decision: replicates exp-210 on the same binaries as the cost record of the age column, which ships regardless, held to the per-row bar set after exp-210's run: second tree report over an opened root +17.79% [+15.06%, +21.38%], 23 us; wall -0.80% [-3.83%, +2.54%], so exp-210's +1.56% opened wall did not reproduce; warm-snapshot-load component +1.73% [-5.25%, +13.99%] and wall +0.35% too wide to bound on a loaded host, so exp-210 remains the snapshot-load evidence"
     commit: 10ae731f
     kept: candidate
 ---
@@ -346,7 +346,15 @@ busy. No sample was invalid and the tree was unchanged.
 
 ## Decision
 
-Accepted as a replication of exp-210 under H192’s bar: 23 µs a report over an opened
-root, the same order as exp-210’s 18.5 µs and two orders below the pass’s 4.7 ms.
+Not a speed decision, as exp-210 is not (review C3 on #191): a replication of its cost
+record under the per-row bar, which was set after exp-210 ran, recorded `rejected` as a
+speed claim with the candidate kept, because the age column ships regardless.
+It puts the opened root’s price at 23 µs a report, the same order as exp-210’s 18.5 µs
+and two orders below the pass’s 4.7 ms.
 It does not bound the snapshot load’s maintenance more tightly; exp-210’s +2.21%
 [+0.53%, +2.71%] remains the evidence for that.
+exp-210’s opened-root wall signal, +1.56% [+1.06%, +3.75%], did not reproduce here:
+−0.80% [−3.83%, +2.54%]. The binary is exp-210’s, which predates `1b3ac793` and
+`e25f12e3`;
+[exp-212](exp-212-macos-the-age-column-re-measured-at-the-shipped-head-per-row.md)
+re-measures the shipped head with each binary tied to its commit.

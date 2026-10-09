@@ -40,7 +40,7 @@ experiment:
     warmups: 3
     interleaved: true
     control: "148ef78e probe: main before the age column"
-    candidate: "66652033 probe: the age column, each row aged by a per-report activity pass"
+    candidate: "66652033 probe: the age column, each row aged by a per-report activity pass (the commit was named when recording; only the binary's sha256 was recorded, so nothing ties the binary to it, review C4 on #191)"
     control_binary:
       name: control
       sha256: d2ac70ff129f6c510100a0f58a27677015fec20af2f8d29b732f6e29e2182041
@@ -421,7 +421,7 @@ experiment:
     primary_job: index-second-report
     primary_metric: component_ns
     change_pct: 496.226
-    reason: "Second tree report over a retained Index 0.128 -> 0.789 ms, +496.23% [+451.68%, +964.74%], and over an opened root 0.252 -> 4.92 ms, +1,544.52% [+251.98%, +4,579.65%]: work per entry on every retained report; default-tree wall -2.07% [-12.16%, +9.55%] on a loaded host, peak RSS +10.41% from the per-slot table. Replaced by the maintained per-directory maximum (H192, exp-210)."
+    reason: "Second tree report over a retained Index 0.128 -> 0.789 ms, +496.23% [+451.68%, +964.74%], and over an opened root 0.252 -> 4.92 ms, +1,544.52% [+251.98%, +4,579.65%]: work per entry on every retained report; default-tree wall -2.07% [-12.16%, +9.55%] and peak RSS +10.41% [+4.18%, +14.03%] on a loaded host, the RSS unattributed (the folded default tree's per-slot table is about 85 KB, under 1% of its peak). Replaced by the maintained per-directory maximum (H192, exp-210)."
     commit: "66652033"
     kept: control
 ---
@@ -449,7 +449,13 @@ No sample was invalid and the tree was unchanged.
 - `opened-second-report` component, the same over a settled opened root: 0.252 ms to
   4.92 ms, +1,544.52% [+251.98%, +4,579.65%].
 - `default-tree` wall −2.07% [−12.16%, +9.55%], too wide to bound at +3% on this host;
-  peak RSS +10.41% [+4.18%, +14.03%], the pass’s table with one slot per arena entry.
+  peak RSS +10.41% [+4.18%, +14.03%], which the pass does not explain.
+  `default-tree` answers from the folded index, whose arena holds the 3,427 directories
+  and about 100 kept files, so the pass’s table of one 24-byte slot per arena entry is
+  about 85 KB, under 1% of the 11.8 MB peak; and `index-second-report`, whose table over
+  77,355 slots is about 1.9 MB, moved +1.50% [−4.51%, +9.19%]. The mechanism and the
+  measurement point opposite ways, so the cause is unattributed (review C5 on #191); the
+  load-independent allocation counters (`FDU_COUNTERS=1`) are what would attribute it.
 
 An opened root keeps each directory’s children in a name-keyed map whose order does not
 follow the arena, so its pass touched scattered entries and cost two to three times the
