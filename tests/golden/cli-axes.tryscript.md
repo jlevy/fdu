@@ -983,8 +983,11 @@ extension-levels[SEP]release.v2.zip
 ? 0
 ```
 
+By name, rows of different roots order by label and then by path, so the listing reads
+as sorted; by name rather than by size here, since allocated sizes differ by platform.
+
 ```console
-$ fdu --cache off --format paths --kind file project extension-levels
+$ fdu --cache off --format paths --kind file --sort name project extension-levels
 extension-levels[SEP]archive.tar.gz
 extension-levels[SEP]file.c++
 extension-levels[SEP]notes.md~
