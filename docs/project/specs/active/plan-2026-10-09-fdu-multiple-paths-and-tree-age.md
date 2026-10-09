@@ -146,8 +146,21 @@ proof and takes `complete` from it.
 
 #### Computing it
 
-- **Unfiltered selections** take a new pass in `query_subtrees`, beside `measure`: one
-  post-order traversal by entry id and depth, no paths.
+- **Unfiltered selections over a complete index with no scan depth** read each row’s
+  activity from a maximum the index maintains per directory beside `newest_mtime_ns`:
+  the newest time among every entry beneath the directory, of any kind, including the
+  files a folded index counted without keeping.
+  A row adds its own time unless it is the root.
+  Every subtree is complete there, so the tree reads only the rows it shows.
+  The maximum absorbs an addition or a later time in O(depth), and the stale-max repair
+  that `recompute_newest_upward` already ran for `newest_mtime_ns` rebuilds it after a
+  removal, an earlier file or symlink time, or an earlier directory time.
+  It is kept for the `all` partition alone: an unfiltered selection admits ignored
+  entries, and any other selection folds its activity in `walk`.
+- **Unfiltered selections over an index that may hold an unlisted subtree** (a partial
+  walk, an opened root mid-discovery, a scan depth) take a pass in `query_subtrees`,
+  beside `measure`: one post-order traversal by entry id and depth, no paths, which also
+  supplies the completeness the partial-tree share proof needs.
   A directory’s activity is the maximum of its own time (unless it is the root), its
   non-directory children’s times, its subdirectories’ activity, and its roll-up’s newest
   file, read only when the roll-up counts files.
@@ -162,16 +175,38 @@ boundary) on every directory of a full index, and the fast pass on a folded inde
 `measure` on the full index of the same tree, through the path-independence harness;
 fixtures include empty directories, symlinks, a scan-depth boundary, a failed subtree,
 and a directory whose own time is its newest activity.
+The maintained maximum equals the pass, and `measure` wherever the index keeps every
+file, on every directory: after a detached and a scanner cold walk, on a folded index,
+after a snapshot load, on an opened root once discovery settles and after its refreshes,
+and after each kind of incremental change (a file or symlink time moved either way, the
+newest file removed, a directory time raised and lowered, a kind replaced, a subtree
+removed, a rename). The reference model compares every tree row’s activity with its
+from-scratch definition after every generated step.
 
-The pass adds a traversal to reports that read only pre-computed roll-ups today.
-In the one-shot tier it is small beside the walk; on a retained index (`Index.report`,
-opened roots, watch repaints) it is the whole added cost.
-Both regimes are measured before release (paired `make perf-compare` of the default
-report, and a retained-index report timing at a large entry count).
-If the retained regime regresses measurably, the fallback is an activity maximum
-maintained per directory beside `newest_mtime_ns`, using the stale-max repair that
-`recompute_newest_upward` already implements, at the price of a snapshot fingerprint
-bump.
+The pass came first and served every unfiltered tree, adding a traversal to reports that
+had read only pre-computed roll-ups.
+Paired against the pre-age build on `~/.rustup` (77,355 entries; macOS, M1 Pro, an
+uncontrolled and heavily loaded host), the one-shot default report showed no wall-time
+change, but the retained regime did regress: a second tree report over a retained
+`Index` went from 0.13 ms to 0.79 ms, and over a settled opened root from 0.25 ms to 4.9
+ms. An opened root keeps each directory’s children in a name-keyed map whose order does
+not follow the arena, so its pass touched scattered entries and cost two to three times
+the detached index’s in isolation; the paired figure adds that host’s noise.
+So the maintained maximum replaced the pass wherever every subtree is complete.
+Measured the same way afterwards, the second report is 0.134 ms over a retained `Index`
+(control 0.129 ms) and 0.153 ms over an opened root (control 0.135 ms); what remains is
+the column’s per-row work.
+The default report, a cold walk into an index, and a snapshot load show no wall-time
+change, and the default report no longer holds the pass’s per-slot table (its peak RSS
+regression is gone).
+A snapshot load’s component time moved +2.2% in one run (95% interval +0.5% to +2.7%)
+and +1.7% in a recheck (interval −5.3% to +14.0%): the extra maintenance is within the
++3% non-inferiority margin.
+
+No snapshot fingerprint changes.
+A snapshot stores each entry’s record and no roll-up, and a load rebuilds every roll-up,
+this maximum included, by merging each record into its ancestors, so a snapshot written
+before the change loads to the value a fresh walk computes.
 
 #### Tree nodes and sorting
 

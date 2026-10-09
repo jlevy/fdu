@@ -397,11 +397,14 @@ every matching root, including overlapping ones.
 Opened report budgets charge the subtree-measurement pass as well as selection and
 shaping.
 The default unfiltered tree still reads maintained roll-ups without constructing
-a flat inventory.
-Its age column adds one pass over the index by entry id, without paths:
-each directory’s newest activity counts directories and symlinks, which no roll-up
-keeps, and reads the roll-up’s newest regular file so that a folded index, which kept
-only the largest files as entries, still counts the times of the files it folded.
+a flat inventory. Its age column reads each row’s newest activity from a maximum the
+index maintains per directory beside the roll-up, so a retained index’s repeated reports
+cost their rows, not a pass: it counts directories and symlinks, which the roll-up’s
+files-only recency leaves out, and in a folded index, which kept only the largest files
+as entries, the times of the files it folded.
+That read serves a complete index with no scan depth, where every subtree is complete.
+An index that may hold an unlisted subtree takes one pass over the index by entry id
+instead, without paths, which also proves which subtrees are complete.
 A filtered tree folds the same maximum in its selection walk.
 See [machine output](../../machine-output.md) for age/reference fields and conversion
 rules.

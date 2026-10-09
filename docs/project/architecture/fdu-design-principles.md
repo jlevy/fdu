@@ -545,8 +545,11 @@ milliseconds warm: an unfiltered request reads pre-computed roll-up state direct
 while any selection filter triggers one traversal that re-aggregates what it admits.
 One traversal serves every filtered view in a request.
 The one addition to the unfiltered tier is a tree’s age column: each row’s newest
-activity counts directories and symlinks, which no roll-up keeps, so an unfiltered tree
-takes one pass over the index by entry id, without paths, beside its roll-ups.
+activity counts directories and symlinks, which the roll-up’s files-only recency leaves
+out, so the index maintains that maximum per directory beside its roll-ups and an
+unfiltered tree over a complete index reads it per row.
+Over an index that may hold an unlisted subtree the tree takes one pass by entry id,
+without paths, which also proves completeness.
 A test pins that the two tiers answer identically when the filter admits everything.
 An additional golden and semantic-hash gate pins that a derived summary serializes
 identically to the indexed summary.
