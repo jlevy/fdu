@@ -5,6 +5,8 @@
 //! is a pure function of an [`Index`](crate::Index) and a request, so the CLI, the Rust
 //! API, and the Python bindings all compose the same types rather than reimplementing
 //! selection three times — and so a report can never quietly become a producer of state.
+//! The one read is [`Roots::resolve`], which validates a request's roots before anything
+//! is scanned, as a scan would on reaching each one, and stores nothing.
 
 mod query_glob;
 mod query_report;
@@ -25,9 +27,9 @@ pub use query_report::{
 pub(crate) use query_report::{report_in, report_summary};
 pub(crate) use query_request::Rejection;
 pub use query_request::{
-    Basis, BasisHolder, Delivery, ReadSpec, Request, RequestDefaults, RequestError, RequestSpec,
-    Scope, ScopeAxis, WatchDelivery, Workers, bound_nanos, parse_bound, parse_cache_policy,
-    parse_kind, parse_kinds, parse_size_metric, parse_sort,
+    Basis, BasisHolder, Delivery, NamedRoot, ReadSpec, Request, RequestDefaults, RequestError,
+    RequestSpec, Roots, Scope, ScopeAxis, WatchDelivery, Workers, bound_nanos, parse_bound,
+    parse_cache_policy, parse_kind, parse_kinds, parse_size_metric, parse_sort,
 };
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{

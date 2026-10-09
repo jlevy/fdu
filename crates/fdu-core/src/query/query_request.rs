@@ -204,6 +204,216 @@ impl Basis {
     const UNOBSERVED_LIMITS: ControlLimits = Request::DEFAULTS.control_limits;
 }
 
+/// One root of a report: the path as its caller named it, and the directory it is.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NamedRoot {
+    /// The path as the caller gave it, normalized by its components.
+    ///
+    /// `PathBuf::from_iter(path.components())`: repeated and trailing separators go, and so
+    /// does a `.` anywhere but at the start, while `/` stays `/` and `C:\` stays `C:\`
+    /// rather than becoming an empty string or a drive-relative `C:`. It is what text
+    /// prints before a root-relative path (`docs/guide.md`), as `find docs src` does, and
+    /// what a machine format serializes as `label`, beside `label_raw` when it is not
+    /// UTF-8.
+    pub label: PathBuf,
+    /// The canonical directory, which is what the root's index names
+    /// ([`Index::root_path`](crate::Index::root_path)).
+    pub path: PathBuf,
+}
+
+/// The roots of one report: one or more directories, in the caller's order, none equal to
+/// or inside another.
+///
+/// A report over several roots is the sum of the reports over each, so a path counted under
+/// two roots would count twice, and fdu counts each path once. Collapsing the inner root
+/// instead would guess at intent and change what `.gitignore` applies, since rules are read
+/// only inside the scanned root. So [`Self::resolve`] refuses an overlap, naming both
+/// labels, and refusing is the reversible choice: accepting overlap later adds an answer,
+/// where changing what a total means after release would not.
+///
+/// Built only by [`Self::resolve`], which validates every root before anything is scanned,
+/// so a value of this type is always a valid, disjoint, non-empty list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Roots {
+    roots: Vec<NamedRoot>,
+}
+
+impl Roots {
+    /// Validate and name the roots of one report, in the caller's order.
+    ///
+    /// In order: an empty list is refused ([`RequestError::NoRoots`]); then each root, in
+    /// argument order, must exist and be a directory, failing with the error one root has
+    /// always failed with -- `Error::Io` at the path as given when it cannot be resolved,
+    /// and at the canonical path, as the scanner words it, when it is not a directory; then
+    /// no two may be the same directory ([`RequestError::RootsRepeated`]) or one inside the
+    /// other ([`RequestError::RootsOverlap`]).
+    ///
+    /// The overlap check compares identities as well as paths. Canonical paths miss
+    /// aliases: on macOS `/Users` and `/System/Volumes/Data/Users` are one directory
+    /// through a firmlink, and a Linux bind mount behaves the same way. So on Unix each
+    /// root's device and inode are compared against every other root's and against the
+    /// chain of its ancestors, and everywhere canonical paths are compared component by
+    /// component. Elsewhere only the path comparison runs, so an alias such as a `subst`
+    /// drive goes undetected there. The check is conservative: `/` and `/mnt/usb` overlap
+    /// even under one-filesystem, where the walk would not have descended into the second.
+    ///
+    /// This reads each root's metadata and its ancestors', and nothing else: it validates
+    /// the request's input, as a scan would on reaching each root, before any work is done.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidRequest`](crate::Error::InvalidRequest) for an empty list and for
+    /// overlapping roots; [`Error::Io`](crate::Error::Io) for a root that cannot be
+    /// resolved or is not a directory.
+    pub fn resolve<P: AsRef<Path>>(paths: &[P]) -> crate::Result<Self> {
+        if paths.is_empty() {
+            return Err(crate::Error::InvalidRequest(RequestError::NoRoots));
+        }
+        let mut roots = Vec::with_capacity(paths.len());
+        let mut facts = Vec::with_capacity(paths.len());
+        for given in paths {
+            let given = given.as_ref();
+            let canonical = given.canonicalize().map_err(|error| crate::Error::io(given, error))?;
+            let metadata = std::fs::metadata(&canonical)
+                .map_err(|error| crate::Error::io(&canonical, error))?;
+            if !metadata.is_dir() {
+                // The scanner's own words, so a file root fails as it always has.
+                return Err(crate::Error::io(
+                    &canonical,
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotADirectory,
+                        "scan root is not a directory",
+                    ),
+                ));
+            }
+            facts.push(RootFacts::of(&canonical, &metadata));
+            roots.push(NamedRoot { label: given.components().collect(), path: canonical });
+        }
+        if let Some(overlap) = first_overlap(&facts) {
+            let (outer, inner) = (&roots[overlap.outer], &roots[overlap.inner]);
+            return Err(crate::Error::InvalidRequest(if overlap.same {
+                RequestError::RootsRepeated {
+                    first: outer.label.clone(),
+                    second: inner.label.clone(),
+                }
+            } else {
+                RequestError::RootsOverlap {
+                    inner: inner.label.clone(),
+                    outer: outer.label.clone(),
+                }
+            }));
+        }
+        Ok(Self { roots })
+    }
+
+    /// Every root, in the caller's order.
+    pub fn as_slice(&self) -> &[NamedRoot] {
+        &self.roots
+    }
+
+    /// Every root, in the caller's order.
+    pub fn iter(&self) -> std::slice::Iter<'_, NamedRoot> {
+        self.roots.iter()
+    }
+
+    /// The first root the caller named; the only one of a single-root report.
+    pub fn first(&self) -> &NamedRoot {
+        &self.roots[0]
+    }
+
+    /// Whether there is more than one root, which is when a report's shape changes: rows
+    /// gain a root index, the tree a total row, and text a label before each path.
+    pub fn is_several(&self) -> bool {
+        self.roots.len() > 1
+    }
+}
+
+impl<'a> IntoIterator for &'a Roots {
+    type Item = &'a NamedRoot;
+    type IntoIter = std::slice::Iter<'a, NamedRoot>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.roots.iter()
+    }
+}
+
+/// What the overlap check knows of one root: its canonical path, and on Unix the device
+/// and inode of the root and of each of its ancestors.
+#[derive(Clone, Debug, Default)]
+struct RootFacts {
+    canonical: PathBuf,
+    /// The root's own identity, where the platform has one.
+    identity: Option<(u64, u64)>,
+    /// The identities of its ancestors, nearest first, skipping any that cannot be read.
+    ancestors: Vec<(u64, u64)>,
+}
+
+impl RootFacts {
+    #[cfg(unix)]
+    fn of(canonical: &Path, metadata: &std::fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        Self {
+            canonical: canonical.to_path_buf(),
+            identity: Some((metadata.dev(), metadata.ino())),
+            ancestors: canonical
+                .ancestors()
+                .skip(1)
+                .filter_map(|ancestor| std::fs::metadata(ancestor).ok())
+                .map(|metadata| (metadata.dev(), metadata.ino()))
+                .collect(),
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn of(canonical: &Path, _metadata: &std::fs::Metadata) -> Self {
+        Self { canonical: canonical.to_path_buf(), identity: None, ancestors: Vec::new() }
+    }
+
+    /// Whether this root is the same directory as `other`.
+    fn same_as(&self, other: &Self) -> bool {
+        self.canonical == other.canonical
+            || self.identity.is_some_and(|identity| other.identity == Some(identity))
+    }
+
+    /// Whether this root lies inside `outer`, by path or, through an alias, by identity.
+    fn inside(&self, outer: &Self) -> bool {
+        // `starts_with` compares whole components, so `src-old` is not inside `src`.
+        self.canonical.starts_with(&outer.canonical)
+            || outer.identity.is_some_and(|identity| self.ancestors.contains(&identity))
+    }
+}
+
+/// The first pair of roots, in argument order, that overlap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Overlap {
+    /// The containing root, or the earlier one of two that are the same directory.
+    outer: usize,
+    /// The contained root, or the later one of two that are the same directory.
+    inner: usize,
+    /// Whether the two are one directory rather than one inside the other.
+    same: bool,
+}
+
+/// The first overlapping pair in argument order, or `None` when the roots are disjoint.
+///
+/// A pure function of the facts, so a test can state aliases no host it runs on has.
+fn first_overlap(facts: &[RootFacts]) -> Option<Overlap> {
+    for (a, first) in facts.iter().enumerate() {
+        for (b, second) in facts.iter().enumerate().skip(a + 1) {
+            if first.same_as(second) {
+                return Some(Overlap { outer: a, inner: b, same: true });
+            }
+            if second.inside(first) {
+                return Some(Overlap { outer: a, inner: b, same: false });
+            }
+            if first.inside(second) {
+                return Some(Overlap { outer: b, inner: a, same: false });
+            }
+        }
+    }
+    None
+}
+
 /// How a request is carried out, which never changes what its answer says.
 ///
 /// No `Default`, deliberately. Every field here is a decision its caller has already made,
@@ -1229,6 +1439,22 @@ pub enum RequestError {
         /// The most one report accepts.
         limit: usize,
     },
+    /// A report was asked about no root at all.
+    NoRoots,
+    /// One root lies inside another, so its paths would count twice ([`Roots`]).
+    RootsOverlap {
+        /// The contained root, by its label.
+        inner: PathBuf,
+        /// The containing root, by its label.
+        outer: PathBuf,
+    },
+    /// Two roots are the same directory, by path or through an alias ([`Roots`]).
+    RootsRepeated {
+        /// The earlier of the two, by its label.
+        first: PathBuf,
+        /// The later of the two, by its label.
+        second: PathBuf,
+    },
 }
 
 impl RequestError {
@@ -1326,6 +1552,18 @@ impl RequestError {
             Self::ViewLimit { attempted, limit } => {
                 format!("report request contains {attempted} views or omissions; limit is {limit}")
             }
+            Self::NoRoots => "a report needs at least one root".to_owned(),
+            Self::RootsOverlap { inner, outer } => {
+                format!("{} is inside {}; name one or the other", inner.display(), outer.display())
+            }
+            Self::RootsRepeated { first, second } if first == second => {
+                format!("{} is named twice; name it once", first.display())
+            }
+            Self::RootsRepeated { first, second } => format!(
+                "{} is the same directory as {}; name one or the other",
+                second.display(),
+                first.display()
+            ),
         }
     }
 }
@@ -1982,6 +2220,36 @@ mod tests {
                 RequestError::ViewLimit { attempted: 17, limit: 16 },
                 "report request contains 17 views or omissions; limit is 16",
                 "report request contains 17 views or omissions; limit is 16",
+            ),
+            (
+                RequestError::NoRoots,
+                "a report needs at least one root",
+                "a report needs at least one root",
+            ),
+            (
+                RequestError::RootsOverlap {
+                    inner: PathBuf::from("src/core"),
+                    outer: PathBuf::from("src"),
+                },
+                "src/core is inside src; name one or the other",
+                "src/core is inside src; name one or the other",
+            ),
+            // One spelling twice names it once; two spellings of one directory name both.
+            (
+                RequestError::RootsRepeated {
+                    first: PathBuf::from("docs"),
+                    second: PathBuf::from("docs"),
+                },
+                "docs is named twice; name it once",
+                "docs is named twice; name it once",
+            ),
+            (
+                RequestError::RootsRepeated {
+                    first: PathBuf::from("docs"),
+                    second: PathBuf::from("./docs"),
+                },
+                "./docs is the same directory as docs; name one or the other",
+                "./docs is the same directory as docs; name one or the other",
             ),
         ];
         for (refusal, flags, fields) in cases {
@@ -3125,5 +3393,232 @@ mod tests {
                 limit: crate::MAX_REPORT_VIEWS,
             })
         );
+    }
+
+    /// The refusal `Roots::resolve` returns, or a panic naming what it returned instead.
+    fn roots_refusal<P: AsRef<Path>>(paths: &[P]) -> RequestError {
+        match Roots::resolve(paths) {
+            Err(crate::Error::InvalidRequest(refusal)) => refusal,
+            other => panic!("expected a request refusal, got {other:?}"),
+        }
+    }
+
+    /// A tree of three directories, `a`, `a/b`, and `c`, under a fresh temporary root.
+    fn roots_fixture() -> (tempfile::TempDir, PathBuf) {
+        let temporary = tempfile::tempdir().expect("tempdir");
+        let base = temporary.path().canonicalize().expect("canonical tempdir");
+        std::fs::create_dir_all(base.join("a/b")).expect("a/b");
+        std::fs::create_dir(base.join("c")).expect("c");
+        (temporary, base)
+    }
+
+    #[test]
+    fn roots_keep_the_callers_order_labels_and_canonical_paths() {
+        let (_temporary, base) = roots_fixture();
+        let roots = Roots::resolve(&[base.join("c"), base.join("a")]).expect("disjoint roots");
+        assert!(roots.is_several());
+        let labels: Vec<_> = roots.iter().map(|root| root.label.clone()).collect();
+        assert_eq!(labels, [base.join("c"), base.join("a")]);
+        assert_eq!(roots.first().path, base.join("c"));
+        assert!(!Roots::resolve(&[base.join("a")]).expect("one root").is_several());
+    }
+
+    /// A label is normalized by its components: separators repeated or trailing go, `/`
+    /// stays itself, and a leading `.` stays because it is how the caller named the root.
+    #[test]
+    fn root_labels_are_normalized_by_their_components() {
+        let (_temporary, base) = roots_fixture();
+        for spelling in ["a/", "a//", "a/./"] {
+            let given = format!("{}/{spelling}", base.display());
+            let roots = Roots::resolve(&[given.as_str()]).expect("a directory");
+            assert_eq!(roots.first().label, base.join("a"), "{spelling}");
+            assert_eq!(roots.first().path, base.join("a"), "{spelling}");
+        }
+        let current = Roots::resolve(&["."]).expect("the working directory");
+        assert_eq!(current.first().label, PathBuf::from("."));
+        assert_eq!(current.first().path, Path::new(".").canonicalize().expect("cwd"));
+        let dotted = Roots::resolve(&["./src/"]).expect("this crate's sources");
+        assert_eq!(dotted.first().label, PathBuf::from("./src"));
+        #[cfg(unix)]
+        {
+            let slash = Roots::resolve(&["/"]).expect("the filesystem root");
+            assert_eq!(slash.first().label, PathBuf::from("/"));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_drive_root_label_stays_whole() {
+        let drive = Roots::resolve(&[r"C:\"]).expect("the system drive");
+        assert_eq!(drive.first().label, PathBuf::from(r"C:\"));
+    }
+
+    #[test]
+    fn a_root_named_twice_is_refused_naming_both_spellings() {
+        let (_temporary, base) = roots_fixture();
+        let a = base.join("a");
+        assert_eq!(
+            roots_refusal(&[&a, &a]),
+            RequestError::RootsRepeated { first: a.clone(), second: a.clone() }
+        );
+        let respelled = PathBuf::from(format!("{}/./a/", base.display()));
+        assert_eq!(
+            roots_refusal(&[&a, &respelled]),
+            RequestError::RootsRepeated { first: a.clone(), second: a.clone() },
+            "one directory spelled two ways normalizes to one label"
+        );
+        let relative = Path::new("./src");
+        assert_eq!(
+            roots_refusal(&[Path::new("src"), relative]),
+            RequestError::RootsRepeated {
+                first: PathBuf::from("src"),
+                second: PathBuf::from("./src")
+            },
+            "a leading `.` is part of the label, so the refusal names both spellings"
+        );
+    }
+
+    #[test]
+    fn a_root_inside_another_is_refused_in_either_order() {
+        let (_temporary, base) = roots_fixture();
+        let (outer, inner) = (base.join("a"), base.join("a/b"));
+        let expected = RequestError::RootsOverlap { inner: inner.clone(), outer: outer.clone() };
+        assert_eq!(roots_refusal(&[&outer, &inner]), expected);
+        assert_eq!(roots_refusal(&[&inner, &outer]), expected);
+        // Whole components: `a` and `ab` are neighbours, not nested.
+        std::fs::create_dir(base.join("ab")).expect("ab");
+        Roots::resolve(&[base.join("a"), base.join("ab")]).expect("a prefix is not a parent");
+        // Conservative: the filesystem root contains every other root.
+        #[cfg(unix)]
+        assert_eq!(
+            roots_refusal(&[Path::new("/"), base.as_path()]),
+            RequestError::RootsOverlap { inner: base.clone(), outer: PathBuf::from("/") }
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_alias_is_the_directory_it_names() {
+        let (_temporary, base) = roots_fixture();
+        std::os::unix::fs::symlink(base.join("a"), base.join("alias")).expect("alias");
+        std::os::unix::fs::symlink(base.join("a/b"), base.join("deep")).expect("deep");
+        assert_eq!(
+            roots_refusal(&[base.join("a"), base.join("alias")]),
+            RequestError::RootsRepeated { first: base.join("a"), second: base.join("alias") }
+        );
+        assert_eq!(
+            roots_refusal(&[base.join("a"), base.join("deep")]),
+            RequestError::RootsOverlap { inner: base.join("deep"), outer: base.join("a") }
+        );
+    }
+
+    /// On macOS, `/System/Volumes/Data` holds the data volume, and firmlinks such as
+    /// `/private` and `/Users` show its directories at the top as well: two paths that
+    /// canonicalize apart and are one directory. Probed rather than assumed, since a
+    /// temporary directory need not sit under a firmlink on every host.
+    #[cfg(unix)]
+    #[test]
+    fn a_firmlink_alias_is_the_directory_it_names_where_the_host_has_one() {
+        use std::os::unix::fs::MetadataExt;
+        let (_temporary, base) = roots_fixture();
+        let relative = base.strip_prefix("/").expect("absolute tempdir");
+        let alias = Path::new("/System/Volumes/Data").join(relative);
+        let identity = |path: &Path| std::fs::metadata(path).map(|m| (m.dev(), m.ino())).ok();
+        if alias == base || identity(&alias).is_none() || identity(&alias) != identity(&base) {
+            eprintln!("skipped: {} is not a firmlink alias on this host", alias.display());
+            return;
+        }
+        assert_eq!(
+            roots_refusal(&[base.as_path(), alias.as_path()]),
+            RequestError::RootsRepeated { first: base.clone(), second: alias.clone() }
+        );
+        assert_eq!(
+            roots_refusal(&[base.as_path(), alias.join("a").as_path()]),
+            RequestError::RootsOverlap { inner: alias.join("a"), outer: base.clone() }
+        );
+    }
+
+    /// A bind mount, or any alias, as identities: no host need have one for the rule to be
+    /// pinned.
+    #[test]
+    fn the_overlap_check_compares_identities_as_well_as_paths() {
+        let facts = |canonical: &str, identity: (u64, u64), ancestors: &[(u64, u64)]| RootFacts {
+            canonical: PathBuf::from(canonical),
+            identity: Some(identity),
+            ancestors: ancestors.to_vec(),
+        };
+        let source = facts("/srv/data", (1, 10), &[(1, 3), (1, 2)]);
+        // `/mnt/view` is `/srv/data` bound elsewhere: another path, the same directory.
+        let bound = facts("/mnt/view", (1, 10), &[(1, 4), (1, 2)]);
+        let below = facts("/mnt/view/x", (1, 30), &[(1, 10), (1, 4), (1, 2)]);
+        let elsewhere = facts("/home/me", (1, 40), &[(1, 5), (1, 2)]);
+        assert_eq!(
+            first_overlap(&[source.clone(), bound]),
+            Some(Overlap { outer: 0, inner: 1, same: true })
+        );
+        assert_eq!(
+            first_overlap(&[below.clone(), source.clone()]),
+            Some(Overlap { outer: 1, inner: 0, same: false })
+        );
+        assert_eq!(first_overlap(&[source.clone(), elsewhere.clone()]), None);
+        // Without identities, as off Unix, only the paths decide.
+        let unknown = |canonical: &str| RootFacts {
+            canonical: PathBuf::from(canonical),
+            ..RootFacts::default()
+        };
+        assert_eq!(
+            first_overlap(&[unknown("/srv"), unknown("/srv/data")]),
+            Some(Overlap { outer: 0, inner: 1, same: false })
+        );
+        assert_eq!(first_overlap(&[unknown("/srv/data"), unknown("/srv/data-old")]), None);
+        // The first overlapping pair in argument order is the one named.
+        assert_eq!(
+            first_overlap(&[elsewhere, source, below]),
+            Some(Overlap { outer: 1, inner: 2, same: false })
+        );
+    }
+
+    /// Each root fails as one root always has, in argument order, before any overlap is
+    /// considered: a missing root at the path as given, a file at its canonical path in the
+    /// scanner's words.
+    #[test]
+    fn roots_are_validated_in_order_before_overlap() {
+        let (_temporary, base) = roots_fixture();
+        let missing = base.join("missing");
+        match Roots::resolve(&[base.join("a"), base.join("a"), missing.clone()]) {
+            Err(crate::Error::Io { path, source }) => {
+                assert_eq!(path, missing);
+                assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+            }
+            other => panic!("expected the missing root's error, got {other:?}"),
+        }
+        std::fs::write(base.join("file"), b"x").expect("file");
+        match Roots::resolve(&[base.join("c"), base.join("./file")]) {
+            Err(crate::Error::Io { path, source }) => {
+                assert_eq!(path, base.join("file"));
+                assert_eq!(source.kind(), std::io::ErrorKind::NotADirectory);
+                assert_eq!(source.to_string(), "scan root is not a directory");
+            }
+            other => panic!("expected the file root's error, got {other:?}"),
+        }
+        assert_eq!(roots_refusal::<&Path>(&[]), RequestError::NoRoots);
+    }
+
+    /// A name that is not UTF-8 keeps its bytes in the label, as a path does. Where the
+    /// filesystem refuses such a name (APFS requires UTF-8), there is nothing to test.
+    #[cfg(unix)]
+    #[test]
+    fn a_label_that_is_not_utf8_keeps_its_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let (_temporary, base) = roots_fixture();
+        let name = std::ffi::OsStr::from_bytes(b"caf\xe9");
+        let root = base.join(name);
+        if std::fs::create_dir(&root).is_err() {
+            eprintln!("skipped: this filesystem refuses a name that is not UTF-8");
+            return;
+        }
+        let roots = Roots::resolve(&[&root]).expect("a directory");
+        assert_eq!(roots.first().label.as_os_str().as_bytes(), root.as_os_str().as_bytes());
+        assert!(roots.first().label.to_str().is_none());
     }
 }
