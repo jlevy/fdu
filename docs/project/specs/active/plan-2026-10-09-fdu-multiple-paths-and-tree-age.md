@@ -1,6 +1,6 @@
 # Plan: Several Paths in One Report, and an Age Column in the Tree
 
-**Date:** 2026-10-09 (last updated 2026-10-09, after design review)
+**Date:** 2026-10-09 (last updated 2026-10-09, after design review and review A on #191)
 
 **Author:** fdu project, with Claude Opus 5.5
 
@@ -44,8 +44,19 @@ $ fdu docs src
   the merge, against the combined total.
 - A report over one root keeps its shape; only the age column and the new age fields
   change it.
-- The default report gets no measurably slower, in either the one-shot or the retained
-  regime.
+- The default one-shot report gets no measurably slower on macOS. On Linux it gives back
+  H185’s measured gain, 3.6% of the default tree on a directory-dense tree, because
+  every route must read directory and symlink times
+  ([below](#every-route-reads-directory-and-symlink-times)); that cost is not yet
+  measured on this build (`fdu-088k`).
+- A retained report pays the column’s per-row work and no work per entry, so its cost
+  grows with the rows it shows, never with the tree beneath them.
+  Measured on macOS, that is +5.8% of the second report’s time over a retained `Index`
+  (7.5 µs) and +13.7% and +17.8% over an opened root (18 and 23 µs), accepted as the
+  column’s cost
+  ([exp-210](../../experiments/exp-210-macos-h192-maintained-activity-leaves-the-age-column-per-row.md),
+  [exp-211](../../experiments/exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md)).
+  Linux is unmeasured.
 
 ## Non-Goals
 
@@ -192,21 +203,56 @@ change, but the retained regime did regress: a second tree report over a retaine
 ms. An opened root keeps each directory’s children in a name-keyed map whose order does
 not follow the arena, so its pass touched scattered entries and cost two to three times
 the detached index’s in isolation; the paired figure adds that host’s noise.
-So the maintained maximum replaced the pass wherever every subtree is complete.
-Measured the same way afterwards, the second report is 0.134 ms over a retained `Index`
-(control 0.129 ms) and 0.153 ms over an opened root (control 0.135 ms); what remains is
-the column’s per-row work.
+That design is recorded as rejected, H191 in
+[exp-209](../../experiments/exp-209-macos-h191-a-per-report-activity-pass-makes-a-retained-tree-.md).
+So the maintained maximum replaced the pass wherever every subtree is complete (H192).
+
+The bar the maintained maximum is held to is that a retained report’s cost grows with
+the rows it shows and not with the entries beneath them; a few microseconds of per-row
+age work is the column’s price, not a regression to remove.
+Measured the same way afterwards
+([exp-210](../../experiments/exp-210-macos-h192-maintained-activity-leaves-the-age-column-per-row.md)),
+the second report is 0.134 ms over a retained `Index` (control 0.129 ms), +5.8% (95%
+interval +2.7% to +7.5%), and 0.153 ms over an opened root (control 0.135 ms), +13.7%
+(+11.7% to +14.7%); a recheck
+([exp-211](../../experiments/exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md))
+put the opened root at +17.8% (+15.1% to +21.4%), 23 µs.
+That is 7 to 23 µs a report, against the 0.66 ms and 4.7 ms the pass added.
 The default report, a cold walk into an index, and a snapshot load show no wall-time
 change, and the default report no longer holds the pass’s per-slot table (its peak RSS
 regression is gone).
-A snapshot load’s component time moved +2.2% in one run (95% interval +0.5% to +2.7%)
-and +1.7% in a recheck (interval −5.3% to +14.0%): the extra maintenance is within the
-+3% non-inferiority margin.
+A snapshot load’s component time moved +2.2% in one run (95% interval +0.5% to +2.7%),
+within the +3% non-inferiority margin, and +1.7% in the recheck, whose interval (−5.3%
+to +14.0%) is too wide to bound it.
+Every figure is from one loaded macOS host; Linux is unmeasured.
 
 No snapshot fingerprint changes.
 A snapshot stores each entry’s record and no roll-up, and a load rebuilds every roll-up,
 this maximum included, by merging each record into its ancestors, so a snapshot written
 before the change loads to the value a fresh walk computes.
+
+#### Every route reads directory and symlink times
+
+A row’s age counts each directory’s and symlink’s own time, so every route has to read
+it. The folded one-shot index, which answers the default tree, did not: since 0.3.0 it
+took H72’s listing policy (H185), taking a directory’s or symlink’s kind from the
+listing’s `d_type` with default attributes, because no tree row read their attributes.
+That applied on Linux, on any other Unix, and on macOS wherever a directory fell back
+from bulk listing to the portable reader.
+There a directory would be aged by its files alone on the default route and by its
+activity on every full-index route, which makes the route part of the answer.
+
+So the folded index stats every child, as the full index does, on the native readers and
+the portable fallback alike.
+The transient summary keeps H72, since its `newest_mtime_ns` is files-only and it reads
+no directory’s or symlink’s attributes.
+The price is H185’s measured gain: −3.55% of the default tree on the directory-dense
+`node-modules-dense` (95% interval −7.85% to −2.57%) and no resolvable change on
+`linux-v6.12`
+([exp-197](../../experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)).
+`fdu-088k` measures what reading them costs on Linux.
+If it matters, taking a directory’s attributes from its own opened descriptor (H179)
+wins the directory half back without changing what an age means.
 
 #### Tree nodes and sorting
 
@@ -526,9 +572,13 @@ Two stacked pull requests on gh-stack, the age column first.
 - **Watch.** A file modified after the session starts shows a non-negative age on the
   next repaint; an idle tree still repaints nothing; a touch inside one age bucket still
   repaints.
-- **Goldens.** Default tree sessions use the existing `AGE` pattern for the column
-  (fixture times are fresh, so ages are never literals); a new session over two fixtures
-  covers the text tree, a flat listing, JSON shape, and the overlap refusal.
+- **Goldens.** Default tree sessions use the existing `AGE` pattern for the column,
+  since their fixture times are fresh.
+  One session stamps a fixture at fixed distances before the run, mid-unit, and pins the
+  ages it reads (`3d`, `2mo`, `1y`) on the folded default tree, the full index
+  `--cache on` builds, and `--long`, including a directory whose own time is its newest
+  activity. A new session over two fixtures covers the text tree, a flat listing, JSON
+  shape, and the overlap refusal.
 - **Parity.** The Python shim replays every new session; no unclassified deviation.
 - **Performance.** Paired one-shot comparison and a retained-index report timing, each
   recorded with its regime.
@@ -537,7 +587,8 @@ Two stacked pull requests on gh-stack, the age column first.
 
 Release 0.5.0 by the release checklist, once both pull requests have landed.
 The release notes name the schema bump, the new column and its definition, the `--long`
-ladder change, the `--sort mtime` change on trees, and the multi-root shape.
+ladder change, the `--sort mtime` change on trees, the Linux default tree’s return to
+reading directory and symlink times, and the multi-root shape.
 
 ## Open Questions
 
