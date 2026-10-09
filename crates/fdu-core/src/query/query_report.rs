@@ -2007,6 +2007,20 @@ fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>) {
     }
 }
 
+impl Report {
+    /// Measure this report's ages from another reference instant, in epoch nanoseconds.
+    ///
+    /// Every age is a function of a row's modification time, its completeness, and the
+    /// reference, so this gives exactly the ages the same read at that reference has. A
+    /// watch session uses it to compare two repaints with the reference held fixed, so
+    /// ages that only grew older do not count as a change.
+    #[cfg(feature = "watch")]
+    pub(crate) fn measure_ages_from(&mut self, reference_ns: Option<i64>) {
+        self.age_reference_ns = reference_ns;
+        measure_ages(&mut self.sections, reference_ns);
+    }
+}
+
 /// One directory's filtered totals in the walk, beside the newest activity its tree row
 /// counts.
 ///

@@ -146,6 +146,41 @@ impl Persistence {
     }
 }
 
+/// Write the exact activity of every row whose age `format` shows into a repaint's
+/// identity: each tree row's `mtime_ns` and `complete`, and a flat row's under `--long`,
+/// the one flat format that prints an age. A rendered age has a unit's resolution, so a
+/// touch that leaves `3m` at `3m` would otherwise repaint nothing; the other formats show
+/// the exact time or none. Whether a row counts, and so what each row shows, already
+/// follows from the rendering.
+fn write_shown_activity(
+    identity: &mut impl std::io::Write,
+    report: &Report,
+    format: crate::report_format::Format,
+) -> std::io::Result<()> {
+    use crate::report_format::Format;
+
+    // Text renders whichever presentation the query asked for.
+    let shown = if format == Format::Text { report.format } else { format };
+    for section in &report.sections {
+        match section {
+            crate::query::Section::Tree { root: Some(root), .. } => {
+                let mut stack = vec![&**root];
+                while let Some(node) = stack.pop() {
+                    writeln!(identity, "{:?} {:?}", node.mtime_ns, node.complete)?;
+                    stack.extend(node.children.iter());
+                }
+            }
+            crate::query::Section::Files { rows, .. } if shown == Format::Long => {
+                for row in rows {
+                    writeln!(identity, "{} {:?}", row.mtime_ns, row.complete)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
     pending && since_last_save >= interval
 }
@@ -299,7 +334,9 @@ impl Session {
     ///
     /// `request` carries its own `now`, fixed when it was built: a watch answers one
     /// request as the tree changes, and a relative time window that slid under it would
-    /// make two repaints answer two different questions.
+    /// make two repaints answer two different questions. The windows were resolved to
+    /// absolute bounds when the request was built, so each repaint can still measure its
+    /// ages from its own instant ([`Self::report`]) without moving them.
     ///
     /// `delivery` is the one its caller opened the index under. It is taken rather than
     /// composed here because the cache policy is part of it: a session built against a
@@ -426,9 +463,23 @@ impl Session {
     ///
     /// The same `report` a one-shot run produces, from the same index, which is what
     /// makes "watch is the same query repeated" true rather than aspirational.
+    ///
+    /// Its ages are measured from `generated_at`, the instant the answer is generated,
+    /// not from the instant the session's request was built. A session lives for hours,
+    /// and an age measured from its start makes a file written since read as modified in
+    /// the future. The windows the request selects by do not move: they were resolved to
+    /// absolute bounds when it was built, and only the age reference is re-read.
     pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
-        report(&index, &self.request, generated_at)
+        report(&index, &self.request_at(generated_at), generated_at)
+    }
+
+    /// The session's request, read at `at`: the same question, with its ages measured
+    /// from `at`.
+    fn request_at(&self, at: std::time::SystemTime) -> Request {
+        let mut request = self.request.clone();
+        request.now = at;
+        request
     }
 
     /// The current answer, unless a reader of `format` would see nothing new in it.
@@ -452,6 +503,15 @@ impl Session {
     /// The change records of [`Self::next_batch`] are never deduplicated; only this
     /// repaint is. The first call always answers, and [`Self::report`] always answers.
     ///
+    /// Ages are the one rendered value that moves while the tree stands still: each
+    /// answer measures them from its own instant, so a tree's `3m` becomes `4m` with no
+    /// change at all. The identity measures them from one fixed reference instead, the
+    /// instant the session's request was built, which leaves each row's age a function
+    /// of its activity alone, and adds the exact `mtime_ns` and `complete` of every row
+    /// whose age `format` shows. So an idle tree repaints nothing while its ages roll
+    /// over, and any change in a row's activity repaints, a touch that leaves its age in
+    /// the same unit included.
+    ///
     /// # Errors
     ///
     /// As [`Self::report`], and [`Error::Io`] when `format` cannot render the answer.
@@ -466,6 +526,8 @@ impl Session {
         let mut report = self.report(generated_at)?;
         let pinned = std::time::SystemTime::UNIX_EPOCH;
         let stamped = std::mem::replace(&mut report.provenance.generated_at, pinned);
+        let measured_from = report.age_reference_ns;
+        report.measure_ages_from(crate::query::system_time_to_nanos(self.request.now));
         let mut identity = RepaintDigest::new();
         let rendered =
             crate::report_format::write_with_options(&report, format, options, &mut identity)
@@ -482,8 +544,10 @@ impl Session {
                     {
                         writeln!(identity, "{line}")?;
                     }
-                    Ok(())
+                    identity.end_section();
+                    write_shown_activity(&mut identity, &report, format)
                 });
+        report.measure_ages_from(measured_from);
         report.provenance.generated_at = stamped;
         rendered.map_err(|error| Error::io(&self.request.basis.root, error))?;
         let identity = identity.finish();
@@ -1549,6 +1613,17 @@ mod tests {
         query: Query,
         scan: ScanConfig,
     ) -> (Session, crate::watch::ScriptedSender) {
+        scripted_session_built(root, query, scan, std::time::SystemTime::now())
+    }
+
+    /// [`scripted_session_under`], with its request built at `built`: the instant its
+    /// windows resolve against and its repaint identity measures ages from.
+    fn scripted_session_built(
+        root: &std::path::Path,
+        query: Query,
+        scan: ScanConfig,
+        built: std::time::SystemTime,
+    ) -> (Session, crate::watch::ScriptedSender) {
         let (index, report) = crate::scan::scan_into_index(root, &scan).expect("scan");
         assert!(report.is_complete());
         let request = Request::new(
@@ -1558,7 +1633,7 @@ mod tests {
                 content: crate::content::AnalysisSet::NONE,
             },
             query,
-            std::time::SystemTime::now(),
+            built,
         );
         let delivery = Delivery {
             stale_ok: false,
@@ -1686,6 +1761,103 @@ mod tests {
         sender.send("modify\tbig.txt\n").expect("script a touch");
         assert!(session.next_batch(Duration::from_secs(10)).expect("touch").is_some());
         assert!(json(&mut session).is_some(), "JSON shows the newest modification time");
+    }
+
+    /// The default tree, every row shown, in text.
+    fn tree_query() -> Query {
+        Query {
+            views: vec![crate::query::ViewSpec::Tree],
+            selection: Selection {
+                min_share: Some(crate::query::ShareThreshold::parse("0%").expect("share")),
+                ..Selection::default()
+            },
+            ..Query::default()
+        }
+    }
+
+    /// Each answer measures its ages from its own instant, not the one the session's
+    /// request was built at: a file written since the session started is not modified in
+    /// the future, while the request, and every window it resolved, stays as built.
+    #[test]
+    fn a_repaint_measures_ages_from_its_own_instant() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("a.txt"), b"alpha").expect("a");
+        // Built an hour before anything below happens, as a long session's request is.
+        let built = std::time::SystemTime::now() - Duration::from_secs(3_600);
+        let (mut session, sender) =
+            scripted_session_built(root.path(), tree_query(), ScanConfig::default(), built);
+        assert!(session.changed_report(built, Format::Text, RenderOptions::default()).is_ok());
+
+        std::fs::write(root.path().join("b.txt"), b"bravo").expect("b");
+        sender.send("create\tb.txt\n").expect("script the write");
+        assert!(session.next_batch(Duration::from_secs(10)).expect("write").is_some());
+        let repainted_at = std::time::SystemTime::now();
+        let answer = session
+            .changed_report(repainted_at, Format::Json, RenderOptions::default())
+            .expect("repaint")
+            .expect("a new file repaints");
+        assert_eq!(answer.age_reference_ns, crate::query::system_time_to_nanos(repainted_at));
+        let Some(crate::query::Section::Tree { root: Some(tree), .. }) = answer.sections.first()
+        else {
+            panic!("a tree")
+        };
+        let written = tree.children.iter().find(|row| row.name == "b.txt").expect("the new file");
+        assert!(written.age_ns.is_some_and(|age| age >= 0), "{:?}", written.age_ns);
+        assert!(tree.age_ns.is_some_and(|age| age >= 0), "{:?}", tree.age_ns);
+        assert_eq!(session.request().now, built, "the request stays as it was built");
+        let plain = session.report(repainted_at).expect("report");
+        assert_eq!(plain.age_reference_ns, answer.age_reference_ns, "and so does the plain read");
+    }
+
+    /// An idle tree repaints nothing while its ages roll over, and any change in a row's
+    /// activity repaints, even a touch that leaves its rendered age in the same unit.
+    #[test]
+    fn ages_rolling_over_repaint_nothing_and_activity_always_repaints() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        let file = root.path().join("a.txt");
+        std::fs::write(&file, b"alpha").expect("a");
+        let written = std::time::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .and_then(|handle| handle.set_modified(written))
+            .expect("stamp");
+        // The identity measures ages from the request's instant: a day and an hour after
+        // the file, so a five-second touch leaves it at `1d`.
+        let built = written + Duration::from_secs(25 * 3_600);
+        let (mut session, sender) =
+            scripted_session_built(root.path(), tree_query(), ScanConfig::default(), built);
+        let at = |session: &mut Session, instant| {
+            session.changed_report(instant, Format::Text, RenderOptions::default()).expect("report")
+        };
+        let first = at(&mut session, built).expect("the first answer is always given");
+        let rendered = |report: &Report| {
+            crate::report_format::render(report, Format::Text, false).expect("render")
+        };
+        assert!(rendered(&first).contains("  1d  "), "{}", rendered(&first));
+
+        // Idle, and later: the ages a reader sees have rolled over, the tree has not.
+        let later = built + Duration::from_secs(40 * 86_400);
+        assert!(at(&mut session, later).is_none(), "an idle tree repaints nothing");
+        assert!(rendered(&session.report(later).expect("report")).contains("  1mo  "));
+
+        // A touch inside one unit of the age the identity measures still repaints.
+        touch(&file);
+        sender.send("modify\ta.txt\n").expect("script a touch");
+        assert!(session.next_batch(Duration::from_secs(10)).expect("touch").is_some());
+        let mut held = session.report(later).expect("report");
+        held.measure_ages_from(crate::query::system_time_to_nanos(built));
+        assert!(
+            rendered(&held).contains("  1d  "),
+            "the touch stays in the unit: {}",
+            rendered(&held)
+        );
+        assert!(at(&mut session, later).is_some(), "a change in activity repaints");
+        assert!(at(&mut session, later).is_none(), "and only once");
     }
 
     /// The repaint digest is FNV-1a at 128 bits, and a section boundary is part of what
