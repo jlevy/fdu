@@ -304,7 +304,8 @@ In practice:
 Every release follows the
 [Release Checklist](docs/project/guides/release-process.md#release-checklist).
 The `make release-*` steps read, or write only what can be undone, and an agent may run
-them.
+them. `make release-demo` writes only to a draft release, which can still be edited or
+deleted; publishing it is the irreversible part.
 Tagging, dispatching the publishing run and approving the `release` environment are
 irreversible: approval authorizes registry publication and the workflow’s automatic
 GitHub release announcement.
