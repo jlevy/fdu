@@ -640,9 +640,9 @@ fn prepare_report_internal(
 /// What one root's plan keeps for the read, instead of reading at once.
 enum RootState {
     /// The summary tier's reduction of the walk.
-    Summary(SummaryPart),
+    Summary(Box<SummaryPart>),
     /// A folded index, which answers its one tree and is never returned.
-    Folded(crate::Index),
+    Folded(Box<crate::Index>),
     /// A full index, which a pending save may still be writing from.
     Full(std::sync::Arc<crate::Index>),
 }
@@ -713,7 +713,7 @@ fn run_root(
                 complete,
             };
             Ok(RootRun {
-                state: RootState::Summary(part),
+                state: RootState::Summary(Box::new(part)),
                 pending: PendingSave::none(),
                 performance,
                 diagnostics,
@@ -733,7 +733,7 @@ fn run_root(
             )?;
             debug_assert_eq!(index.scope(), scan_config.scope());
             Ok(RootRun {
-                state: RootState::Folded(index),
+                state: RootState::Folded(Box::new(index)),
                 pending: PendingSave::none(),
                 performance: walked(&scan),
                 diagnostics,
@@ -770,7 +770,7 @@ fn read_states(
         let parts = states
             .into_iter()
             .filter_map(|state| match state {
-                RootState::Summary(part) => Some(part),
+                RootState::Summary(part) => Some(*part),
                 RootState::Folded(_) | RootState::Full(_) => None,
             })
             .collect();
@@ -779,7 +779,7 @@ fn read_states(
     let indexes: Vec<std::sync::Arc<crate::Index>> = states
         .into_iter()
         .map(|state| match state {
-            RootState::Folded(index) => Ok(std::sync::Arc::new(index)),
+            RootState::Folded(index) => Ok(std::sync::Arc::from(index)),
             RootState::Full(index) => Ok(index),
             RootState::Summary(_) => {
                 Err(Error::InvalidRequest(crate::query::RequestError::DeliveryUnsupported {
