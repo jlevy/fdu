@@ -3,9 +3,9 @@ type: is
 id: is-01m4fxankw8s2qrmnnkn3ejs75
 title: "Age: tree nodes carry mtime_ns, complete, age_ns; --sort mtime uses them"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -22,7 +22,11 @@ parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
 hold: null
 hold_until: null
 created_at: 2026-10-09T08:43:57.433Z
-updated_at: 2026-10-09T09:25:43.377Z
+updated_at: 2026-10-09T11:16:01.843Z
 started_at: 2026-10-09T09:25:43.371Z
+closed_at: 2026-10-09T11:16:01.842Z
+close_reason: "Landed in fac3d744: TreeNode gains mtime_ns/complete/age_ns; unfiltered trees read the activity pass, filtered trees fold activity in walk over counted dirs, symlinks, and other entries, completeness from measure() when the index or scope can be partial; tree --sort mtime orders by mtime_ns; newest_mtime_ns keeps its files-only meaning; remainder rows carry no age. make check green at 66652033."
+resolution: null
+duplicate_of: null
 ---
 A tree row's age = newest mtime among the entries it counts (own entry when admitted, every counted entry beneath, any kind; root excluded; none -> no age). Unfiltered: the fast pass. Filtered: fold in walk() over admitted/covered dirs and symlinks as well as files. complete: true over a complete index with no scan depth, else from tree_measurements. TreeNode gains mtime_ns, complete (null for files), age_ns (null when incomplete/empty/unrepresentable); newest_mtime_ns keeps its files-only meaning. Tree --sort mtime orders by mtime_ns.
