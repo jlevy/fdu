@@ -5536,6 +5536,49 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Refreshing a path whose entry was removed, or moved in from outside the tree, also
+    /// re-reads its directory's own time, which moved with it and which no listing in
+    /// the refresh reads: the opened root then ages that directory as a cold walk of the
+    /// same tree does (B1 on #191).
+    #[test]
+    fn a_refresh_ages_its_directory_as_a_cold_walk_does() {
+        use crate::test_support::{stamped_file, wait_past_modification};
+
+        let root = tempfile::tempdir().expect("temp root");
+        let outside = tempfile::tempdir().expect("outside the opened root");
+        stamped_file(&root.path().join("a/old.txt"), b"old", 1_000_000_000);
+        stamped_file(&root.path().join("a/new.txt"), b"new", 1_020_000_000);
+        stamped_file(&outside.path().join("report.pdf"), b"pdf", 990_000_000);
+        wait_past_modification(&root.path().join("a"));
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("opened root");
+        assert_eq!(wait_until_settled(&opened).coverage, crate::Coverage::Complete);
+        let check = |label: &str| {
+            opened
+                .state
+                .index
+                .read_with(|index| {
+                    crate::query::assert_same_as_cold_walk(
+                        index,
+                        root.path(),
+                        &crate::ScanConfig::default(),
+                        label,
+                    );
+                })
+                .expect("read");
+        };
+
+        std::fs::remove_file(root.path().join("a/new.txt")).expect("remove the newest file");
+        opened.refresh(&[PathBuf::from("a/new.txt")]).expect("refresh the removal");
+        check("the newest file removed");
+
+        wait_past_modification(&root.path().join("a"));
+        std::fs::rename(outside.path().join("report.pdf"), root.path().join("a/report.pdf"))
+            .expect("move an old file in");
+        opened.refresh(&[PathBuf::from("a/report.pdf")]).expect("refresh the arrival");
+        check("an old file moved in");
+        opened.close().expect("close");
+    }
+
     #[test]
     fn refresh_classifies_paths_and_collapses_overlapping_walks() {
         let root = tempfile::tempdir().expect("temp root");

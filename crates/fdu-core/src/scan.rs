@@ -6064,6 +6064,7 @@ fn reconcile_target_inner(
     }
 
     if !subtree.as_os_str().is_empty() {
+        push_directory_attributes(target, &root, subtree, &mut batch)?;
         let baseline = target.expectation(subtree)?;
         let absolute = root.join(subtree);
         let (kind, attrs) = match observe_path(&absolute) {
@@ -7264,6 +7265,43 @@ fn remove_known_children(
         }
     }
     flush_reconcile_batch(target, batch, sink, report)
+}
+
+/// Re-read the own attributes of the directory `subtree` lives in, without listing it.
+///
+/// Whatever happened at `subtree` (an entry created, removed, or moved in) moved that
+/// directory's own modification time, and the walk below never reads it: the directory
+/// is outside the subtree. So a refresh of a removed path, or a reconciliation of one a
+/// watch invalidated, left its directory aged by its old time, where a cold walk of the
+/// same tree reads it as just changed (B1 on #191). This joins the walk's first batch, so
+/// the directory's time commits with the subtree's facts.
+///
+/// Only a directory the index holds is refreshed, conditional on the entry it holds, and
+/// only when its attributes moved; a directory that is gone or no longer one is the
+/// business of a walk of it. The root is never read: its own time counts toward no row,
+/// and a cold walk does not record it.
+fn push_directory_attributes(
+    target: &ReconcileTarget<'_>,
+    root: &Path,
+    subtree: &Path,
+    batch: &mut Vec<ObservationOp>,
+) -> Result<()> {
+    let Some(directory) = subtree.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+        return Ok(());
+    };
+    let baseline = target.expectation(directory)?;
+    let PathState::Present { kind: EntryKind::Dir, attrs: held } = baseline.state else {
+        return Ok(());
+    };
+    if let Ok((EntryKind::Dir, attrs)) = observe_path(&root.join(directory)) {
+        if attrs != held {
+            batch.push(ObservationOp::if_state(
+                Op::Upsert { path: directory.to_path_buf(), kind: EntryKind::Dir, attrs },
+                baseline,
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn push_reconcile_upsert(
