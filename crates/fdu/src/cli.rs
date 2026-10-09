@@ -2375,7 +2375,7 @@ mod tests {
         };
         assert!(footer(&observed(1, Vec::new())).contains("; 0 gitignore rules (1 file); "));
         let refused = RefusedControl {
-            path: PathBuf::from(".gitignore"),
+            root: 0, path: PathBuf::from(".gitignore"),
             reason: ControlRefusalReason::LineLimit,
         };
         assert!(

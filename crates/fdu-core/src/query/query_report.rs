@@ -27,7 +27,7 @@ use crate::content::{
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars, newer};
-use crate::query::query_request::{Basis, Request};
+use crate::query::query_request::{Basis, NamedRoot, Request, RequestError, Roots};
 use crate::query::query_selection::{
     Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey,
 };
@@ -1272,7 +1272,10 @@ pub struct ContentReportMetadata {
 /// after exclusions; other entries carry their own metadata. Nested rows may overlap.
 #[derive(Clone, Debug)]
 pub struct FileRow {
-    /// Path relative to the index root.
+    /// Position of the row's root among the report's roots ([`Report::roots`]); 0 for a
+    /// report over one root.
+    pub root: usize,
+    /// Path relative to the row's root.
     pub path: PathBuf,
     /// What the entry is.
     pub kind: EntryKind,
@@ -1331,10 +1334,15 @@ pub enum Section {
         view: ViewSpec,
         /// Bounds resolved before projection.
         limits: TreeDisplayLimits,
-        /// The bounded directory roll-ups.
+        /// The bounded directory roll-ups of a report over one root, or `None` when the row
+        /// limit is zero or the report has several roots.
         root: Option<Box<TreeNode>>,
-        /// The omitted root when the section row limit is zero.
+        /// What the section's top boundary omitted: the root of one root's tree under a
+        /// zero row limit, or the root rows the row limit cut from several roots' trees.
         omissions: Vec<TreeOmission>,
+        /// The rows of a report over several roots, which has no single root node: a total
+        /// and one ordinary tree per root. `None` for a report over one root.
+        roots: Option<Box<RootTrees>>,
     },
     /// A raw-extension view.
     Extensions {
@@ -1370,6 +1378,59 @@ pub enum Section {
     },
     /// A summary view.
     Summary(SummaryRow),
+}
+
+/// The rows of a tree over several roots.
+///
+/// No synthetic node joins the roots: a tree node is an entry, with a kind from the
+/// snapshot's vocabulary, and the total is none. So the section carries the total beside
+/// the trees, and each tree is the one its root alone would have, measured against the
+/// combined total.
+#[derive(Clone, Debug)]
+pub struct RootTrees {
+    /// The first row: every root's totals together, or `None` when the row limit is zero.
+    pub total: Option<TreeTotal>,
+    /// The trees the row limit kept, in display order: the tree sorter's, with each root's
+    /// label as its name.
+    pub trees: Vec<RootTree>,
+}
+
+/// One root's tree in a report over several roots.
+#[derive(Clone, Debug)]
+pub struct RootTree {
+    /// Position of the tree's root among the report's roots.
+    pub root: usize,
+    /// The root's row and what it shows beneath it, named by the root's label, with paths
+    /// relative to the root. Every root is a row, whatever its share, since its caller
+    /// named it; its own bounds are recorded on it as one root's would be.
+    pub tree: TreeNode,
+}
+
+/// The total row of a tree over several roots: the merge of their root rows.
+///
+/// The same values a [`TreeNode`] carries, without the identity of an entry: no path,
+/// name, or kind, because no entry is the total.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TreeTotal {
+    /// Apparent bytes under every root.
+    pub bytes: u64,
+    /// Allocated bytes under every root.
+    pub allocated: u64,
+    /// Files under every root.
+    pub files: u64,
+    /// Directories under every root.
+    pub dirs: u64,
+    /// The ignored part of the totals, or `None` when any root's is unknown.
+    pub ignored: Option<IgnoredTally>,
+    /// The newest regular file under any root ([`TreeNode::newest_mtime_ns`]).
+    pub newest_mtime_ns: Option<i64>,
+    /// The newest activity any root's row counts ([`TreeNode::mtime_ns`]).
+    pub mtime_ns: Option<i64>,
+    /// Whether every root was listed in full.
+    pub complete: bool,
+    /// Signed nanoseconds from [`Self::mtime_ns`] to the report's age reference, on the
+    /// terms of [`TreeNode::age_ns`].
+    pub age_ns: Option<i128>,
 }
 
 impl Section {
@@ -1408,8 +1469,20 @@ pub struct Report {
     pub requested_views: Vec<ViewSpec>,
     /// Resolved views requested but unavailable from this analyzer set.
     pub omitted_views: Vec<ViewSpec>,
-    /// Absolute path of the indexed root.
-    pub root: PathBuf,
+    /// Absolute path of the indexed root of a report over one root, and `None` for a
+    /// report over several, which names them in [`Self::roots`].
+    ///
+    /// Exactly one of the two is set, so a report over one root needs no label and has the
+    /// same shape on every route: a one-shot report, an opened root's, and a watch's.
+    pub root: Option<PathBuf>,
+    /// The roots of a report over several, each with its label and canonical path, in the
+    /// caller's order; `None` for a report over one root.
+    ///
+    /// Every path in the report stays relative to its own root, and rows, status errors,
+    /// and `.gitignore` refusals carry the position of that root here, so
+    /// `roots[row.root].path.join(&row.path)` names an entry exactly. Text prints each
+    /// path after its root's label instead.
+    pub roots: Option<Vec<NamedRoot>>,
     /// Remarks about the report itself, in the order a renderer should print them.
     ///
     /// Facts about what was asked for and what could be answered -- not telemetry about
@@ -1469,6 +1542,17 @@ pub(crate) fn display_notes(
     content: AnalysisSet,
     ignore_rules: &ControlCoverage,
 ) -> (Vec<String>, Vec<String>) {
+    root_display_notes(query, content, ignore_rules, None)
+}
+
+/// [`display_notes`] for a report over the roots `labels` names, which a note that names a
+/// directory puts before it, as text puts a label before every path; `None` for one root.
+fn root_display_notes(
+    query: &Query,
+    content: AnalysisSet,
+    ignore_rules: &ControlCoverage,
+    labels: Option<&[NamedRoot]>,
+) -> (Vec<String>, Vec<String>) {
     let mut notes = Vec::new();
     let mut tips = Vec::new();
     let labels = |views: &[ViewSpec]| views.iter().map(|view| view.label()).collect::<Vec<_>>();
@@ -1495,7 +1579,7 @@ pub(crate) fn display_notes(
             content.union(needed).request_label()
         ));
     }
-    if let Some((note, tip)) = refused_controls_note(ignore_rules, query.axes) {
+    if let Some((note, tip)) = refused_controls_note(ignore_rules, query.axes, labels) {
         notes.push(note);
         tips.extend(tip);
     }
@@ -1555,6 +1639,7 @@ const REFUSED_DIRECTORIES_NAMED: usize = 5;
 fn refused_controls_note(
     ignore_rules: &ControlCoverage,
     axes: &AxisNames,
+    labels: Option<&[NamedRoot]>,
 ) -> Option<(String, Option<String>)> {
     use crate::control::ControlRefusalReason::{Budget, LineLimit};
 
@@ -1604,9 +1689,14 @@ fn refused_controls_note(
     let shown = observed.refusals.len().min(REFUSED_DIRECTORIES_NAMED);
     let mut directories: Vec<String> = observed.refusals[..shown]
         .iter()
-        .map(|refusal| match refusal.path.parent() {
-            Some(parent) if !parent.as_os_str().is_empty() => parent.display().to_string(),
-            _ => ".".to_string(),
+        .map(|refusal| {
+            let parent = refusal.path.parent().filter(|parent| !parent.as_os_str().is_empty());
+            match (labels.and_then(|labels| labels.get(refusal.root)), parent) {
+                (Some(root), Some(parent)) => root.label.join(parent).display().to_string(),
+                (Some(root), None) => root.label.display().to_string(),
+                (None, Some(parent)) => parent.display().to_string(),
+                (None, None) => ".".to_string(),
+            }
         })
         .collect();
     let unnamed = observed.refused.saturating_sub(u64::try_from(shown).unwrap_or(u64::MAX));
@@ -5243,7 +5333,7 @@ mod tests {
                 rules: 0,
                 refused: 1,
                 refusals: vec![RefusedControl {
-                    path: Path::new("vendor").join(".gitignore"),
+                    root: 0, path: Path::new("vendor").join(".gitignore"),
                     reason,
                 }],
             });
@@ -5268,7 +5358,7 @@ mod tests {
                 refused,
                 refusals: (0..crate::MAX_RETAINED_ISSUES)
                     .map(|i| RefusedControl {
-                        path: Path::new(&format!("d{i:02}")).join(".gitignore"),
+                        root: 0, path: Path::new(&format!("d{i:02}")).join(".gitignore"),
                         reason: ControlRefusalReason::Budget,
                     })
                     .collect(),

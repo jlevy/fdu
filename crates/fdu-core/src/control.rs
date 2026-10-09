@@ -201,6 +201,10 @@ enum Verdict {
 /// One control file whose rules an index refused, relative to the index root.
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct RefusedControl {
+    /// Position of the file's root among a report's roots: 0 for an index, which has one
+    /// root, and for a report over one root. A report over several roots sets it, so that
+    /// its root's path joined with [`Self::path`] names the file.
+    pub root: usize,
     /// The refused `.gitignore`.
     pub path: PathBuf,
     /// Which limit refused it.
@@ -663,6 +667,7 @@ impl ControlTable {
     /// Every refused control file and its reason, in governing-directory order.
     pub fn refusals(&self) -> impl ExactSizeIterator<Item = RefusedControl> + '_ {
         self.refused.iter().map(|(directory, reason)| RefusedControl {
+            root: 0,
             path: control_path(directory),
             reason: *reason,
         })
@@ -1531,7 +1536,7 @@ mod tests {
                 rules: 0,
                 refused: 1,
                 refusals: vec![RefusedControl {
-                    path: PathBuf::from("a/.gitignore"),
+                    root: 0, path: PathBuf::from("a/.gitignore"),
                     reason: ControlRefusalReason::Budget,
                 }],
             }
@@ -1617,7 +1622,7 @@ mod tests {
         assert_eq!(
             table.refusals().collect::<Vec<_>>(),
             vec![RefusedControl {
-                path: PathBuf::from("b/.gitignore"),
+                root: 0, path: PathBuf::from("b/.gitignore"),
                 reason: ControlRefusalReason::LineLimit,
             }]
         );
