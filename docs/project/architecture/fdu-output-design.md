@@ -68,17 +68,17 @@ columns right of the file count, so it reads as a breakdown of that tally:
 A row with only a file count stays on one line.
 The count of documentation files, those under a `doc`, `docs`, or `documentation`
 directory or named like a README, CHANGELOG, or CONTRIBUTING file, is in machine output
-only (`detection.flags.documentation`). In DOCUMENTS nearly every file is one, and as a
-line under a document row it read as a measure of the documents themselves.
+only (`detection.flags.documentation`): in DOCUMENTS nearly every file is one, and a
+line under a document row would read as a measure of the documents themselves.
 Stacking makes a row as wide as its widest measure rather than all of them together.
 On one line, the Linux kernel’s DOCUMENTS rows reached 154 columns; stacked, the
 standard output of its `--view code,documents` report is at most 88 columns wide.
-The `perf:` line on standard error is still about 210 columns, and fitting it is open
-work. Every continuation in a section starts at one column, because the label column is
-padded to the section’s widest label.
+The `perf:` line on standard error is about 210 columns.
+Every continuation in a section starts at one column, because the label column is padded
+to the section’s widest label.
 The code overview is a table with a column per measure, so neither its rows nor its
 TOTAL row stack; the grouped views print no total row in text.
-Machine formats are unchanged.
+Stacking is human output only: machine formats keep one record per row.
 
 ## Content Reports and Names
 

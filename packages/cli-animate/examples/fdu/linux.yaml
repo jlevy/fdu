@@ -13,7 +13,7 @@
 # recording measures the drive. The intro states the tree's size and file count for that
 # tag; update it if you clone another.
 # The README demo is made with no background around the window:
-#   cli-animate make examples/fdu/linux.yaml --out out/ --gif --margin 0
+#   cli-animate make packages/cli-animate/examples/fdu/linux.yaml --out out/ --gif --margin 0
 title: "fdu: the Linux kernel, real time"
 # 140 columns fit every result row, since grouped rows stack their measures; only the perf lines wrap.
 terminal: { cols: 140, rows: 48, font_size: 14 }

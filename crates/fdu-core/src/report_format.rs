@@ -1456,8 +1456,8 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
 //
 // The documentation-file count is machine output only (`documentation_files`). It
 // counts files under a doc, docs, or documentation directory or named like a README,
-// CHANGELOG, or CONTRIBUTING file, which in DOCUMENTS is nearly every file, and as a
-// line under a document row it read as a measure of the documents themselves.
+// CHANGELOG, or CONTRIBUTING file, which in DOCUMENTS is nearly every file, and a line
+// under a document row would read as a measure of the documents themselves.
 //
 // The rule that is easy to get wrong: **a column's width is measured on visible text**.
 // `paint` wraps its argument in escape sequences, and a width specifier counts those
