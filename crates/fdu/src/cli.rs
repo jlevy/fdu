@@ -132,7 +132,7 @@ Run `fdu --docs` for setup, libraries, more commands, cache behavior, and the fu
 /// guide, `--help`, and parser describing one command. The two arguments are the
 /// watch example with its note, and the Mode axis's flags.
 macro_rules! docs_guide {
-    ($watch_composition:literal, $mode_flags:literal) => {
+    ($one_path_watch:literal, $watch_composition:literal, $mode_flags:literal) => {
         concat!(
             r"fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 document counts, for the command line, Python, and Rust.
@@ -193,8 +193,11 @@ START HERE
   Several paths are what each would report, added: every size, row, share, and
   bound is over the union, once. The tree starts with a (total) row, each root
   is a row named as given, and flat paths are printed after their root's label.
-  A root inside another, or the same directory twice, is refused. --watch,
-  --cache-status, and --cache-clear take one PATH.
+  Every PATH is a directory; `fdu */` names only the directories here. A root
+  inside another, or the same directory twice, is refused. --cache-status and
+  --cache-clear take one PATH",
+            $one_path_watch,
+            r".
 
   code and documents read file contents; --analyze is the extra control for
   analysis a view does not imply:
@@ -394,6 +397,7 @@ EXIT STATUS
 /// The guide for a command line that can watch.
 #[cfg(feature = "watch")]
 const DOCS: &str = docs_guide!(
+    ", as does --watch",
     "  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 
   --interval throttles rendering only; change detection is event-driven and
@@ -404,7 +408,7 @@ const DOCS: &str = docs_guide!(
 );
 /// The guide for a command line built without `watch`, which names neither of its flags.
 #[cfg(not(feature = "watch"))]
-const DOCS: &str = docs_guide!("", "--cache, --workers");
+const DOCS: &str = docs_guide!("", "", "--cache, --workers");
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -2401,11 +2405,13 @@ mod tests {
             ),
             Some(&roots),
         );
+        // Joined as every text path is, so with `\` on Windows.
+        let shown = |label: &str| Path::new(label).join("a.md").display().to_string();
         assert_eq!(
             labelled,
             [
-                "warn: docs/a.md: Permission denied (os error 13)",
-                "warn: src/a.md: Permission denied (os error 13)",
+                format!("warn: {}: Permission denied (os error 13)", shown("docs")),
+                format!("warn: {}: Permission denied (os error 13)", shown("src")),
             ]
         );
     }

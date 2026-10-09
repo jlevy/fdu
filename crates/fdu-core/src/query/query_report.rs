@@ -8037,7 +8037,9 @@ mod tests {
             Some(roots.as_slice()),
         )
         .expect("a note");
-        assert!(note.ends_with("affected: docs/a, src"), "{note}");
+        // Joined as every text path is, so with `\` on Windows.
+        let affected = format!("affected: {}, src", Path::new("docs").join("a").display());
+        assert!(note.ends_with(&affected), "{note}");
         let many: Vec<String> = (0..40).map(|i| format!("d{i}/.gitignore")).collect();
         let many: Vec<&str> = many.iter().map(String::as_str).collect();
         let ControlCoverage::Observed(bounded) =

@@ -1495,7 +1495,11 @@ fn human_name(name: &str, kind: EntryKind, ignored: Option<bool>, color: bool) -
     } else {
         STYLE_NAME
     };
-    let slash = kind == EntryKind::Dir && !matches!(name, "." | "..") && !name.ends_with('/');
+    // A root's label can already end in a separator: `/`, or a drive root such as `C:\`,
+    // which would otherwise print as `C:\/`. No entry's own name can.
+    let slash = kind == EntryKind::Dir
+        && !matches!(name, "." | "..")
+        && !name.ends_with(['/', std::path::MAIN_SEPARATOR]);
     format!(
         "{}{}",
         paint(&escaped_human(name), style, color),
@@ -5623,6 +5627,11 @@ mod tests {
         );
         assert_eq!(human_name("build", EntryKind::File, None, false), "build");
         assert_eq!(human_name("build", EntryKind::Dir, None, false), "build/");
+        // A root's label that ends in a separator gains no second one: `/`, and a drive
+        // root, which ends in the platform's separator (`C:\` on Windows).
+        assert_eq!(human_name("/", EntryKind::Dir, None, false), "/");
+        let drive = format!("C:{}", std::path::MAIN_SEPARATOR);
+        assert_eq!(human_name(&drive, EntryKind::Dir, None, false), drive);
     }
 
     #[test]
@@ -6194,10 +6203,19 @@ mod tests {
         assert!(compact.contains(r#""files":[{"root":0,"path":"guide.md","#), "{json}");
         assert!(compact.contains(r#"{"root":1,"path":"main.rs","#), "{json}");
         let paths = super::render(&files, Format::Paths, false).expect("paths");
-        assert_eq!(
-            paths,
-            "docs/guide.md\ndocs/sub\ndocs/sub/a.md\nsrc/main.rs\nsrc/sub\nsrc/sub/lib.rs\n"
-        );
+        // Joined by component, as every text path is, so with `\` on Windows.
+        let expected: String = [
+            &["docs", "guide.md"][..],
+            &["docs", "sub"],
+            &["docs", "sub", "a.md"],
+            &["src", "main.rs"],
+            &["src", "sub"],
+            &["src", "sub", "lib.rs"],
+        ]
+        .iter()
+        .map(|parts| format!("{}\n", parts.iter().collect::<PathBuf>().display()))
+        .collect();
+        assert_eq!(paths, expected);
         let one = fixture(&[ViewSpec::Files]);
         let json = super::render(&one, Format::Json, false).expect("json");
         assert!(!json.contains("\"roots\"") && !json.contains("\"root\": 0"), "{json}");
