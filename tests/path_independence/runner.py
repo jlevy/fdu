@@ -900,14 +900,21 @@ class MatrixRun:
                 self.ws.discard(xdg)
                 key = case_key("roots", matrix.CLI_ROUTE, "auto", "first-root-auto", "-", label)
                 verdict = compare(oracle, measured, policy="auto")
-                if verdict.kind == "same" and content_tier_source(measured) != "cached":
-                    # The weakest content source across roots: only a sidecar read for the
-                    # first root makes it `cached`, so anything else means the history
-                    # warmed nothing and the case proved no mix.
+                source = ((measured.answer or {}).get("provenance") or {}).get("source")
+                if verdict.kind == "same" and (
+                    source != "warm_revalidate" or content_tier_source(measured) == "scanned"
+                ):
+                    # The weakest source across roots: the first root's snapshot and sidecar
+                    # make the report a revalidated one, so a cold scan, or a content tier
+                    # read entirely from the files, means the history warmed nothing and the
+                    # case proved no mix.
                     verdict = Verdict(
                         "differs",
-                        ("provenance.tiers.content.source",),
-                        (f"expected cached, got {content_tier_source(measured)}",),
+                        ("provenance.source",),
+                        (
+                            f"expected a warm first root, got {source} / "
+                            f"{content_tier_source(measured)}",
+                        ),
                     )
                 results.append(CaseResult(key, verdict, oracle, measured, history))
 
