@@ -92,8 +92,11 @@ Add `--size=apparent` for logical file lengths.
 
 Each row of a grouped view (`families`, `types`, `languages`, or `documents`) shows a
 size, a percentage, a label, and a file count.
-Any further measure, such as lines, words, files detected as generated or documentation,
-or files not analyzed and why, is a line of its own indented under the file count.
+Any further measure, such as lines, words, files detected as generated or vendored, or
+files not analyzed and why, is a line of its own indented under the file count.
+Structured formats also count each row’s documentation files: those under a `doc`,
+`docs`, or `documentation` directory, or named like a README, CHANGELOG, or CONTRIBUTING
+file.
 
 The percentage column in grouped views normally shows byte share.
 When code analysis is shown by language, it shows code-line share instead.

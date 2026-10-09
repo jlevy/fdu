@@ -58,7 +58,6 @@ The extensionless `Makefile` therefore remains visible as `make`.
 $ fdu --cache off --view types --size apparent project
      128 B   47.6%  archive            1 file
       71 B   26.4%  markdown           2 files
-                                         2 documentation
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file

@@ -818,7 +818,7 @@ class AnswerCheckTests(unittest.TestCase):
             "    34 MiB   78.6%  rst                3,598 files\n"
             f"{indent}745,461 lines (565,334 nonblank, 180,127 blank)\n"
             f"{indent}3,898,406 words (15,593.6 pages)\n"
-            f"{indent}3,597 documentation\n"
+            f"{indent}2 generated\n"
             " 1,010 KiB    1.2%  latex              1 file\n"
             f"{indent}234 lines (228 nonblank, 6 blank)\n"
             f"{indent}1,334 words (5.3 pages)\n"

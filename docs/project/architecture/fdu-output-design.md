@@ -51,8 +51,8 @@ Apply these roles consistently across human report views.
 The grouped views (`types`, `families`, `languages`, and `documents`) share one row
 layout. A row’s first line holds its size, share, label, and file count.
 Each further measure goes on its own line below, in a fixed order: lines with their
-breakdown, words with pages, the generated, vendored, and documentation counts, then
-each coverage reason other than analyzed.
+breakdown, words with pages, the generated and vendored counts, then each coverage
+reason other than analyzed.
 A continuation line leaves the size, share, and label columns blank and starts two
 columns right of the file count, so it reads as a breakdown of that tally:
 
@@ -60,12 +60,16 @@ columns right of the file count, so it reads as a breakdown of that tally:
     39 MiB   77.6%  rst                4,064 files
                                          834,425 lines (633,499 nonblank, 200,926 blank)
                                          4,390,955 words (17,563.8 pages)
-                                         4,063 documentation
    5.0 MiB   12.8%  xml                130 files
                                          84,380 lines (82,696 nonblank, 1,684 blank)
+                                         723,951 words (2,895.8 pages)
 ```
 
 A row with only a file count stays on one line.
+The count of documentation files, those under a `doc`, `docs`, or `documentation`
+directory or named like a README, CHANGELOG, or CONTRIBUTING file, is in machine output
+only (`detection.flags.documentation`). In DOCUMENTS nearly every file is one, and as a
+line under a document row it read as a measure of the documents themselves.
 Stacking makes a row as wide as its widest measure rather than all of them together.
 On one line, the Linux kernel’s DOCUMENTS rows reached 154 columns; stacked, its
 `--view code,documents` report is at most 88 columns wide.
