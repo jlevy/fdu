@@ -3,9 +3,9 @@ type: is
 id: is-01m47z5n33np3b15yena1k3hqt
 title: "Release fdu 0.4.0: notes epilogue + content views imply analysis"
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 29
+version: 30
 labels: []
 dependencies: []
 child_order_hints:
@@ -37,7 +37,11 @@ child_order_hints:
   - is-01m4ftg7y0q3zkgcje4wdvpzfy
   - is-01m4fth9hpx7xx6tdgvqxb0mqf
 created_at: 2026-10-06T06:42:14.754Z
-updated_at: 2026-10-09T07:55:08.724Z
+updated_at: 2026-10-09T08:08:39.950Z
+closed_at: 2026-10-09T08:08:39.932Z
+close_reason: "0.4.0 published 2026-10-09 (tag v0.4.0 on c041ed1c, publishing run 37897343884); crates.io, PyPI, docs.rs, and the GitHub release verified, release record merged in #190 (148ef78e). Release-tooling follow-ups moved to fdu-chcx."
+resolution: null
+duplicate_of: null
 ---
 Bring stack #174 -> #177 (plus the document-shares fix) through review, merge, release prep (version, CHANGELOG date, release notes), the release checklist (stability pass incl. correctness runbook, preflight, rehearsal, body), tag and publish (maintainer go-ahead), and a final demo video from the released build.
 

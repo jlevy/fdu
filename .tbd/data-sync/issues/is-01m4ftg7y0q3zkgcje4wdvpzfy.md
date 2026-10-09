@@ -5,13 +5,13 @@ title: Stability pass reports 'nothing skipped' when Phase 4's subtree analysis 
 kind: bug
 status: open
 priority: 2
-version: 1
+version: 2
 labels:
   - release
   - testing
 dependencies: []
-parent_id: is-01m47z5n33np3b15yena1k3hqt
+parent_id: is-01m48xs24ec44m1prxyt7xany5
 created_at: 2026-10-09T07:54:34.290Z
-updated_at: 2026-10-09T07:54:34.290Z
+updated_at: 2026-10-09T08:08:36.430Z
 ---
 Found while recording 0.4.0 (#190): with FDU_QA_MEDIUM_ANALYZE unset and a medium tree that has Documentation/ but no docs/, the harness's Phase 4 subdirectory --analyze=code check and its reuse check never ran (47 checks against 0.3.0's 49), yet the driver reported 'Nothing failed, and nothing was skipped'. Record it as a skip (exit 3) or default the analyze subtree more robustly (e.g. Documentation/), with a test.

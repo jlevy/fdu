@@ -5,12 +5,12 @@ title: Byte-compare local notes.md with the rehearsal's notes artifact before th
 kind: task
 status: open
 priority: 3
-version: 1
+version: 2
 labels:
   - release
 dependencies: []
-parent_id: is-01m47z5n33np3b15yena1k3hqt
+parent_id: is-01m48xs24ec44m1prxyt7xany5
 created_at: 2026-10-09T06:23:37.238Z
-updated_at: 2026-10-09T06:23:37.238Z
+updated_at: 2026-10-09T08:08:38.756Z
 ---
 Review B B3 on #189 (https://github.com/jlevy/fdu/pull/189#issuecomment-6075575482): a notes mismatch between $RELEASE/notes.md and the workflow's derivation surfaces only after registry publication; compare against announcement-notes-rehearsal-<sha9> in make release-candidate or release-body.
