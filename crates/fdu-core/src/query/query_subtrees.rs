@@ -300,6 +300,39 @@ pub(super) fn maintained_activity(index: &Index, id: EntryId) -> Option<i64> {
     newer(own.flatten(), index.newest_activity_below(id))
 }
 
+/// Assert that the activity `index` maintains is [`activity`]'s on every live directory
+/// and, where the index keeps every file, [`measure`]'s, which reads no roll-up at all.
+///
+/// Checked whatever the index's coverage or scope: a report reads the maintained value
+/// only where every subtree was listed, but the index maintains it everywhere, so a
+/// partial index that later completes must already hold it exactly.
+#[cfg(test)]
+pub(crate) fn assert_maintained_activity(index: &Index, label: &str) {
+    let table = activity(index);
+    let measured =
+        (!index.is_folded()).then(|| measure(index, &Selection::default(), NameIdentity::Native));
+    let mut stack = vec![(PathBuf::new(), EntryId::ROOT)];
+    while let Some((path, id)) = stack.pop() {
+        let maintained = maintained_activity(index, id);
+        let passed = table.get(id).expect("every live directory has a value").newest_ns;
+        assert_eq!(maintained, passed, "{label}: maintained and pass at {}", path.display());
+        if let Some(values) = &measured {
+            let value = values[&id].mtime_ns;
+            assert_eq!(
+                maintained,
+                (value != i64::MIN).then_some(value),
+                "{label}: maintained and measured at {}",
+                path.display()
+            );
+        }
+        for (name, child) in index.children_of(id).expect("a live directory") {
+            if index.kind_of(child) == Some(EntryKind::Dir) {
+                stack.push((path.join(name), child));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,6 +395,14 @@ mod tests {
         directories(index)
             .into_iter()
             .map(|(path, id)| (path, table.get(id).expect("every directory has a value")))
+            .collect()
+    }
+
+    /// The activity every directory maintains with its roll-up, by path.
+    fn maintained(index: &Index) -> BTreeMap<PathBuf, Option<i64>> {
+        directories(index)
+            .into_iter()
+            .map(|(path, id)| (path, maintained_activity(index, id)))
             .collect()
     }
 
@@ -492,6 +533,124 @@ mod tests {
             .expect("read");
     }
 
+    /// The activity each directory maintains stays the pass's through every change the
+    /// apply lane makes: a file written newer and older, the newest file removed, a
+    /// directory's own time raised past everything and lowered back, a symlink's and an
+    /// other entry's time moved both ways, kinds replaced, a subtree removed, and a rename.
+    /// Each step also states the values it expects where the repair is the point.
+    #[test]
+    fn the_maintained_activity_follows_every_kind_of_change() {
+        fn step(index: &mut Index, label: &str, ops: Vec<Op>) {
+            index.apply_ok(&Observation::new(ops));
+            assert_maintained_activity(index, label);
+        }
+        fn newest(index: &Index, path: &str) -> Option<i64> {
+            let id = index.lookup(Path::new(path)).expect("a live directory");
+            maintained_activity(index, id)
+        }
+        let mut index = Index::new("/root");
+        step(
+            &mut index,
+            "initial",
+            vec![
+                upsert("src", EntryKind::Dir, attrs(0, 5)),
+                upsert("src/main.rs", EntryKind::File, attrs(10, 10)),
+                upsert("src/deep", EntryKind::Dir, attrs(0, 6)),
+                upsert("src/deep/a.rs", EntryKind::File, attrs(10, 40)),
+                upsert("src/deep/b.rs", EntryKind::File, attrs(10, 30)),
+                upsert("src/empty", EntryKind::Dir, attrs(0, 20)),
+                upsert("docs", EntryKind::Dir, attrs(0, 4)),
+                upsert("docs/link", EntryKind::Symlink, attrs(0, 50)),
+                upsert("fifo", EntryKind::Other, attrs(0, 15)),
+            ],
+        );
+        assert_eq!(
+            [newest(&index, ""), newest(&index, "src"), newest(&index, "src/empty")],
+            [Some(50), Some(40), Some(20)],
+            "the symlink is the root's newest, and an empty directory's own time is its"
+        );
+
+        step(&mut index, "file newer", vec![upsert("src/main.rs", EntryKind::File, attrs(10, 70))]);
+        assert_eq!(newest(&index, ""), Some(70));
+        step(&mut index, "file older", vec![upsert("src/main.rs", EntryKind::File, attrs(10, 1))]);
+        assert_eq!([newest(&index, ""), newest(&index, "src")], [Some(50), Some(40)]);
+        step(&mut index, "newest file removed", vec![Op::Remove { path: "src/deep/a.rs".into() }]);
+        assert_eq!(newest(&index, "src"), Some(30));
+
+        step(
+            &mut index,
+            "directory raised",
+            vec![upsert("src/deep", EntryKind::Dir, attrs(0, 90))],
+        );
+        assert_eq!(
+            [newest(&index, ""), newest(&index, "src"), newest(&index, "src/deep")],
+            [Some(90), Some(90), Some(90)],
+            "a directory's own time is activity in its row and in every ancestor's"
+        );
+        step(
+            &mut index,
+            "directory lowered",
+            vec![upsert("src/deep", EntryKind::Dir, attrs(0, 2))],
+        );
+        assert_eq!([newest(&index, ""), newest(&index, "src")], [Some(50), Some(30)]);
+
+        step(
+            &mut index,
+            "symlink older",
+            vec![upsert("docs/link", EntryKind::Symlink, attrs(0, 3))],
+        );
+        assert_eq!([newest(&index, ""), newest(&index, "docs")], [Some(30), Some(4)]);
+        step(
+            &mut index,
+            "symlink newer",
+            vec![upsert("docs/link", EntryKind::Symlink, attrs(0, 100))],
+        );
+        step(&mut index, "other newer", vec![upsert("fifo", EntryKind::Other, attrs(0, 200))]);
+        assert_eq!(newest(&index, ""), Some(200));
+        step(&mut index, "other older", vec![upsert("fifo", EntryKind::Other, attrs(0, 0))]);
+        assert_eq!(newest(&index, ""), Some(100));
+
+        step(
+            &mut index,
+            "kinds replaced",
+            vec![
+                upsert("fifo", EntryKind::Dir, attrs(0, 300)),
+                upsert("fifo/inner", EntryKind::File, attrs(1, 7)),
+                upsert("src/deep/b.rs", EntryKind::Symlink, attrs(0, 35)),
+                upsert("src/empty", EntryKind::File, attrs(1, 8)),
+            ],
+        );
+        assert_eq!([newest(&index, ""), newest(&index, "src")], [Some(300), Some(35)]);
+        step(
+            &mut index,
+            "subtrees removed",
+            vec![Op::Remove { path: "fifo".into() }, Op::Remove { path: "docs".into() }],
+        );
+        assert_eq!(newest(&index, ""), Some(35));
+
+        step(
+            &mut index,
+            "rename",
+            vec![
+                Op::Remove { path: "src/deep".into() },
+                upsert("moved", EntryKind::Dir, attrs(0, 3)),
+                upsert("moved/deep", EntryKind::Dir, attrs(0, 2)),
+                upsert("moved/deep/b.rs", EntryKind::Symlink, attrs(0, 35)),
+            ],
+        );
+        assert_eq!(
+            [newest(&index, ""), newest(&index, "src"), newest(&index, "moved")],
+            [Some(35), Some(8), Some(35)]
+        );
+
+        step(
+            &mut index,
+            "everything removed",
+            vec![Op::Remove { path: "src".into() }, Op::Remove { path: "moved".into() }],
+        );
+        assert_eq!(newest(&index, ""), None, "a root holding nothing has no activity");
+    }
+
     /// Write `bytes` bytes to `path`, creating its parents, stamped `seconds` after the
     /// epoch.
     fn stamped_file(path: &Path, bytes: usize, seconds: u64) {
@@ -556,7 +715,12 @@ mod tests {
             assert!(folded.is_folded() && folded.len() < full.len(), "{label}: it folds");
             assert_eq!(fast(&folded), measured(&full), "{label}, {largest_files} kept");
             assert_eq!(fast(&full), measured(&full), "{label}");
+            // The roll-up a folded index maintains counts the files it folded, as the pass
+            // reads them, so it is the full index's too.
+            assert_maintained_activity(&folded, &format!("{label}, {largest_files} kept"));
+            assert_eq!(maintained(&folded), maintained(&full), "{label}, {largest_files} kept");
         }
+        assert_maintained_activity(&full, label);
     }
 
     #[test]
@@ -606,5 +770,42 @@ mod tests {
                 std::panic::resume_unwind(panic);
             }
         }
+    }
+
+    /// Every route that builds an index from a walk or a file maintains the activity the
+    /// pass computes, and the same activity for the same tree: the detached cold walk, the
+    /// scanner's apply lane, a scan-depth boundary, and a snapshot load. The folded index
+    /// and the failed subtree are pinned with the folded pass above.
+    #[test]
+    fn every_route_that_builds_an_index_maintains_the_passs_activity() {
+        let tree = folding_tree();
+        let canonical = tree.path().canonicalize().expect("canonical");
+        let (detached, _) = crate::scan::scan_into_index(&canonical, &crate::ScanConfig::default())
+            .expect("detached walk");
+        assert_maintained_activity(&detached, "detached walk");
+
+        // A walk that leaves ignored entries out applies its listings through the apply
+        // lane, as the opened root and every refresh do, rather than the detached builder.
+        let scanner = crate::ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            ..crate::ScanConfig::default()
+        };
+        let (applied, _) =
+            crate::scan::scan_into_index(&canonical, &scanner).expect("scanner walk");
+        assert!(!applied.is_folded());
+        assert_maintained_activity(&applied, "scanner walk");
+        assert_eq!(maintained(&applied), maintained(&detached), "same tree, same activity");
+
+        let bounded = crate::ScanConfig { max_depth: Some(2), ..crate::ScanConfig::default() };
+        let (shallow, _) =
+            crate::scan::scan_into_index(&canonical, &bounded).expect("bounded walk");
+        assert_maintained_activity(&shallow, "scan depth 2");
+
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot = cache.path().join("tree.fdu");
+        crate::snapshot::save(&detached, &snapshot).expect("save");
+        let loaded = crate::snapshot::load(&snapshot).expect("load").expect("present");
+        assert_maintained_activity(&loaded, "snapshot load");
+        assert_eq!(maintained(&loaded), maintained(&detached), "a load rebuilds it exactly");
     }
 }

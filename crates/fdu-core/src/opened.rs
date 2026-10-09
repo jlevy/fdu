@@ -5486,6 +5486,56 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// Once discovery settles an opened root holds each directory's activity exactly as
+    /// the pass computes it, and keeps it so while refreshes add a newer file, stamp the
+    /// newest file older, and remove a subtree. A tree over a settled root reads it per row.
+    #[test]
+    fn an_opened_root_maintains_the_activity_the_pass_computes() {
+        let root = tempfile::tempdir().expect("temp root");
+        let write = |relative: &str, seconds: u64| {
+            let path = root.path().join(relative);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("parents");
+            std::fs::write(&path, relative.as_bytes()).expect("file");
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .and_then(|file| {
+                    file.set_modified(
+                        std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds),
+                    )
+                })
+                .expect("stamp");
+        };
+        write("a/b/old.txt", 1_000);
+        write("a/new.txt", 2_000);
+        write("c/kept.txt", 1_500);
+        std::fs::create_dir(root.path().join("empty")).expect("empty directory");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("kept.txt", root.path().join("c/link")).expect("symlink");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("opened root");
+        let settled = wait_until_settled(&opened);
+        assert_eq!(settled.coverage, crate::Coverage::Complete);
+        let check = |label: &str| {
+            opened
+                .state
+                .index
+                .read_with(|index| crate::query::assert_maintained_activity(index, label))
+                .expect("read");
+        };
+        check("settled");
+
+        write("a/b/fresh.txt", 3_000);
+        opened.refresh(&[PathBuf::from("a/b/fresh.txt")]).expect("refresh a new file");
+        check("a newer file");
+        write("a/b/fresh.txt", 10);
+        opened.refresh(&[PathBuf::from("a/b/fresh.txt")]).expect("refresh an older stamp");
+        check("the newest file stamped older");
+        std::fs::remove_dir_all(root.path().join("a/b")).expect("remove subtree");
+        opened.refresh(&[PathBuf::from("a/b")]).expect("refresh a removed subtree");
+        check("a subtree removed");
+        opened.close().expect("close");
+    }
+
     #[test]
     fn refresh_classifies_paths_and_collapses_overlapping_walks() {
         let root = tempfile::tempdir().expect("temp root");
