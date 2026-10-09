@@ -393,6 +393,32 @@ PROBE_JOBS: Dict[str, Job] = {
         snapshot_preparation_mode="cold-open-save",
         parallel_cpu=True,
     ),
+    "roots-default-tree": Job(
+        id="roots-default-tree",
+        argv=("{binary}", "roots-default-tree", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "The default tree through the door the command line and Python take for one "
+            "or more PATHs, `RootsRequest::resolve` then `prepare_roots_report`, over the "
+            "subject as its one root, with the rendered text tree. Beside `default-tree` "
+            "it prices that door: validating the root and naming its snapshot. The probe's "
+            "`--child-roots` runs it over each subdirectory instead, which this job does "
+            "not, since the tallies would not be the subject's."
+        ),
+        oracle="tallies",
+        parallel_cpu=True,
+    ),
+    "roots-summary": Job(
+        id="roots-summary",
+        argv=("{binary}", "roots-summary", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "The shape of `fdu --view summary PATH` through the several-root door, over the "
+            "subject as its one root: `aggregate-summary` plus validating the root."
+        ),
+        oracle="tallies",
+        parallel_cpu=True,
+    ),
     "cold-scan-index": Job(
         id="cold-scan-index",
         argv=("{binary}", "scan-index", "--root", "{root}"),

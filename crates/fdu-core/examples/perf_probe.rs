@@ -112,6 +112,8 @@ enum Mode {
     ColdOpenSave,
     DefaultTree,
     Revalidate,
+    RootsDefaultTree,
+    RootsSummary,
     ScanIndex,
     ScanProducer,
     SnapshotLoad,
@@ -153,6 +155,8 @@ impl Mode {
             "render-yaml" => Ok(Self::RenderYaml),
             "render-yaml-string" => Ok(Self::RenderYamlString),
             "revalidate" => Ok(Self::Revalidate),
+            "roots-default-tree" => Ok(Self::RootsDefaultTree),
+            "roots-summary" => Ok(Self::RootsSummary),
             "cold-open-save" => Ok(Self::ColdOpenSave),
             "default-tree" => Ok(Self::DefaultTree),
             "scan-index" => Ok(Self::ScanIndex),
@@ -197,6 +201,8 @@ impl Mode {
             Self::RenderYaml => "render-yaml",
             Self::RenderYamlString => "render-yaml-string",
             Self::Revalidate => "revalidate",
+            Self::RootsDefaultTree => "roots-default-tree",
+            Self::RootsSummary => "roots-summary",
             Self::ColdOpenSave => "cold-open-save",
             Self::DefaultTree => "default-tree",
             Self::ScanIndex => "scan-index",
@@ -211,9 +217,14 @@ impl Mode {
 }
 
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools, reason = "each flag is one independent probe switch")]
 struct Arguments {
     mode: Mode,
     root: PathBuf,
+    /// Every `--root`, in order; `root` is the first. Only the several-root modes take
+    /// more than one, or `--child-roots`, which names each subdirectory of the one root.
+    roots: Vec<PathBuf>,
+    child_roots: bool,
     snapshot: Option<PathBuf>,
     operations: usize,
     queries: usize,
@@ -235,7 +246,8 @@ impl Arguments {
             .ok_or_else(|| ProbeError("missing probe mode".into()))?
             .into_string()
             .map_err(|_| ProbeError("probe mode must be Unicode".into()))?;
-        let mut root = None;
+        let mut roots = Vec::new();
+        let mut child_roots = false;
         let mut snapshot = None;
         let mut operations = 1_000_usize;
         let mut queries = 1_000_usize;
@@ -259,7 +271,8 @@ impl Arguments {
         let mut progress = false;
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
-                Some("--root") => root = Some(next_path(&mut arguments, "--root")?),
+                Some("--root") => roots.push(next_path(&mut arguments, "--root")?),
+                Some("--child-roots") => child_roots = true,
                 Some("--snapshot") => {
                     snapshot = Some(next_path(&mut arguments, "--snapshot")?);
                 }
@@ -326,7 +339,7 @@ impl Arguments {
                 _ => return Err(ProbeError(format!("unknown argument {flag:?}"))),
             }
         }
-        let root = root.ok_or_else(|| ProbeError("--root is required".into()))?;
+        let root = roots.first().cloned().ok_or_else(|| ProbeError("--root is required".into()))?;
         if operations == 0 || queries == 0 {
             return Err(ProbeError("--operations and --queries must be nonzero".into()));
         }
@@ -334,6 +347,20 @@ impl Arguments {
             return Err(ProbeError("--repeat must be nonzero".into()));
         }
         let mode = Mode::parse(&mode)?;
+        let several_roots = matches!(mode, Mode::RootsDefaultTree | Mode::RootsSummary);
+        if (roots.len() > 1 || child_roots) && !several_roots {
+            // One root is what every other mode measures, so a second would be ignored.
+            return Err(ProbeError(format!(
+                "{} takes one --root: only roots-default-tree and roots-summary take several \
+                 or --child-roots",
+                mode.name()
+            )));
+        }
+        if child_roots && roots.len() > 1 {
+            return Err(ProbeError(
+                "--child-roots names the subdirectories of one --root, not of several".into(),
+            ));
+        }
         if let (Mode::OpenedDiscovery | Mode::OpenedSecondReport, Some(flag)) =
             (mode, walk_only_flag)
         {
@@ -375,13 +402,18 @@ impl Arguments {
                 mode.name()
             )));
         }
-        if progress && !matches!(mode, Mode::DefaultTree | Mode::Summary) {
-            // The handle enters a one-shot report through `prepare_report_with_progress`,
-            // and only these two modes prepare one. Every other mode would run without a
-            // handle while the record said it had one.
+        if progress
+            && !matches!(
+                mode,
+                Mode::DefaultTree | Mode::Summary | Mode::RootsDefaultTree | Mode::RootsSummary
+            )
+        {
+            // The handle enters a one-shot report through `prepare_report_with_progress` or
+            // `prepare_roots_report_with_progress`, and only these modes prepare one. Every
+            // other mode would run without a handle while the record said it had one.
             return Err(ProbeError(format!(
-                "--progress does not apply to {}: only default-tree and summary prepare a \
-                 one-shot report a progress handle can observe",
+                "--progress does not apply to {}: only default-tree, summary, and their \
+                 roots- forms prepare a one-shot report a progress handle can observe",
                 mode.name()
             )));
         }
@@ -397,6 +429,8 @@ impl Arguments {
         Ok(Self {
             mode,
             root,
+            roots,
+            child_roots,
             snapshot,
             operations,
             queries,
@@ -486,6 +520,8 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::SnapshotLoad => snapshot_load(arguments),
         Mode::Summary => summary_tier(arguments),
         Mode::Revalidate => revalidate(arguments),
+        Mode::RootsDefaultTree => roots_report(arguments, true),
+        Mode::RootsSummary => roots_report(arguments, false),
         Mode::DeltaApply | Mode::DeltaApplyLarge => delta_apply(arguments),
         Mode::DeltaApplyBatched => delta_apply_batched(arguments),
         Mode::OpenedDiscovery => opened_discovery(arguments),
@@ -1061,6 +1097,100 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     // and only moves its mtime. Identity, not mtime, is therefore the signal, and it is
     // the number a reader of this job wants beside the wall time.
     summary.snapshot_written = Some(identity_after.is_some() && identity_after != identity_before);
+    Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+/// `roots-default-tree` (`tree`) and `roots-summary`: the default tree or the summary
+/// through the door the command line and Python take, `RootsRequest::resolve` and then
+/// `prepare_roots_report`, over every `--root` or, with `--child-roots`, over each
+/// subdirectory of the one root, as `fdu ROOT/*/` names them.
+///
+/// Over one root this measures what `default-tree` and `summary` measure plus that door:
+/// validating the root and naming its snapshot (review C3 on #192). Over several it is the
+/// several-root report, every root's walk one after another and one read; set beside a
+/// run over their parent it prices each root's fixed cost (review C2, `fdu-ich9`). The
+/// component includes resolving the roots, as the command line pays it before any walk.
+///
+/// The cache is `auto` with no location, which is what the command line's default plans
+/// for a metadata report: neither reads nor writes a snapshot.
+///
+/// The oracle is `tallies`, read off the total row over several roots and off the root
+/// node or summary row over one, so one root's run checks against an independent walk as
+/// `default-tree` does. Over child roots the tallies are the children's, without the
+/// files at the top of the root, so a run like that is measured without the oracle.
+fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
+    let paths = if arguments.child_roots {
+        let mut children: Vec<PathBuf> = std::fs::read_dir(&arguments.root)?
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .map(|entry| entry.path())
+            .collect();
+        children.sort();
+        if children.is_empty() {
+            return Err(ProbeError("--child-roots found no subdirectory".into()));
+        }
+        children
+    } else {
+        arguments.roots.clone()
+    };
+    let (basis, delivery) =
+        open_plan(&paths[0], &arguments.scan, CachePolicy::Auto, None, AnalysisRequest::default());
+    let view = if tree { ViewSpec::Tree } else { ViewSpec::Summary };
+    let query = Query { views: vec![view], ..Query::default() };
+    let request = Request::new(basis, query, std::time::SystemTime::now());
+    let counters = begin_component_counters();
+    let started = Instant::now();
+    let request = fdu_core::query::RootsRequest::resolve(&paths, request, &delivery)?;
+    let (prepared, progress) = if arguments.progress {
+        let progress = fdu_core::Progress::new();
+        let poller = ProgressPoller::start(progress.clone())?;
+        let prepared = fdu_core::prepare_roots_report_with_progress(&request, &delivery, &progress);
+        poller.stop()?;
+        (prepared?, Some(progress))
+    } else {
+        (fdu_core::prepare_roots_report(&request, &delivery)?, None)
+    };
+    let fdu_core::RootsPrepared { report, pending, performance } = prepared;
+    if tree {
+        let rendered =
+            fdu_core::report_format::render(&report, fdu_core::report_format::Format::Text, false)?;
+        black_box(rendered.len());
+    }
+    if let Some(failure) = pending.join_all().into_iter().next() {
+        return Err(failure.into());
+    }
+    let component = started.elapsed();
+    let counters = finish_component_counters(counters.as_ref());
+    verify_progress(progress.as_ref(), &fdu_core::PerformanceSummary::sum(&performance))?;
+
+    let tallies = report.sections.iter().find_map(|section| match section {
+        fdu_core::query::Section::Summary(row) => {
+            Some((row.files, row.dirs, row.bytes, row.allocated, row.newest_mtime_ns))
+        }
+        fdu_core::query::Section::Tree { root: Some(node), .. } => {
+            Some((node.files, node.dirs, node.bytes, node.allocated, node.newest_mtime_ns))
+        }
+        fdu_core::query::Section::Tree { roots: Some(trees), .. } => trees.total.map(|total| {
+            (total.files, total.dirs, total.bytes, total.allocated, total.newest_mtime_ns)
+        }),
+        _ => None,
+    });
+    let (files, dirs, bytes, allocated, newest) =
+        tallies.ok_or_else(|| ProbeError("the report returned no tallies".to_string()))?;
+    let mut summary = Summary {
+        files,
+        dirs,
+        apparent_bytes: u128::from(bytes),
+        allocated_bytes: u128::from(allocated),
+        newest_file_mtime_ns: newest,
+        engine_digest: None,
+        index_len: None,
+        ..Summary::default()
+    };
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
+    summary.counters = counters;
+    summary.complete = report.status.complete;
+    summary.entries = files + dirs;
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 
