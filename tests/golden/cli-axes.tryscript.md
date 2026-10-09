@@ -14,7 +14,7 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
-  AGE_DAYS: '\s*[0-9]{1,3}(?:,[0-9]{3})*'
+  AGE_YEARS: '\s*[0-9]{1,3}(?:,[0-9]{3})*'
   AGE_NS: '-?\d+'
   ALLOCATED: '\d+'
   # Paths are reported with the platform's own separator, so the separator is matched
@@ -655,7 +655,7 @@ fdu: invalid time "1.5h": fractional ages are not supported; write them as compo
 
 ```console
 $ fdu --cache off --modified-before 3months project
-fdu: invalid time "3months": calendar units are not supported because they are not a fixed length; use days, as in `30d` or `365d`
+fdu: invalid time "3months": calendar units are not supported because they are not a fixed length; use days, as in `91d`
 ? 2
 ```
 
@@ -801,10 +801,10 @@ empty[SEP].venv
 
 ```console
 $ fdu --cache off --size apparent --kind dir --include .venv --include node_modules --include target --modified-before 30d --long builds
-      70 B [AGE_DAYS]d c[SEP]target
-      50 B [AGE_DAYS]d b[SEP]node_modules
-      30 B [AGE_DAYS]d a[SEP].venv
-       0 B [AGE_DAYS]d empty[SEP].venv
+      70 B [AGE_YEARS]y c[SEP]target
+      50 B [AGE_YEARS]y b[SEP]node_modules
+      30 B [AGE_YEARS]y a[SEP].venv
+       0 B [AGE_YEARS]y empty[SEP].venv
 ? 0
 ```
 

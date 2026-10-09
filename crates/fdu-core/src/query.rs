@@ -35,7 +35,7 @@ pub use query_selection::{
     SizeMetric, SortKey,
 };
 pub use query_status::{ReportProvenance, TierProvenance, TierState, TreeStatus};
-pub(crate) use query_values::format_rfc3339_nanos;
+pub(crate) use query_values::{MONTH_SECONDS, YEAR_SECONDS, format_rfc3339_nanos};
 pub use query_values::{
     format_rfc3339, parse_control_budget, parse_control_line_limit, parse_size, parse_when,
     system_time_to_nanos,

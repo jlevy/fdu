@@ -71,9 +71,10 @@ use crate::control::ControlCoverage;
 use crate::emit::{Event, IoFmt, JsonSink, Scalar, Shape, Sink, YamlSink};
 use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source};
 use crate::query::{
-    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow,
-    MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TierState,
-    TreeNode, TypeRow, ViewSpec, format_rfc3339, format_rfc3339_nanos, pages,
+    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MONTH_SECONDS, MetricGroup,
+    MetricRow, MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow,
+    TierState, TreeNode, TypeRow, ViewSpec, YEAR_SECONDS, format_rfc3339, format_rfc3339_nanos,
+    pages,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -266,16 +267,33 @@ fn flat_path(path: &Path) -> String {
         .collect()
 }
 
-/// A compact signed duration. Exact nanoseconds remain available in machine output.
+/// A compact signed age, the one formatter for the tree's age column and `--long`.
+/// Exact nanoseconds remain available in machine output.
+///
+/// Each unit holds until the next one's length: seconds under a minute, minutes under an
+/// hour, hours under a day, days under a display month of 30.44 days, months under a
+/// display year of 365.25 days, and years beyond. So no cell reads `0mo` or `0y`, and an
+/// old tree reads `12y` rather than `4,382d`. The amount is floored toward zero and the
+/// sign kept, so a time ahead of the reference reads `-5m`, and less than a second ahead
+/// `-0s`. Below a century a cell is at most four characters and a sign. Months and years
+/// are display units only: the age grammar refuses them ([`MONTH_SECONDS`]).
 fn human_age(age: Option<i128>) -> String {
+    const MINUTE: u128 = 60;
+    const HOUR: u128 = 60 * MINUTE;
+    const DAY: u128 = 24 * HOUR;
     let Some(age) = age else { return "unknown".to_string() };
     let seconds = age.unsigned_abs() / 1_000_000_000;
-    let (amount, unit) = if seconds >= 86400 {
-        (seconds / 86400, "d")
-    } else if seconds >= 3600 {
-        (seconds / 3600, "h")
-    } else if seconds >= 60 {
-        (seconds / 60, "m")
+    let (month, year) = (u128::from(MONTH_SECONDS), u128::from(YEAR_SECONDS));
+    let (amount, unit) = if seconds >= year {
+        (seconds / year, "y")
+    } else if seconds >= month {
+        (seconds / month, "mo")
+    } else if seconds >= DAY {
+        (seconds / DAY, "d")
+    } else if seconds >= HOUR {
+        (seconds / HOUR, "h")
+    } else if seconds >= MINUTE {
+        (seconds / MINUTE, "m")
     } else {
         (seconds, "s")
     };
@@ -5034,7 +5052,47 @@ mod tests {
             human_count_u128(u128::MAX),
             "340,282,366,920,938,463,463,374,607,431,768,211,455"
         );
-        assert_eq!(human_age(Some(1000 * 86400 * 1_000_000_000)), "1,000d");
+        let year = i128::from(YEAR_SECONDS) * 1_000_000_000;
+        assert_eq!(human_age(Some(1_000 * year)), "1,000y");
+    }
+
+    /// Every unit of the age ladder at both of its edges, the sign, and the floor: a unit
+    /// holds until the next one's length, so no cell reads `0mo` or `0y`.
+    #[test]
+    fn human_ages_climb_one_ladder_and_switch_units_at_their_own_length() {
+        const SECOND: i128 = 1_000_000_000;
+        let month = i128::from(MONTH_SECONDS) * SECOND;
+        let year = i128::from(YEAR_SECONDS) * SECOND;
+        for (age, shown) in [
+            (0, "0s"),
+            (SECOND - 1, "0s"),
+            (59 * SECOND, "59s"),
+            (60 * SECOND - 1, "59s"),
+            (60 * SECOND, "1m"),
+            (3_600 * SECOND - 1, "59m"),
+            (3_600 * SECOND, "1h"),
+            (86_400 * SECOND - 1, "23h"),
+            (86_400 * SECOND, "1d"),
+            (30 * 86_400 * SECOND, "30d"),
+            (month - 1, "30d"),
+            (month, "1mo"),
+            (2 * month, "2mo"),
+            (year - 1, "11mo"),
+            (year, "1y"),
+            (26 * year + month, "26y"),
+            (100 * year - 1, "99y"),
+            (-1, "-0s"),
+            (-SECOND, "-1s"),
+            (-5 * 60 * SECOND - 1, "-5m"),
+            (-2 * month, "-2mo"),
+        ] {
+            assert_eq!(human_age(Some(age)), shown, "{age} ns");
+        }
+        assert_eq!(human_age(None), "unknown");
+        // Below a century, at most four characters and a sign.
+        let widest =
+            [month * 11, year * 99, 59 * SECOND, 3_599 * SECOND].map(|age| human_age(Some(-age)));
+        assert!(widest.iter().all(|cell| cell.len() <= 5), "{widest:?}");
     }
 
     #[test]

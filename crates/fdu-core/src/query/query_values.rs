@@ -18,6 +18,22 @@ use crate::engine_contract::{Error, Result};
 /// Nanoseconds in one second.
 const NANOS_PER_SEC: u32 = 1_000_000_000;
 
+/// Seconds in one day, the longest unit the age grammar accepts but a week.
+const DAY_SECONDS: u64 = 86_400;
+
+/// Seconds in the display month of 30.44 days, a twelfth of a Julian year to the
+/// hundredth of a day.
+///
+/// A display unit only, for human ages such as `2mo`: the age grammar refuses months
+/// ([`age_unit_seconds`]), because a window has to resolve against a fixed length and a
+/// calendar month has none. Twelve of them exceed [`YEAR_SECONDS`], so no age reads
+/// `12mo`.
+pub(crate) const MONTH_SECONDS: u64 = 2_630_016;
+
+/// Seconds in the display year of 365.25 days, the Julian year; a display unit only, as
+/// [`MONTH_SECONDS`] is.
+pub(crate) const YEAR_SECONDS: u64 = 31_557_600;
+
 /// The most fractional digits an `@epoch` value can carry before the rest is ignored.
 const MAX_FRACTION_DIGITS: usize = 9;
 
@@ -292,30 +308,35 @@ fn age_unit_duration(input: &str, unit: &str, count: u64) -> Result<Duration> {
     if matches!(unit.as_str(), "ms" | "msec" | "msecs" | "millisecond" | "milliseconds") {
         return Ok(Duration::from_millis(count));
     }
-    let seconds = age_unit_seconds(input, &unit)?
+    let seconds = age_unit_seconds(input, &unit, count)?
         .checked_mul(count)
         .ok_or_else(|| when_error(input, "age is larger than this machine can represent"))?;
     Ok(Duration::from_secs(seconds))
 }
 
-/// Seconds in one whole-second age unit.
-fn age_unit_seconds(input: &str, unit: &str) -> Result<u64> {
+/// Seconds in one whole-second age unit; `count` of them is what a refusal translates.
+fn age_unit_seconds(input: &str, unit: &str, count: u64) -> Result<u64> {
     const MINUTE: u64 = 60;
     const HOUR: u64 = 60 * MINUTE;
-    const DAY: u64 = 24 * HOUR;
     Ok(match unit {
         "s" | "sec" | "secs" | "second" | "seconds" => 1,
         "m" | "min" | "mins" | "minute" | "minutes" => MINUTE,
         "h" | "hr" | "hrs" | "hour" | "hours" => HOUR,
-        "d" | "day" | "days" => DAY,
-        "w" | "week" | "weeks" => 7 * DAY,
+        "d" | "day" | "days" => DAY_SECONDS,
+        "w" | "week" | "weeks" => 7 * DAY_SECONDS,
         // Calendar units are rejected rather than approximated: a month is not a fixed
         // number of days, and a file age that quietly means 30.44 days is a bug waiting
-        // for a bug report nobody can reproduce.
+        // for a bug report nobody can reproduce. Human output does show ages in months
+        // and years ([`MONTH_SECONDS`]), so the refusal names the whole days the display
+        // units would mean, floored as the display is, and the caller decides.
         "mo" | "mon" | "month" | "months" | "y" | "yr" | "yrs" | "year" | "years" => {
+            let length = if unit.starts_with('m') { MONTH_SECONDS } else { YEAR_SECONDS };
+            let days = u128::from(count) * u128::from(length) / u128::from(DAY_SECONDS);
             return Err(when_error(
                 input,
-                "calendar units are not supported because they are not a fixed length; use days, as in `30d` or `365d`",
+                &format!(
+                    "calendar units are not supported because they are not a fixed length; use days, as in `{days}d`"
+                ),
             ));
         }
         _ => {
@@ -684,15 +705,19 @@ mod tests {
         assert_eq!(time_rejection("2026-02-29T00:00:00Z"), "day is not a day of that month");
     }
 
+    /// Months and years are display units only: the grammar refuses them and names the
+    /// whole days the display units stand for, floored as the display floors them.
     #[test]
     fn calendar_units_are_rejected_with_a_days_suggestion() {
-        for value in ["3mo", "3months", "1y", "2years"] {
-            assert!(
-                time_rejection(value).contains("use days"),
-                "{value} should suggest days, got {:?}",
-                time_rejection(value)
-            );
+        for (value, days) in
+            [("2mo", 60), ("3months", 91), ("1y", 365), ("2years", 730), ("3yr", 1_095), ("0y", 0)]
+        {
+            let hint = time_rejection(value);
+            assert!(hint.contains("not a fixed length"), "{value}: {hint}");
+            assert!(hint.ends_with(&format!("use days, as in `{days}d`")), "{value}: {hint}");
         }
+        assert_eq!(MONTH_SECONDS, 3_044 * DAY_SECONDS / 100);
+        assert_eq!(YEAR_SECONDS, 36_525 * DAY_SECONDS / 100);
     }
 
     #[test]
