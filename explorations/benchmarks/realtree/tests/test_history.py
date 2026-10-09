@@ -811,6 +811,26 @@ class AnswerCheckTests(unittest.TestCase):
         )
         self.assertEqual(history.document_totals(multi.encode())["words"], 3899740)
         self.assertIsNone(history.document_totals(b"no documents here\n"))
+        # From 0.4.0 each measure past the file count is a line of its own below it.
+        indent = " " * 41
+        stacked = (
+            "CODE\nCode lines  Language\n\nDOCUMENTS\n"
+            "    34 MiB   78.6%  rst                3,598 files\n"
+            f"{indent}745,461 lines (565,334 nonblank, 180,127 blank)\n"
+            f"{indent}3,898,406 words (15,593.6 pages)\n"
+            f"{indent}3,597 documentation\n"
+            " 1,010 KiB    1.2%  latex              1 file\n"
+            f"{indent}234 lines (228 nonblank, 6 blank)\n"
+            f"{indent}1,334 words (5.3 pages)\n"
+            "\nLANGUAGES\n"
+            "    12 MiB    0.0%  Assembly     1,338 files\n"
+            "                                 376,316 lines (328,436 nonblank, 47,880 blank)\n"
+            "                                 1,370,730 words (5,482.9 pages)\n"
+        )
+        self.assertEqual(
+            history.document_totals(stacked.encode()),
+            {"formats": 2, "files": 3599, "lines": 745695, "words": 3899740},
+        )
 
     def test_a_build_must_start_from_the_state_its_component_declares(self) -> None:
         # F2: a filled cache found cold, or empty caches found warm, refuse the cell.

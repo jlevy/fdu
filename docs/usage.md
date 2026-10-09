@@ -90,6 +90,11 @@ added only when some `.gitignore` could not be read or applied.
 Sizes use allocated bytes by default.
 Add `--size=apparent` for logical file lengths.
 
+Each row of a grouped view (`families`, `types`, `languages`, or `documents`) shows a
+size, a percentage, a label, and a file count.
+Any further measure, such as lines, words, files detected as generated or documentation,
+or files not analyzed and why, is a line of its own indented under the file count.
+
 The percentage column in grouped views normally shows byte share.
 When code analysis is shown by language, it shows code-line share instead.
 In `documents`, it shows document-word share.

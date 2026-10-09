@@ -9,13 +9,14 @@ import { record } from '../../record.js';
 import { loadScenario } from '../../scenario.js';
 import { capture, deliver, writeRenderReceipt } from '../../render.js';
 import { verify } from '../../verify.js';
-import { context, integer, positive, stem } from '../lib/context.js';
+import { context, integer, nonNegativeInteger, positive, stem } from '../lib/context.js';
 
 interface MakeOptions {
   out: string;
   gif?: boolean;
   fps: number;
   scale: number;
+  margin: number;
   chrome?: string;
 }
 
@@ -28,6 +29,7 @@ export function registerMake(program: Command): void {
     .option('--gif', 'also deliver a README-sized GIF')
     .option('--fps <n>', 'frames per second', integer, 60)
     .option('--scale <n>', 'device pixels per CSS pixel', positive, 2)
+    .option('--margin <px>', 'background margin around the window', nonNegativeInteger, 32)
     .option('--chrome <path>', 'Chromium executable (default: CHROME_PATH, then playwright-core’s)')
     .action(async (scenario: string, opts: MakeOptions, command: Command) => {
       const { options, out } = context(command);
@@ -42,6 +44,7 @@ export function registerMake(program: Command): void {
         fps: opts.fps,
         fontSize: loadScenario(scenario).terminal.font_size,
         scale: opts.scale,
+        margin: opts.margin,
         ...(opts.chrome === undefined ? {} : { chromePath: opts.chrome }),
         onProgress: (done, total) => out.note(`  frame ${done} / ${total}`),
       });
