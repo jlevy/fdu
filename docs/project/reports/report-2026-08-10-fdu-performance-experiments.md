@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 85 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 88 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
@@ -289,6 +289,9 @@ dead end.
 | 211 | [macOS: H192 replicated over an opened root, 23 microseconds a report](#exp-211--macos-h192-replicated-over-an-opened-root-23-microseconds-a-report) | H192 | `opened-second-report` | +17.8% | ❌ rejected |
 | 212 | [macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row](#exp-212--macos-the-age-column-re-measured-at-the-shipped-head-per-row-retained-cost-and-a-quarter-microsecond-a-machine-row) | H192 | `index-second-report` | +0.2% | ❌ rejected |
 | 213 | [macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains](#exp-213--macos-h194-fixed-buffer-instants-halve-the-age-column-machine-format-cost-about-012-microseconds-a-row-remains) | H194 | `render-json` | +1.3% | ❌ rejected |
+| 214 | [macOS: H195 one root through the several-roots reader, non-inferior on five jobs and unresolved on three under load](#exp-214--macos-h195-one-root-through-the-several-roots-reader-non-inferior-on-five-jobs-and-unresolved-on-three-under-load) | H195 | `default-tree` | -7.2% | ❌ rejected |
+| 215 | [macOS: an early look at one root through the several-roots reader, unresolved on an overloaded host](#exp-215--macos-an-early-look-at-one-root-through-the-several-roots-reader-unresolved-on-an-overloaded-host) | H195 | `default-tree` | +4.9% | ❌ rejected |
+| 216 | [macOS: H196 several roots pay about 2.4 ms a root, 625 small roots seven times one walk of their parent](#exp-216--macos-h196-several-roots-pay-about-24-ms-a-root-625-small-roots-seven-times-one-walk-of-their-parent) | H196 | `roots-default-tree` | +570.2% | ❌ rejected |
 
 ## The experiments
 
@@ -6876,6 +6879,111 @@ the Python eager instants are unmeasured.
 Full record:
 [`exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md`](../experiments/exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md)
 
+### exp-214 — macOS: H195 one root through the several-roots reader, non-inferior on five jobs and unresolved on three under load
+
+❌ rejected · 2026-10-09 · H195 · commit `3f195a2b`
+
+Control: 23d11b19 probe: the age column head and the base of #192, built in a clean
+worktree (sha256 2c738e89)
+
+Candidate: 3f195a2b probe: #192 after reviews A, B, and C, clean tree (sha256 2495b561)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 207.4 | 190.9 | -7.18% | [-11.59%, -0.12%] |
+| component (ms) | 196.1 | 182.4 | -6.89% (n.s.) | [-12.75%, +5.16%] |
+| cpu (ms) | 611.2 | 637.1 | +2.49% (n.s.) | [-1.30%, +11.16%] |
+| user (ms) | 42.1 | 42.9 | +1.31% (n.s.) | [-0.97%, +5.05%] |
+| system (ms) | 570.2 | 594.6 | +2.59% (n.s.) | [-1.51%, +11.62%] |
+| peak rss (MiB) | 11.8 | 11.6 | -1.76% (n.s.) | [-9.22%, +3.20%] |
+
+Other jobs, wall time: `aggregate-summary` +1.8% (n.s.), `cold-scan-index` -2.2% (n.s.),
+`content-query` -7.9%, `index-second-report` +0.1% (n.s.), `opened-second-report` -2.1%
+(n.s.), `render-json` -8.4% (n.s.), `render-yaml` +7.7% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** not a speed decision: several roots ship regardless; on an uncontrolled
+host (load 26 to 34 on 10 cores) wall is non-inferior at +3% on cold-scan-index (the
+placebo, -2.25% [-11.46%, +2.73%]), default-tree, index-second-report (+0.10%
+[-0.93%, +2.27%]), content-query, and render-json, with the retained reads flat in
+component; aggregate-summary (+1.84% [-4.54%, +25.24%]), opened-second-report, and
+render-yaml are unresolved, so H195 is neither confirmed nor refuted there and those
+three rerun quiet with H193 (fdu-088k).
+
+Full record:
+[`exp-214-macos-h195-one-root-through-the-several-roots-reader-non-inf.md`](../experiments/exp-214-macos-h195-one-root-through-the-several-roots-reader-non-inf.md)
+
+### exp-215 — macOS: an early look at one root through the several-roots reader, unresolved on an overloaded host
+
+❌ rejected · 2026-10-09 · H195 · commit `d0621141`
+
+Control: b2968074 probe (sha256 c4e01629, exp-213 candidate; engine as 23d11b19; the run
+variant notes are empty, so the binding is stated in the record body)
+
+Candidate: d0621141 probe: #192 before review (sha256 e40a5173; binding stated in the
+record body)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 203.0 | 204.2 | +4.91% (n.s.) | [-14.38%, +31.57%] |
+| component (ms) | 178.4 | 180.9 | +6.11% (n.s.) | [-16.42%, +36.88%] |
+| cpu (ms) | 446.2 | 484.5 | +8.12% (regression) | [+3.92%, +16.35%] |
+| user (ms) | 38.5 | 39.7 | +2.31% (n.s.) | [-0.87%, +6.08%] |
+| system (ms) | 406.8 | 443.8 | +9.08% (regression) | [+3.90%, +18.06%] |
+| peak rss (MiB) | 12.7 | 12.1 | -6.58% (n.s.) | [-10.62%, +2.87%] |
+
+Other jobs, wall time: `aggregate-summary` -1.8% (n.s.), `cold-scan-index` +2.8% (n.s.),
+`index-second-report` +2.6% (n.s.), `opened-second-report` -7.0% (n.s.), `render-json`
++7.8% (n.s.), `warm-snapshot-load` +2.6% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** inconclusive, and recorded so it is not read as evidence either way: run
+before H195 was registered, on a host at load 25 to 43 over 10 cores; every wall
+interval includes zero and is wider than the +3% margin, default-tree +4.91%
+[-14.38%, +31.57%]; superseded by exp-214 at the reviewed head.
+
+Full record:
+[`exp-215-macos-an-early-look-at-one-root-through-the-several-roots-re.md`](../experiments/exp-215-macos-an-early-look-at-one-root-through-the-several-roots-re.md)
+
+### exp-216 — macOS: H196 several roots pay about 2.4 ms a root, 625 small roots seven times one walk of their parent
+
+❌ rejected · 2026-10-09 · H196 · commit `3f195a2b`
+
+Control: 3f195a2b probe, the store as one root (sha256 2495b561)
+
+Candidate: 3f195a2b probe, each of the store 625 crate directories as a root
+(--child-roots, same binary)
+
+**`roots-default-tree`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 234.5 | 1719.5 | +570.25% (regression) | [+506.62%, +732.48%] |
+| component (ms) | 216.6 | 1703.3 | +620.88% (regression) | [+552.89%, +760.18%] |
+| cpu (ms) | 557.8 | 764.6 | +44.10% (regression) | [+24.58%, +47.46%] |
+| user (ms) | 40.5 | 126.9 | +209.16% (regression) | [+203.78%, +241.15%] |
+| system (ms) | 516.2 | 630.7 | +29.54% (regression) | [+11.72%, +32.32%] |
+| peak rss (MiB) | 9.1 | 20.8 | +127.46% (regression) | [+124.22%, +131.57%] |
+
+Other jobs, wall time: `roots-summary` +313.1% (regression).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** not a speed decision: it measures what several roots cost;
+roots-default-tree wall 234.5 to 1719.5 ms, +570% [+507%, +732%], about 2.4 ms a root,
+and roots-summary +313% [+137%, +391%], about 0.9 ms a root, against 190 ms predicted;
+far past the 10% bar, so one walker pool across roots (fdu-ich9) earns its hypothesis;
+user CPU and minor faults point at per-root fixed costs, unattributed.
+
+Full record:
+[`exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md`](../experiments/exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -7012,6 +7120,18 @@ state rather than a change.
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
 | 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
 
+### rustup (77,355 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 209 | macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower | `index-second-report` | 372.8 | 374.1 | -2.3% | ❌ rejected |
+| 210 | macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report | `index-second-report` | 320.0 | 335.3 | +5.7% | ❌ rejected |
+| 211 | macOS: H192 replicated over an opened root, 23 microseconds a report | `opened-second-report` | 1,130.1 | 1,121.4 | -0.8% | ❌ rejected |
+| 212 | macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row | `index-second-report` | 292.7 | 287.4 | -1.7% | ❌ rejected |
+| 213 | macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains | `render-json` | 748.2 | 760.1 | +1.3% | ❌ rejected |
+| 214 | macOS: H195 one root through the several-roots reader, non-inferior on five jobs and unresolved on three under load | `default-tree` | 207.4 | 190.9 | -7.2% | ❌ rejected |
+| 215 | macOS: an early look at one root through the several-roots reader, unresolved on an overloaded host | `default-tree` | 203.0 | 204.2 | +4.9% | ❌ rejected |
+
 ### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -7073,16 +7193,6 @@ state rather than a change.
 | 183 | Linux H180 summary walker trims cut the default summary 9% on node-modules-dense | `aggregate-summary` | 73.5 | 67.5 | -8.7% | ✅ accepted |
 | 185 | Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
 | 195 | Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense | `default-tree` | 126.9 | 114.2 | -9.8% | 📏 baseline |
-
-### rustup (77,355 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 209 | macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower | `index-second-report` | 372.8 | 374.1 | -2.3% | ❌ rejected |
-| 210 | macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report | `index-second-report` | 320.0 | 335.3 | +5.7% | ❌ rejected |
-| 211 | macOS: H192 replicated over an opened root, 23 microseconds a report | `opened-second-report` | 1,130.1 | 1,121.4 | -0.8% | ❌ rejected |
-| 212 | macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row | `index-second-report` | 292.7 | 287.4 | -1.7% | ❌ rejected |
-| 213 | macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains | `render-json` | 748.2 | 760.1 | +1.3% | ❌ rejected |
 
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -7251,6 +7361,12 @@ state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 065 | Validate the content roll-up change on a dense real tree | `content-cache-hit` | 270.7 | 201.9 | -25.8% | ✅ accepted |
+
+### cargo-registry-src (36,526 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 216 | macOS: H196 several roots pay about 2.4 ms a root, 625 small roots seven times one walk of their parent | `roots-default-tree` | 234.5 | 1,719.5 | +570.2% | ❌ rejected |
 
 ### diagnostics-overhead (100,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

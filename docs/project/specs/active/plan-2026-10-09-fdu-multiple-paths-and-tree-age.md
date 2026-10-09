@@ -609,6 +609,29 @@ Two stacked pull requests on gh-stack, the age column first.
 - [x] Root indexes on rows and issues; status, provenance, and note merges
 - [x] Command line `PATH...` and refusals; Python `report(paths)`; parity shim
 - [x] Goldens over two fixtures, the path-independence cases, docs
+- [x] The performance guard for one root and the cost of many roots (below)
+
+**Performance.** Two measurements on macOS, both on an uncontrolled host at a load
+average near three times its ten cores, so both are exploratory.
+One root first, since every surface now reads it through the several-roots reader and
+door (review C1 on #192): H195, registered before the run, predicted wall non-inferior
+at +3% on every job the refactor reaches.
+[exp-214](../../experiments/exp-214-macos-h195-one-root-through-the-several-roots-reader-non-inf.md)
+holds it on five jobs, `cold-scan-index` (the placebo), `default-tree`,
+`index-second-report`, `content-query`, and `render-json`, with both retained reads flat
+in component, and cannot resolve `aggregate-summary`, `opened-second-report`, or
+`render-yaml` either way; those three rerun on a quiet host with H193 (`fdu-088k`)
+before release. An earlier run at the pre-review head, before the registration, resolved
+nothing
+([exp-215](../../experiments/exp-215-macos-an-early-look-at-one-root-through-the-several-roots-re.md)).
+Then many roots (review C2): H196 put 625 crate directories against their parent, both
+through the several-roots door (`roots-default-tree --child-roots`).
+[exp-216](../../experiments/exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md)
+measured about 2.4 ms a root on the default tree, 1.72 s against 0.23 s for the parent,
+and about 0.9 ms a root on the summary, about eight and three times the estimate.
+So `fdu */` over many small directories is several times slower than `fdu .` over their
+parent; usage says roots are walked one after another, and one walker pool across roots
+is `fdu-ich9`.
 
 Decided during implementation:
 
@@ -625,6 +648,13 @@ Decided during implementation:
   root’s already are, so every sum across roots is exact.
 - `TreeStatus::errors` holds `StatusIssue { root, issue }`, an explicit pairing, rather
   than a parallel list of root positions.
+  A `.gitignore` refusal carries its root as a field instead (`RefusedControl::root`):
+  `Issue` is the engine contract’s, shared with commits and opened roots, so its root
+  goes on a report-level wrapper, while a refusal is the control table’s record inside
+  `ControlCoverage`, which an index and a report share whole, and wrapping it would need
+  a report-level copy of `ControlObservation` (review A9 on #192). Modeling “exactly one
+  of `root` and `roots`” and the tree’s rows as enums is `fdu-couf`, with the one-shot
+  API consolidation (review A10).
 - One root through `prepare_roots_report` is `prepare_report` over the validated
   canonical path, with the snapshot path derived from the delivery’s cache directory.
   Validating the roots before the walk means `--stale-ok` over a file now fails as not a
