@@ -1537,17 +1537,10 @@ pub struct Report {
 /// selected view shows any analysis, the tip names the views [`ViewSpec::defaults_for`]
 /// the analyzers; when some is shown, it keeps the caller's views and adds the ones that
 /// show the rest, so following it never drops what the caller already sees.
-pub(crate) fn display_notes(
-    query: &Query,
-    content: AnalysisSet,
-    ignore_rules: &ControlCoverage,
-) -> (Vec<String>, Vec<String>) {
-    root_display_notes(query, content, ignore_rules, None)
-}
-
-/// [`display_notes`] for a report over `roots`, whose labels a note that names a directory
-/// puts before it, as text puts a label before every path; `None` for one root.
-fn root_display_notes(
+///
+/// `roots` names a report's roots when it has several, whose labels a note naming a
+/// directory puts before it, as text puts a label before every path; `None` for one root.
+fn display_notes(
     query: &Query,
     content: AnalysisSet,
     ignore_rules: &ControlCoverage,
@@ -1809,6 +1802,17 @@ pub fn report_roots(
     read_roots(indexes, labels, request, generated_at, NameIdentity::Native)
 }
 
+/// [`report_roots`] for the engine's own runs, which built each index from its root and
+/// need not check that they belong together; `roots` is `None` for one root.
+pub(crate) fn read_indexes(
+    indexes: &[&Index],
+    roots: Option<&Roots>,
+    request: &Request,
+    generated_at: std::time::SystemTime,
+) -> crate::Result<Report> {
+    read_roots(indexes, roots, request, generated_at, NameIdentity::Native)
+}
+
 /// One root's part of a read: its index, and everything the reader derives from that index
 /// before a section combines it with any other root's.
 ///
@@ -2018,7 +2022,7 @@ fn read_roots(
     measure_ages(&mut sections, age_reference_ns);
     let ignore_rules =
         merge_ignore_rules(reads.iter().map(|read| read.index.control_coverage()).collect());
-    let (mut notes, mut tips) = root_display_notes(query, content, &ignore_rules, labels);
+    let (mut notes, mut tips) = display_notes(query, content, &ignore_rules, labels);
     if content.includes_words() {
         // Of the files the report's views show, not of every record the index holds: a
         // selection that leaves a Markdown file out says nothing of it. Each metric view's
@@ -2171,6 +2175,28 @@ fn retained_refusals_tip(query: &Query, ignore_rules: &ControlCoverage) -> Optio
         .then(|| format!("tip: show retained ignore-file details: {} json", query.axes.format))
 }
 
+/// What the summary tier keeps of one root's walk: the reduced row and everything the
+/// report states about the walk that produced it.
+pub(crate) struct SummaryPart {
+    /// The canonical root.
+    pub(crate) root: PathBuf,
+    /// The scope the walk observed.
+    pub(crate) scope: ScanScope,
+    /// The root's totals.
+    pub(crate) summary: SummaryRow,
+    /// The control table's coverage.
+    pub(crate) ignore_rules: ControlCoverage,
+    /// Whether the row withholds its ignored share because a governing rule could not be
+    /// verified.
+    pub(crate) ignored_unverified: bool,
+    /// The walk's completeness and failures.
+    pub(crate) status: TreeStatus,
+    /// When the walk began.
+    pub(crate) scan_started: std::time::SystemTime,
+    /// Whether the walk read everything in scope.
+    pub(crate) complete: bool,
+}
+
 /// Build a one-section report from an already reduced exact summary.
 ///
 /// Pure for the same reason as [`report`]: scanning and time sampling happened before
@@ -2181,19 +2207,32 @@ fn retained_refusals_tip(query: &Query, ignore_rules: &ControlCoverage) -> Optio
 /// ignored share, which [`report`] reads from the index as the root's classification
 /// being incomplete. The notes are therefore the same notes, in the same order, less
 /// those about content and trees this tier never answers.
-#[allow(clippy::too_many_arguments)]
+///
+/// Over several roots, `parts` holds each root's reduction in the roots' order and merges
+/// as [`report_roots`] merges indexes: the rows sum, the coverage adds, and the status and
+/// provenance take every root's.
 pub(crate) fn report_summary(
-    root: &Path,
-    scope: ScanScope,
+    parts: Vec<SummaryPart>,
+    roots: Option<&Roots>,
     request: &Request,
-    summary: SummaryRow,
-    ignore_rules: ControlCoverage,
-    ignored_unverified: bool,
-    status: TreeStatus,
-    provenance: ReportProvenance,
+    generated_at: std::time::SystemTime,
 ) -> Report {
     let query = &request.query;
-    let (mut notes, mut tips) = display_notes(query, request.basis.content, &ignore_rules);
+    let first = parts.first().expect("a report reads at least one root");
+    let (root, scope) = (first.root.clone(), first.scope);
+    let ignored_unverified = parts.iter().any(|part| part.ignored_unverified);
+    let summary = sum_roots(parts.iter().map(|part| part.summary));
+    let provenance = ReportProvenance::merge(
+        parts
+            .iter()
+            .map(|part| ReportProvenance::of_walk(part.scan_started, generated_at, part.complete))
+            .collect(),
+    );
+    let (ignore_rules, status): (Vec<_>, Vec<_>) =
+        parts.into_iter().map(|part| (part.ignore_rules, part.status)).unzip();
+    let ignore_rules = merge_ignore_rules(ignore_rules);
+    let labels = roots.map(Roots::as_slice);
+    let (mut notes, mut tips) = display_notes(query, request.basis.content, &ignore_rules, labels);
     tips.extend(retained_refusals_tip(query, &ignore_rules));
     if ignored_unverified {
         notes.push(UNVERIFIED_IGNORED_NOTE.to_owned());
@@ -2204,14 +2243,14 @@ pub(crate) fn report_summary(
         notes,
         tips,
         axes: query.axes,
-        status,
+        status: TreeStatus::merge(status),
         provenance,
         scope,
         requested_analysis: AnalysisSet::NONE,
         requested_views: query.views.clone(),
         omitted_views: query.omitted_views.clone(),
-        root: Some(root.to_path_buf()),
-        roots: None,
+        root: roots.is_none().then_some(root),
+        roots: roots.map(|roots| roots.as_slice().to_vec()),
         size: query.selection.size,
         sort_metric: match query.selection.sort {
             Some(SortKey::Metric(name)) => Some(name),
@@ -5427,7 +5466,8 @@ mod tests {
         assert!(omitted.contains(&ViewSpec::Documents));
 
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
-        let (notes, tips) = display_notes(&query, AnalysisSet::NONE, &ControlCoverage::NotObserved);
+        let (notes, tips) =
+            display_notes(&query, AnalysisSet::NONE, &ControlCoverage::NotObserved, None);
         assert_eq!(notes, ["note: full omits code, documents without analysis"]);
         assert_eq!(tips, ["tip: include them: analyze all"]);
 
@@ -5437,7 +5477,9 @@ mod tests {
         assert!(omitted.is_empty(), "every view is answerable with analysis enabled");
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
         assert!(
-            display_notes(&query, AnalysisSet::ALL, &ControlCoverage::NotObserved).0.is_empty()
+            display_notes(&query, AnalysisSet::ALL, &ControlCoverage::NotObserved, None)
+                .0
+                .is_empty()
         );
     }
 
@@ -5470,7 +5512,7 @@ mod tests {
                 axes: &AxisNames::FLAGS,
                 ..Query::default()
             };
-            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved, None);
             assert_eq!(notes, [note], "{content:?}");
             assert_eq!(tips, ["tip: include them: --analyze all"], "{content:?}");
         }
@@ -5507,14 +5549,14 @@ mod tests {
             ),
         ] {
             let query = Query { views, axes: &AxisNames::FLAGS, ..Query::default() };
-            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved, None);
             assert_eq!((notes, tips), (vec![note.to_owned()], vec![tip.to_owned()]));
         }
 
         // A view that displays analysis, or a ranking by one of its metrics, says nothing.
         let shown = Query { views: vec![ViewSpec::Languages], ..Query::default() };
         let (notes, tips) =
-            display_notes(&shown, AnalysisSet::CODE_ONLY, &ControlCoverage::NotObserved);
+            display_notes(&shown, AnalysisSet::CODE_ONLY, &ControlCoverage::NotObserved, None);
         assert!(notes.is_empty() && tips.is_empty(), "{notes:?} {tips:?}");
         let ranked = Query {
             views: vec![ViewSpec::Files],
@@ -5525,7 +5567,7 @@ mod tests {
             ..Query::default()
         };
         let (notes, _) =
-            display_notes(&ranked, AnalysisSet::CODE_ONLY, &ControlCoverage::NotObserved);
+            display_notes(&ranked, AnalysisSet::CODE_ONLY, &ControlCoverage::NotObserved, None);
         assert!(notes.is_empty(), "{notes:?}");
     }
 
@@ -5563,7 +5605,7 @@ mod tests {
                 axes: &AxisNames::FLAGS,
                 ..Query::default()
             };
-            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            let (notes, tips) = display_notes(&query, content, &ControlCoverage::NotObserved, None);
             assert_eq!((notes, tips), (vec![note.to_owned()], vec![tip.to_owned()]));
         }
 
@@ -5571,7 +5613,7 @@ mod tests {
         for view in [ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages] {
             let query = Query { views: vec![view], ..Query::default() };
             let (notes, tips) =
-                display_notes(&query, AnalysisSet::ALL, &ControlCoverage::NotObserved);
+                display_notes(&query, AnalysisSet::ALL, &ControlCoverage::NotObserved, None);
             assert!(notes.is_empty() && tips.is_empty(), "{view:?}: {notes:?} {tips:?}");
         }
     }
@@ -5595,7 +5637,7 @@ mod tests {
                 .fold(AnalysisSet::NONE, |set, view| set.union(view.shows()));
             assert!(shown.contains(content), "{content:?}");
             let query = Query { views: ViewSpec::defaults_for(content), ..Query::default() };
-            let (notes, _) = display_notes(&query, content, &ControlCoverage::NotObserved);
+            let (notes, _) = display_notes(&query, content, &ControlCoverage::NotObserved, None);
             assert!(notes.is_empty(), "{content:?}: {notes:?}");
         }
     }
@@ -5702,8 +5744,9 @@ mod tests {
             // Anchored on the whole phrase, because `--analyze` contains `analyze`: a bare
             // `contains` for the other surface's spelling matches its own. That is the same
             // tokenisation trap the watch-scope substitution had to avoid.
-            let tip =
-                display_notes(&query, AnalysisSet::NONE, &ControlCoverage::NotObserved).1.remove(0);
+            let tip = display_notes(&query, AnalysisSet::NONE, &ControlCoverage::NotObserved, None)
+                .1
+                .remove(0);
             assert!(tip.contains(&format!(": {mine} ")), "{tip} must name {mine}");
             assert!(!tip.contains(&format!(": {theirs} ")), "{tip} must not name {theirs}");
         }

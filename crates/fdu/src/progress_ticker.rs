@@ -429,6 +429,7 @@ mod tests {
             bytes: 4_096,
             allocated: 8_192,
             analysis: Some((2, 5)),
+            root: None,
         };
         assert_eq!(
             frame_facts(&snapshot, SizeMetric::Allocated),
@@ -469,6 +470,7 @@ mod tests {
             bytes: 8_796_093_022_208,
             allocated: 41_107_456,
             analysis: None,
+            root: None,
         };
         let bytes = |size| frame_facts(&snapshot, size).map(|facts| facts.bytes);
         assert_eq!(bytes(SizeMetric::Allocated), Some(41_107_456));

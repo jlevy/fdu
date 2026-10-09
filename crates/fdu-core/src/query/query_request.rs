@@ -335,6 +335,54 @@ impl Roots {
     }
 }
 
+/// One request over one or more roots: the roots, and the request every root shares.
+///
+/// The rest of a request -- scope, analyzers, selection, views, and `now` -- belongs to the
+/// whole report, so it is built once, from a spec naming any one root, and each root's
+/// request is that one with its basis root replaced. Each therefore has exactly the
+/// identity one root's request has, its snapshot, content sidecar, and cache policy
+/// included, so one root answered from its cache and another walked cold can sit in one
+/// report; and every root's ages are measured from one instant.
+#[derive(Clone, Debug)]
+pub struct RootsRequest {
+    roots: Roots,
+    request: Request,
+}
+
+impl RootsRequest {
+    /// A request over `roots`, sharing everything but the basis root with `request`.
+    ///
+    /// The shared request's basis root becomes the first root's label, so that its own
+    /// root is never a directory outside the report.
+    pub fn new(roots: Roots, mut request: Request) -> Self {
+        request.basis.root.clone_from(&roots.first().label);
+        Self { roots, request }
+    }
+
+    /// The report's roots.
+    pub fn roots(&self) -> &Roots {
+        &self.roots
+    }
+
+    /// The request every root shares, rooted at the first root.
+    pub fn request(&self) -> &Request {
+        &self.request
+    }
+
+    /// Each root beside its own request: the shared one, rooted at the root's label.
+    ///
+    /// The label rather than the canonical path, so a root that vanished between
+    /// validation and its walk fails in the spelling its caller used, as one root does;
+    /// every route canonicalizes the root before it reads anything.
+    pub(crate) fn per_root(&self) -> impl Iterator<Item = (&NamedRoot, Request)> + '_ {
+        self.roots.iter().map(|root| {
+            let mut request = self.request.clone();
+            request.basis.root.clone_from(&root.label);
+            (root, request)
+        })
+    }
+}
+
 impl<'a> IntoIterator for &'a Roots {
     type Item = &'a NamedRoot;
     type IntoIter = std::slice::Iter<'a, NamedRoot>;
