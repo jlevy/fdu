@@ -84,6 +84,7 @@ export const INPUT_WRITERS = new Map([
     "mutates the scan tree; an in-place rewrite is the change under test",
   ],
   ["tests/golden/bin/cache-plant.mjs", "plants damaged cache files for a golden to reject"],
+  ["tests/golden/bin/directory-ages.cjs", "builds the tree a golden scans"],
   ["tests/golden/bin/directory-builds.cjs", "builds the tree a golden scans"],
   ["tests/golden/bin/watch-capture.mjs", "each write is a change the watch golden observes"],
   [
