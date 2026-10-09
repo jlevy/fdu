@@ -4738,6 +4738,43 @@ impl Index {
             .filter(|&newest| newest != NO_ACTIVITY)
     }
 
+    /// The directory below the root, least by path, that this index entered and whose
+    /// device and inode `wanted` accepts, with what `wanted` returned for it.
+    ///
+    /// Entered: something beneath it was counted, so its newest activity is known. A
+    /// directory the walk listed and did not descend into, at the scan depth or across a
+    /// filesystem boundary, has nothing counted beneath it and is never returned. A report
+    /// over several roots asks this of each root's index, for a directory that is another
+    /// root reached through an alias ([`crate::query::Roots::resolve`]); an index without
+    /// device and inode numbers, as off Unix, holds none to accept.
+    pub(crate) fn entered_directory_with<T>(
+        &self,
+        wanted: impl Fn((u64, u64)) -> Option<T>,
+    ) -> Option<(T, PathBuf)> {
+        let mut least: Option<(T, PathBuf)> = None;
+        for (slot, cell) in self.arena.iter().enumerate() {
+            let Slot::Occupied { generation, entry } = cell else { continue };
+            if entry.kind != EntryKind::Dir || entry.parent.is_none() {
+                continue;
+            }
+            let identity = (entry.attrs.dev, entry.attrs.inode);
+            if identity == (0, 0) {
+                continue;
+            }
+            let Some(found) = wanted(identity) else { continue };
+            let id =
+                EntryId { slot: u32::try_from(slot).unwrap_or(u32::MAX), generation: *generation };
+            if self.newest_activity_below(id).is_none() {
+                continue;
+            }
+            let Some(path) = self.path_of(id) else { continue };
+            if least.as_ref().is_none_or(|(_, held)| path < *held) {
+                least = Some((found, path));
+            }
+        }
+        least
+    }
+
     /// Whether this index was built by the transient tree tier and keeps only some of the
     /// files it walked ([`Self::folded_children`]).
     ///

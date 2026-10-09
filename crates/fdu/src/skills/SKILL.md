@@ -97,7 +97,10 @@ Every size, row, share, and bound is taken over the union, once.
 Text prints each path after its root’s label (`docs/guide.md`); JSON keeps paths
 relative to their root, sets `root` to null, names the roots in `roots`, and gives rows,
 errors, and refusals a `root` index into it.
-A root inside another, or the same directory twice, is refused.
+A tree section over several roots has `tree: null`, a `total` row, and `trees`, one tree
+per root, each with its own `remainder` and a `root` index.
+Every PATH is a directory: `fdu */` names only the directories here, where `fdu *` stops
+at the first file. A root inside another, or the same directory twice, is refused.
 `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
 
 ## Read the Result and Its Notes
@@ -190,6 +193,8 @@ native filenames. Directory rows include descendants and overlap; add
 
 A tree’s `remainder` contains recursive `files`, `bytes`, `allocated`, and applicable
 `reasons` outside its displayed root-level rows; `null` means nothing is hidden there.
+Over several roots the section’s `tree` is null: read `total` and each tree in `trees`,
+whose `remainder` is that root’s own.
 A displayed directory already represents its whole subtree, including descendants whose
 rows were bounded away.
 Per-boundary `entries` counts hidden roots, while `files` counts regular files

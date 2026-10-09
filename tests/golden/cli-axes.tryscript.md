@@ -1214,6 +1214,24 @@ $ fdu --cache off project missing
 ? 1
 ```
 
+Every PATH is a directory, so `fdu *` stops at the first file; the refusal names the
+file as given and the command that names only the directories.
+
+```console
+$ fdu --cache off project project/README.md
+! fdu: project[SEP]README.md is a file; fdu reports on directories (to name only the directories here: fdu */)
+? 1
+```
+
+With one root, a delivery no route can carry is refused before the root is found to be a
+file, as it was before several roots existed.
+
+```console
+$ fdu project/README.md --cache off --stale-ok
+! fdu: --stale-ok answers from the snapshot, which --cache off never reads; drop one of them
+? 2
+```
+
 The cache lifecycle acts on one root’s snapshot, so it takes one PATH.
 
 ```console

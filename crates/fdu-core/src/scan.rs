@@ -1839,22 +1839,7 @@ pub(crate) fn scan_summary_fold(
     config: &ScanConfig,
     fold: &mut dyn FnMut(&ObservationOp),
 ) -> Result<ScanReport> {
-    let mut sink = |batch: ScannerBatch| {
-        for op in batch.ops() {
-            fold(op);
-        }
-        batch.recycle();
-    };
-    let (mut report, _diagnostics) = scan_internal(
-        root,
-        config,
-        &mut sink,
-        false,
-        WorkerPolicyExperiment::ShippedOneShot,
-        SinkMode::TransientFold,
-    )?;
-    normalize_walk_errors(root, &mut report.errors);
-    Ok(report)
+    summary_fold_walk(root, config, fold, false, SinkMode::TransientFold).map(|(report, _)| report)
 }
 
 /// [`scan_summary_fold`] plus the diagnostic trace [`scan_with_diagnostics`] collects.
@@ -1863,6 +1848,30 @@ pub(crate) fn scan_summary_fold_with_diagnostics(
     config: &ScanConfig,
     fold: &mut dyn FnMut(&ObservationOp),
 ) -> Result<(ScanReport, ScanDiagnostics)> {
+    summary_fold_walk(root, config, fold, true, SinkMode::TransientFold).map(
+        |(report, diagnostics)| (report, diagnostics.expect("diagnostic scan creates a recorder")),
+    )
+}
+
+/// [`scan_summary_fold`] over one of several roots, which states every directory so the
+/// fold sees each one's device and inode ([`SinkMode::TransientFoldIdentified`]), with the
+/// diagnostic trace when `collect_diagnostics` asks for it.
+pub(crate) fn scan_summary_fold_identified(
+    root: &Path,
+    config: &ScanConfig,
+    fold: &mut dyn FnMut(&ObservationOp),
+    collect_diagnostics: bool,
+) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
+    summary_fold_walk(root, config, fold, collect_diagnostics, SinkMode::TransientFoldIdentified)
+}
+
+fn summary_fold_walk(
+    root: &Path,
+    config: &ScanConfig,
+    fold: &mut dyn FnMut(&ObservationOp),
+    collect_diagnostics: bool,
+    mode: SinkMode,
+) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
     let mut sink = |batch: ScannerBatch| {
         for op in batch.ops() {
             fold(op);
@@ -1873,12 +1882,12 @@ pub(crate) fn scan_summary_fold_with_diagnostics(
         root,
         config,
         &mut sink,
-        true,
+        collect_diagnostics,
         WorkerPolicyExperiment::ShippedOneShot,
-        SinkMode::TransientFold,
+        mode,
     )?;
     normalize_walk_errors(root, &mut report.errors);
-    Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
+    Ok((report, diagnostics))
 }
 
 /// Walk `root`, emitting observations and a bounded run-scoped diagnostic trace.
@@ -1927,12 +1936,16 @@ enum SinkMode {
     Retained,
     /// The consumer folds each batch and drops it: the transient summary tier.
     TransientFold,
+    /// [`Self::TransientFold`] over one of several roots, whose consumer compares every
+    /// directory's device and inode with the other roots' to find one it reached through
+    /// an alias, so every directory is stated, as the retained walk states it.
+    TransientFoldIdentified,
 }
 
 impl SinkMode {
     /// Drained batches go back to the worker that allocated them (H147).
     fn recycles_batches(self) -> bool {
-        self == Self::TransientFold
+        self != Self::Retained
     }
 
     /// Directory and symlink kind come from the listing without a stat (H72).
@@ -1953,7 +1966,7 @@ impl SinkMode {
     /// (`StreamingEmission::send_if_full`). The retained stream keeps listing order: the
     /// index reclassifies the subtree a control governs when that control arrives.
     fn groups_directories(self, config: &ScanConfig) -> bool {
-        self == Self::TransientFold && config.read_controls
+        self != Self::Retained && config.read_controls
     }
 }
 
@@ -2930,6 +2943,7 @@ fn scan_concurrent(
         match sink_mode {
             SinkMode::Retained => walk_worker,
             SinkMode::TransientFold => walk_worker_transient_fold,
+            SinkMode::TransientFoldIdentified => walk_worker_transient_fold_identified,
         },
         &mut consume,
     )
@@ -3725,6 +3739,27 @@ fn walk_worker_transient_fold(
         sender,
         diagnostics,
         StreamingEmission::for_sink(config, SinkMode::TransientFold),
+    )
+}
+
+/// One worker's share of the transient summary walk over one of several roots
+/// ([`SinkMode::TransientFoldIdentified`]).
+fn walk_worker_transient_fold_identified(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+) -> ScanReport {
+    walk_worker_with(
+        root,
+        config,
+        root_dev,
+        queue,
+        sender,
+        diagnostics,
+        StreamingEmission::for_sink(config, SinkMode::TransientFoldIdentified),
     )
 }
 

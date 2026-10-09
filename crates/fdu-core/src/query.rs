@@ -27,12 +27,13 @@ pub use query_report::{
 pub(crate) use query_report::{
     SummaryPart, read_indexes, report_in, report_summary, summary_totals_fit,
 };
-pub(crate) use query_request::Rejection;
 pub use query_request::{
     Basis, BasisHolder, Delivery, NamedRoot, ReadSpec, Request, RequestDefaults, RequestError,
     RequestSpec, Roots, RootsRequest, Scope, ScopeAxis, WatchDelivery, Workers, bound_nanos,
-    parse_bound, parse_cache_policy, parse_kind, parse_kinds, parse_size_metric, parse_sort,
+    labelled_path, parse_bound, parse_cache_policy, parse_kind, parse_kinds, parse_size_metric,
+    parse_sort,
 };
+pub(crate) use query_request::{Rejection, RootAliases};
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
     Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, ShareThreshold,

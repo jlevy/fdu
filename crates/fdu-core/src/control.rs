@@ -204,6 +204,16 @@ pub struct RefusedControl {
     /// Position of the file's root among a report's roots: 0 for an index, which has one
     /// root, and for a report over one root. A report over several roots sets it, so that
     /// its root's path joined with [`Self::path`] names the file.
+    ///
+    /// A field, where a status issue is wrapped with its root
+    /// ([`StatusIssue`](crate::query::StatusIssue)), because the two types sit differently.
+    /// [`Issue`](crate::Issue) is the engine contract's, carried by commits and opened
+    /// roots, which have one root by construction, so the root goes on a report-level
+    /// wrapper and the contract stays as it is. A refusal is the control table's own
+    /// record, reached only through [`ControlCoverage`], which an index and a report share
+    /// whole; wrapping it would take a second, report-level copy of
+    /// [`ControlObservation`] to hold the wrapped list, for one `usize` that an index
+    /// always fills with 0 (review A9 on #192).
     pub root: usize,
     /// The refused `.gitignore`.
     pub path: PathBuf,

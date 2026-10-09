@@ -25,7 +25,7 @@ use fdu_core::query::IgnoredEntries;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
 use fdu_core::query::{
-    AxisNames, Delivery, ReadSpec, Report, ReportSource, Request, RequestError, RequestSpec, Roots,
+    AxisNames, Delivery, ReadSpec, Report, ReportSource, Request, RequestError, RequestSpec,
     RootsRequest, SizeMetric, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
@@ -855,20 +855,15 @@ impl Cli {
                 report_format::MAX_BAR_SIZE
             )));
         }
-        let cache = self.parse_cache_policy().map_err(|error| usage(&error))?;
-        // The cache directory first, then the roots, in the order one root's run has
-        // always failed: a bad `--cache-dir`, then a root that is missing, not a
-        // directory, or overlapping another. Each root's snapshot is named under this one
-        // directory by the engine, as one root's has always been named here.
-        let cache_dir = fdu_core::default_cache_dir(self.cache_dir.as_deref())?;
-        let roots = Roots::resolve(&self.paths).map_err(|error| match error {
-            fdu_core::Error::InvalidRequest(refusal) => usage(&refused(&refusal)),
-            other => other.into(),
-        })?;
         let delivery = Delivery {
-            cache,
+            cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
             stale_ok: self.stale_ok,
             cache_path: None,
+            // The directory every root's snapshot is named in, resolved here because this
+            // command caches by default; the engine names each root's file in it, as this
+            // command line once named one root's. A bad `--cache-dir` fails first, before
+            // any root is resolved, as it always has.
+            cache_dir: fdu_core::default_cache_dir(self.cache_dir.as_deref())?,
             workers: fdu_core::query::Workers {
                 analysis: self.analysis_workers,
                 ..Default::default()
@@ -880,14 +875,22 @@ impl Cli {
             // command's exit mapping reads it today, and the execution plan model will.
             accept_partial: self.allow_partial,
         };
-        // What a watch cannot carry -- a narrowed scan scope, content analysis nothing
-        // re-reads, a snapshot nothing verified -- is the model's rule now, so a library
-        // caller and a Python caller meet the same wall this command line has always been.
-        request.validate_delivery(&delivery).map_err(|error| usage(&refused(&error)))?;
+        // The roots, refused in the order one root's run has always been: a root that is
+        // missing; then a delivery no route can carry -- what a watch cannot carry (a
+        // narrowed scan scope, content analysis nothing re-reads, a snapshot nothing
+        // verified) is the model's rule, so a library caller and a Python caller meet the
+        // same wall -- then a root that is not a directory, or that overlaps another.
+        let request =
+            RootsRequest::resolve(&self.paths, request, &delivery).map_err(
+                |error| match error {
+                    fdu_core::Error::InvalidRequest(refusal) => usage(&refused(&refusal)),
+                    other => self.root_error(other),
+                },
+            )?;
 
         // Resolved before any work starts, beside the color decision; the ticker takes
         // this rather than re-deriving it deeper in.
-        let progress_plan = self.progress_plan(terminal, &request);
+        let progress_plan = self.progress_plan(terminal, request.request());
 
         #[cfg(feature = "watch")]
         if self.watch {
@@ -907,16 +910,12 @@ impl Cli {
             .enabled();
             let indicator = progress_plan.draw.then_some((progress_plan, progress_io));
             // A watch has one root, checked above, and keeps its snapshot where one root's
-            // report would.
-            let delivery = Delivery {
-                cache_path: default_cache_path_in(&roots.first().path, cache_dir.as_deref())?,
-                ..delivery
-            };
+            // report would: the session names it in the delivery's directory.
             return Self::run_watch(
                 out,
                 diagnostic,
                 format,
-                &request,
+                request.request(),
                 &delivery,
                 indicator,
                 WatchPresentation {
@@ -934,10 +933,8 @@ impl Cli {
         // The measurement door comes first because it is a measurement: a ticker thread
         // polling beside the walk would be part of what it measures. A run that does not
         // draw takes the plain door and pays nothing for the indicator, not even a handle.
-        let request = RootsRequest::new(roots, request);
-        let cache_dir = cache_dir.as_deref();
         let (prepared, scan_diagnostics) = if collect_scan_diagnostics {
-            prepare_roots_report_with_scan_diagnostics(&request, &delivery, cache_dir)?
+            prepare_roots_report_with_scan_diagnostics(&request, &delivery)?
         } else if progress_plan.draw {
             // The one place the line is stopped on this route: right after the engine
             // returns, with a report or with an error, and before a byte reaches either
@@ -947,12 +944,11 @@ impl Cli {
             let progress = Progress::new();
             let mut ticker =
                 Ticker::start(progress_plan, progress.clone(), report_started, progress_io);
-            let prepared =
-                prepare_roots_report_with_progress(&request, &delivery, cache_dir, &progress);
+            let prepared = prepare_roots_report_with_progress(&request, &delivery, &progress);
             ticker.stop();
             (prepared?, Vec::new())
         } else {
-            (prepare_roots_report(&request, &delivery, cache_dir)?, Vec::new())
+            (prepare_roots_report(&request, &delivery)?, Vec::new())
         };
         let RootsPrepared { report, pending: pending_saves, performance } = prepared;
         // One line per root that walked, in the roots' order.
@@ -999,11 +995,12 @@ impl Cli {
         // pay for a cold scan that this one had already done.
         let diagnostic_color =
             ColorContext::from_environment(self.color, false, false, stderr_is_terminal).enabled();
-        // Every root's save is joined, and each failure is its own warning.
-        let save_warnings: Vec<String> = pending_saves
-            .into_iter()
-            .filter_map(|pending| pending.join().err().map(|error| format!("warn: {error}")))
-            .collect();
+        // Every root's save is joined. One root has always warned of its first failure;
+        // over several, each failure is its own warning.
+        let failures = pending_saves.join_all();
+        let shown = if request.roots().is_several() { failures.len() } else { 1 };
+        let save_warnings: Vec<String> =
+            failures.into_iter().take(shown).map(|error| format!("warn: {error}")).collect();
         if render_result.is_err() {
             // A failed report write still joins the saves and tells the caller if one failed.
             for warning in &save_warnings {
@@ -1068,6 +1065,33 @@ impl Cli {
             0 | 1 => Ok(()),
             given => Err(usage(&anyhow::anyhow!("{flag} takes one PATH; {given} were given"))),
         }
+    }
+
+    /// A root the engine refused, in this command's words.
+    ///
+    /// A PATH that names no directory says so by the name it was given and what to type
+    /// instead, since `fdu *`, the way `du -sh *` is typed, meets a file in nearly every
+    /// directory and fdu reports on directories (review A5 on #192); the exit status is
+    /// still a filesystem error's. Every other error is the engine's.
+    fn root_error(&self, error: fdu_core::Error) -> anyhow::Error {
+        if let fdu_core::Error::Io { path, source } = &error {
+            let given = (source.kind() == io::ErrorKind::NotADirectory)
+                .then(|| {
+                    self.paths
+                        .iter()
+                        .find(|given| given.canonicalize().is_ok_and(|resolved| resolved == *path))
+                })
+                .flatten();
+            if let Some(given) = given {
+                let what = if path.is_file() { "is a file" } else { "is not a directory" };
+                return anyhow::anyhow!(
+                    "{} {what}; fdu reports on directories (to name only the directories \
+                     here: fdu */)",
+                    given.display()
+                );
+            }
+        }
+        error.into()
     }
 
     /// Whether the requested format is a machine format, which is never colorized.
@@ -1972,9 +1996,7 @@ fn status_warnings(
             let issue = &detail.issue;
             match &issue.path {
                 Some(path) if !path.as_os_str().is_empty() && !names_path(&issue.message, path) => {
-                    let shown = roots
-                        .and_then(|roots| roots.get(detail.root))
-                        .map_or_else(|| path.clone(), |root| root.label.join(path));
+                    let shown = fdu_core::query::labelled_path(roots, detail.root, path);
                     format!("warn: {}: {}", shown.display(), issue.message)
                 }
                 _ => format!("warn: {}", issue.message),
@@ -4609,6 +4631,7 @@ mod tests {
             cache: CachePolicy::Off,
             stale_ok: false,
             cache_path: None,
+            cache_dir: None,
             workers: fdu_core::query::Workers::default(),
             batch_size: fdu_core::ScanConfig::default().batch_size,
             order: fdu_core::ScanOrder::default(),

@@ -333,16 +333,9 @@ pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
     DiagnosticLines { notes, tips }
 }
 
-/// A row's path as text prints it: after its root's label when the report has several, as
-/// `find docs src` prints `docs/guide.md`, and as it is when the report has one root.
-///
-/// Text alone does this. Machine formats keep the path relative to its root and carry the
-/// root's position beside it, so an absolute label never makes a relative path absolute.
+/// A row's path as text prints it ([`crate::query::labelled_path`]).
 fn display_path<'a>(report: &Report, row: &'a FileRow) -> std::borrow::Cow<'a, Path> {
-    match report.roots.as_deref().and_then(|roots| roots.get(row.root)) {
-        Some(root) => std::borrow::Cow::Owned(root.label.join(&row.path)),
-        None => std::borrow::Cow::Borrowed(&row.path),
-    }
+    crate::query::labelled_path(report.roots.as_deref(), row.root, &row.path)
 }
 
 fn render_flat(report: &Report, format: Format) -> String {
@@ -6167,6 +6160,67 @@ mod tests {
         assert_eq!(text.lines().collect::<Vec<_>>(), expected, "{text}");
     }
 
+    /// The row limit applies once over several roots, with the total as the first row: a
+    /// limit that cuts root rows leaves the cut roots to the section's omission, which
+    /// names what they hold, and a zero limit keeps no row at all, as one root's tree does
+    /// (review A7 on #192). Text and JSON say the same.
+    #[test]
+    fn a_row_limit_over_several_roots_cuts_root_rows_and_says_so() {
+        let bounded = |limit| {
+            several_roots_fixture(&Query {
+                views: vec![ViewSpec::Tree],
+                selection: Selection {
+                    size: SizeMetric::Apparent,
+                    min_share: Some(ShareThreshold::parse("10%").expect("share")),
+                    limit: Some(crate::query::Bound::Limit(limit)),
+                    ..Selection::default()
+                },
+                ..Query::default()
+            })
+        };
+        let text = |report: &Report| {
+            render_with_options(report, Format::Text, RenderOptions { color: false, bar_size: 0 })
+                .expect("text")
+        };
+        let json = |report: &Report| {
+            let json = super::render(report, Format::Json, false).expect("json");
+            json.split_whitespace().collect::<String>()
+        };
+
+        let two = bounded(2);
+        assert_eq!(
+            text(&two).lines().collect::<Vec<_>>(),
+            [
+                " 100%     8.7 KiB  20s  (total) 4 files",
+                "  56%     4.8 KiB  20s    src/ 2 files",
+                // `src` keeps its own remainder, one level in, as one root's tree does ...
+                "  56%     4.8 KiB           … and 2 more files",
+                // ... and the root row the cap cut is the section's omission, at the level
+                // root rows are shown at.
+                "  44%     3.9 KiB         … and 2 more files",
+            ],
+            "{}",
+            text(&two)
+        );
+        let compact = json(&two);
+        assert!(compact.contains(r#""tree":null,"total":{"bytes":9001,"#), "{compact}");
+        assert!(compact.contains(r#""trees":[{"root":1,"tree":{"name":"src","#), "{compact}");
+        assert!(!compact.contains(r#""name":"docs""#), "docs is past the cap: {compact}");
+        assert!(compact.contains(r#""reason":"rows""#), "{compact}");
+
+        let none = bounded(0);
+        assert_eq!(
+            text(&none).lines().collect::<Vec<_>>(),
+            // No row shows an age, so there is no age column, as for one root.
+            [" 100%     8.7 KiB  … and 4 more files"],
+            "{}",
+            text(&none)
+        );
+        let compact = json(&none);
+        assert!(compact.contains(r#""tree":null,"total":null,"trees":[]"#), "{compact}");
+        assert!(compact.contains(r#""reason":"rows""#), "{compact}");
+    }
+
     /// Machine output over several roots: `root` is null and `roots` names each, the tree
     /// is a total and one tree per root, and every row, error, and refusal carries its root.
     #[test]
@@ -6204,17 +6258,17 @@ mod tests {
         assert!(compact.contains(r#"{"root":1,"path":"main.rs","#), "{json}");
         let paths = super::render(&files, Format::Paths, false).expect("paths");
         // Joined by component, as every text path is, so with `\` on Windows.
-        let expected: String = [
+        let mut expected = String::new();
+        for parts in [
             &["docs", "guide.md"][..],
             &["docs", "sub"],
             &["docs", "sub", "a.md"],
             &["src", "main.rs"],
             &["src", "sub"],
             &["src", "sub", "lib.rs"],
-        ]
-        .iter()
-        .map(|parts| format!("{}\n", parts.iter().collect::<PathBuf>().display()))
-        .collect();
+        ] {
+            let _ = writeln!(expected, "{}", parts.iter().collect::<PathBuf>().display());
+        }
         assert_eq!(paths, expected);
         let one = fixture(&[ViewSpec::Files]);
         let json = super::render(&one, Format::Json, false).expect("json");

@@ -314,7 +314,7 @@ impl ReportProvenance {
         let mut parts = parts.into_iter();
         let first = parts.next().expect("a report reads at least one root");
         parts.fold(first, |merged, part| Self {
-            source: weaker_source(merged.source, part.source),
+            source: merged.source.weaker(part.source),
             freshness: least_fresh(merged.freshness, part.freshness),
             scan_started_at: merged
                 .scan_started_at
@@ -341,17 +341,6 @@ fn merged_tier(left: TierState, right: TierState) -> TierState {
         freshness: least_fresh(left.freshness, right.freshness),
         observed_at_ns: left.observed_at_ns.zip(right.observed_at_ns).map(|(a, b)| a.min(b)),
     }
-}
-
-/// The weaker of two report sources: an answer no filesystem verified is weaker than a
-/// revalidated one, which is weaker than a cold walk.
-fn weaker_source(left: ReportSource, right: ReportSource) -> ReportSource {
-    let rank = |source| match source {
-        ReportSource::ColdScan => 0,
-        ReportSource::WarmRevalidate => 1,
-        ReportSource::CacheOnly => 2,
-    };
-    if rank(left) >= rank(right) { left } else { right }
 }
 
 fn least_fresh(left: Freshness, right: Freshness) -> Freshness {
@@ -524,6 +513,85 @@ mod tests {
                 .count(),
             66,
             "the diagnostic bound must not discard retained failure state"
+        );
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use super::{ReportProvenance, TierProvenance, TierState};
+    use crate::query::ReportSource;
+    use crate::{Freshness, Source};
+
+    fn part(
+        source: ReportSource,
+        entries: (Source, Freshness, Option<i64>),
+        content: Option<(Source, Freshness, Option<i64>)>,
+        started: Option<u64>,
+        generated: u64,
+    ) -> ReportProvenance {
+        let tier =
+            |(source, freshness, observed_at_ns)| TierState { source, freshness, observed_at_ns };
+        ReportProvenance {
+            source,
+            freshness: entries.1,
+            scan_started_at: started.map(|seconds| UNIX_EPOCH + Duration::from_secs(seconds)),
+            generated_at: UNIX_EPOCH + Duration::from_secs(generated),
+            tiers: TierProvenance { entries: tier(entries), content: content.map(tier) },
+        }
+    }
+
+    /// Several roots' provenance with mixed sources: the weakest source, the least fresh
+    /// tier, the earliest times and unknown when any root's is, and a content tier only
+    /// when every root has one (review A7 on #192).
+    #[test]
+    fn provenance_over_mixed_roots_takes_the_weakest_part_of_each() {
+        let cold = part(
+            ReportSource::ColdScan,
+            (Source::Scanned, Freshness::Fresh, Some(30)),
+            Some((Source::Scanned, Freshness::Fresh, Some(31))),
+            Some(30),
+            40,
+        );
+        let warm = part(
+            ReportSource::WarmRevalidate,
+            (Source::Revalidated, Freshness::Fresh, Some(20)),
+            Some((Source::Cached, Freshness::Fresh, Some(21))),
+            Some(20),
+            41,
+        );
+        let cached = part(
+            ReportSource::CacheOnly,
+            (Source::Cached, Freshness::Stale, Some(10)),
+            None,
+            None,
+            42,
+        );
+
+        let both = ReportProvenance::merge(vec![cold.clone(), warm.clone()]);
+        assert_eq!(both.source, ReportSource::WarmRevalidate);
+        assert_eq!(both.freshness, Freshness::Fresh);
+        assert_eq!(both.scan_started_at, Some(UNIX_EPOCH + Duration::from_secs(20)));
+        assert_eq!(both.generated_at, UNIX_EPOCH + Duration::from_secs(40));
+        assert_eq!(both.tiers.entries.source, Source::Revalidated);
+        assert_eq!(both.tiers.entries.observed_at_ns, Some(20));
+        let content = both.tiers.content.expect("every root has a content tier");
+        assert_eq!((content.source, content.observed_at_ns), (Source::Cached, Some(21)));
+
+        let all = ReportProvenance::merge(vec![cold, warm, cached]);
+        assert_eq!(all.source, ReportSource::CacheOnly);
+        assert_eq!(all.freshness, Freshness::Stale);
+        assert_eq!(all.scan_started_at, None, "unknown when any root's is");
+        assert_eq!(all.tiers.entries.source, Source::Cached);
+        assert_eq!(all.tiers.entries.observed_at_ns, Some(10));
+        assert_eq!(all.tiers.content, None, "one root has no content tier");
+
+        assert_eq!(ReportSource::ColdScan.weaker(ReportSource::CacheOnly), ReportSource::CacheOnly);
+        assert_eq!(
+            ReportSource::WarmRevalidate.weaker(ReportSource::ColdScan),
+            ReportSource::WarmRevalidate
         );
     }
 }

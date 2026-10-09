@@ -686,6 +686,21 @@ pub enum ReportSource {
     CacheOnly,
 }
 
+impl ReportSource {
+    /// The weaker of two sources, which is what an answer built from both can claim: one no
+    /// filesystem verified is weaker than a revalidated one, which is weaker than a cold
+    /// walk. A report over several roots takes it across them, as one takes it across tiers.
+    #[must_use]
+    pub fn weaker(self, other: Self) -> Self {
+        let rank = |source| match source {
+            Self::ColdScan => 0,
+            Self::WarmRevalidate => 1,
+            Self::CacheOnly => 2,
+        };
+        if rank(other) > rank(self) { other } else { self }
+    }
+}
+
 /// One directory's row in a tree view.
 #[derive(Clone, Debug)]
 pub struct TreeNode {
@@ -1683,13 +1698,10 @@ fn refused_controls_note(
     let mut directories: Vec<String> = observed.refusals[..shown]
         .iter()
         .map(|refusal| {
-            let parent = refusal.path.parent().filter(|parent| !parent.as_os_str().is_empty());
-            match (labels.and_then(|labels| labels.get(refusal.root)), parent) {
-                (Some(root), Some(parent)) => root.label.join(parent).display().to_string(),
-                (Some(root), None) => root.label.display().to_string(),
-                (None, Some(parent)) => parent.display().to_string(),
-                (None, None) => ".".to_string(),
-            }
+            let parent = refusal.path.parent().unwrap_or(Path::new(""));
+            let shown = crate::query::labelled_path(labels, refusal.root, parent);
+            // One root's own directory has no path to print, and is named as `.`.
+            if shown.as_os_str().is_empty() { ".".to_owned() } else { shown.display().to_string() }
         })
         .collect();
     let unnamed = observed.refused.saturating_sub(u64::try_from(shown).unwrap_or(u64::MAX));
@@ -1780,7 +1792,8 @@ pub(crate) fn report_in(
 ///
 /// [`Error::InvalidRequest`](crate::Error::InvalidRequest) with
 /// [`RequestError::RootMismatch`] when the indexes are not the roots' indexes, one for one
-/// and in order, and whatever [`report`] refuses of any of them.
+/// and in order; with [`RequestError::RootScopesDiffer`] when they hold different scan
+/// scopes; and whatever [`report`] refuses of any of them.
 pub fn report_roots(
     indexes: &[&Index],
     roots: &Roots,
@@ -1797,6 +1810,15 @@ pub fn report_roots(
                 requested: requested.unwrap_or_default(),
             }));
         }
+    }
+    // One report has one scope: its sizes, its `.gitignore` coverage, and what it says it
+    // scanned are each one root's under it, so indexes opened under different scopes have
+    // no one answer (review B4 on #192). The engine's own runs take one request's scope.
+    if let Some(other) = indexes.iter().find(|index| index.scope() != indexes[0].scope()) {
+        return Err(crate::Error::InvalidRequest(RequestError::RootScopesDiffer {
+            first: indexes[0].root_path().to_path_buf(),
+            other: other.root_path().to_path_buf(),
+        }));
     }
     let labels = roots.is_several().then_some(roots);
     read_roots(indexes, labels, request, generated_at, NameIdentity::Native)
@@ -3462,9 +3484,10 @@ fn file_rows(
     query: &Query,
     content: AnalysisSet,
 ) -> (Vec<FileRow>, usize) {
-    let ranks = label_ranks(labels);
+    let ranks = labels.map(label_ranks);
+    let ranks = ranks.as_deref();
     if let [read] = reads {
-        return root_file_rows(view, read, &ranks, query, content);
+        return root_file_rows(view, read, ranks, query, content);
     }
     // Each root's rows are bounded on their own first. That is exact for a sorted top-k:
     // the comparator orders a root's rows among themselves as it orders them alone, since
@@ -3473,11 +3496,11 @@ fn file_rows(
     let mut rows = Vec::new();
     let mut total = 0;
     for read in reads {
-        let (part, count) = root_file_rows(view, read, &ranks, query, content);
+        let (part, count) = root_file_rows(view, read, ranks, query, content);
         rows.extend(part);
         total += count;
     }
-    sort_file_rows(&mut rows, query, view, &ranks);
+    sort_file_rows(&mut rows, query, view, ranks);
     truncate(&mut rows, query.limit_for(view));
     (rows, total)
 }
@@ -3487,9 +3510,9 @@ fn file_rows(
 ///
 /// Text prints a path after its root's label, so ordering by label and then by path is what
 /// reads as sorted; ordering by the relative path alone would interleave the roots. Labels
-/// that compare equal keep the caller's order. One root has rank 0.
-fn label_ranks(labels: Option<&[NamedRoot]>) -> Vec<usize> {
-    let Some(labels) = labels else { return vec![0] };
+/// that compare equal keep the caller's order. A report over one root has no labels and
+/// takes no ranks ([`sort_file_rows`]).
+fn label_ranks(labels: &[NamedRoot]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..labels.len()).collect();
     order.sort_by(|left, right| {
         labels[*left].label.to_string_lossy().cmp(&labels[*right].label.to_string_lossy())
@@ -3503,7 +3526,22 @@ fn label_ranks(labels: Option<&[NamedRoot]>) -> Vec<usize> {
 
 /// Order flat rows by the view's key, ranking rows of different roots by label where names
 /// decide ([`label_ranks`]).
-fn sort_file_rows(rows: &mut [FileRow], query: &Query, view: ViewSpec, ranks: &[usize]) {
+///
+/// One root, with no `ranks`, takes a constant rank: its own instance of the comparator,
+/// which is the one-root comparator with no lookup per comparison (review C8 on #192).
+fn sort_file_rows(rows: &mut [FileRow], query: &Query, view: ViewSpec, ranks: Option<&[usize]>) {
+    match ranks {
+        None => sort_file_rows_ranked(rows, query, view, |_: &FileRow| 0),
+        Some(ranks) => sort_file_rows_ranked(rows, query, view, |row: &FileRow| ranks[row.root]),
+    }
+}
+
+fn sort_file_rows_ranked(
+    rows: &mut [FileRow],
+    query: &Query,
+    view: ViewSpec,
+    rank: impl Fn(&FileRow) -> usize,
+) {
     sort_rows(
         rows,
         query,
@@ -3517,7 +3555,7 @@ fn sort_file_rows(rows: &mut [FileRow], query: &Query, view: ViewSpec, ranks: &[
             mtime: |row: &FileRow| Some(row.mtime_ns),
             name: borrowed_name(|row: &FileRow| row.path.to_string_lossy()),
             content_metric: |row: &FileRow, _: &MetricDef| row.sort_value,
-            rank: |row: &FileRow| ranks[row.root],
+            rank,
         },
     );
 }
@@ -3526,7 +3564,7 @@ fn sort_file_rows(rows: &mut [FileRow], query: &Query, view: ViewSpec, ranks: &[
 fn root_file_rows(
     view: ViewSpec,
     read: &RootRead<'_>,
-    ranks: &[usize],
+    ranks: Option<&[usize]>,
     query: &Query,
     content: AnalysisSet,
 ) -> (Vec<FileRow>, usize) {
@@ -7993,6 +8031,31 @@ mod tests {
                 Err(crate::Error::InvalidRequest(RequestError::RootMismatch { .. }))
             ));
         }
+    }
+
+    /// Indexes opened under different scan scopes have no one scope to report under, and
+    /// are refused rather than reported under the first one's (review B4 on #192).
+    #[test]
+    fn report_roots_refuses_indexes_under_different_scopes() {
+        let (docs, _, roots) = two_roots();
+        let shallow =
+            Index::new_with_scope("/src", ScanScope { max_depth: Some(1), ..ScanScope::default() });
+        let request =
+            crate::test_support::read_of(&docs, query(&[ViewSpec::Tree], Selection::default()));
+        assert!(matches!(
+            report_roots(&[&docs, &shallow], &roots, &request, generated_at()),
+            Err(crate::Error::InvalidRequest(RequestError::RootScopesDiffer { first, other }))
+                if first == Path::new("/docs") && other == Path::new("/src")
+        ));
+    }
+
+    /// A flat row's size is a layout decision: the root index rides in padding today, and
+    /// the next 8-byte field would grow every row a walk builds by a ninth (review C13 on
+    /// #192). Pinned where the layout is known.
+    #[cfg(all(unix, target_pointer_width = "64"))]
+    #[test]
+    fn a_flat_row_keeps_its_size() {
+        assert_eq!(std::mem::size_of::<FileRow>(), 176);
     }
 
     /// Coverage over several roots adds its counts and keeps each refusal's root, and a

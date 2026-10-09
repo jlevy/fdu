@@ -13,10 +13,11 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use crate::query::{
-    Delivery, Report, ReportSource, Request, Roots, RootsRequest, SizeMetric, SortKey, SummaryPart,
-    SummaryRow, TreeStatus, ViewSpec, read_indexes, report_summary, summary_totals_fit,
+    Delivery, NamedRoot, Report, ReportSource, Request, RootAliases, Roots, RootsRequest,
+    SizeMetric, SortKey, SummaryPart, SummaryRow, TreeStatus, ViewSpec, read_indexes,
+    report_summary, summary_totals_fit,
 };
-use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Progress, Result, execute};
+use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Progress, Result};
 
 /// The minimum state a one-shot report plan retains while scanning.
 ///
@@ -356,11 +357,6 @@ impl PerformanceSummary {
     /// A surface naming each root's tier reads them from the parts, since one tier cannot
     /// say that one root was walked and another served from its snapshot.
     pub fn sum(parts: &[Self]) -> Self {
-        let rank = |source| match source {
-            ReportSource::ColdScan => 0,
-            ReportSource::WarmRevalidate => 1,
-            ReportSource::CacheOnly => 2,
-        };
         parts.iter().fold(Self::default(), |sum, part| Self {
             walked_files: sum.walked_files.saturating_add(part.walked_files),
             walked_bytes: sum.walked_bytes.saturating_add(part.walked_bytes),
@@ -370,7 +366,7 @@ impl PerformanceSummary {
             analysis_ns: sum.analysis_ns.saturating_add(part.analysis_ns),
             cached_files: sum.cached_files.saturating_add(part.cached_files),
             cached_bytes: sum.cached_bytes.saturating_add(part.cached_bytes),
-            source: if rank(part.source) > rank(sum.source) { part.source } else { sum.source },
+            source: sum.source.weaker(part.source),
         })
     }
 
@@ -631,8 +627,13 @@ fn prepare_report_internal(
     collect_scan_diagnostics: bool,
     progress: Option<&Progress>,
 ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
-    let RootRun { state, pending, performance, diagnostics } =
-        run_root(request, delivery, collect_scan_diagnostics, progress)?;
+    // A cache directory names this root's snapshot, as it names each root's over several.
+    let delivery = delivery.for_root(&request.basis.root)?;
+    let RootRun { state, save, performance, diagnostics, .. } =
+        run_root(request, &delivery, collect_scan_diagnostics, progress, None)?;
+    // Started at once, as one root's write always has: the read and the caller's rendering
+    // overlap it.
+    let pending = save.map_or_else(PendingSave::none, |save| save.spawn(progress));
     let report = read_states(vec![state], None, request, progress)?;
     Ok((report, pending, performance, diagnostics))
 }
@@ -647,21 +648,41 @@ enum RootState {
     Full(std::sync::Arc<crate::Index>),
 }
 
-/// One root's run: what it keeps for the read, its pending save, and its telemetry.
+impl RootState {
+    /// The canonical root the state was built from.
+    fn root(&self) -> &Path {
+        match self {
+            Self::Summary(part) => &part.root,
+            Self::Folded(index) => index.root_path(),
+            Self::Full(index) => index.root_path(),
+        }
+    }
+}
+
+/// One root's run: what it keeps for the read, the cache writes it decided on, its
+/// telemetry, and any other root its walk entered.
 struct RootRun {
     state: RootState,
-    pending: PendingSave,
+    /// The writes the run owes, not yet started; its caller starts them.
+    save: Option<crate::SaveJob>,
     performance: PerformanceSummary,
     diagnostics: Option<crate::scan::ScanDiagnostics>,
+    /// Another root, by position, that this root's walk entered through an alias, and the
+    /// directory under this root where it did ([`RootAliases`]).
+    reached: Option<(usize, std::path::PathBuf)>,
 }
 
 /// Run one root's plan up to the read: validate, plan, and walk, load, or reduce, keeping
 /// the least state the request needs.
+///
+/// `aliases` is the report's other roots by identity, with this root's position among them,
+/// when there are several: every directory the run enters is compared against them.
 fn run_root(
     request: &Request,
     delivery: &Delivery,
     collect_scan_diagnostics: bool,
     progress: Option<&Progress>,
+    aliases: Option<(&RootAliases, usize)>,
 ) -> Result<RootRun> {
     // Before anything is scanned, loaded, or reduced: a request its own basis cannot answer
     // has no answer at any cost, and the compact summary tier below never reaches a reader,
@@ -684,12 +705,28 @@ fn run_root(
         source: ReportSource::ColdScan,
         ..PerformanceSummary::default()
     };
+    // Another root this index entered, compared once the run is over: every tier but the
+    // summary keeps every directory it entered.
+    let entered = |index: &crate::Index| {
+        aliases.and_then(|(aliases, own)| {
+            index.entered_directory_with(|identity| aliases.other_root(identity, own))
+        })
+    };
     match plan.retained {
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-            let mut fold = SummaryFold::new(&scan_config);
+            let mut fold = SummaryFold::new(&scan_config, aliases);
             let mut reduce = |observed: &crate::ObservationOp| fold.observe(observed);
-            let (mut scan, diagnostics) = if collect_scan_diagnostics {
+            let (mut scan, diagnostics) = if aliases.is_some() {
+                // Over several roots the fold compares each directory's identity with the
+                // other roots', so every directory is stated, as the index tiers state it.
+                crate::scan::scan_summary_fold_identified(
+                    &root,
+                    &scan_config,
+                    &mut reduce,
+                    collect_scan_diagnostics,
+                )?
+            } else if collect_scan_diagnostics {
                 let (scan, diagnostics) = crate::scan::scan_summary_fold_with_diagnostics(
                     &root,
                     &scan_config,
@@ -700,6 +737,7 @@ fn run_root(
                 (crate::scan::scan_summary_fold(&root, &scan_config, &mut reduce)?, None)
             };
             let complete = scan.is_complete();
+            let reached = fold.reached();
             let (summary, ignore_rules, ignored_unverified) = fold.finish(&root, &scan.errors)?;
             let performance = walked(&scan);
             let part = SummaryPart {
@@ -714,9 +752,10 @@ fn run_root(
             };
             Ok(RootRun {
                 state: RootState::Summary(Box::new(part)),
-                pending: PendingSave::none(),
+                save: None,
                 performance,
                 diagnostics,
+                reached,
             })
         }
         RetainedState::Tree(retention) => {
@@ -732,28 +771,41 @@ fn run_root(
                 collect_scan_diagnostics,
             )?;
             debug_assert_eq!(index.scope(), scan_config.scope());
+            let reached = entered(&index);
             Ok(RootRun {
                 state: RootState::Folded(Box::new(index)),
-                pending: PendingSave::none(),
+                save: None,
                 performance: walked(&scan),
                 diagnostics,
+                reached,
             })
         }
         RetainedState::FullIndex => {
-            let (index, open_report, pending, diagnostics) =
-                execute(&plan, &request.basis, collect_scan_diagnostics, progress)?;
+            let (index, open_report, save, diagnostics) = crate::execute_deferring(
+                &plan,
+                &request.basis,
+                collect_scan_diagnostics,
+                progress,
+            )?;
             debug_assert_eq!(index.scope(), scan_config.scope());
+            let reached = entered(&index);
             Ok(RootRun {
                 state: RootState::Full(index),
-                pending,
+                save,
                 performance: PerformanceSummary::from_open_report(&open_report),
                 diagnostics,
+                reached,
             })
         }
     }
 }
 
 /// Read what every root's run kept into one report, then free it.
+///
+/// `validated` is the report's roots when they were resolved and named ([`Roots`]): each
+/// state must then be of its root, one for one and in order, since a walk resolves its
+/// root again and a symlink can change between validation and the walk (review B2 on
+/// #192). The report is labelled only when there are several.
 ///
 /// Every root's plan derives from one request and from deliveries that differ only in a
 /// snapshot path under one cache directory, so every root takes the same tier: all kept a
@@ -762,10 +814,21 @@ fn run_root(
 /// root, so each root kept every file the merged tree can show.
 fn read_states(
     states: Vec<RootState>,
-    roots: Option<&Roots>,
+    validated: Option<&Roots>,
     request: &Request,
     progress: Option<&Progress>,
 ) -> Result<Report> {
+    if let Some(validated) = validated {
+        for (state, root) in states.iter().zip(validated) {
+            if state.root() != root.path {
+                return Err(Error::InvalidRequest(crate::query::RequestError::RootMismatch {
+                    held: state.root().to_path_buf(),
+                    requested: root.path.clone(),
+                }));
+            }
+        }
+    }
+    let roots = validated.filter(|roots| roots.is_several());
     if states.iter().all(|state| matches!(state, RootState::Summary(_))) {
         let parts: Vec<SummaryPart> = states
             .into_iter()
@@ -800,23 +863,22 @@ fn read_states(
     // The answer is complete and owns no part of any index, so freeing them is no longer
     // the caller's wait.
     drop(borrowed);
-    for index in indexes {
-        crate::release_index(index);
-    }
+    crate::release_indexes(indexes);
     answer
 }
 
-/// A one-shot report over one or more roots, with each root's pending save and telemetry.
+/// A one-shot report over one or more roots, with their pending saves and telemetry.
 ///
-/// Returned by [`prepare_roots_report`]; the caller joins every save, as it joins the one
+/// Returned by [`prepare_roots_report`]; the caller joins the saves, as it joins the one
 /// [`prepare_report`] returns.
 #[derive(Debug)]
-#[must_use = "join every pending save before exiting or a snapshot may be abandoned"]
+#[must_use = "join the pending saves before exiting or a snapshot may be abandoned"]
 pub struct RootsPrepared {
     /// The one report over every root.
     pub report: Report,
-    /// Each root's deferred cache writes, in the roots' order.
-    pub pending: Vec<PendingSave>,
+    /// Every root's deferred cache writes, in one handle; [`PendingSave::join_all`] names
+    /// each that failed.
+    pub pending: PendingSave,
     /// Each root's walk telemetry, in the roots' order; [`PerformanceSummary::sum`] totals
     /// them.
     pub performance: Vec<PerformanceSummary>,
@@ -830,33 +892,39 @@ pub struct RootsPrepared {
 /// one read merges them, so every display bound applies once, to the combined total. Any
 /// root that fails fails the run, naming its label where the error does not name a path;
 /// a partial root makes the report partial, which [`Plan::outcome`] classifies as for
-/// one root. Peak memory is every root's retained state at once: small for the summary
-/// and folded tiers, every root's full index otherwise.
+/// one root. Peak memory is every root's retained state at once: one summary row each on
+/// the summary tier; every directory of every root and each root's largest files on the
+/// folded tier; every root's full index otherwise.
 ///
-/// The cache is a directory, `cache_dir`, or the default one when it is `None`
-/// ([`default_cache_dir`](crate::default_cache_dir)), and each root's snapshot is the one
-/// [`default_cache_path_in`](crate::default_cache_path_in) names for it. With one root this
-/// is [`prepare_report`], unchanged: an explicit [`Delivery::cache_path`] is honored, and
-/// without one the path is derived from `cache_dir`.
+/// Roots run one after another, each with its own walk; a report over many small roots
+/// pays each walk's fixed cost once per root.
+///
+/// The cache location is the delivery's: [`Delivery::cache_dir`] names each root's
+/// snapshot, as one root's is named, and with neither it nor [`Delivery::cache_path`]
+/// nothing is cached. One root may take a snapshot file instead; several cannot. Over
+/// several roots, no root's snapshot is written until every root has been walked, since a
+/// cache directory can lie inside a later root, and the writes run on a bounded number of
+/// threads.
+///
+/// On Unix each root's walk is compared against the other roots' identities, and a walk
+/// that enters another root through an alias fails the run as overlapping
+/// ([`RequestError::RootReachedInside`](crate::query::RequestError::RootReachedInside)).
 ///
 /// # Errors
 ///
 /// [`Error::InvalidRequest`] before any work for a request no basis can answer, and, over
 /// several roots, for a delivery naming one snapshot file or a watch, neither of which can
-/// hold several roots; then any error of any root's run.
-pub fn prepare_roots_report(
-    request: &RootsRequest,
-    delivery: &Delivery,
-    cache_dir: Option<&Path>,
-) -> Result<RootsPrepared> {
-    prepare_roots_internal(request, delivery, cache_dir, false, None).map(|(prepared, _)| prepared)
+/// hold several roots; then any error of any root's run, and an overlap a walk found.
+pub fn prepare_roots_report(request: &RootsRequest, delivery: &Delivery) -> Result<RootsPrepared> {
+    prepare_roots_internal(request, delivery, false, None).map(|(prepared, _)| prepared)
 }
 
 /// [`prepare_roots_report`], reporting its progress through `progress`.
 ///
 /// One handle spans every root: the counters are cumulative, the phase starts over at
 /// each root, and [`ProgressSnapshot::root`](crate::ProgressSnapshot::root) names the root
-/// being walked and its position. The run ends at `Summarizing` once, after the last root.
+/// being walked and its position. A run over full or folded indexes ends at `Summarizing`
+/// once, after the last root; the summary tier, over one root or several, never enters it.
 ///
 /// # Errors
 ///
@@ -864,11 +932,9 @@ pub fn prepare_roots_report(
 pub fn prepare_roots_report_with_progress(
     request: &RootsRequest,
     delivery: &Delivery,
-    cache_dir: Option<&Path>,
     progress: &Progress,
 ) -> Result<RootsPrepared> {
-    prepare_roots_internal(request, delivery, cache_dir, false, Some(progress))
-        .map(|(prepared, _)| prepared)
+    prepare_roots_internal(request, delivery, false, Some(progress)).map(|(prepared, _)| prepared)
 }
 
 /// [`prepare_roots_report`], retaining each root's scan diagnostics, in the roots' order,
@@ -880,83 +946,103 @@ pub fn prepare_roots_report_with_progress(
 pub fn prepare_roots_report_with_scan_diagnostics(
     request: &RootsRequest,
     delivery: &Delivery,
-    cache_dir: Option<&Path>,
 ) -> Result<(RootsPrepared, Vec<Option<crate::scan::ScanDiagnostics>>)> {
-    prepare_roots_internal(request, delivery, cache_dir, true, None)
+    prepare_roots_internal(request, delivery, true, None)
 }
 
 fn prepare_roots_internal(
     request: &RootsRequest,
     delivery: &Delivery,
-    cache_dir: Option<&Path>,
     collect_scan_diagnostics: bool,
     progress: Option<&Progress>,
 ) -> Result<(RootsPrepared, Vec<Option<crate::scan::ScanDiagnostics>>)> {
     let roots = request.roots();
-    if !roots.is_several() {
-        let mut delivery = delivery.clone();
-        if delivery.cache_path.is_none() {
-            delivery.cache_path = crate::default_cache_path_in(&roots.first().path, cache_dir)?;
-        }
-        let (report, pending, performance, diagnostics) = prepare_report_internal(
-            request.request(),
-            &delivery,
-            collect_scan_diagnostics,
-            progress,
-        )?;
-        let prepared =
-            RootsPrepared { report, pending: vec![pending], performance: vec![performance] };
-        return Ok((prepared, vec![diagnostics]));
-    }
+    let count = roots.as_slice().len();
     // Refused before any root is walked, in the order one root's request is refused.
     request.request().validate().map_err(Error::InvalidRequest)?;
-    request.request().validate_delivery(delivery).map_err(Error::InvalidRequest)?;
-    let refuse = |reason| {
-        Err(Error::InvalidRequest(crate::query::RequestError::DeliveryUnsupported {
-            route: "several roots",
-            reason,
-        }))
-    };
-    if delivery.cache_path.is_some() {
-        return refuse("one snapshot file cannot hold several roots; name a cache directory");
+    request.request().validate_roots_delivery(count, delivery).map_err(Error::InvalidRequest)?;
+    if !roots.is_several() {
+        // One root is `prepare_report` over its validated path, with its snapshot named by
+        // the delivery, and its write started at once.
+        let (root, request) = request.per_root().next().expect("a report has a root");
+        let delivery = delivery.for_canonical_root(&root.path)?;
+        let run = run_root(&request, &delivery, collect_scan_diagnostics, progress, None)
+            .map_err(|error| for_root(error, root, false))?;
+        let pending = run.save.map_or_else(PendingSave::none, |save| save.spawn(progress));
+        let report = read_states(vec![run.state], Some(roots), &request, progress)?;
+        let prepared = RootsPrepared { report, pending, performance: vec![run.performance] };
+        return Ok((prepared, vec![run.diagnostics]));
     }
-    if delivery.watch.is_some() {
-        return refuse("a watch takes one root");
-    }
-    let count = roots.as_slice().len();
+    let aliases = roots.aliases();
+    let aliases = (!aliases.is_empty()).then_some(&aliases);
     let mut states = Vec::with_capacity(count);
-    let mut pending = Vec::with_capacity(count);
+    let mut saves = Vec::with_capacity(count);
     let mut performance = Vec::with_capacity(count);
     let mut diagnostics = Vec::with_capacity(count);
-    for (position, (root, request)) in request.per_root().enumerate() {
+    for (position, (root, root_request)) in request.per_root().enumerate() {
         if let Some(progress) = progress {
             progress.enter_root(position, count);
         }
-        let delivery = Delivery {
-            cache_path: crate::default_cache_path_in(&root.path, cache_dir)?,
-            ..delivery.clone()
+        let ran = delivery.for_canonical_root(&root.path).and_then(|delivery| {
+            run_root(
+                &root_request,
+                &delivery,
+                collect_scan_diagnostics,
+                progress,
+                aliases.map(|aliases| (aliases, position)),
+            )
+        });
+        let run = match ran {
+            Ok(run) => run,
+            Err(error) => return Err(failed(for_root(error, root, true), saves, progress)),
         };
-        // A save an earlier root started is joined when `pending` drops, so a failing root
-        // never abandons another's snapshot.
-        let run = run_root(&request, &delivery, collect_scan_diagnostics, progress)
-            .map_err(|error| for_root(error, &root.label))?;
+        saves.extend(run.save);
+        if let Some((other, at)) = run.reached {
+            let inner = &roots.as_slice()[other];
+            let refusal = crate::query::RequestError::RootReachedInside {
+                inner: inner.label.clone(),
+                outer: root.label.clone(),
+                at: crate::query::labelled_path(Some(roots.as_slice()), position, &at).into_owned(),
+            };
+            return Err(failed(Error::InvalidRequest(refusal), saves, progress));
+        }
         states.push(run.state);
-        pending.push(run.pending);
         performance.push(run.performance);
         diagnostics.push(run.diagnostics);
     }
+    // Every root is walked, so no write can land inside one while it is.
+    let pending = crate::spawn_saves(saves, progress);
     let report = read_states(states, Some(roots), request.request(), progress)?;
     Ok((RootsPrepared { report, pending, performance }, diagnostics))
 }
 
+/// A run that failed after earlier roots were walked: their snapshots are still written
+/// before the error returns, so one failing root never costs another its warm start.
+fn failed(error: Error, saves: Vec<crate::SaveJob>, progress: Option<&Progress>) -> Error {
+    // The run's own error is what the caller is told; a write failing besides it costs
+    // only the next run's warmth.
+    drop(crate::spawn_saves(saves, progress).join_all());
+    error
+}
+
 /// Name the root an error belongs to when the error does not.
 ///
-/// An I/O error already names its path, and a refusal is the request's; a snapshot that
-/// cannot serve a stale answer says only "this root", which over several roots needs the
-/// label to mean one.
-fn for_root(error: Error, label: &Path) -> Error {
+/// A root missing at its own canonical path, which every walk resolves again, vanished
+/// after validation, and is named by the label its caller used, as one root's missing root
+/// always was (review B6 on #192); any other failure at the root keeps the scanner's
+/// canonical path, as it always has. A snapshot that cannot serve a stale answer says only
+/// "this root", which over `several` roots needs the label to mean one. Any other error
+/// names its own path, and a refusal is the request's.
+fn for_root(error: Error, root: &NamedRoot, several: bool) -> Error {
     match error {
-        Error::Snapshot(message) => Error::Snapshot(format!("{}: {message}", label.display())),
+        Error::Io { path, source }
+            if path == root.path && source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            Error::Io { path: root.label.clone(), source }
+        }
+        Error::Snapshot(message) if several => {
+            Error::Snapshot(format!("{}: {message}", root.label.display()))
+        }
         other => other,
     }
 }
@@ -1004,13 +1090,54 @@ fn for_root(error: Error, label: &Path) -> Error {
 /// would carry `all` past `u64::MAX` is not counted, and the report fails with
 /// [`Error::UnrepresentableTotal`]. The unignored tally is a part of `all`, so it cannot
 /// overflow while `all` does not.
-struct SummaryFold {
+struct SummaryFold<'a> {
     /// Every entry the walk retained.
     all: SummaryRow,
     /// The classifier, when the scan observes `.gitignore`.
     controls: Option<SummaryControls>,
     /// The first file the root total could not hold, which fails the report.
     unrepresentable: Option<Error>,
+    /// The report's other roots, when it has several to look for ([`FoldAliases`]).
+    aliases: Option<FoldAliases<'a>>,
+}
+
+/// What a [`SummaryFold`] over one of several roots looks for: a directory that is another
+/// root, reached through an alias, that the walk entered.
+///
+/// The fold keeps no directory, so it decides as each arrives: a directory whose device and
+/// inode are another root's is a candidate, and an entry arriving with a candidate as its
+/// parent shows the walk entered it, since a listing reaches the fold after its parent
+/// does. A candidate nothing arrives under -- at the scan depth, across a filesystem
+/// boundary, or empty -- counted nothing twice. Candidates are the other roots' own
+/// directories, so the set holds at most one per root.
+struct FoldAliases<'a> {
+    roots: &'a RootAliases,
+    /// This root's position, whose own identity is not an alias.
+    own: usize,
+    /// Directories seen with another root's identity, by path bytes, with that root.
+    candidates: std::collections::HashMap<std::ffi::OsString, usize>,
+    /// The first candidate the walk entered.
+    reached: Option<(usize, std::path::PathBuf)>,
+}
+
+impl FoldAliases<'_> {
+    fn observe(&mut self, path: &Path, kind: EntryKind, attrs: &crate::Attrs) {
+        if self.reached.is_some() {
+            return;
+        }
+        if !self.candidates.is_empty() {
+            let (parent, _) = crate::control::split_parent(path);
+            if let Some(&root) = self.candidates.get(parent) {
+                self.reached = Some((root, std::path::PathBuf::from(parent)));
+                return;
+            }
+        }
+        if kind == EntryKind::Dir && (attrs.dev, attrs.inode) != (0, 0) {
+            if let Some(root) = self.roots.other_root((attrs.dev, attrs.inode), self.own) {
+                self.candidates.insert(path.as_os_str().to_os_string(), root);
+            }
+        }
+    }
 }
 
 /// What a classifying [`SummaryFold`] keeps: the control table, the heads of ignored
@@ -1044,8 +1171,8 @@ struct SummaryControls {
     rejected: Option<Error>,
 }
 
-impl SummaryFold {
-    fn new(config: &crate::ScanConfig) -> Self {
+impl<'a> SummaryFold<'a> {
+    fn new(config: &crate::ScanConfig, aliases: Option<(&'a RootAliases, usize)>) -> Self {
         Self {
             all: SummaryRow::default(),
             controls: config.read_controls.then(|| SummaryControls {
@@ -1057,12 +1184,26 @@ impl SummaryFold {
                 rejected: None,
             }),
             unrepresentable: None,
+            aliases: aliases.map(|(roots, own)| FoldAliases {
+                roots,
+                own,
+                candidates: std::collections::HashMap::new(),
+                reached: None,
+            }),
         }
+    }
+
+    /// Another root the walk entered through an alias, and where ([`FoldAliases`]).
+    fn reached(&self) -> Option<(usize, std::path::PathBuf)> {
+        self.aliases.as_ref().and_then(|aliases| aliases.reached.clone())
     }
 
     fn observe(&mut self, observed: &crate::ObservationOp) {
         match &observed.op {
             crate::Op::Upsert { path, kind, attrs } => {
+                if let Some(aliases) = &mut self.aliases {
+                    aliases.observe(path, *kind, attrs);
+                }
                 match kind {
                     EntryKind::File => {
                         if let Err(error) = crate::index::add_file_sizes(
@@ -1365,7 +1506,7 @@ mod tests {
         };
         let summary_fold = |layout: Layout, sizes: &[(u64, u64)], read_controls: bool| {
             let config = ScanConfig { read_controls, ..ScanConfig::default() };
-            let mut fold = SummaryFold::new(&config);
+            let mut fold = SummaryFold::new(&config, None);
             for op in upserts(layout, sizes) {
                 fold.observe(&ObservationOp::unconditional(op));
             }
@@ -4505,10 +4646,18 @@ mod tests {
         (base, roots)
     }
 
-    /// The request over `roots` an `OpenFixture` spells, with no snapshot file named.
+    /// The request over `roots` an `OpenFixture` spells, with no cache location.
     fn roots_split(roots: &Roots, config: &OpenFixture, query: &Query) -> (RootsRequest, Delivery) {
         let (request, delivery) = split(&roots.first().label, config, query);
-        (RootsRequest::new(roots.clone(), request), Delivery { cache_path: None, ..delivery })
+        (
+            RootsRequest::new(roots.clone(), request),
+            Delivery { cache_path: None, cache_dir: None, ..delivery },
+        )
+    }
+
+    /// `delivery` with its snapshots named under `directory`.
+    fn under(directory: &Path, delivery: &Delivery) -> Delivery {
+        Delivery { cache_dir: Some(directory.to_path_buf()), ..delivery.clone() }
     }
 
     /// What a report says, without the instants a run samples.
@@ -4563,8 +4712,9 @@ mod tests {
                     "{label}"
                 );
             }
-            let prepared = prepare_roots_report(&request, &delivery, None).expect(label);
-            assert_eq!((prepared.pending.len(), prepared.performance.len()), (2, 2), "{label}");
+            let prepared = prepare_roots_report(&request, &delivery).expect(label);
+            assert_eq!(prepared.performance.len(), 2, "{label}");
+            assert!(prepared.pending.join_all().is_empty(), "{label}: nothing to write");
             let indexes: Vec<crate::Index> = roots
                 .iter()
                 .map(|root| {
@@ -4597,7 +4747,8 @@ mod tests {
             (blind(CachePolicy::Off, None), summary_query()),
         ] {
             let (request, delivery) = roots_split(&one, &fixture, &query);
-            let through = prepare_roots_report(&request, &delivery, None).expect("roots entry");
+            let through = prepare_roots_report(&request, &delivery).expect("roots entry");
+            through.pending.join().expect("no save");
             let (alone, pending, _) = prepare_report(request.request(), &delivery).expect("one");
             pending.join().expect("no save");
             assert_eq!(answer_of(&through.report), answer_of(&alone));
@@ -4605,19 +4756,25 @@ mod tests {
         }
     }
 
-    /// Each root's snapshot lives where one root's would, under one cache directory; a
-    /// stale answer over both serves from them, and one missing fails naming its root. A
-    /// single snapshot file cannot hold several roots, and is refused before any walk.
+    /// Each root's snapshot lives where one root's would, under the delivery's cache
+    /// directory; a stale answer over both serves from them, and one missing fails naming
+    /// its root. A single snapshot file cannot hold several roots, and is refused before
+    /// any walk; a delivery naming no location caches nothing, never a default directory.
     #[test]
     fn several_roots_cache_one_snapshot_each_under_one_directory() {
         let (_base, roots) = two_root_tree();
         let cache = tempfile::tempdir().expect("cache dir");
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
         let (request, delivery) = roots_split(&roots, &config(CachePolicy::On, None), &tree);
-        let prepared = prepare_roots_report(&request, &delivery, Some(cache.path())).expect("on");
-        for pending in prepared.pending {
-            pending.join().expect("save");
-        }
+        // No location: `on` has nothing to write, so the plan keeps no index for it.
+        assert!(matches!(
+            plan(request.request(), &delivery, Route::OneShot).expect("plan").retained,
+            RetainedState::Tree(_)
+        ));
+        let nowhere = prepare_roots_report(&request, &delivery).expect("on, nowhere");
+        assert!(nowhere.pending.join_all().is_empty());
+        let prepared = prepare_roots_report(&request, &under(cache.path(), &delivery)).expect("on");
+        assert!(prepared.pending.join_all().is_empty(), "every save succeeded");
         let snapshots: Vec<PathBuf> = roots
             .iter()
             .map(|root| {
@@ -4630,14 +4787,14 @@ mod tests {
 
         let (request, delivery) =
             roots_split(&roots, &stale(config(CachePolicy::Auto, None)), &tree);
-        let served = prepare_roots_report(&request, &delivery, Some(cache.path())).expect("stale");
+        let delivery = under(cache.path(), &delivery);
+        let served = prepare_roots_report(&request, &delivery).expect("stale");
         assert_eq!(served.report.provenance.source, ReportSource::CacheOnly);
         assert_eq!(served.report.provenance.freshness, crate::Freshness::Stale);
         assert!(served.performance.iter().all(|part| part.source == ReportSource::CacheOnly));
 
         fs::remove_file(&snapshots[1]).expect("remove b's snapshot");
-        let missing = prepare_roots_report(&request, &delivery, Some(cache.path()))
-            .expect_err("b has no snapshot");
+        let missing = prepare_roots_report(&request, &delivery).expect_err("b has no snapshot");
         let label = roots.as_slice()[1].label.display().to_string();
         assert!(
             matches!(&missing, Error::Snapshot(message) if message.starts_with(&format!("{label}: "))),
@@ -4649,13 +4806,66 @@ mod tests {
             roots_split(&roots, &config(CachePolicy::On, Some(named.clone())), &tree);
         let delivery = Delivery { cache_path: Some(named.clone()), ..delivery };
         assert!(matches!(
-            prepare_roots_report(&request, &delivery, None),
+            prepare_roots_report(&request, &delivery),
             Err(Error::InvalidRequest(crate::query::RequestError::DeliveryUnsupported {
                 route: "several roots",
                 ..
             }))
         ));
         assert!(!named.exists(), "refused before any root was walked");
+        assert!(matches!(
+            prepare_roots_report(&request, &under(cache.path(), &delivery)),
+            Err(Error::InvalidRequest(crate::query::RequestError::CacheLocationTwice))
+        ));
+    }
+
+    /// A cache directory names one root's snapshot on every route that takes a delivery,
+    /// where `default_cache_path_in` names it.
+    #[test]
+    fn a_cache_directory_names_one_roots_snapshot_on_every_route() {
+        let (_base, roots) = two_root_tree();
+        let root = &roots.first().path;
+        let cache = tempfile::tempdir().expect("cache dir");
+        let expected = crate::default_cache_path_in(root, Some(cache.path()))
+            .expect("path")
+            .expect("a directory names a path");
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let (request, delivery) = split(root, &config(CachePolicy::On, None), &tree);
+        let delivery = under(cache.path(), &delivery);
+        assert_eq!(
+            delivery.for_root(root).expect("resolved").cache_path.as_deref(),
+            Some(expected.as_path())
+        );
+        let (_, pending, _) = prepare_report(&request, &delivery).expect("one-shot");
+        pending.join().expect("save");
+        assert!(expected.exists(), "the one-shot report wrote where the directory names");
+        fs::remove_file(&expected).expect("remove");
+        crate::open(&request.basis, &delivery).expect("open");
+        assert!(expected.exists(), "an open wrote where the directory names");
+        // A file and no directory, or neither, is the delivery as given.
+        let file = Delivery { cache_path: Some(expected.clone()), cache_dir: None, ..delivery };
+        assert_eq!(file.for_root(root).expect("unchanged"), file);
+    }
+
+    /// No root's snapshot is written while a later root is walked: a cache directory inside
+    /// the second root holds nothing when that root is walked, so its totals are its own,
+    /// and both snapshots are there once the run's writes are joined (review B3 on #192).
+    #[test]
+    fn no_snapshot_is_written_inside_a_root_while_it_is_walked() {
+        let (_base, roots) = two_root_tree();
+        let inside = roots.as_slice()[1].path.join("cache");
+        let summary = summary_query();
+        let (request, delivery) = roots_split(&roots, &config(CachePolicy::On, None), &summary);
+        let alone = prepare_roots_report(&request, &delivery).expect("nothing cached");
+        let prepared = prepare_roots_report(&request, &under(&inside, &delivery)).expect("on");
+        let files = |report: &Report| match &report.sections[..] {
+            [Section::Summary(row)] => (row.files, row.dirs),
+            other => panic!("a summary, not {other:?}"),
+        };
+        assert_eq!(files(&prepared.report), files(&alone.report), "no snapshot was counted");
+        assert!(prepared.pending.join_all().is_empty(), "every save succeeded");
+        let written = fs::read_dir(&inside).map_or(0, Iterator::count);
+        assert!(written >= 2, "both roots' snapshots were written after the walks");
     }
 
     /// One handle spans every root: the counters end at the sum of the roots' walked
@@ -4668,7 +4878,7 @@ mod tests {
             roots_split(&roots, &analyzing(config(CachePolicy::Off, None)), &tree);
         let progress = Progress::new();
         let prepared =
-            prepare_roots_report_with_progress(&request, &delivery, None, &progress).expect("run");
+            prepare_roots_report_with_progress(&request, &delivery, &progress).expect("run");
         let sum = PerformanceSummary::sum(&prepared.performance);
         let snapshot = progress.snapshot();
         assert_eq!(
@@ -4681,7 +4891,8 @@ mod tests {
         assert!(sum.fresh_files > prepared.performance[0].fresh_files, "both roots analyzed");
     }
 
-    /// Any root that fails fails the run, and a save an earlier root started is completed.
+    /// Any root that fails fails the run, naming a root that vanished after validation by
+    /// its label; the snapshot of a root already walked is still written.
     #[test]
     fn a_failing_root_fails_the_run_after_the_others_saves() {
         let (base, roots) = two_root_tree();
@@ -4690,8 +4901,9 @@ mod tests {
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
         let (request, delivery) = roots_split(&roots, &config(CachePolicy::On, None), &tree);
         let error =
-            prepare_roots_report(&request, &delivery, Some(cache.path())).expect_err("b is gone");
-        assert!(matches!(&error, Error::Io { path, .. } if path.ends_with("b")), "{error}");
+            prepare_roots_report(&request, &under(cache.path(), &delivery)).expect_err("b is gone");
+        let label = &roots.as_slice()[1].label;
+        assert!(matches!(&error, Error::Io { path, .. } if path == label), "{error}");
         let first = crate::default_cache_path_in(&roots.first().path, Some(cache.path()))
             .expect("path")
             .expect("a directory names a path");
@@ -4712,7 +4924,7 @@ mod tests {
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
         let (request, delivery) = roots_split(&roots, &config(CachePolicy::Off, None), &tree);
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny read");
-        let prepared = prepare_roots_report(&request, &delivery, None);
+        let prepared = prepare_roots_report(&request, &delivery);
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("restore");
         let report = prepared.expect("a partial report").report;
         assert!(!report.status.complete);
@@ -4722,6 +4934,114 @@ mod tests {
         let accepting = Delivery { accept_partial: true, ..delivery };
         let lenient = plan(request.request(), &accepting, Route::OneShot).expect("plan");
         assert_eq!(lenient.outcome(&report.status), OutcomeClass::Success);
+    }
+
+    /// The read refuses a root's state built from another directory than validation
+    /// resolved, as a symlink retargeted between the two would make it (review B2 on #192).
+    #[test]
+    fn the_read_refuses_a_state_of_another_root_than_was_validated() {
+        let roots = Roots::named(vec![NamedRoot {
+            label: PathBuf::from("docs"),
+            path: PathBuf::from("/validated/docs"),
+        }]);
+        let index = crate::Index::new("/walked/elsewhere");
+        let request = crate::test_support::read_of(&index, summary_query());
+        let state = RootState::Full(std::sync::Arc::new(index));
+        assert!(matches!(
+            read_states(vec![state], Some(&roots), &request, None),
+            Err(Error::InvalidRequest(crate::query::RequestError::RootMismatch { held, requested }))
+                if held == Path::new("/walked/elsewhere") && requested == Path::new("/validated/docs")
+        ));
+    }
+
+    /// A walk that enters a directory with another root's identity has reached that root
+    /// through an alias, on the summary tier as on an index; one that only lists it, at the
+    /// scan depth or across a filesystem boundary, entered nothing and counted nothing
+    /// twice. The shape the paths cannot show before the walk is review B's on #192:
+    /// `/srv` beside `/mnt/view/x`, where `/mnt/view` is `/srv/data` bound elsewhere.
+    #[test]
+    fn a_walk_finds_another_root_it_enters_through_an_alias() {
+        let aliases = RootAliases::of(&[((1, 3), 0), ((1, 30), 1)]);
+        let dir = |path: &str, inode| crate::Op::Upsert {
+            path: PathBuf::from(path),
+            kind: EntryKind::Dir,
+            attrs: crate::Attrs { dev: 1, inode, ..crate::Attrs::default() },
+        };
+        let file = |path: &str| crate::Op::Upsert {
+            path: PathBuf::from(path),
+            kind: EntryKind::File,
+            attrs: crate::Attrs { size: 1, dev: 1, inode: 99, ..crate::Attrs::default() },
+        };
+        // Root 0, `/srv`, holds `data/x`, which is root 1's directory.
+        let entered = [dir("data", 10), dir("data/x", 30), file("data/x/f")];
+        let listed = [dir("data", 10), dir("data/x", 30)];
+        let fold = |ops: &[crate::Op], own| {
+            let mut fold = SummaryFold::new(&ScanConfig::default(), Some((&aliases, own)));
+            for op in ops {
+                fold.observe(&crate::ObservationOp::unconditional(op.clone()));
+            }
+            fold.reached()
+        };
+        assert_eq!(fold(&entered, 0), Some((1, PathBuf::from("data/x"))));
+        assert_eq!(fold(&listed, 0), None, "listed, not entered");
+        assert_eq!(fold(&entered, 1), None, "a root's own identity is no alias");
+        let index = |ops: &[crate::Op]| {
+            let mut index = crate::Index::new("/srv");
+            index.apply(&crate::Observation::new(ops.to_vec())).expect("apply");
+            index.entered_directory_with(|identity| aliases.other_root(identity, 0))
+        };
+        assert_eq!(index(&entered), Some((1, PathBuf::from("data/x"))));
+        assert_eq!(index(&listed), None, "listed, not entered");
+    }
+
+    /// The real shape on macOS, where `/private` is a firmlink onto the data volume: its
+    /// own ancestors never pass through `/System/Volumes/Data`, so the paths cannot show
+    /// that the second is inside the first. A walk of the data volume deep enough to enter
+    /// `private` finds it, on the summary fold and on the folded tree, and one that stops
+    /// above it refuses nothing. Probed rather than assumed, so a host without the firmlink
+    /// skips with a message.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_firmlink_into_another_root_is_found_when_the_walk_enters_it() {
+        use std::os::unix::fs::MetadataExt;
+        let identity =
+            |path: &str| fs::metadata(path).map(|metadata| (metadata.dev(), metadata.ino())).ok();
+        let (outer, inner) = ("/System/Volumes/Data", "/private");
+        if identity("/System/Volumes/Data/private").is_none()
+            || identity("/System/Volumes/Data/private") != identity(inner)
+        {
+            eprintln!("skipped: {inner} is not a firmlink into {outer} on this host");
+            return;
+        }
+        let roots = Roots::resolve(&[outer, inner]).expect("the paths show no overlap");
+        let depth = |depth: usize| OpenFixture {
+            scan: ScanConfig { max_depth: Some(depth), ..ScanConfig::default() },
+            ..config(CachePolicy::Off, None)
+        };
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        for query in [summary_query(), tree] {
+            let (request, delivery) = roots_split(&roots, &depth(2), &query);
+            match prepare_roots_report(&request, &delivery) {
+                Err(Error::InvalidRequest(crate::query::RequestError::RootReachedInside {
+                    inner: reached,
+                    outer: walked,
+                    at,
+                })) => {
+                    assert_eq!(
+                        (reached.as_path(), walked.as_path()),
+                        (Path::new(inner), Path::new(outer))
+                    );
+                    assert_eq!(at, Path::new("/System/Volumes/Data/private"));
+                }
+                other => panic!(
+                    "expected the firmlink refused, got {:?}",
+                    other.map(|p| p.report.status)
+                ),
+            }
+            let (request, delivery) = roots_split(&roots, &depth(1), &query);
+            let listed = prepare_roots_report(&request, &delivery).expect("listed, not entered");
+            drop(listed.pending.join_all());
+        }
     }
 
     #[test]
