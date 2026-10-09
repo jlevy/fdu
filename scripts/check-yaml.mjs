@@ -115,20 +115,30 @@ const exactJson = (source) => JSON.parse(source, (key, value, context) => {
 
 const assertAges = (report, label) => {
   assert.ok(Object.hasOwn(report, 'age_reference_ns'), `${label}: age reference missing`);
+  assert.ok(Object.hasOwn(report, 'age_reference_at'), `${label}: age reference instant missing`);
   const reference = report.age_reference_ns;
+  // A list row always has a time; a tree node has none when it counts nothing.
+  const assertAge = (row) => {
+    assert.ok(Object.hasOwn(row, 'age_ns'), `${label}: row age missing`);
+    assert.ok(Object.hasOwn(row, 'modified_at'), `${label}: row instant missing`);
+    if (row.age_ns == null) {
+      assert.ok(reference == null || row.complete === false || row.mtime_ns == null,
+        `${label}: complete row has null age with a reference`);
+      return;
+    }
+    assert.equal(typeof reference, 'bigint', `${label}: missing exact age reference`);
+    assert.equal(typeof row.mtime_ns, 'bigint', `${label}: missing exact mtime`);
+    assert.notEqual(row.complete, false, `${label}: incomplete row has an age`);
+    assert.equal(row.age_ns, reference - row.mtime_ns,
+      `${label}: age differs from reference minus mtime`);
+  };
   for (const section of report.reports ?? []) {
-    for (const row of section.files ?? []) {
-      assert.ok(Object.hasOwn(row, 'age_ns'), `${label}: row age missing`);
-      if (row.age_ns == null) {
-        assert.ok(reference == null || row.complete === false,
-          `${label}: complete row has null age with a reference`);
-        continue;
-      }
-      assert.equal(typeof reference, 'bigint', `${label}: missing exact age reference`);
-      assert.equal(typeof row.mtime_ns, 'bigint', `${label}: missing exact mtime`);
-      assert.notEqual(row.complete, false, `${label}: incomplete row has an age`);
-      assert.equal(row.age_ns, reference - row.mtime_ns,
-        `${label}: age differs from reference minus mtime`);
+    for (const row of section.files ?? []) assertAge(row);
+    const nodes = section.tree ? [section.tree] : [];
+    while (nodes.length > 0) {
+      const node = nodes.pop();
+      assertAge(node);
+      nodes.push(...(node.children ?? []));
     }
   }
 };
@@ -138,7 +148,8 @@ const stripVolatile = (value) => {
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value)
       .filter(([key]) => ![
-        'scan_started_at', 'generated_at', 'observed_at_ns', 'age_reference_ns', 'age_ns',
+        'scan_started_at', 'generated_at', 'observed_at_ns', 'age_reference_ns',
+        'age_reference_at', 'age_ns',
       ].includes(key))
       .map(([key, inner]) => [key, stripVolatile(inner)]));
   }
