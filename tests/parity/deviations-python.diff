@@ -42,7 +42,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 68 sessions differ, and every one of them has a named cause.
+# 71 sessions differ, and every one of them has a named cause.
 #
 #  30  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
@@ -62,7 +62,7 @@
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
 #
-#   4  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
+#   5  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
 #      The command line calls it --scan-depth and the API calls it max_depth. They are
 #      different words, not different punctuation, so this is checked by eliding the knob
 #      names on both sides and requiring the rest of the sentence to be identical.
@@ -92,6 +92,14 @@
 #      naming how it was opened. Both refuse before reporting anything, with one exit status;
 #      which of two true rules speaks first follows the route. Pinned whole: one line on
 #      each side, the same view and analyzer, and an index opened with no analyzer.
+#
+#   2  A file PATH is refused on both surfaces; the command line adds a shell remedy  [file-root-remedy]
+#      fdu reports on directories, so a PATH naming a file is refused on both surfaces, with
+#      the same exit status. The command line words the refusal for `fdu *`, the way
+#      `du -sh *` is typed: it names the file as given and suggests `fdu */`, which only a
+#      shell can expand (review A5 on #192). Python raises the engine's refusal, OSError at
+#      the canonical path, since a caller passing a list has no glob to change. Pinned
+#      whole: one line each side, the Python path ending in the name the command line gave.
 #
 # An unexplained difference fails the run rather than landing here, so this list is
 # what is known, not what was tolerated.
@@ -273,6 +281,16 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Several Roots Report as One
   ✓ Several Roots Report as One
   ✓ Several Roots Report as One
+  ✗ Several Roots Report as One
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: project[SEP]README.md is a file; fdu reports on directories (to name only the directories here: fdu */)
++fdu: I/O error at [SANDBOX]/project/README.md: scan root is not a directory
+  ✗ Several Roots Report as One
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: --stale-ok answers from the snapshot, which --cache off never reads; drop one of them
++fdu: stale_ok answers from the snapshot, which cache policy off never reads; drop one of them
   ✓ Several Roots Report as One
 FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Scan Without a Cache
@@ -1532,7 +1550,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,253 +1,1 @@
+@@ -1,254 +1,1 @@
 -fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1592,8 +1610,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Several paths are what each would report, added: every size, row, share, and
 -  bound is over the union, once. The tree starts with a (total) row, each root
 -  is a row named as given, and flat paths are printed after their root's label.
--  A root inside another, or the same directory twice, is refused. --watch,
--  --cache-status, and --cache-clear take one PATH.
+-  Every PATH is a directory; `fdu */` names only the directories here. A root
+-  inside another, or the same directory twice, is refused. --cache-status and
+-  --cache-clear take one PATH, as does --watch.
 -
 -  code and documents read file contents; --analyze is the extra control for
 -  analysis a view does not imply:
@@ -1811,7 +1830,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✓ Watching Keeps One Root
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
-  ✓ Reject It as the Root
+  ✗ Reject It as the Root
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: plain-file is a file; fdu reports on directories (to name only the directories here: fdu */)
++fdu: I/O error at [SANDBOX]/plain-file: scan root is not a directory
 PASS [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
   ✓ Build a Tree and Capture a Watch Session
   ✓ Build a Tree and Capture a Watch Session

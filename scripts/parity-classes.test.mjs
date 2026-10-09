@@ -305,6 +305,30 @@ test("a watched content view accepts only the held-index refusal of the same vie
   );
 });
 
+test("a file root accepts only the engine's refusal of the same file", () => {
+  const cli = (given) =>
+    `! fdu: ${given} is a file; fdu reports on directories (to name only the directories here: fdu */)`;
+  const api = (path) => `! fdu: I/O error at ${path}: scan root is not a directory`;
+  assert.equal(
+    classify(session([cli("project[SEP]README.md")], [api("[SANDBOX]/project/README.md")]))?.id,
+    "file-root-remedy",
+  );
+  assert.equal(classify(session([cli("plain-file")], [api("[SANDBOX]/plain-file")]))?.id, "file-root-remedy");
+  for (const added of [
+    api("[SANDBOX]/other-file"),
+    api("[SANDBOX]/notplain-file"),
+    "! fdu: I/O error at [SANDBOX]/plain-file: [OS_ERROR]",
+    "fdu: I/O error at [SANDBOX]/plain-file: scan root is not a directory",
+  ]) {
+    assert.equal(classify(session([cli("plain-file")], [added])), null, added);
+  }
+  assert.equal(
+    classify(session([cli("plain-file"), "total 100"], [api("[SANDBOX]/plain-file"), "total 999"])),
+    null,
+    "an extra changed line is never absorbed",
+  );
+});
+
 // A class that cannot fail is worse than no class: the summary then reports a clean
 // surface while a real difference goes unread. Each class gets a fixture it would
 // otherwise match, polluted with one genuinely changed line.
