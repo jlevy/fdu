@@ -715,29 +715,37 @@ fn run_root(
     match plan.retained {
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-            let mut fold = SummaryFold::new(&scan_config, aliases);
-            let mut reduce = |observed: &crate::ObservationOp| fold.observe(observed);
-            let (mut scan, diagnostics) = if aliases.is_some() {
-                // Over several roots the fold compares each directory's identity with the
-                // other roots', so every directory is stated, as the index tiers state it.
-                crate::scan::scan_summary_fold_identified(
+            let mut fold = SummaryFold::new(&scan_config);
+            // One root's reducer is the fold alone, which holds no alias state and checks
+            // nothing per entry beyond what it reduces (review D4 on #192). Over several
+            // roots a watch for the other roots runs beside it, and every directory is
+            // stated so the watch sees its identity, as the index tiers state it.
+            let (mut scan, diagnostics, reached) = if let Some((roots, own)) = aliases {
+                let mut watch = FoldAliases::new(roots, own);
+                let (scan, diagnostics) = crate::scan::scan_summary_fold_identified(
                     &root,
                     &scan_config,
-                    &mut reduce,
+                    &mut |observed: &crate::ObservationOp| {
+                        watch.observe(observed);
+                        fold.observe(observed);
+                    },
                     collect_scan_diagnostics,
-                )?
-            } else if collect_scan_diagnostics {
-                let (scan, diagnostics) = crate::scan::scan_summary_fold_with_diagnostics(
-                    &root,
-                    &scan_config,
-                    &mut reduce,
                 )?;
-                (scan, Some(diagnostics))
+                (scan, diagnostics, watch.reached)
             } else {
-                (crate::scan::scan_summary_fold(&root, &scan_config, &mut reduce)?, None)
+                let mut reduce = |observed: &crate::ObservationOp| fold.observe(observed);
+                if collect_scan_diagnostics {
+                    let (scan, diagnostics) = crate::scan::scan_summary_fold_with_diagnostics(
+                        &root,
+                        &scan_config,
+                        &mut reduce,
+                    )?;
+                    (scan, Some(diagnostics), None)
+                } else {
+                    (crate::scan::scan_summary_fold(&root, &scan_config, &mut reduce)?, None, None)
+                }
             };
             let complete = scan.is_complete();
-            let reached = fold.reached();
             let (summary, ignore_rules, ignored_unverified) = fold.finish(&root, &scan.errors)?;
             let performance = walked(&scan);
             let part = SummaryPart {
@@ -1128,24 +1136,27 @@ fn live_directory_identity(path: &Path) -> Option<(u64, u64)> {
 /// would carry `all` past `u64::MAX` is not counted, and the report fails with
 /// [`Error::UnrepresentableTotal`]. The unignored tally is a part of `all`, so it cannot
 /// overflow while `all` does not.
-struct SummaryFold<'a> {
+///
+/// **What it does not look for.** Another root reached through an alias: over several
+/// roots a [`FoldAliases`] watches beside the fold, in the reducer the walk calls, so the
+/// fold one root takes holds no alias state and tests nothing for it per entry (review D4
+/// on #192).
+struct SummaryFold {
     /// Every entry the walk retained.
     all: SummaryRow,
     /// The classifier, when the scan observes `.gitignore`.
     controls: Option<SummaryControls>,
     /// The first file the root total could not hold, which fails the report.
     unrepresentable: Option<Error>,
-    /// The report's other roots, when it has several to look for ([`FoldAliases`]).
-    aliases: Option<FoldAliases<'a>>,
 }
 
-/// What a [`SummaryFold`] over one of several roots looks for: a directory that is another
-/// root, reached through an alias, that the walk entered.
+/// What the summary tier over one of several roots looks for beside its [`SummaryFold`]: a
+/// directory that is another root, reached through an alias, that the walk entered.
 ///
-/// The fold keeps no directory, so it decides as each arrives: a directory whose device and
-/// inode are another root's is a candidate, and an entry arriving with a candidate as its
-/// parent shows the walk entered it, since a listing reaches the fold after its parent
-/// does. A candidate nothing arrives under -- at the scan depth, across a filesystem
+/// The fold keeps no directory, so this decides as each arrives: a directory whose device
+/// and inode are another root's is a candidate, and an entry arriving with a candidate as
+/// its parent shows the walk entered it, since a listing reaches the reducer after its
+/// parent does. A candidate nothing arrives under -- at the scan depth, across a filesystem
 /// boundary, or empty -- counted nothing twice. Candidates are the other roots' own
 /// directories, so the set holds at most one per root.
 struct FoldAliases<'a> {
@@ -1158,11 +1169,16 @@ struct FoldAliases<'a> {
     reached: Option<(usize, std::path::PathBuf)>,
 }
 
-impl FoldAliases<'_> {
-    fn observe(&mut self, path: &Path, kind: EntryKind, attrs: &crate::Attrs) {
+impl<'a> FoldAliases<'a> {
+    fn new(roots: &'a RootAliases, own: usize) -> Self {
+        Self { roots, own, candidates: std::collections::HashMap::new(), reached: None }
+    }
+
+    fn observe(&mut self, observed: &crate::ObservationOp) {
         if self.reached.is_some() {
             return;
         }
+        let crate::Op::Upsert { path, kind, attrs } = &observed.op else { return };
         if !self.candidates.is_empty() {
             let (parent, _) = crate::control::split_parent(path);
             if let Some(&root) = self.candidates.get(parent) {
@@ -1170,7 +1186,7 @@ impl FoldAliases<'_> {
                 return;
             }
         }
-        if kind == EntryKind::Dir && (attrs.dev, attrs.inode) != (0, 0) {
+        if *kind == EntryKind::Dir && (attrs.dev, attrs.inode) != (0, 0) {
             if let Some(root) = self.roots.other_root((attrs.dev, attrs.inode), self.own) {
                 self.candidates.insert(path.as_os_str().to_os_string(), root);
             }
@@ -1209,8 +1225,8 @@ struct SummaryControls {
     rejected: Option<Error>,
 }
 
-impl<'a> SummaryFold<'a> {
-    fn new(config: &crate::ScanConfig, aliases: Option<(&'a RootAliases, usize)>) -> Self {
+impl SummaryFold {
+    fn new(config: &crate::ScanConfig) -> Self {
         Self {
             all: SummaryRow::default(),
             controls: config.read_controls.then(|| SummaryControls {
@@ -1222,26 +1238,12 @@ impl<'a> SummaryFold<'a> {
                 rejected: None,
             }),
             unrepresentable: None,
-            aliases: aliases.map(|(roots, own)| FoldAliases {
-                roots,
-                own,
-                candidates: std::collections::HashMap::new(),
-                reached: None,
-            }),
         }
-    }
-
-    /// Another root the walk entered through an alias, and where ([`FoldAliases`]).
-    fn reached(&self) -> Option<(usize, std::path::PathBuf)> {
-        self.aliases.as_ref().and_then(|aliases| aliases.reached.clone())
     }
 
     fn observe(&mut self, observed: &crate::ObservationOp) {
         match &observed.op {
             crate::Op::Upsert { path, kind, attrs } => {
-                if let Some(aliases) = &mut self.aliases {
-                    aliases.observe(path, *kind, attrs);
-                }
                 match kind {
                     EntryKind::File => {
                         if let Err(error) = crate::index::add_file_sizes(
@@ -1544,7 +1546,7 @@ mod tests {
         };
         let summary_fold = |layout: Layout, sizes: &[(u64, u64)], read_controls: bool| {
             let config = ScanConfig { read_controls, ..ScanConfig::default() };
-            let mut fold = SummaryFold::new(&config, None);
+            let mut fold = SummaryFold::new(&config);
             for op in upserts(layout, sizes) {
                 fold.observe(&ObservationOp::unconditional(op));
             }
@@ -5018,13 +5020,26 @@ mod tests {
         let entered = [dir("data", 10), dir("data/x", 30), file("data/x/f")];
         let listed = [dir("data", 10), dir("data/x", 30)];
         let fold = |ops: &[crate::Op], own| {
-            let mut fold = SummaryFold::new(&ScanConfig::default(), Some((&aliases, own)));
+            let mut watch = FoldAliases::new(&aliases, own);
             for op in ops {
-                fold.observe(&crate::ObservationOp::unconditional(op.clone()));
+                watch.observe(&crate::ObservationOp::unconditional(op.clone()));
             }
-            fold.reached()
+            watch.reached
         };
         assert_eq!(fold(&entered, 0), Some((1, PathBuf::from("data/x"))));
+        // One root's fold holds no alias state and tests nothing for one per entry (review
+        // D4 on #192): it is built from the scan configuration alone and observes each op
+        // alone, so it has nowhere to keep another root's identities, and only several
+        // roots run the watch beside it. A fold that took them again would change these
+        // signatures, and this test with them.
+        let new: fn(&ScanConfig) -> SummaryFold = SummaryFold::new;
+        let observe: fn(&mut SummaryFold, &crate::ObservationOp) = SummaryFold::observe;
+        let mut one = new(&ScanConfig { read_controls: false, ..ScanConfig::default() });
+        for op in &entered {
+            observe(&mut one, &crate::ObservationOp::unconditional(op.clone()));
+        }
+        let (row, ..) = one.finish(Path::new("/srv"), &[]).expect("a row");
+        assert_eq!((row.dirs, row.files, row.bytes), (2, 1, 1), "folded as entries, nothing more");
         assert_eq!(fold(&listed, 0), None, "listed, not entered");
         assert_eq!(fold(&entered, 1), None, "a root's own identity is no alias");
         let index = |ops: &[crate::Op]| {
