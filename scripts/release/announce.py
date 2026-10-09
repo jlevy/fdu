@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,31 +18,36 @@ from scripts.release.maintainer import CommandError, Host, Release, StepError
 
 def release_record(host: Host, release: Release) -> dict[str, Any] | None:
     """List with write authority to include drafts, which the tag endpoint omits."""
-    pages = json.loads(
-        host.run(
-            [
-                "gh",
-                "api",
-                "--paginate",
-                "--slurp",
-                f"repos/{release.repository}/releases?per_page=100",
-            ]
-        )
-    )
-    matches = [record for page in pages for record in page if record.get("tag_name") == release.tag]
+    records = maintainer.release_records(host, release)
+    matches = [record for record in records if record.get("tag_name") == release.tag]
     if len(matches) > 1:
         raise StepError(f"multiple releases name {release.tag}")
     return matches[0] if matches else None
 
 
-def missing_assets(release: Release, record: dict[str, Any]) -> list[Path]:
-    """Return absent assets; refuse unexpected files or any unverifiable existing bytes."""
+def missing_assets(
+    release: Release, record: dict[str, Any], demo: maintainer.Demo | None
+) -> list[Path]:
+    """
+    Return absent assets; refuse unexpected files or any unverifiable existing bytes.
+
+    The announcement attaches the eleven verified files and never the demo video, which
+    the workflow has no copy of. A demo the release commit declares may already be
+    attached, by `make release-demo`, and then must be exactly the declared bytes; one it
+    does not declare is unexpected.
+    """
     expected = maintainer.expected_assets(release)
+    allowed = expected.keys() | ({demo.asset} if demo is not None else set())
     held = record.get("assets") or []
     names = [asset["name"] for asset in held]
-    if len(names) != len(set(names)) or set(names) - expected.keys():
+    if len(names) != len(set(names)) or set(names) - allowed:
         raise StepError("GitHub release has duplicate or unexpected assets")
     for asset in held:
+        if demo is not None and asset["name"] == demo.asset:
+            if demo.asset_problems(asset):
+                declared = maintainer.DEMO_DECLARATION
+                raise StepError(f"GitHub asset conflicts with {declared}: {demo.asset}")
+            continue
         path = expected[asset["name"]]
         digest = maintainer.inspect_artifacts.digest(path)
         if asset.get("size") != path.stat().st_size or asset.get("digest") != f"sha256:{digest}":
@@ -55,8 +59,9 @@ def announce(host: Host, release: Release) -> None:
     """Audit before writes; publish only after every draft asset has the expected hash."""
     maintainer.require_pushed_tag(host, release)
     maintainer.verify_kept(release, release.directory / "published")
-    # A demo video committed at the tag is a twelfth asset; without one there are eleven.
-    maintainer.stage_demo(host, release)
+    # The eleven files are attached here. A demo video the tag declares is attached by
+    # `make release-demo` once the release is public, so it may already be there.
+    demo = maintainer.declared_demo(host, release)
     notes = (release.directory / "notes.md").read_text(encoding="utf-8")
     source = maintainer.show(host, release, release.notes_path)
     if source is None:
@@ -100,7 +105,7 @@ def announce(host: Host, release: Release) -> None:
         or str(record.get("body") or "").strip() != notes.strip()
     ):
         raise StepError("existing GitHub release identity or notes conflict")
-    missing = missing_assets(release, record)
+    missing = missing_assets(release, record, demo)
     if not record.get("draft"):
         if missing:
             raise StepError("published GitHub release is missing assets; inspect before repair")
@@ -111,13 +116,13 @@ def announce(host: Host, release: Release) -> None:
             maintainer.gh(release, "release", "upload", release.tag, *(str(p) for p in missing))
         )
     record = release_record(host, release)
-    if record is None or missing_assets(release, record):
+    if record is None or missing_assets(release, record, demo):
         raise StepError("draft is incomplete after upload")
     # Check the remote tag again immediately before making the draft public.
     maintainer.require_pushed_tag(host, release)
     host.run(maintainer.gh(release, "release", "edit", release.tag, "--draft=false"))
     record = release_record(host, release)
-    if record is None or record.get("draft") or missing_assets(release, record):
+    if record is None or record.get("draft") or missing_assets(release, record, demo):
         raise StepError("GitHub release did not become public with all expected assets")
     print(record["html_url"])
 
