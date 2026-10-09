@@ -31,7 +31,7 @@ $ fdu
 Fastest du replacement, with .gitignore-aware sizes and code and document counts, for the command
 line, Python, and Rust
 
-Usage: fdu [OPTIONS] <PATH>
+Usage: fdu [OPTIONS] <PATH>...
        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
        fdu [PATH] --cache-clear[=<SCOPE>]
        fdu --docs
@@ -39,7 +39,7 @@ Usage: fdu [OPTIONS] <PATH>
        fdu --install-skill [--agent-base <DIR>]
 
 ARGUMENTS
-  [PATH]  Report root; optional only for the discovery and cache-lifecycle flags
+  [PATH]...  Report roots, disjoint; optional only for the discovery and cache-lifecycle flags
 
 SCOPE
       --scan-depth <N>               Limit scanning and retention to N entry levels
@@ -1016,7 +1016,7 @@ $ fdu --definitely-not-an-option
 !
 !   tip: to pass '--definitely-not-an-option' as a value, use '-- --definitely-not-an-option'
 !
-! Usage: fdu [OPTIONS] <PATH>
+! Usage: fdu [OPTIONS] <PATH>...
 !        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
 !        fdu [PATH] --cache-clear[=<SCOPE>]
 !        fdu --docs

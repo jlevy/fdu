@@ -25,15 +25,15 @@ use fdu_core::query::IgnoredEntries;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
 use fdu_core::query::{
-    AxisNames, Delivery, ReadSpec, Report, ReportSource, Request, RequestError, RequestSpec,
-    SizeMetric, WatchDelivery, parse_cache_policy,
+    AxisNames, Delivery, ReadSpec, Report, ReportSource, Request, RequestError, RequestSpec, Roots,
+    RootsRequest, SizeMetric, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
 use fdu_core::{CachePolicy, CacheScope, CacheState, Progress, default_cache_path_in};
 use fdu_core::{
-    PerformanceSummary, prepare_report, prepare_report_with_progress,
-    prepare_report_with_scan_diagnostics,
+    PerformanceSummary, RootsPrepared, prepare_roots_report, prepare_roots_report_with_progress,
+    prepare_roots_report_with_scan_diagnostics,
 };
 
 use crate::progress_line::{
@@ -498,7 +498,7 @@ pub enum RunOutcome {
     disable_help_flag = true,
     disable_version_flag = true,
     arg_required_else_help = true,
-    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill\n       fdu --install-skill [--agent-base <DIR>]"
+    override_usage = "fdu [OPTIONS] <PATH>...\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill\n       fdu --install-skill [--agent-base <DIR>]"
 )]
 // A command line is a flat bag of independent switches. Folding these into enums to
 // satisfy the lint would obscure the one thing this struct exists to mirror: the flags a
@@ -506,12 +506,16 @@ pub enum RunOutcome {
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     // ---- scope: what the engine observes and retains ----
-    /// Report root; optional only for the discovery and cache-lifecycle flags.
+    /// Report roots, disjoint; optional only for the discovery and cache-lifecycle flags.
+    ///
+    /// Several roots report as one, as if each were reported alone and the reports added.
+    /// The engine validates them ([`Roots::resolve`]), so this only collects them in order.
     #[arg(
+        value_name = "PATH",
         required_unless_present_any = ["docs", "skill", "install_skill", "cache_status", "cache_clear"],
         help_heading = "ARGUMENTS"
     )]
-    pub path: Option<PathBuf>,
+    pub paths: Vec<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
     #[arg(long, value_name = "N", help_heading = "SCOPE")]
@@ -799,8 +803,10 @@ impl Cli {
         // Lifecycle flags run before scan validation, so they need no readable tree, and
         // they suppress the report entirely: a run that inspects or clears the cache is
         // not also a run that scans. Clear runs first so a combined invocation reports
-        // the state it left behind.
+        // the state it left behind. A cache belongs to one root, so they take one PATH.
         if self.cache_clear.is_some() || self.cache_status.is_some() {
+            let flag = if self.cache_clear.is_some() { "--cache-clear" } else { "--cache-status" };
+            self.one_path_for(flag)?;
             return self.run_cache_lifecycle(out, stdout_is_terminal);
         }
 
@@ -808,15 +814,22 @@ impl Cli {
         // time costs nothing and reports its own spelling rather than a scan's worth of
         // waiting followed by an error.
         let format = self.parse_format().map_err(|error| usage(&error))?;
-        let path = self.path.as_deref().ok_or_else(|| {
+        let path = self.paths.first().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
             ))
         })?;
+        // A watch keeps one tree current; several would need one watcher each and a
+        // merged stream, which nothing builds yet.
+        #[cfg(feature = "watch")]
+        if self.watch {
+            self.one_path_for("--watch")?;
+        }
         // One grammar, one defaults table, one set of rules: this command line hands the
         // model the words its caller typed and renders whatever comes back in flag names.
         // It used to parse each axis itself, which is how a default could differ between
-        // the doors into the same engine.
+        // the doors into the same engine. Several roots share this one request; it names
+        // the first, and the engine roots a copy at each.
         let request = self.request(path, SystemTime::now())?;
         let has_tree = request.query.views.iter().any(|view| {
             matches!(view, fdu_core::query::ViewSpec::List | fdu_core::query::ViewSpec::Tree)
@@ -831,10 +844,20 @@ impl Cli {
                 report_format::MAX_BAR_SIZE
             )));
         }
+        let cache = self.parse_cache_policy().map_err(|error| usage(&error))?;
+        // The cache directory first, then the roots, in the order one root's run has
+        // always failed: a bad `--cache-dir`, then a root that is missing, not a
+        // directory, or overlapping another. Each root's snapshot is named under this one
+        // directory by the engine, as one root's has always been named here.
+        let cache_dir = fdu_core::default_cache_dir(self.cache_dir.as_deref())?;
+        let roots = Roots::resolve(&self.paths).map_err(|error| match error {
+            fdu_core::Error::InvalidRequest(refusal) => usage(&refused(&refusal)),
+            other => other.into(),
+        })?;
         let delivery = Delivery {
-            cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
+            cache,
             stale_ok: self.stale_ok,
-            cache_path: default_cache_path_in(path, self.cache_dir.as_deref())?,
+            cache_path: None,
             workers: fdu_core::query::Workers {
                 analysis: self.analysis_workers,
                 ..Default::default()
@@ -872,6 +895,12 @@ impl Cli {
             )
             .enabled();
             let indicator = progress_plan.draw.then_some((progress_plan, progress_io));
+            // A watch has one root, checked above, and keeps its snapshot where one root's
+            // report would.
+            let delivery = Delivery {
+                cache_path: default_cache_path_in(&roots.first().path, cache_dir.as_deref())?,
+                ..delivery
+            };
             return Self::run_watch(
                 out,
                 diagnostic,
@@ -894,8 +923,10 @@ impl Cli {
         // The measurement door comes first because it is a measurement: a ticker thread
         // polling beside the walk would be part of what it measures. A run that does not
         // draw takes the plain door and pays nothing for the indicator, not even a handle.
-        let (report, pending_save, performance, scan_diagnostics) = if collect_scan_diagnostics {
-            prepare_report_with_scan_diagnostics(&request, &delivery)?
+        let request = RootsRequest::new(roots, request);
+        let cache_dir = cache_dir.as_deref();
+        let (prepared, scan_diagnostics) = if collect_scan_diagnostics {
+            prepare_roots_report_with_scan_diagnostics(&request, &delivery, cache_dir)?
         } else if progress_plan.draw {
             // The one place the line is stopped on this route: right after the engine
             // returns, with a report or with an error, and before a byte reaches either
@@ -905,15 +936,16 @@ impl Cli {
             let progress = Progress::new();
             let mut ticker =
                 Ticker::start(progress_plan, progress.clone(), report_started, progress_io);
-            let prepared = prepare_report_with_progress(&request, &delivery, &progress);
+            let prepared =
+                prepare_roots_report_with_progress(&request, &delivery, cache_dir, &progress);
             ticker.stop();
-            let (report, pending_save, performance) = prepared?;
-            (report, pending_save, performance, None)
+            (prepared?, Vec::new())
         } else {
-            let (report, pending_save, performance) = prepare_report(&request, &delivery)?;
-            (report, pending_save, performance, None)
+            (prepare_roots_report(&request, &delivery, cache_dir)?, Vec::new())
         };
-        if let Some(scan_diagnostics) = scan_diagnostics {
+        let RootsPrepared { report, pending: pending_saves, performance } = prepared;
+        // One line per root that walked, in the roots' order.
+        for scan_diagnostics in scan_diagnostics.into_iter().flatten() {
             writeln!(diagnostic, "{SCAN_DIAGNOSTICS_PREFIX}{}", scan_diagnostics.to_json())?;
         }
 
@@ -956,10 +988,14 @@ impl Cli {
         // pay for a cold scan that this one had already done.
         let diagnostic_color =
             ColorContext::from_environment(self.color, false, false, stderr_is_terminal).enabled();
-        let save_warning = pending_save.join().err().map(|error| format!("warn: {error}"));
+        // Every root's save is joined, and each failure is its own warning.
+        let save_warnings: Vec<String> = pending_saves
+            .into_iter()
+            .filter_map(|pending| pending.join().err().map(|error| format!("warn: {error}")))
+            .collect();
         if render_result.is_err() {
-            // A failed report write still joins the save and tells the caller if it failed.
-            if let Some(warning) = &save_warning {
+            // A failed report write still joins the saves and tells the caller if one failed.
+            for warning in &save_warnings {
                 let _ = writeln!(diagnostic, "{}", paint(warning, STYLE_WARNING, diagnostic_color));
             }
         }
@@ -980,7 +1016,7 @@ impl Cli {
             &report,
             format,
             diagnostic_color,
-            save_warning.as_deref(),
+            &save_warnings,
             self.quiet,
         )?;
         if !self.quiet
@@ -991,10 +1027,11 @@ impl Cli {
                 "{}",
                 paint(
                     &performance_footer(
-                        performance,
+                        &performance,
+                        report.roots.as_deref(),
                         &report.ignore_rules,
                         report_started.elapsed(),
-                        request.query.selection.size,
+                        request.request().query.selection.size,
                         diagnostic_color,
                     ),
                     STYLE_PERFORMANCE,
@@ -1004,11 +1041,22 @@ impl Cli {
         }
         diagnostic.flush()?;
 
-        let plan = fdu_core::plan(&request, &delivery, fdu_core::Route::OneShot)?;
+        let plan = fdu_core::plan(request.request(), &delivery, fdu_core::Route::OneShot)?;
         Ok(match plan.outcome(&report.status) {
             fdu_core::OutcomeClass::Success => RunOutcome::Complete,
             fdu_core::OutcomeClass::Partial => RunOutcome::Partial,
         })
+    }
+
+    /// Refuse a second PATH for a flag that acts on one root: a watch, and the cache
+    /// lifecycle, whose snapshot belongs to one root. A command-line rule because no
+    /// engine call can be asked otherwise: a watch session and `cache_status` take one root
+    /// by type.
+    fn one_path_for(&self, flag: &str) -> anyhow::Result<()> {
+        match self.paths.len() {
+            0 | 1 => Ok(()),
+            given => Err(usage(&anyhow::anyhow!("{flag} takes one PATH; {given} were given"))),
+        }
     }
 
     /// Whether the requested format is a machine format, which is never colorized.
@@ -1037,10 +1085,15 @@ impl Cli {
             || self.install_skill
             || self.cache_status.is_some()
             || self.cache_clear.is_some());
-        let root = self.path.as_deref().unwrap_or(Path::new("."));
+        let home = home_directory();
+        let roots = if self.paths.is_empty() {
+            vec![display_root(Path::new("."), home.as_deref())]
+        } else {
+            self.paths.iter().map(|root| display_root(root, home.as_deref())).collect()
+        };
         ProgressPlan {
             draw: !self.quiet && should_draw(self.progress, terminal, self.machine_format(), walks),
-            root: display_root(root, home_directory().as_deref()),
+            roots,
             color: ColorContext::from_environment(
                 self.color,
                 false,
@@ -1109,7 +1162,7 @@ impl Cli {
         }
         report_format::write_with_options(&initial, format, render, out)?;
         out.flush()?;
-        write_report_diagnostics(diagnostic, &initial, format, diagnostic_color, None, quiet)?;
+        write_report_diagnostics(diagnostic, &initial, format, diagnostic_color, &[], quiet)?;
 
         let mut dirty_since_render = false;
         let mut last_render = SystemTime::now();
@@ -1286,7 +1339,7 @@ impl Cli {
         }
         report_format::write_with_options(&report, format, render, out)?;
         out.flush()?;
-        write_report_diagnostics(diagnostic, &report, format, diagnostic_color, None, quiet)?;
+        write_report_diagnostics(diagnostic, &report, format, diagnostic_color, &[], quiet)?;
         Ok(())
     }
 
@@ -1351,7 +1404,7 @@ impl Cli {
         // Lifecycle commands do not scan. With no PATH they retain their existing
         // current-root meaning so `--cache-status=all` and `--cache-clear=all` remain
         // useful discovery/maintenance actions without weakening report safety.
-        let root = self.path.as_deref().unwrap_or_else(|| Path::new("."));
+        let root = self.paths.first().map_or_else(|| Path::new("."), PathBuf::as_path);
         let cache_dir = fdu_core::default_cache_dir(self.cache_dir.as_deref())?;
 
         if let Some(scope) = &self.cache_clear {
@@ -1614,7 +1667,7 @@ impl Cli {
     /// [`Cli::request`] for a test, over a root no test reads.
     #[cfg(test)]
     fn resolved_request(&self) -> anyhow::Result<Request> {
-        self.request(self.path.as_deref().unwrap_or(Path::new(".")), SystemTime::now())
+        self.request(self.paths.first().map_or(Path::new("."), PathBuf::as_path), SystemTime::now())
     }
 }
 
@@ -1629,13 +1682,39 @@ struct TypedValues {
 /// The ignore-rule count sits beside the walk it was read during. It is also what tells a
 /// reader apart two reports that show no ignored share: one whose rules ignore nothing,
 /// and one that read no rules.
+///
+/// Over several roots the counts are summed, and the tier names each root's when they
+/// differ, `cold scan (docs), cache only (src)`, since one tier would misdescribe a run
+/// whose roots were served differently.
 fn performance_footer(
-    performance: PerformanceSummary,
+    parts: &[PerformanceSummary],
+    roots: Option<&[fdu_core::query::NamedRoot]>,
     ignore_rules: &ControlCoverage,
     total: Duration,
     size: SizeMetric,
     color: bool,
 ) -> String {
+    let performance = PerformanceSummary::sum(parts);
+    let mut tiers: Vec<(ReportSource, Vec<String>)> = Vec::new();
+    for (position, part) in parts.iter().enumerate() {
+        let label = roots
+            .and_then(|roots| roots.get(position))
+            .map(|root| root.label.display().to_string());
+        match tiers.iter_mut().find(|(source, _)| *source == part.source) {
+            Some((_, labels)) => labels.extend(label),
+            None => tiers.push((part.source, label.into_iter().collect())),
+        }
+    }
+    let tier = match tiers.as_slice() {
+        [(source, _)] => performance_source(*source).to_owned(),
+        tiers => tiers
+            .iter()
+            .map(|(source, labels)| {
+                format!("{} ({})", performance_source(*source), labels.join(", "))
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    };
     // The walked bytes in the answer's own metric: a sparse disk image is terabytes
     // apparent and megabytes allocated, and the line sits right under the answer.
     let walked_bytes = match size {
@@ -1687,14 +1766,13 @@ fn performance_footer(
     };
     let rates = performance.total_throughput(total, size);
     format!(
-        "perf: took {} to walk {} {} ({}) at {rates}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}",
+        "perf: took {} to walk {} {} ({}) at {rates}; {rules}; content read {}{}; analysis {fresh}, {cached}; {tier}",
         human_duration(total),
         human_count(performance.walked_files),
         plural_u64(performance.walked_files, "file", "files"),
         performance_bytes(walked_bytes, color),
         performance_bytes(performance.bytes_read, color),
         read_rate,
-        performance_source(performance.source),
     )
 }
 
@@ -1830,7 +1908,7 @@ fn write_report_diagnostics(
     report: &Report,
     format: report_format::Format,
     color: bool,
-    save_warning: Option<&str>,
+    save_warnings: &[String],
     quiet: bool,
 ) -> io::Result<()> {
     let lines = if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
@@ -1846,7 +1924,7 @@ fn write_report_diagnostics(
     for warning in report_format::report_warnings(report) {
         writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color))?;
     }
-    if let Some(warning) = save_warning {
+    for warning in save_warnings {
         writeln!(diagnostic, "{}", paint(warning, STYLE_WARNING, color))?;
     }
     if !report.status.complete {
@@ -2385,7 +2463,8 @@ mod tests {
         };
         let footer = |rules: &ControlCoverage| {
             performance_footer(
-                performance,
+                &[performance],
+                None,
                 rules,
                 Duration::from_millis(3),
                 SizeMetric::Apparent,
@@ -2399,7 +2478,8 @@ mod tests {
         // The walked bytes are the answer's metric, allocated unless `--size apparent`.
         assert!(
             performance_footer(
-                performance,
+                &[performance],
+                None,
                 &ControlCoverage::NotObserved,
                 Duration::from_millis(3),
                 SizeMetric::Allocated,
@@ -2573,7 +2653,7 @@ mod tests {
     /// A CLI with every axis at its default, so a test can vary exactly one.
     fn cli() -> Cli {
         Cli {
-            path: Some(PathBuf::from(".")),
+            paths: vec![PathBuf::from(".")],
             scan_depth: None,
             one_filesystem: false,
             gitignore_budget: None,
@@ -2654,6 +2734,117 @@ mod tests {
         assert!(
             bare_help.lines().all(|line| line.trim_end() == line),
             "help should not pad blank lines with invisible whitespace"
+        );
+    }
+
+    /// Run `args` with inert progress, returning the exit status, stdout, and stderr.
+    fn run_args(args: &[&OsStr]) -> (u8, String, String) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let args: Vec<OsString> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        let status = run_with_io(
+            &args,
+            &mut out,
+            &mut err,
+            false,
+            &TerminalFacts::default(),
+            ProgressIo::inert(),
+        );
+        let text = |bytes| String::from_utf8(bytes).expect("UTF-8");
+        (status, text(out), text(err))
+    }
+
+    #[test]
+    fn several_paths_parse_in_argument_order() {
+        assert_eq!(
+            parse(&["fdu", "src", "docs", "."]).paths,
+            ["src", "docs", "."].map(PathBuf::from)
+        );
+        assert_eq!(parse(&["fdu", "--view", "files", "a", "--depth", "1", "b"]).paths.len(), 2);
+    }
+
+    /// A watch and the cache lifecycle act on one root, so a second PATH is a usage error
+    /// naming the limit, raised before anything is read.
+    #[test]
+    fn a_second_path_with_watch_cache_status_or_cache_clear_is_a_usage_error() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let (a, b) = (root.path().join("a"), root.path().join("b"));
+        for flags in [
+            &["--cache-status"][..],
+            &["--cache-clear"],
+            #[cfg(feature = "watch")]
+            &["--watch"],
+        ] {
+            let mut args: Vec<&OsStr> = vec![OsStr::new("fdu")];
+            args.extend(flags.iter().map(OsStr::new));
+            args.extend([a.as_os_str(), b.as_os_str()]);
+            let (status, out, err) = run_args(&args);
+            assert_eq!(status, 2, "{flags:?}: {err}");
+            assert!(out.is_empty(), "{flags:?}");
+            assert!(err.contains(&format!("{} takes one PATH; 2 were given", flags[0])), "{err}");
+        }
+    }
+
+    /// Overlapping roots are a refused request, exit 2, naming both labels as given; a
+    /// missing root fails as one root always has, exit 1.
+    #[test]
+    fn overlapping_and_missing_roots_fail_as_one_root_does() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let outer = root.path().join("a");
+        std::fs::create_dir_all(outer.join("b")).expect("a/b");
+        let inner = outer.join("b");
+        let (status, out, err) = run_args(&[
+            OsStr::new("fdu"),
+            OsStr::new("--cache"),
+            OsStr::new("off"),
+            outer.as_os_str(),
+            inner.as_os_str(),
+        ]);
+        assert_eq!(status, 2, "{err}");
+        assert!(out.is_empty());
+        assert!(
+            err.contains(&format!(
+                "{} is inside {}; name one or the other",
+                inner.display(),
+                outer.display()
+            )),
+            "{err}"
+        );
+        let missing = root.path().join("missing");
+        let (status, _, err) = run_args(&[
+            OsStr::new("fdu"),
+            OsStr::new("--cache"),
+            OsStr::new("off"),
+            outer.as_os_str(),
+            missing.as_os_str(),
+        ]);
+        assert_eq!(status, 1, "{err}");
+        assert!(err.contains(&format!("I/O error at {}", missing.display())), "{err}");
+    }
+
+    /// Several roots report as one: a total row, root rows by label, labelled paths.
+    #[test]
+    fn several_roots_print_a_total_and_labelled_paths() {
+        let root = tempfile::tempdir().expect("tempdir");
+        for (name, size) in [("a", 3_000), ("b", 1_000)] {
+            std::fs::create_dir(root.path().join(name)).expect("root");
+            std::fs::write(root.path().join(name).join("f.bin"), vec![b'.'; size]).expect("file");
+        }
+        let (a, b) = (root.path().join("a"), root.path().join("b"));
+        let base = [OsStr::new("fdu"), OsStr::new("--cache"), OsStr::new("off"), OsStr::new("-q")];
+        let mut tree: Vec<&OsStr> = base.to_vec();
+        tree.extend([a.as_os_str(), b.as_os_str()]);
+        let (status, out, err) = run_args(&tree);
+        assert_eq!(status, 0, "{err}");
+        assert!(out.lines().next().is_some_and(|line| line.contains("(total) 2 files")), "{out}");
+        assert!(out.contains(&format!("{}/", a.display())), "{out}");
+        let mut paths: Vec<&OsStr> = base.to_vec();
+        paths.extend(["--view", "files", "--format", "paths", "--sort", "name"].map(OsStr::new));
+        paths.extend([b.as_os_str(), a.as_os_str()]);
+        let (status, out, _) = run_args(&paths);
+        assert_eq!(status, 0);
+        assert_eq!(
+            out.lines().collect::<Vec<_>>(),
+            [a.join("f.bin").display().to_string(), b.join("f.bin").display().to_string()]
         );
     }
 
@@ -3204,7 +3395,7 @@ mod tests {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
         let command = Cli {
-            path: Some(root.path().to_path_buf()),
+            paths: vec![root.path().to_path_buf()],
             analyze: "lines,words".to_string(),
             view: Some("documents".to_string()),
             format: "json".to_string(),
@@ -3236,7 +3427,7 @@ mod tests {
         std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
         std::fs::write(root.path().join("two.txt"), b"two\n").expect("write");
         let command = Cli {
-            path: Some(root.path().to_path_buf()),
+            paths: vec![root.path().to_path_buf()],
             analyze: "lines".to_string(),
             view: Some("summary".to_string()),
             size: "apparent".to_string(),
@@ -3301,7 +3492,7 @@ mod tests {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
         let command = |quiet| Cli {
-            path: Some(root.path().to_path_buf()),
+            paths: vec![root.path().to_path_buf()],
             analyze: "lines".to_string(),
             view: Some("summary".to_string()),
             size: "apparent".to_string(),
@@ -3354,10 +3545,11 @@ mod tests {
     fn quiet_keeps_warnings_on_the_diagnostic_stream() {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
-        let command = Cli { path: Some(root.path().to_path_buf()), quiet: true, ..cli() };
+        let command = Cli { paths: vec![root.path().to_path_buf()], quiet: true, ..cli() };
         let request = command.request(root.path(), SystemTime::now()).expect("request");
         let (report, pending_save, _) =
-            prepare_report(&request, &Delivery::new(CachePolicy::Off, None)).expect("report");
+            fdu_core::prepare_report(&request, &Delivery::new(CachePolicy::Off, None))
+                .expect("report");
         pending_save.join().expect("no cache save");
         let mut diagnostic = Vec::new();
         write_report_diagnostics(
@@ -3365,7 +3557,7 @@ mod tests {
             &report,
             report_format::Format::Tree,
             false,
-            Some("warn: snapshot could not be saved"),
+            &["warn: snapshot could not be saved".to_owned()],
             true,
         )
         .expect("diagnostics");
@@ -3387,7 +3579,7 @@ mod tests {
         std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
         let cache = tempfile::tempdir().expect("cache dir");
         let command = |view: &str, format: &str, cache_policy: &str, stale_ok, quiet| Cli {
-            path: Some(root.path().to_path_buf()),
+            paths: vec![root.path().to_path_buf()],
             view: Some(view.to_string()),
             format: format.to_string(),
             size: "apparent".to_string(),
@@ -3450,7 +3642,7 @@ mod tests {
         std::fs::write(root.path().join("two.txt"), b"two\n").expect("write");
         for size in [SIZE_DEFAULT, "apparent"] {
             let command = Cli {
-                path: Some(root.path().to_path_buf()),
+                paths: vec![root.path().to_path_buf()],
                 view: Some("summary".to_string()),
                 size: size.to_string(),
                 ..cli()
@@ -3480,7 +3672,7 @@ mod tests {
     #[test]
     fn performance_footer_names_units_cache_work_and_metadata_tier() {
         let footer = performance_footer(
-            PerformanceSummary {
+            &[PerformanceSummary {
                 walked_files: 12_345,
                 walked_bytes: 2_048,
                 walked_allocated: 50_565_120,
@@ -3490,7 +3682,8 @@ mod tests {
                 cached_files: 2,
                 cached_bytes: 4_096,
                 source: ReportSource::WarmRevalidate,
-            },
+            }],
+            None,
             &ControlCoverage::NotObserved,
             Duration::from_millis(2_500),
             SizeMetric::Apparent,
@@ -3501,6 +3694,46 @@ mod tests {
             footer,
             "perf: took 2.50 s to walk 12,345 files (2.0 KiB) at 4,938 files/s (0.000 GiB/s); gitignore not read; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1,500 files/s, 2 cached (4.0 KiB); warm revalidation"
         );
+    }
+
+    /// Over several roots the line sums the walk and names each root's tier when they
+    /// differ; when they agree, it names the one tier.
+    #[test]
+    fn perf_line_sums_and_names_each_tier_when_roots_differ() {
+        let part = |files, source| PerformanceSummary {
+            walked_files: files,
+            walked_bytes: files * 100,
+            source,
+            ..PerformanceSummary::default()
+        };
+        let roots = [
+            fdu_core::query::NamedRoot { label: "docs".into(), path: "/abs/docs".into() },
+            fdu_core::query::NamedRoot { label: "src".into(), path: "/abs/src".into() },
+            fdu_core::query::NamedRoot { label: "tests".into(), path: "/abs/tests".into() },
+        ];
+        let footer = |parts: &[PerformanceSummary]| {
+            performance_footer(
+                parts,
+                Some(&roots),
+                &ControlCoverage::NotObserved,
+                Duration::from_secs(1),
+                SizeMetric::Apparent,
+                false,
+            )
+        };
+        let mixed = footer(&[
+            part(2, ReportSource::ColdScan),
+            part(3, ReportSource::CacheOnly),
+            part(4, ReportSource::ColdScan),
+        ]);
+        assert!(mixed.starts_with("perf: took 1.00 s to walk 9 files (900 B) at "), "{mixed}");
+        assert!(mixed.ends_with("; cold scan (docs, tests), cache only (src)"), "{mixed}");
+        let agreed = footer(&[
+            part(2, ReportSource::ColdScan),
+            part(3, ReportSource::ColdScan),
+            part(4, ReportSource::ColdScan),
+        ]);
+        assert!(agreed.ends_with("; cold scan"), "{agreed}");
     }
 
     #[test]
@@ -3516,7 +3749,8 @@ mod tests {
             ..PerformanceSummary::default()
         };
         let plain = performance_footer(
-            performance,
+            &[performance],
+            None,
             &ControlCoverage::NotObserved,
             Duration::from_secs(1),
             SizeMetric::Apparent,
@@ -3528,7 +3762,8 @@ mod tests {
 
         let colored = paint(
             &performance_footer(
-                performance,
+                &[performance],
+                None,
                 &ControlCoverage::NotObserved,
                 Duration::from_secs(1),
                 SizeMetric::Apparent,
@@ -3552,7 +3787,7 @@ mod tests {
         std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
         for format in ["json", "jsonl", "yaml"] {
             let command = Cli {
-                path: Some(root.path().to_path_buf()),
+                paths: vec![root.path().to_path_buf()],
                 view: Some("summary".to_string()),
                 size: "apparent".to_string(),
                 format: format.to_string(),
@@ -3602,7 +3837,7 @@ mod tests {
         // Parsing precedes open(), so a typo reports itself instead of arriving after a
         // scan of a large tree.
         let message = query_error(&Cli {
-            path: Some(PathBuf::from("/nonexistent-root-that-should-not-be-scanned")),
+            paths: vec![PathBuf::from("/nonexistent-root-that-should-not-be-scanned")],
             view: Some("bogus".to_string()),
             ..cli()
         });
@@ -4101,18 +4336,19 @@ mod tests {
     fn the_progress_plan_names_the_root_and_follows_the_color_rule() {
         let interactive = interactive_terminal();
         let plan = |args: &[&str]| progress_plan_of(args, &interactive);
-        assert_eq!(plan(&["fdu", "."]).root, ".");
+        assert_eq!(plan(&["fdu", "."]).roots, ["."]);
         assert_eq!(
-            plan(&["fdu", "--cache-status"]).root,
-            ".",
+            plan(&["fdu", "--cache-status"]).roots,
+            ["."],
             "a lifecycle command without a path reports on the current directory"
         );
         let home = home_directory().expect("the test runner has a home directory");
         let under_home = home.join("wrk").join("github");
         assert_eq!(
-            plan(&["fdu", under_home.to_str().expect("Unicode")]).root,
-            Path::new("~").join("wrk").join("github").display().to_string()
+            plan(&["fdu", under_home.to_str().expect("Unicode")]).roots,
+            [Path::new("~").join("wrk").join("github").display().to_string()]
         );
+        assert_eq!(plan(&["fdu", "docs", "src"]).roots, ["docs", "src"], "every root in order");
 
         assert!(!plan(&["fdu", "--color", "never", "."]).color);
         assert!(plan(&["fdu", "--color", "always", "."]).color);
