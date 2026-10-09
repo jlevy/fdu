@@ -1,6 +1,6 @@
 # Machine Output and Directory Inventories
 
-All reports use `fdu.report/10`, including metadata-only and content-analyzed reports.
+All reports use `fdu.report/11`, including metadata-only and content-analyzed reports.
 Cache status uses `fdu.cache/3`, and raw watch changes use `fdu.stream/2`. Check the
 schema before decoding.
 The [schema rule](project/guides/release-process.md) requires a new version when a

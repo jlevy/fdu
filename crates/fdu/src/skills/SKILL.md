@@ -469,7 +469,7 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/10`, a `--watch`
+- `schema` before parsing anything else: a report carries `fdu.report/11`, a `--watch`
   stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. Treat an
   unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)

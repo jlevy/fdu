@@ -5497,7 +5497,9 @@ mod tests {
         assert_eq!(remainder.reasons, vec![TreeOmissionReason::Depth]);
         let text = crate::report_format::render(&report, crate::report_format::Format::Text, false)
             .expect("render");
-        assert!(text.contains("—     unknown    … and more files (count unknown)"));
+        // The root's age is unknown too, and the remainder's age cell is blank beneath it.
+        assert!(text.contains("100 B  unknown  . 1 file"), "{text}");
+        assert!(text.contains("—     unknown             … and more files (count unknown)"));
     }
 
     /// A failed listing must not turn off the default threshold for verified siblings.
@@ -5520,7 +5522,12 @@ mod tests {
             std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
         )]);
         let selection = Selection { size: SizeMetric::Apparent, ..Selection::default() };
-        let report = run(&index, &query(&[ViewSpec::Tree], selection.clone()));
+        // An hour after every time in the tree, as the command-line test that shares this
+        // golden stamps its fixture an hour and a half minute back.
+        let mut request =
+            crate::test_support::read_of(&index, query(&[ViewSpec::Tree], selection.clone()));
+        request.now = UNIX_EPOCH + Duration::from_secs(3_600);
+        let report = report(&index, &request, generated_at()).expect("report");
         assert!(!report.status.complete);
         assert_eq!(
             crate::report_format::render(&report, crate::report_format::Format::Text, false)
@@ -6511,7 +6518,15 @@ mod tests {
         ];
         let mut actual = String::new();
         for (label, index, selection) in cases {
-            let report = run(index, &query(&[ViewSpec::Tree], selection));
+            // Ages are incidental here, and one fixture is written to disk as the test
+            // runs. Read each tree at the instant of its newest activity, so every age is
+            // `0s` however long ago the fixture was written.
+            let query = query(&[ViewSpec::Tree], selection);
+            let newest = tree_of(&run(index, &query)).mtime_ns.expect("every tree has activity");
+            let mut request = crate::test_support::read_of(index, query);
+            request.now =
+                UNIX_EPOCH + Duration::from_nanos(u64::try_from(newest).expect("after the epoch"));
+            let report = report(index, &request, generated_at()).expect("report");
             actual.push_str(label);
             actual.push('\n');
             actual.push_str(

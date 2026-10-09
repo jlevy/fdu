@@ -280,7 +280,8 @@ JSON, JSONL, and YAML tree sections expose `remainder` with `files`, `bytes`,
 collapsed under listed directories.
 The existing `limits` fields provide the corresponding bound values; per-node
 `omissions` retain detailed boundaries for debugging.
-Report schema `fdu.report/10` uses this root-branch accounting for the remainder.
+The report schema has used this root-branch accounting for the remainder since
+`fdu.report/10`.
 
 Explain accounting and applicable bounds once at the end, then offer one remedy:
 
