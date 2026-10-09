@@ -4073,15 +4073,27 @@ fn cap_tree_forest(
             pending.push(Pending { node: child, parent: Some(current), complete });
         }
     }
-    // Fold from the end: every parent's position is smaller than its child's, so removing a
-    // later row never moves one still to be used. A tree root stays where it is.
-    for position in (0..kept.len()).rev() {
-        if let Some(parent) = kept[position].parent {
-            let child = kept.remove(position);
-            kept[parent].node.children.insert(0, child.node);
-        }
+    // Fold from the end: every parent's position is smaller than its child's, so by the time
+    // a row is folded into its parent, every row beneath it already has been. Each row is
+    // taken from its slot rather than removed, so no later row moves (review C9 on #192),
+    // and children arrive last first, so each row's are reversed once, when it is folded.
+    let mut slots: Vec<Option<Pending>> = kept.into_iter().map(Some).collect();
+    for position in (0..slots.len()).rev() {
+        let Some(parent) = slots[position].as_ref().and_then(|item| item.parent) else {
+            continue;
+        };
+        let mut child = slots[position].take().expect("each row is folded once").node;
+        child.children.reverse();
+        slots[parent].as_mut().expect("a parent precedes its child").node.children.push(child);
     }
-    kept.into_iter().map(|item| item.node).collect()
+    slots
+        .into_iter()
+        .flatten()
+        .map(|mut item| {
+            item.node.children.reverse();
+            item.node
+        })
+        .collect()
 }
 
 /// Attach a node's children, honoring the depth and per-directory limit bounds.
