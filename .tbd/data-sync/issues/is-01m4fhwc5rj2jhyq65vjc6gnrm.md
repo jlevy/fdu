@@ -3,9 +3,9 @@ type: is
 id: is-01m4fhwc5rj2jhyq65vjc6gnrm
 title: "Address PR #189 review A: attach the demo to the draft, since releases are immutable"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 9
+version: 10
 delegate: claude-code@spud10.local
 labels: []
 dependencies: []
@@ -21,6 +21,10 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-09T05:23:54.667Z
-updated_at: 2026-10-09T05:24:04.314Z
+updated_at: 2026-10-09T05:51:07.927Z
 started_at: 2026-10-09T05:24:04.309Z
+closed_at: 2026-10-09T05:51:07.926Z
+close_reason: "Review A on #189 addressed at 54748271: A1-A7 fixed, A8 deferred to fdu-jvof (coordinator). fixed in 54748271 (PR #189); dispositions https://github.com/jlevy/fdu/pull/189#issuecomment-6075163255"
+resolution: null
+duplicate_of: null
 ---
