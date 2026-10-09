@@ -1138,15 +1138,16 @@ rebuild them from this list and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-213** and **H194**; exp-202 is the 0.3.0 release standing.
+**Ids.** Next free are **exp-214** and **H195**; exp-202 is the 0.3.0 release standing.
 exp-203–208 are reserved for the platform review’s macOS cells (M1–M6 in
 [its protocol](../research/research-2026-09-29-platform-review-of-the-linux-round.md)),
 which assigned them before any ran.
-exp-209–212 and H191–H193 record the tree age column on
+exp-209–213 and H191–H194 record the tree age column on
 [#191](https://github.com/jlevy/fdu/pull/191): the per-report activity pass rejected
 (exp-209), the maintained per-directory maximum’s price on macOS recorded as not a speed
-decision (exp-210 to exp-212, exp-212 the re-measure tied to commits), and H193 the
-Linux give-back, pre-registered for `fdu-088k` and not yet run.
+decision (exp-210 to exp-212, exp-212 the re-measure tied to commits), the
+machine-output instant written into a fixed buffer (H194, exp-213, `fdu-oiuc`), and H193
+the Linux give-back, pre-registered for `fdu-088k` and not yet run.
 exp-196 and H184 record `fdu-d2fn`, the automount fix; the pdu track (`fdu-faqa`, branch
 `claude/pdu-uniform-lead`) used exp-197–201 and H185–H190. exp-173–202 and H162–H190 are
 Linux work.

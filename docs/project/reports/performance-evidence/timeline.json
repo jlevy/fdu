@@ -923,6 +923,16 @@
    "subject": "36ce9b22af9a:77355:4304d9d4071f",
    "tool": "dust",
    "wall_ns": 171107250
+  },
+  {
+   "entries": 77355,
+   "id": "exp-213",
+   "per_entry_ns": 2317.7619934070194,
+   "platform": "macOS",
+   "run": "docs/project/experiments/evidence/exp-213/run.json.gz",
+   "subject": "36ce9b22af9a:77355:4304d9d4071f",
+   "tool": "dust",
+   "wall_ns": 179290479
   }
  ],
  "experiments": [
@@ -51540,6 +51550,359 @@
    "subject": "36ce9b22af9a:77355:4304d9d4071f",
    "title": "macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "b2968074 probe, clean tree: exp-212 candidate ae90aef4 plus each machine-output instant written into a fixed stack buffer instead of a String per row (review C7 on #191, fdu-oiuc; sha256 c4e01629; binding stated in the record body)",
+   "change_pct": 1.302,
+   "commit": "b2968074",
+   "compares": true,
+   "complexity": {
+    "lines_changed": 52,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "b2968074: a fixed thirty-byte layout for years 0 to 9999 with the general format! spelling kept as the fallback, in query_values.rs and the one call site (emit_instant) in report_format.rs, plus a 45-line test that holds the two spellings to the same bytes; the measured pair spans all of the #191 engine change against 148ef78e"
+   },
+   "control": "148ef78e probe: main before the age column (sha256 d2ac70ff, the binary exp-209 to exp-212 used; the run variant notes are empty, so the binding is stated in the record body)",
+   "date": "2026-10-09",
+   "decision": "rejected",
+   "entries": 77355,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [
+    "H194"
+   ],
+   "id": "exp-213",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "render-json",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 146512625,
+        "control": 128427729.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 13.941,
+        "ci95_high_pct": 14.763,
+        "ci95_low_pct": 13.601,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1358590000,
+        "control": 1394779500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.991,
+        "ci95_high_pct": 3.676,
+        "ci95_low_pct": -5.03,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 128991232,
+        "control": 129122304
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.133,
+        "ci95_high_pct": 1.121,
+        "ci95_low_pct": -0.619,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 732423000,
+        "control": 780488500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.087,
+        "ci95_high_pct": 4.787,
+        "ci95_low_pct": -10.381,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 627922500,
+        "control": 616449000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 2.37,
+        "ci95_high_pct": 2.889,
+        "ci95_low_pct": 1.887,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 760104958.5,
+        "control": 748204437.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.302,
+        "ci95_high_pct": 1.783,
+        "ci95_low_pct": 0.568,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 9826.190401396161,
+      "control": 9672.347456531576
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "render-jsonl",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 130492708.5,
+        "control": 113695979.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 14.557,
+        "ci95_high_pct": 15.644,
+        "ci95_low_pct": 13.709,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1314125000,
+        "control": 1310549500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.122,
+        "ci95_high_pct": 1.215,
+        "ci95_low_pct": -1.403,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 129327104,
+        "control": 129490944
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.113,
+        "ci95_high_pct": 0.114,
+        "ci95_low_pct": -0.511,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 701689500,
+        "control": 713409000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.993,
+        "ci95_high_pct": -0.665,
+        "ci95_low_pct": -4.326,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 612497500,
+        "control": 594587000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 3.031,
+        "ci95_high_pct": 3.568,
+        "ci95_low_pct": 2.498,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 741922313,
+        "control": 724798312.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.734,
+        "ci95_high_pct": 3.839,
+        "ci95_low_pct": 0.586,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 9591.135841251373,
+      "control": 9369.766821795618
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "render-yaml",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 136843124.5,
+        "control": 118681375
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 15.578,
+        "ci95_high_pct": 16.445,
+        "ci95_low_pct": 15.106,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1750703500,
+        "control": 1729876000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.349,
+        "ci95_high_pct": 3.01,
+        "ci95_low_pct": -0.745,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 128770048,
+        "control": 128737280
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.204,
+        "ci95_high_pct": 0.388,
+        "ci95_low_pct": -0.368,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1131778500,
+        "control": 1128697500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.012,
+        "ci95_high_pct": 3.052,
+        "ci95_low_pct": -2.582,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 618753000,
+        "control": 602451000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 2.929,
+        "ci95_high_pct": 3.429,
+        "ci95_low_pct": 2.44,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 826969562.5,
+        "control": 811321937.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 2.149,
+        "ci95_high_pct": 2.55,
+        "ci95_low_pct": 0.974,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 10690.576724193652,
+      "control": 10488.293419946998
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 213,
+   "path": "exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md",
+   "platform": "macOS",
+   "primary_job": "render-json",
+   "primary_metric": "wall_ns",
+   "reason": "not a speed decision: the age column ships regardless, and this measures the review C7 fix (b2968074, fdu-oiuc) against the pre-age control: render-json wall +1.30% [+0.57%, +1.78%], component 128.4 to 146.5 ms; render-jsonl wall +1.73% [+0.59%, +3.84%]; render-yaml wall +2.15% [+0.97%, +2.55%], component 118.7 to 136.8 ms; read across runs against exp-212 (+4.27% and +5.98% wall, same control binary) the buffer removes about half the added render cost, and the residual of about 0.12 us a row is the new per-row data itself, accepted as the price of the machine-output timestamps; the Python eager instants are unmeasured",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 179290479
+    }
+   ],
+   "run_artifact": "docs/project/experiments/evidence/exp-213/run.json.gz",
+   "subject": "36ce9b22af9a:77355:4304d9d4071f",
+   "title": "macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains",
+   "trials": 12
   }
  ],
  "history": [
@@ -55586,6 +55949,7 @@
   "opened-discovery": "opened-root",
   "opened-second-report": "opened-root",
   "render-json": "default-tree",
+  "render-jsonl": "default-tree",
   "render-yaml": "default-tree",
   "rich-summary-open-pipeline": "summary",
   "rich-summary-report": "summary",
@@ -55963,6 +56327,28 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 3750189949,
+   "directories": 3427,
+   "entries": 77355,
+   "experiments": [
+    "exp-209",
+    "exp-210",
+    "exp-211",
+    "exp-212",
+    "exp-213"
+   ],
+   "files": 73928,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "36ce9b22af9a:77355:4304d9d4071f",
+   "labels": [
+    "rustup"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 35888409,
    "directories": 60314,
    "entries": 100001,
@@ -56068,27 +56454,6 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": true
-  },
-  {
-   "apparent_bytes": 3750189949,
-   "directories": 3427,
-   "entries": 77355,
-   "experiments": [
-    "exp-209",
-    "exp-210",
-    "exp-211",
-    "exp-212"
-   ],
-   "files": 73928,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "36ce9b22af9a:77355:4304d9d4071f",
-   "labels": [
-    "rustup"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
   },
   {
    "apparent_bytes": 1085083672,
@@ -56737,16 +57102,16 @@
    "baseline": 17,
    "blocked": 2,
    "in-progress": 4,
-   "rejected": 65,
+   "rejected": 66,
    "superseded": 6
   },
-  "experiments": 204,
+  "experiments": 205,
   "first_date": "2026-08-10",
-  "hypotheses": 138,
+  "hypotheses": 139,
   "last_date": "2026-10-09",
   "platforms": {
    "Linux": 63,
-   "macOS": 141
+   "macOS": 142
   }
  },
  "version": "fdu.performance.timeline/1"

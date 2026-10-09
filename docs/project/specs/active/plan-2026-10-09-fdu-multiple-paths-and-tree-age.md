@@ -239,7 +239,11 @@ report’s wall change was again not resolved (+2.3%, −3.0% to +4.6%), and its
 moved +4.9% (+0.3% to +10.0%) for a reason the run cannot name.
 The one resolved cost is in machine formats: every row gains `modified_at`, and a full
 JSON or YAML render of the tree and a file list got 4% to 6% slower, about a quarter of
-a microsecond per row (`fdu-oiuc` tracks formatting it into a fixed buffer).
+a microsecond per row.
+Writing each instant into a fixed buffer instead of a `String` (`b2968074`,
+[exp-213](../../experiments/exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md))
+removed about half of that: 1% to 2% of the render’s wall remains, about 0.12 µs a row,
+the cost of writing the new fields themselves.
 These are records of the column’s price, not speed decisions, and every figure is from
 one loaded macOS host; Linux is unmeasured (H193).
 

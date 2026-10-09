@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 84 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 85 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
@@ -288,6 +288,7 @@ dead end.
 | 210 | [macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report](#exp-210--macos-h192-maintained-activity-leaves-the-age-column-per-row-work-7-and-18-microseconds-a-report) | H192 | `index-second-report` | +5.8% | ❌ rejected |
 | 211 | [macOS: H192 replicated over an opened root, 23 microseconds a report](#exp-211--macos-h192-replicated-over-an-opened-root-23-microseconds-a-report) | H192 | `opened-second-report` | +17.8% | ❌ rejected |
 | 212 | [macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row](#exp-212--macos-the-age-column-re-measured-at-the-shipped-head-per-row-retained-cost-and-a-quarter-microsecond-a-machine-row) | H192 | `index-second-report` | +0.2% | ❌ rejected |
+| 213 | [macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains](#exp-213--macos-h194-fixed-buffer-instants-halve-the-age-column-machine-format-cost-about-012-microseconds-a-row-remains) | H194 | `render-json` | +1.3% | ❌ rejected |
 
 ## The experiments
 
@@ -6830,6 +6831,51 @@ fdu-088k).
 Full record:
 [`exp-212-macos-the-age-column-re-measured-at-the-shipped-head-per-row.md`](../experiments/exp-212-macos-the-age-column-re-measured-at-the-shipped-head-per-row.md)
 
+### exp-213 — macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains
+
+❌ rejected · 2026-10-09 · H194 · commit `b2968074`
+
+Control: 148ef78e probe: main before the age column (sha256 d2ac70ff, the binary exp-209
+to exp-212 used; the run variant notes are empty, so the binding is stated in the record
+body)
+
+Candidate: b2968074 probe, clean tree: exp-212 candidate ae90aef4 plus each
+machine-output instant written into a fixed stack buffer instead of a String per row
+(review C7 on #191, fdu-oiuc; sha256 c4e01629; binding stated in the record body)
+
+**`render-json`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 748.2 | 760.1 | +1.30% (regression) | [+0.57%, +1.78%] |
+| component (ms) | 128.4 | 146.5 | +13.94% (regression) | [+13.60%, +14.76%] |
+| cpu (ms) | 1394.8 | 1358.6 | -0.99% (n.s.) | [-5.03%, +3.68%] |
+| user (ms) | 616.4 | 627.9 | +2.37% (regression) | [+1.89%, +2.89%] |
+| system (ms) | 780.5 | 732.4 | -3.09% (n.s.) | [-10.38%, +4.79%] |
+| peak rss (MiB) | 123.1 | 123.0 | -0.13% (n.s.) | [-0.62%, +1.12%] |
+
+Other jobs, wall time: `render-jsonl` +1.7% (regression), `render-yaml` +2.1%
+(regression).
+
+Cost to carry: 52 lines; no new dependencies.
+
+b2968074: a fixed thirty-byte layout for years 0 to 9999 with the general format!
+spelling kept as the fallback, in query_values.rs and the one call site (emit_instant)
+in report_format.rs, plus a 45-line test that holds the two spellings to the same bytes;
+the measured pair spans all of the #191 engine change against 148ef78e
+
+**Rejected:** not a speed decision: the age column ships regardless, and this measures
+the review C7 fix (b2968074, fdu-oiuc) against the pre-age control: render-json wall
++1.30% [+0.57%, +1.78%], component 128.4 to 146.5 ms; render-jsonl wall +1.73%
+[+0.59%, +3.84%]; render-yaml wall +2.15% [+0.97%, +2.55%], component 118.7 to 136.8 ms;
+read across runs against exp-212 (+4.27% and +5.98% wall, same control binary) the
+buffer removes about half the added render cost, and the residual of about 0.12 us a row
+is the new per-row data itself, accepted as the price of the machine-output timestamps;
+the Python eager instants are unmeasured.
+
+Full record:
+[`exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md`](../experiments/exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -7028,6 +7074,16 @@ state rather than a change.
 | 185 | Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
 | 195 | Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense | `default-tree` | 126.9 | 114.2 | -9.8% | 📏 baseline |
 
+### rustup (77,355 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 209 | macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower | `index-second-report` | 372.8 | 374.1 | -2.3% | ❌ rejected |
+| 210 | macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report | `index-second-report` | 320.0 | 335.3 | +5.7% | ❌ rejected |
+| 211 | macOS: H192 replicated over an opened root, 23 microseconds a report | `opened-second-report` | 1,130.1 | 1,121.4 | -0.8% | ❌ rejected |
+| 212 | macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row | `index-second-report` | 292.7 | 287.4 | -1.7% | ❌ rejected |
+| 213 | macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains | `render-json` | 748.2 | 760.1 | +1.3% | ❌ rejected |
+
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -7054,15 +7110,6 @@ state rather than a change.
 | 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
 | 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 | 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
-
-### rustup (77,355 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 209 | macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower | `index-second-report` | 372.8 | 374.1 | -2.3% | ❌ rejected |
-| 210 | macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report | `index-second-report` | 320.0 | 335.3 | +5.7% | ❌ rejected |
-| 211 | macOS: H192 replicated over an opened root, 23 microseconds a report | `opened-second-report` | 1,130.1 | 1,121.4 | -0.8% | ❌ rejected |
-| 212 | macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row | `index-second-report` | 292.7 | 287.4 | -1.7% | ❌ rejected |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
