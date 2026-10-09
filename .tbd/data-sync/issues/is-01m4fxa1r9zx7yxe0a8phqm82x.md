@@ -5,7 +5,7 @@ title: "fdu 0.5.0: several paths in one report, and an age column in the tree"
 kind: epic
 status: open
 priority: 1
-version: 16
+version: 19
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 labels: []
 dependencies: []
@@ -25,7 +25,10 @@ child_order_hints:
   - is-01m4gc336c85bew881nh38n3xp
   - is-01m4gc33xdg0re1zed4cjdtrmd
   - is-01m4gc34r0v9f5aj7ymepcsacv
+  - is-01m4ghgje0a1raa8fwqy6m085k
+  - is-01m4ghh5h0wmyx09t533pfm7zx
+  - is-01m4gkdgh3n1dxknsxzfxa6avh
 created_at: 2026-10-09T08:43:37.094Z
-updated_at: 2026-10-09T13:01:59.423Z
+updated_at: 2026-10-09T15:09:59.202Z
 ---
 Implements the plan spec. Part 1: the tree shows each subtree's age (the list-row activity definition, unknown when incomplete) in text and RFC 3339 + exact ns in machine formats; fdu.report/11. Part 2: PATH... over one or more disjoint roots, merged in the engine before bounds, as if each were run and summed. Answers fdu-onoo and fdu-khu8 open question 2.
