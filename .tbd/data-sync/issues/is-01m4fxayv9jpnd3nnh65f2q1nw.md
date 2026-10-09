@@ -3,9 +3,9 @@ type: is
 id: is-01m4fxayv9jpnd3nnh65f2q1nw
 title: Measure the age column's cost on the default report
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -14,8 +14,12 @@ parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
 hold: null
 hold_until: null
 created_at: 2026-10-09T08:44:06.888Z
-updated_at: 2026-10-09T11:28:26.353Z
+updated_at: 2026-10-09T12:38:31.320Z
 started_at: 2026-10-09T11:28:26.350Z
+closed_at: 2026-10-09T12:38:31.319Z
+close_reason: "Measured, and took the spec's fallback. Regime: macOS, Apple M1 Pro, uncontrolled host (load_1m 20-50 on 10 CPUs), ~/.rustup 77,355 entries, paired make perf-compare, 12 trials, control 148ef78e. Phase-1 pass (run tree-age-column): default-tree wall -2.07% [-12.2, +9.6] no change but peak RSS +10.4% regressed; index-second-report component 0.128 -> 0.789 ms (+496%); opened-second-report 0.252 -> 4.92 ms (+1545%). Diagnosis: opened roots keep children in name-keyed BTreeMaps (all 3,427 dirs) whose order does not follow the arena (72,035 of 77,354 children non-contiguous vs 0 in the detached index; slots = live entries), so the pass is 2-3x the detached index's (1.45 vs 0.74 ms warm, 1.93 vs 0.82 ms after a cache sweep); the rest of the paired 4.9 ms was host noise. Fallback (10ae731f): per-directory newest activity maintained beside newest_mtime_ns in the all partition only, read per row by an unfiltered tree over a complete index with no scan depth; the pass remains for partial or depth-bounded indexes. No snapshot format or fingerprint change: roll-ups are rebuilt from entry records on load. After (run tree-age-rollup, same command): default-tree wall +3.37% [-11.8, +13.1] no change, peak RSS +0.78% [-4.3, +5.8]; index-second-report component 0.129 -> 0.134 ms (+5.8% [+2.7, +7.5], ~5 us per-row column work); opened-second-report component 0.135 -> 0.153 ms (+13.7% [+11.7, +14.7]), wall +1.56% [+1.06, +3.75] (recheck: wall -0.80% [-3.83, +2.54], component 0.132 -> 0.154 ms); cold-scan-index wall -0.64% [-5.0, +2.9]; warm-snapshot-load wall -0.24% [-3.2, +0.8], component +2.21% [+0.53, +2.71] noninferior at +3% (recheck +1.73% [-5.3, +14.0]). Tests 27aea45a; make check passes."
+resolution: null
+duplicate_of: null
 ---
 Two regimes: (1) paired make perf-compare of the default one-shot report on a real tree, cold and warm, control = ~/fdu-perf/control-148ef78e/perf_probe; (2) a retained-index report timing (Index.report / opened root) at a large entry count, before and after. If (2) regresses measurably, switch to a per-directory activity maximum maintained beside newest_mtime_ns (snapshot fingerprint bump). Record regime and result.
 
