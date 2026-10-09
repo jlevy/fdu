@@ -126,6 +126,16 @@ impl EntryId {
     const fn idx(self) -> usize {
         self.slot as usize
     }
+
+    /// The arena slot this id names, for a reader that keeps one value per entry in a
+    /// dense table of [`Index::slots`] rows rather than a map keyed by id.
+    ///
+    /// A slot outlives the entry in it and is reused, so a table is valid only for the
+    /// index state it was built from, and only for ids that are live in that state.
+    #[inline]
+    pub(crate) const fn slot(self) -> usize {
+        self.idx()
+    }
 }
 
 /// Index-private extension identity.
@@ -2633,6 +2643,12 @@ impl Index {
         self.live <= 1
     }
 
+    /// Arena slots, live and free: the length of a dense per-entry table indexed by
+    /// [`EntryId::slot`].
+    pub(crate) fn slots(&self) -> usize {
+        self.arena.len()
+    }
+
     /// Owned, self-describing roll-up state for the whole tree.
     pub fn total(&self) -> RollUp {
         self.named_rollup(&self.entry(EntryId::ROOT).rollup().all)
@@ -4630,6 +4646,21 @@ impl Index {
             let rollup = entry.rollup();
             (RollUpScalars::from(&rollup.all), RollUpScalars::from(&rollup.unignored))
         })
+    }
+
+    /// The newest modification time among a live directory's descendant regular files,
+    /// or `None` when it has none or `id` is not a live directory.
+    ///
+    /// The roll-up's files-only recency without copying the rest of the roll-up. In a
+    /// folded index it covers the files the walk counted without keeping as entries, which
+    /// is why a reader of activity takes it rather than only the files it can list.
+    pub(crate) fn newest_file_of(&self, id: EntryId) -> Option<i64> {
+        let entry = self.try_entry(id)?;
+        if !entry.kind.is_dir() {
+            return None;
+        }
+        let rollup = &entry.rollup().all;
+        (rollup.files > 0).then_some(rollup.newest_mtime_ns)
     }
 
     /// Whether this index was built by the transient tree tier and keeps only some of the
