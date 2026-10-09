@@ -7,7 +7,8 @@ this program is the part of it that needs no judgment. Each step reads git, GitH
 the registries, or writes only what can be undone: it pushes and deletes the
 `release/v{VERSION}` branch a rehearsal runs on, dispatches that rehearsal (which cannot
 publish), downloads and verifies artifacts into the release directory, and attaches the
-demo video the release commit declares to the published release. Pushing the tag,
+demo video the release commit declares to the release while it is still a draft, which
+can be edited or deleted until the publishing run makes it public. Pushing the tag,
 dispatching the publishing run, and approving the `release` environment require the
 maintainer's release-specific authorization. The approved workflow creates the GitHub
 release; this local helper only prints a fallback command for older workflows or
@@ -93,8 +94,8 @@ STEPS = (
     "candidate",
     "body",
     "verify-tag",
-    "published",
     "demo",
+    "published",
     "announced",
     "cleanup",
     "audit",
@@ -396,6 +397,39 @@ def release_records(host: Host, release: Release) -> list[dict[str, Any]]:
     return [record for page in pages for record in page]
 
 
+def release_record(host: Host, release: Release) -> dict[str, Any] | None:
+    """This version's GitHub release, draft or published, or None when it has none."""
+    matches = [r for r in release_records(host, release) if r.get("tag_name") == release.tag]
+    if len(matches) > 1:
+        raise StepError(f"multiple releases name {release.tag}")
+    return matches[0] if matches else None
+
+
+def identity_problems(release: Release, record: Mapping[str, Any], notes: str) -> list[str]:
+    """How a GitHub release differs from the one the announcement publishes."""
+    problems = []
+    if record.get("tag_name") != release.tag:
+        problems.append(f"it names {record.get('tag_name')}")
+    if record.get("prerelease"):
+        problems.append("it is a prerelease")
+    if record.get("name") != f"fdu {release.version}":
+        problems.append(f"its title is {record.get('name')!r}, not 'fdu {release.version}'")
+    if str(record.get("body") or "").strip() != notes.strip():
+        problems.append("its body differs from notes.md")
+    return problems
+
+
+def upload_problems(asset: Mapping[str, Any]) -> list[str]:
+    """An asset GitHub has not finished uploading, as an interrupted upload leaves one."""
+    state = asset.get("state")
+    return [] if state == "uploaded" else [f"{asset.get('name')} state is {state}, not uploaded"]
+
+
+def asset_removal(release: Release, name: str) -> str:
+    """The command that removes one asset from a draft release, for a maintainer to run."""
+    return shlex.join(gh(release, "release", "delete-asset", release.tag, name))
+
+
 def previous_version(host: Host, release: Release) -> str | None:
     """The highest released version below this one, from origin's `v*` tags."""
     output = host.run(["git", "ls-remote", "--tags", "--refs", "origin", "v*"], cwd=release.root)
@@ -525,13 +559,15 @@ class Demo:
         """
         How GitHub's record of an attached asset differs from the declaration. The digest
         is required: the video was attached after GitHub began reporting digests, so one
-        it does not report proves nothing about the bytes.
+        it does not report proves nothing about the bytes. So is an upload GitHub
+        finished, which an interrupted one is not.
         """
         problems = []
         if asset.get("size") != self.size:
             problems.append(f"{self.asset} size differs")
         if asset.get("digest") != f"sha256:{self.sha256}":
             problems.append(f"{self.asset} digest differs")
+        problems.extend(upload_problems(asset))
         return problems
 
     def content_problems(self, content: bytes, source: str) -> list[str]:
@@ -670,12 +706,10 @@ def demo_check(host: Host, release: Release, demo_file: Path | None = None) -> C
             )
         detail = f"no {DEMO_DECLARATION} at COMMIT: the release attaches eleven files"
         return Check("demo video", not problems, "; ".join(problems) or detail)
-    detail = (
-        f"declared {demo.asset}, {demo.size} bytes: make release-demo attaches it after publication"
-    )
+    source = ""
     if demo_file is not None:
         problems += demo.content_problems(read_demo_file(demo_file), str(demo_file))
-        detail += f"; {demo_file} matches it"
+        source = f"and {demo_file} matches it"
     else:
         tag = earlier_demo_release(host, release, demo)
         if tag is None:
@@ -684,8 +718,30 @@ def demo_check(host: Host, release: Release, demo_file: Path | None = None) -> C
                 "DEMO=<the recorded video> here and to make release-demo"
             )
         else:
-            detail += f", reusing {tag}'s copy"
+            source = f"reusing {tag}'s copy"
+    detail = (
+        f"declared {demo.asset}, {demo.size} bytes, {source}: make release-demo attaches it to "
+        "the draft release after the tag and before the release environment is approved"
+    )
+    if immutable_releases(host, release):
+        detail += ", since releases here are immutable once published"
     return Check("demo video", not problems, "; ".join(problems) or detail)
+
+
+def immutable_releases(host: Host, release: Release) -> bool:
+    """
+    Whether the repository makes every release immutable once published, so that no asset
+    can be added to it afterwards. An answer that cannot be read is an error, not a no.
+    """
+    path = f"repos/{release.repository}/immutable-releases"
+    reason = f"could not read {path}, which says whether a published release is immutable"
+    try:
+        setting = gh_json(host, path)
+    except CommandError as error:
+        raise StepError(f"{reason}: {error}") from error
+    if not isinstance(setting, dict) or not isinstance(setting.get("enabled"), bool):
+        raise StepError(reason)
+    return setting["enabled"]
 
 
 def unpublished_checks(host: Host, release: Release) -> list[Check]:
@@ -1264,6 +1320,14 @@ def announce_command(release: Release) -> list[str]:
     return [*gh(release, *create), *(str(path) for path in expected_assets(release).values())]
 
 
+def announce_script(release: Release) -> list[str]:
+    """The workflow's announcement, run from this checkout against `$RELEASE`."""
+    script = ["uv", "run", "--no-project", "--python", INSTALL_PYTHON, "python"]
+    script += ["scripts/release/announce.py", "--version", release.version]
+    script += ["--commit", release.commit, "--dir", str(release.directory)]
+    return [*script, "--repo", release.repository]
+
+
 def require_pushed_tag(host: Host, release: Release) -> None:
     """Origin holds the release tag, on the release commit."""
     tag = remote_tag(host, release)
@@ -1302,9 +1366,9 @@ def published(
     published manifest's files, and returns a `gh release create` fallback command.
     Current workflows announce automatically; do not run the fallback for them.
     `by_hand` audits the files a hand publication uploaded, already in
-    `$RELEASE/published`, instead of a publishing run's. Either way the fallback names
-    the eleven files; a demo video the commit declares is `make release-demo`'s to attach
-    once the release is public, and the step says so.
+    `$RELEASE/published`, instead of a publishing run's. When the commit declares a demo
+    video, the fallback is the announcement script instead, run after `make release-demo`:
+    a release is immutable once published, so it must never be published without it.
     """
     if not (release.directory / "notes.md").exists():
         raise StepError("run the body step first: the announcement uses its notes.md")
@@ -1330,17 +1394,24 @@ def published(
     document = registry_state.registry_document(release.version, states)
     write_text_atomic(release.directory / "registry-state.json", document, encoding="utf-8")
     demo = declared_demo(host, release)
-    command = announce_command(release)
     print(
         "every registry holds exactly the published files. Current workflows announce automatically."
     )
-    print("Fallback for an older workflow or publication by hand, only if no release exists:")
-    print(shlex.join(command))
-    if demo is not None:
+    if demo is None:
+        command = announce_command(release)
+        print("Fallback for an older workflow or publication by hand, only if no release exists:")
+    else:
+        # `gh release create` would publish at once, and a published release never takes
+        # the video; the announcement itself publishes only a draft that holds it.
+        command = announce_script(release)
         print(
-            f"COMMIT declares {demo.asset}, {demo.size} bytes: once the release is public, "
-            "`make release-demo` attaches it as a twelfth file"
+            f"COMMIT declares {demo.asset}, {demo.size} bytes, and a release is immutable once "
+            "published: run `make release-demo` first if it has not run. Then, as a fallback "
+            "for an older workflow or publication by hand, only while the release is "
+            "unpublished, run the announcement itself, which publishes the draft only once it "
+            "holds the video and the eleven files:"
         )
+    print(shlex.join(command))
     return command
 
 
@@ -1366,61 +1437,147 @@ def audit(host: Host, release: Release, *, run_id: int | None) -> list[Check]:
     ]
 
 
-def published_release(host: Host, release: Release) -> dict[str, Any]:
-    """GitHub's record of the public release on the tag, refusing a draft or none."""
-    record = gh_json(host, f"repos/{release.repository}/releases/tags/{release.tag}")
-    if record is None or record.get("draft"):
-        raise StepError(
-            f"no published GitHub release on {release.tag} yet: the publishing run's "
-            "Announce on GitHub job publishes it, and the demo video is attached after that"
-        )
-    return record
-
-
 def held_demo(record: Mapping[str, Any], demo: Demo) -> dict[str, Any] | None:
     """GitHub's record of the release's demo video asset, or None when it has none."""
     return next((a for a in record.get("assets") or [] if a.get("name") == demo.asset), None)
 
 
+def release_file_name(name: str, version: str) -> bool:
+    """
+    Whether `name` is one of the eleven files a release of `version` attaches: the three
+    evidence files, both crates, the source distribution, or a cp312-abi3 wheel for one of
+    the five release platforms.
+    """
+    if name in EVIDENCE_FILES or name == f"fdu-{version}.tar.gz":
+        return True
+    if name in {f"{package}-{version}.crate" for package in CRATE_PACKAGES}:
+        return True
+    wheels = inspect_artifacts.RELEASE_WHEEL_PLATFORMS.values()
+    return name.startswith(f"fdu-{version}-cp312-abi3-") and any(p.search(name) for p in wheels)
+
+
+def kept_release_files(release: Release) -> dict[str, Path]:
+    """
+    The release files kept in `$RELEASE`, verified, by name: none until
+    `make release-published` or `make release-audit` has kept a publishing run's files.
+    """
+    published = release.directory / "published"
+    if not (published / "files").is_dir() or not (published / "evidence").is_dir():
+        return {}
+    verify_kept(release, published)
+    return {name: path for name, path in expected_assets(release).items() if path.is_file()}
+
+
+def draft_problems(release: Release, record: Mapping[str, Any], demo: Demo) -> dict[str, list[str]]:
+    """
+    What is wrong with a draft's assets before the video joins them, by asset name: the
+    video other than declared, a file no release of this version attaches, an upload
+    GitHub never finished, or a file other than the one kept in `$RELEASE`. The
+    announcement checks the eleven files again, byte for byte, before it publishes.
+    """
+    kept = kept_release_files(release)
+    problems: dict[str, list[str]] = {}
+    for asset in record.get("assets") or []:
+        name = str(asset.get("name"))
+        if name == demo.asset:
+            found = demo.asset_problems(asset)
+        elif not release_file_name(name, release.version):
+            found = [f"unexpected {name}"]
+        else:
+            found = upload_problems(asset)
+            path = kept.get(name)
+            if path is not None and asset.get("size") != path.stat().st_size:
+                found.append(f"{name} size differs")
+            digest = None if path is None else f"sha256:{inspect_artifacts.digest(path)}"
+            if digest is not None and asset.get("digest") != digest:
+                found.append(f"{name} digest differs")
+        if found:
+            problems.setdefault(name, []).extend(found)
+    return problems
+
+
+def require_draft(release: Release, record: Mapping[str, Any], notes: str, demo: Demo) -> None:
+    """
+    Refuse a release the video cannot join: a published one, which is immutable, or a
+    draft other than the one the announcement publishes, or holding a wrong asset. A
+    draft can still change, so each refusal names how to correct it; nothing is changed
+    or removed here.
+    """
+    if not record.get("draft"):
+        raise StepError(
+            f"{release.tag} is already published, and a published release is immutable: "
+            f"GitHub accepts no new asset, so {demo.asset} can no longer be attached to it"
+        )
+    notes_md = release.directory / "notes.md"
+    identity = identity_problems(release, record, notes)
+    if identity:
+        edit = gh(release, "release", "edit", release.tag, "--notes-file", str(notes_md))
+        edit += ["--title", f"fdu {release.version}", "--prerelease=false"]
+        delete = shlex.join(gh(release, "release", "delete", release.tag))
+        raise StepError(
+            f"the draft release {release.tag} does not match {notes_md}: "
+            f"{'; '.join(identity)}. A draft can still change: correct it with "
+            f"`{shlex.join(edit)}`, or delete it, keeping the tag, with `{delete}`; then "
+            "run this step again"
+        )
+    problems = draft_problems(release, record, demo)
+    if problems:
+        found = "; ".join(problem for listed in problems.values() for problem in listed)
+        removals = ", ".join(f"`{asset_removal(release, name)}`" for name in problems)
+        raise StepError(
+            f"the draft release {release.tag} holds what it should not: {found}. Inspect "
+            f"each, remove it with {removals}, and run this step again; nothing is removed "
+            "for you"
+        )
+
+
 def stage_demo(release: Release, content: bytes) -> Path:
     """
-    Write the checked video to `$RELEASE/published/media/fdu-demo.mp4`, whole, and return
-    its path. Only this step writes there, so anything else in the directory, or a
-    symlink a write would follow out of it, is refused rather than uploaded.
+    Write the checked video to `$RELEASE/demo/fdu-demo.mp4`, whole, and return its path.
+
+    It stays outside `$RELEASE/published`, which the publishing run's files must find
+    empty. Only this step writes there, so anything else in the directory, or a symlink
+    a write would follow out of it, is refused rather than uploaded.
     """
-    media = release.directory / "published" / "media"
-    if media.is_symlink() or (media.exists() and not media.is_dir()):
-        raise StepError(f"{media} must be a directory that only the release steps write")
+    staging = release.directory / "demo"
+    if staging.is_symlink() or (staging.exists() and not staging.is_dir()):
+        raise StepError(f"{staging} must be a directory that only the release steps write")
     strays = [
         path.name
-        for path in (sorted(media.iterdir()) if media.exists() else [])
+        for path in (sorted(staging.iterdir()) if staging.exists() else [])
         if path.name != DEMO_ASSET or path.is_symlink() or not path.is_file()
     ]
     if strays:
         raise StepError(
-            f"{media} holds {', '.join(strays)}; only the declared {DEMO_ASSET}, "
+            f"{staging} holds {', '.join(strays)}; only the declared {DEMO_ASSET}, "
             "as a regular file, belongs there"
         )
-    media.mkdir(parents=True, exist_ok=True)
-    target = media / DEMO_ASSET
+    staging.mkdir(exist_ok=True)
+    target = staging / DEMO_ASSET
     write_bytes_atomic(target, content)
     return target
 
 
 def attach_demo(host: Host, release: Release, *, file: Path | None) -> None:
     """
-    Attach the demo video the release commit declares to the published GitHub release.
+    Attach the demo video the release commit declares to this version's draft release,
+    creating the draft when none exists, so the announcement publishes all twelve files.
 
-    The video lives only as a release asset; `docs/media/fdu-demo.json` at the commit
-    declares its size and SHA-256. The bytes come from `file` (DEMO) or, without one, from
-    the newest earlier release whose `fdu-demo.mp4` GitHub reports with the declared size
-    and digest, so a release that keeps the last recording needs no local copy. They are
-    checked against the declaration, staged in `$RELEASE/published/media`, uploaded, and
-    checked again as GitHub reports them.
+    A release here is immutable once published, so the video must be in the draft first:
+    this runs after the tag is pushed and before the publishing run's announcement makes
+    the release public, and refuses a published release. The draft it creates is the one
+    the announcement completes: titled `fdu $VERSION`, with `$RELEASE/notes.md` from
+    `make release-body` as its body. A draft is still mutable, so every write here can be
+    undone until publication.
 
-    A video already attached as declared makes the step a no-op; one attached with other
-    bytes is refused and never replaced. The step runs only once the release is public,
-    so the announcement, which attaches the eleven files, always comes first.
+    `docs/media/fdu-demo.json` at the commit declares the video's size and SHA-256. The
+    bytes come from `file` (DEMO) or, without one, from the newest earlier release whose
+    `fdu-demo.mp4` GitHub reports with the declared size and digest, so a release that
+    keeps the last recording needs no local copy. They are checked against the
+    declaration before anything is created, staged in `$RELEASE/demo`, uploaded, and
+    checked again as GitHub reports them. A draft already holding the video as declared
+    makes the step a no-op; one holding other bytes, or any file no release of this
+    version attaches, is refused with the command that removes it, never removed here.
     """
     require_pushed_tag(host, release)
     demo = declared_demo(host, release)
@@ -1434,19 +1591,19 @@ def attach_demo(host: Host, release: Release, *, file: Path | None) -> None:
             "eleven files and nothing more"
         )
         return
-    attached = held_demo(published_release(host, release), demo)
-    if attached is not None:
-        problems = demo.asset_problems(attached)
-        if problems:
-            raise StepError(
-                f"{release.tag} attaches a {demo.asset} that differs from {DEMO_DECLARATION}: "
-                f"{'; '.join(problems)}; this step never replaces an asset, so inspect it"
+    notes_md = release.directory / "notes.md"
+    if not notes_md.is_file():
+        raise StepError(f"run the body step first: a draft release takes {notes_md} as its body")
+    notes = notes_md.read_text(encoding="utf-8")
+    record = release_record(host, release)
+    if record is not None:
+        require_draft(release, record, notes, demo)
+        if held_demo(record, demo) is not None:
+            print(
+                f"the draft {release.tag} already holds {demo.asset} as declared, "
+                f"{demo.size} bytes, sha256 {demo.sha256}"
             )
-        print(
-            f"{release.tag} already attaches {demo.asset} as declared, {demo.size} bytes, "
-            f"sha256 {demo.sha256}"
-        )
-        return
+            return
     if file is not None:
         source = str(file)
         content = read_demo_file(file)
@@ -1465,25 +1622,36 @@ def attach_demo(host: Host, release: Release, *, file: Path | None) -> None:
         raise StepError("; ".join(problems))
     target = stage_demo(release, content)
     print(f"staged {demo.asset} from {source}, {demo.size} bytes, sha256 {demo.sha256}")
+    if record is None:
+        title = f"fdu {release.version}"
+        create = ["release", "create", release.tag, "--verify-tag", "--draft", "--title", title]
+        host.run(gh(release, *create, "--notes-file", str(notes_md)))
+        record = release_record(host, release)
+        if record is None:
+            raise StepError(f"GitHub did not return the draft release {release.tag} just created")
+        require_draft(release, record, notes, demo)
+        print(f"created the draft release {release.tag} with {notes_md} as its body")
     host.run(gh(release, "release", "upload", release.tag, str(target)))
-    attached = held_demo(published_release(host, release), demo)
+    record = release_record(host, release)
+    attached = None if record is None or not record.get("draft") else held_demo(record, demo)
     problems = ["it is not attached"] if attached is None else demo.asset_problems(attached)
     if problems:
         raise StepError(
-            f"after the upload, GitHub's {demo.asset} on {release.tag} is not as declared in "
-            f"{DEMO_DECLARATION}: {'; '.join(problems)}"
+            f"after the upload, GitHub's {demo.asset} on the draft {release.tag} is not as "
+            f"declared in {DEMO_DECLARATION}: {'; '.join(problems)}"
         )
     print(
-        f"attached {demo.asset} to {release.tag}: GitHub reports {demo.size} bytes, "
-        f"sha256 {demo.sha256}"
+        f"attached {demo.asset} to the draft {release.tag}: GitHub reports {demo.size} bytes, "
+        f"sha256 {demo.sha256}. The publishing run's announcement publishes it with the "
+        "eleven files"
     )
 
 
 def expected_assets(release: Release) -> dict[str, Path]:
     """
     The eleven files the announcement attaches to a GitHub release, by name. A demo video
-    the release commit declares is no file here: `make release-demo` attaches it later,
-    and checks compare it with the declaration (see `Demo`).
+    the release commit declares is no file here: `make release-demo` attaches it to the
+    draft beforehand, and checks compare it with the declaration (see `Demo`).
     """
     published_dir = release.directory / "published"
     paths = [
@@ -1502,11 +1670,11 @@ def expected_assets(release: Release) -> dict[str, Path]:
 
 def asset_check(release: Release, assets: Sequence[dict[str, Any]], demo: Demo | None) -> Check:
     """
-    The release attaches exactly the local files, byte for byte where GitHub says, and
-    the declared demo video, if any, as declared.
+    The published release attaches exactly the local files, byte for byte where GitHub
+    says, each fully uploaded, and the declared demo video, if any, as declared.
 
-    A declared demo not attached yet is pending rather than failed, as long as nothing
-    else is wrong: `make release-demo` attaches it after the announcement. Without a
+    A declared demo the release lacks is a failure, and a lasting one: a published
+    release is immutable, and `make release-demo` attaches only to a draft. Without a
     declaration a release attaches exactly eleven files, as every release before the demo
     did.
     """
@@ -1522,6 +1690,7 @@ def asset_check(release: Release, assets: Sequence[dict[str, Any]], demo: Demo |
         digest = asset.get("digest")
         if digest and digest != f"sha256:{inspect_artifacts.digest(path)}":
             problems.append(f"{name} digest differs")
+        problems += upload_problems(asset)
     detail = f"{len(expected)} files match {release.directory}"
     if demo is not None and demo.asset in held:
         problems += demo.asset_problems(held[demo.asset])
@@ -1530,10 +1699,10 @@ def asset_check(release: Release, assets: Sequence[dict[str, Any]], demo: Demo |
             f"and {demo.asset} as declared"
         )
     elif demo is not None:
-        if not problems:
-            waiting = f"{demo.asset} is not attached yet: run make release-demo"
-            return Check("release assets", False, f"{detail}; {waiting}", pending=True)
-        problems.append(f"missing {demo.asset}: run make release-demo")
+        problems.append(
+            f"missing {demo.asset}: the release was published without it, and "
+            "make release-demo attaches only to a draft"
+        )
     return Check("release assets", not problems, "; ".join(problems) or detail)
 
 

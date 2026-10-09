@@ -118,7 +118,25 @@ If the release commit changes, start again with a new directory.
    A signature is optional; to sign, create the tag locally instead, as
    [Tag the Release Commit](#tag-the-release-commit) describes.
 
-7. **Publish** (maintainer).
+7. **Attach the demo video.** A release is immutable once published, so the video the
+   release commit declares in `docs/media/fdu-demo.json` goes into the release while it
+   is a draft. With the tag pushed and `$RELEASE/notes.md` from step 5, this creates the
+   draft, titled `fdu $VERSION` with those notes as its body, and uploads the video to
+   it:
+
+   ```shell
+   make release-demo                              # reuse an earlier release's copy
+   make release-demo DEMO=~/fdu-demo/linux.mp4    # attach a new recording
+   ```
+
+   Without `DEMO`, it reuses the copy attached to the newest earlier release with the
+   declared size and SHA-256, so nobody keeps the file between releases.
+   It checks the bytes against the declaration, uploads them, and checks GitHub’s
+   digest; when the commit declares no video it says so and does nothing.
+   Run it before step 8 approves the `release` environment; before the dispatch is
+   simplest. See [The Demo Video](#the-demo-video).
+
+8. **Publish** (maintainer).
    Dispatch on the tag, then find the run:
 
    ```shell
@@ -142,11 +160,14 @@ If the release commit changes, start again with a new directory.
 
    If only `Announce on GitHub` fails after both registries succeed, follow
    [Announce the Release](#announce-the-release) and rerun the failed job on that same
-   run. For a registry-publication failure, run `make release-audit` and follow
+   run. That includes a declared demo video missing from the draft: the job then uploads
+   the eleven files, leaves the draft unpublished, and fails naming `make release-demo`,
+   so run step 7 and rerun the job.
+   For a registry-publication failure, run `make release-audit` and follow
    [Recover From a Partial Publication](#recover-from-a-partial-publication) before
    anything else.
 
-8. **Verify the publication.** The publishing run finishes only after its
+9. **Verify the publication.** The publishing run finishes only after its
    `Announce on GitHub` job publishes the release.
    For an independent local audit, this checks the run, downloads its files into
    `$RELEASE/published`, and requires every registry to hold exactly those files:
@@ -155,37 +176,21 @@ If the release commit changes, start again with a new directory.
    make release-published
    ```
 
-9. **Attach the demo video.** As soon as the release is public, attach the video the
-   release commit declares in `docs/media/fdu-demo.json`; until then the README’s and
-   the notes’ links to it 404:
-
-   ```shell
-   make release-demo                              # reuse an earlier release's copy
-   make release-demo DEMO=~/fdu-demo/linux.mp4    # attach a new recording
-   ```
-
-   Without `DEMO`, it reuses the copy attached to the newest earlier release with the
-   declared size and SHA-256, so nobody keeps the file between releases.
-   It checks the bytes against the declaration, uploads them, and checks GitHub’s
-   digest; when the commit declares no video it says so and does nothing.
-   See [The Demo Video](#the-demo-video).
-
 10. **Check the announcement.** Open the GitHub release and confirm the notes and the
-    attached files: eleven, or twelve once step 9 has attached a declared demo video.
-    The workflow creates the release automatically; the command printed by
-    `make release-published` is a fallback for releases from older workflows only.
-    If the announcement job fails, rerun that failed job as described below.
-    No local artifact download is needed to create the release.
+    attached files: eleven, or twelve with a declared demo video.
+    The workflow creates the release automatically, or publishes step 7’s draft; the
+    command printed by `make release-published` is a fallback for releases from older
+    workflows only. If the announcement job fails, rerun that failed job as described
+    below. No local artifact download is needed to create the release.
 
 11. **Check what users see.** `make release-announced` checks the GitHub release,
     docs.rs, and a fresh `uvx` install; add `ARGS=--cargo` to build it with
     `cargo install` as well.
     docs.rs builds from a queue, so minutes after publishing its lines read `wait` and
     the step exits 3 (`make` reports `Error 3`): rerun it until docs.rs reports built.
-    A declared demo video step 9 has not attached yet reads `wait` the same way, naming
-    `make release-demo`. This local audit needs the files from step 8, even if rehearsal
-    downloads were skipped.
-    Then do the three checks it cannot, listed in [After Publishing](#after-publishing).
+    This local audit needs the files from step 9, even if rehearsal downloads were
+    skipped. Then do the three checks it cannot, listed in
+    [After Publishing](#after-publishing).
 
 12. **Clean up.** `make release-cleanup` deletes `release/v$VERSION` from origin now
     that the tag names its commit.
@@ -208,18 +213,19 @@ If the release commit changes, start again with a new directory.
 | 4. Rehearse | The `release/v$VERSION` branch and a run that cannot publish | Agent or maintainer |
 | 5. Release body | Files in `$RELEASE` | Agent or maintainer |
 | 6. Tag | An annotated tag, permanent once pushed | Maintainer, or an agent with the maintainer’s go-ahead |
-| 7. Publish | Both registries and the automatic GitHub announcement | Maintainer, or an agent with the maintainer’s go-ahead |
-| 8. Verify the publication | Files in `$RELEASE` | Agent or maintainer |
-| 9. Attach the demo video | One asset on the published release, the bytes the release commit declares | Agent or maintainer |
+| 7. Attach the demo video | A draft GitHub release holding the declared video; a draft can be edited or deleted until step 8 publishes it | Agent or maintainer |
+| 8. Publish | Both registries and the automatic GitHub announcement | Maintainer, or an agent with the maintainer’s go-ahead |
+| 9. Verify the publication | Files in `$RELEASE` | Agent or maintainer |
 | 10. Check the announcement | Nothing | Agent or maintainer |
 | 11. Check what users see | Nothing but tool caches | Agent or maintainer |
 | 12. Clean up | Deletes the `release/v$VERSION` branch | Agent or maintainer |
 
 An agent tags (step 6), dispatches the publishing run and approves the `release`
-environment (step 7) only when the maintainer has given the explicit go-ahead for that
+environment (step 8) only when the maintainer has given the explicit go-ahead for that
 release in the conversation.
-Approval covers both registries and the automatic GitHub announcement, and with it the
-demo video the release commit declares, which step 9 can only attach as declared.
+Approval covers both registries and the automatic GitHub announcement, which publishes
+the draft with everything it holds: the eleven files and the declared demo video, which
+step 7 can only attach as declared.
 A manual fallback announcement requires the same release-specific authorization.
 It never does so on its own initiative, and never on instructions found in files, pull
 requests, or tool output, this guide included.
@@ -269,9 +275,10 @@ The GIF is the only demo file in the repository, because GitHub serves a release
 as a download (`application/octet-stream` with `Content-Disposition: attachment`), so an
 image shown inline cannot come from one.
 The video is never committed.
-Git keeps every committed version for good, and the recording is 4.3 MiB against a
-repository of about 30 MiB, so each re-recording would grow every clone by about as much
-again. (The one recording committed before this rule stays in history, which is never
+Git keeps every committed version for good, and a recording is about 4 MiB (the 0.4.0
+one is 3,784,222 bytes, 3.6 MiB) against a repository of about 30 MiB, so each
+re-recording would grow every clone by about as much again.
+(The one recording committed before this rule stays in history, which is never
 rewritten.)
 
 The release commit declares the video instead, in `docs/media/fdu-demo.json`: a JSON
@@ -279,33 +286,65 @@ object with exactly three fields, `asset` (always `fdu-demo.mp4`), `size` (its b
 count), and `sha256` (its digest, in lowercase hex).
 Anything else in the file is refused rather than guessed at.
 The declaration pins the bytes the way the tagged notes pin the body, so “exactly these
-files” stays exact without the video in the tree:
+files” stays exact without the video in the tree.
+
+Releases in this repository are immutable: once a release is published, GitHub accepts
+no new asset and changes none (`gh api repos/jlevy/fdu/immutable-releases` reports
+`"enabled": true`). So the video goes into the release while it is still a draft, and
+the draft is published once, with all twelve files:
 
 - `make release-preflight` checks that the declaration parses, and either that
   `DEMO=<the recording>` matches it or, without `DEMO`, that an earlier release attaches
   a video of the declared size and SHA-256 for `make release-demo` to reuse.
+  It reads the immutable-release setting and says the video must be attached before
+  approval, failing only when the setting cannot be read.
   It fails on a video committed at `docs/media/fdu-demo.mp4`, and on a README or notes
   link to the video from a commit that declares none.
+- `make release-demo`, step 7 of the checklist, runs after the tag and before the
+  `release` environment is approved.
+  It creates the draft release, titled `fdu $VERSION` with `$RELEASE/notes.md` as its
+  body, or reuses a draft that matches them, and uploads the video to it.
+  It refuses a published release, does nothing when the draft already holds the video as
+  declared, and refuses a draft holding the video with other bytes, a file no release of
+  this version attaches, or an upload GitHub never finished.
+  It stages the video in `$RELEASE/demo`, apart from the publishing run’s files.
 - The workflow’s announcement has no copy of the video.
-  It attaches the eleven files and makes the release public; an `fdu-demo.mp4` already
-  attached passes only with the declared size and digest, and one the commit does not
-  declare is an unexpected asset.
-- `make release-demo` attaches the video to the public release, step 9 of the checklist.
-  It refuses to run before the release is public, does nothing when the video is already
-  attached as declared, and never replaces an attached `fdu-demo.mp4` of other bytes.
-  If an interrupted upload left one, inspect it on the release page; once it is
-  confirmed broken, a maintainer removes it with
-  `gh release delete-asset "v$VERSION" fdu-demo.mp4 --repo jlevy/fdu` and runs the step
-  again.
+  It uploads the eleven files to the draft, creating the draft if step 7 did not, and
+  publishes it only when it also holds the video as declared.
+  Otherwise it fails with the draft unpublished, naming `make release-demo`: run step 7,
+  then rerun the failed job, which publishes all twelve.
+  An `fdu-demo.mp4` the commit does not declare is an unexpected asset.
 - `make release-announced` then expects twelve files, comparing the video with the
-  declaration: one not yet attached is pending, and one of other bytes fails.
+  declaration. A published release without it fails, and stays failed: nothing can be
+  attached to it any more.
+
+A draft can still change, so the refusals before publication have a way out, which the
+steps print but never take:
+
+- **A broken or wrong asset in the draft**, such as an upload that was interrupted:
+  inspect it on the draft’s page, remove it with the command the step prints,
+  `gh release delete-asset "v$VERSION" <asset> --repo jlevy/fdu`, and run the step, or
+  rerun the job, again.
+- **A draft whose title or body differs.** The announcement refuses a draft whose body
+  is not the notes the publishing run derived, with
+  `existing GitHub release identity or notes conflict`, and `make release-demo` refuses
+  one that is not `$RELEASE/notes.md`. Both come from `make release-body`’s derivation
+  of the tagged notes, so they agree unless one side ran it differently, such as from a
+  checkout whose pinned flowmark differs.
+  Make the local copy the workflow’s first: download the run’s
+  `announcement-notes-v$VERSION` artifact with
+  `gh run download <run-id> --repo jlevy/fdu --name "announcement-notes-v$VERSION" --dir "$RELEASE/workflow-notes"`
+  and compare it with `$RELEASE/notes.md`. Then correct the draft with
+  `gh release edit "v$VERSION" --notes-file <the workflow's notes.md> --repo jlevy/fdu`,
+  or delete it, keeping the tag, with `gh release delete "v$VERSION" --repo jlevy/fdu`
+  (and run step 7 again), and rerun the job.
 
 A README link to the video uses `releases/latest/download/fdu-demo.mp4`, and a notes
 link uses the copy under the notes’ own tag, `releases/download/v$VERSION/fdu-demo.mp4`,
 so the video a reader sees is the one declared with the release they install.
-Since every release attaches its own copy, `releases/latest/download` keeps working
-after a release that did not re-record: `make release-demo` copies the previous
-release’s video to it.
+Since every release carries its own copy from its draft onward,
+`releases/latest/download` keeps working after a release that did not re-record:
+`make release-demo` copies the previous release’s video into the new draft.
 A commit that links the video this way must declare it, and preflight checks that it
 does. It is no registry file: the manifest and `SHA256SUMS` never name it, and no crate
 or wheel carries it.
@@ -626,7 +665,7 @@ answer is marked stale clearly enough in plain text is an open decision (`fdu-md
 | `Cargo versions at COMMIT` | All three package manifests and both workspace pins name `VERSION`. |
 | `release notes` | `docs/project/release-notes/$VERSION.md` exists at the commit, its repository and release-asset download links name `v$VERSION` (never a branch such as `main`), its compare link starts from the previous release’s tag, and it holds one HTML comment. |
 | `CHANGELOG` | The commit’s CHANGELOG has a `## [$VERSION] - YYYY-MM-DD` heading. |
-| `demo video` | No video is committed at `docs/media/fdu-demo.mp4`. Without `docs/media/fdu-demo.json` the release attaches eleven files, and neither `README.md` nor the notes may link `releases/latest/download/fdu-demo.mp4` or `releases/download/v$VERSION/fdu-demo.mp4`, which would 404. With it, the declaration is a regular file with exactly its three fields, and either `DEMO=<the recording>` is an MP4 of the declared size and SHA-256, or an earlier release attaches one for `make release-demo` to reuse. A video that step could not attach fails here, before the tag, rather than after the registries publish. |
+| `demo video` | No video is committed at `docs/media/fdu-demo.mp4`. Without `docs/media/fdu-demo.json` the release attaches eleven files, and neither `README.md` nor the notes may link `releases/latest/download/fdu-demo.mp4` or `releases/download/v$VERSION/fdu-demo.mp4`, which would 404. With it, the declaration is a regular file with exactly its three fields, and either `DEMO=<the recording>` is an MP4 of the declared size and SHA-256, or an earlier release attaches one for `make release-demo` to reuse; the line also reads the immutable-release setting and names when that step runs, after the tag and before approval, failing only if the setting cannot be read. A video that step could not attach fails here, before the tag, rather than after the registries publish. |
 | `tag v$VERSION` | Origin has no such tag. |
 | `crates.io fdu-core`, `crates.io fdu`, `PyPI fdu` | Each registry answers 404 for this version. The names exist since `0.1.0`, so only the version proves anything. |
 | `private vulnerability reporting` | GitHub’s private reporting form, which SECURITY.md and the notes point to, is enabled. If not, a maintainer enables it with `gh api -X PUT repos/jlevy/fdu/private-vulnerability-reporting`. |
@@ -848,20 +887,24 @@ After `publish` succeeds, `announce` downloads that body and the same run’s ei
 packages, manifest, and checksums with `actions/download-artifact`. It verifies the
 files again, compares the body with the committed notes, and requires every registry to
 hold identical bytes.
-It creates a draft, uploads the eleven assets, verifies their GitHub SHA-256 digests,
-and only then makes the release public.
-It never uploads the demo video, which it has no copy of: `make release-demo` attaches
-that afterwards, and a rerun of the job accepts it only as the tagged commit declares
-it. Only this job has `contents: write`; it has no OIDC grant, registry credentials, or
-project dependency installation.
+It creates a draft, or completes the one `make release-demo` created, uploads the eleven
+assets, verifies their GitHub SHA-256 digests, and only then makes the release public.
+It never uploads the demo video, which it has no copy of.
+When the tagged commit declares one, it publishes only a draft that already holds it as
+declared; otherwise it fails before publishing, naming `make release-demo` (see
+[The Demo Video](#the-demo-video)). Only this job has `contents: write`; it has no OIDC
+grant, registry credentials, or project dependency installation.
 The protected environment approval in the publishing job authorizes this dependent
 announcement without a second approval.
 
 If announcement fails after registry publication, use **Re-run failed jobs** on that
 same run. The announcement resumes a partial draft by uploading only missing files.
 An already published release with identical notes and assets is a successful no-op.
-Conflicting notes, unexpected assets, or missing/different asset digests stop it;
-inspect the discrepancy rather than deleting or overwriting evidence.
+Conflicting notes, unexpected assets, an unfinished upload, or missing or different
+asset digests stop it.
+On a draft the message names the command that removes a wrong asset; inspect it before
+running that, and never delete or overwrite evidence on a published release, which is
+immutable in any case.
 Do not dispatch a new publishing run to retry an announcement: rebuilt artifacts can
 differ from the immutable registry files.
 A failed announcement leaves the overall run failed, even when both registries are
@@ -889,9 +932,17 @@ gh release create "v$VERSION" --verify-tag --title "fdu $VERSION" \
   "$RELEASE"/published/files/*
 ```
 
-It names the eleven files only.
-When the release commit declares the demo video, the step says so after the command: run
-`make release-demo` once the release exists, as for an automatic announcement.
+It names the eleven files only, and publishes at once.
+So when the release commit declares the demo video, the step prints a different fallback
+instead: run `make release-demo` first if it has not run, then the workflow’s own
+announcement script, which completes the draft and publishes it only once it holds the
+video:
+
+```shell
+uv run --no-project --python 3.12 python scripts/release/announce.py \
+  --version "$VERSION" --commit "$COMMIT" --dir "$RELEASE" --repo jlevy/fdu
+```
+
 The body is `$RELEASE/notes.md`, derived from the release commit’s notes, and
 `make release-verify-tag` confirmed the tag names that commit, so the body is the tagged
 text. The rehearsal’s evidence copy of `registry-state.json` is the audit from before
@@ -904,9 +955,9 @@ publishing and is not attached.
 - the GitHub release is final, titled `fdu $VERSION`, carries `notes.md` as its body,
   and attaches exactly the eleven files in `$RELEASE`, byte for byte where GitHub
   reports a digest, and, when the release commit declares the demo video, that video as
-  a twelfth file of the declared size and digest.
-  A declared video not attached yet reads `wait` until `make release-demo` attaches it;
-  nothing in `$RELEASE` changes what is expected;
+  a twelfth file of the declared size and digest, every one fully uploaded.
+  A release published without its declared video fails, for good: it is immutable.
+  Nothing in `$RELEASE` changes what is expected;
 - docs.rs has built both crates;
 - `uv tool run --no-config --no-build --isolated --python 3.12 fdu@$VERSION --version`
   and the same with `fdu@latest` print `fdu $VERSION`. `--no-config` sets aside a
@@ -1268,7 +1319,7 @@ The earlier workflow-level comparison, which shaped `release.yml`, is in the
 | Dry run before publishing | `release.yml` with `tag=dry-run` on `main` | Rehearsal on `release/v$VERSION` pinned at the commit | A dispatch takes a ref, not a commit; pinning makes the rehearsed commit the tagged one. |
 | Publishing trigger | Tag push publishes; agents authorized to run it end to end | Dispatch on the tag with `publish=true`, then a reviewer approves the environment, then the workflow publishes registries and announces on GitHub; an agent tags or approves only on the maintainer’s explicit go-ahead for that release | Publishing is irreversible, so it takes the maintainer’s decision for that release, never a standing authorization or a tag push alone. |
 | Registries | Separate crate and PyPI workflows | One job, one approval, audited before the first write | A conflict on either registry stops both before anything is written. |
-| GitHub release | Created by a job with `contents: write`, generated notes | Created after registry verification by a separate job with `contents: write`, using the checked-in notes and verified artifacts | The release becomes public only with all eleven verified assets, and a declared demo video follows through `make release-demo`, checked against its declaration; retries resume a draft and reject conflicts. |
+| GitHub release | Created by a job with `contents: write`, generated notes | Created after registry verification by a separate job with `contents: write`, using the checked-in notes and verified artifacts | The release becomes public only with all eleven verified assets and, when declared, the demo video `make release-demo` put in the draft, since a published release is immutable; retries resume a draft and reject conflicts. |
 | Post-publish verification | Version-specific registry checks and `uvx` smoke | The same, plus asset digests, docs.rs, and `--require-identical` | Borrowed and extended. |
 | Semver checks (`rust-release-rules`) | Run in CI | The release workflow’s `semver` job, which the publish job needs, and `make semver-check` | Checked where publishing happens, on the version being released; a new `0.x` series is not checked, since it may break. |
 

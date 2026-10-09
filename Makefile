@@ -50,7 +50,7 @@ TARGET_OWNER_TARGETS := build release rust-test reference-model opened-root-gold
 
 $(TARGET_OWNER_TARGETS): target-owner
 
-.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability cli-animate-check cli-animate-e2e portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-stability release-preflight release-candidate release-body release-verify-tag release-published release-demo release-announced release-cleanup release-audit clean cli perf-help verify-beads
+.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability cli-animate-check cli-animate-e2e portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-stability release-preflight release-candidate release-body release-verify-tag release-demo release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -601,9 +601,10 @@ release-stability:
 # and SIGNING_KEY from the environment, and ARGS passes a step's own options;
 # release-preflight and release-demo also read DEMO, the recorded demo video. None of
 # them tags, dispatches a publishing run, approves, or announces: those stay the
-# maintainer's. release-demo writes only to a release already announced, attaching the
-# demo video whose size and SHA-256 the release commit declares.
-release-preflight release-candidate release-body release-verify-tag release-published release-demo release-announced release-cleanup release-audit: uv-version
+# maintainer's. release-demo writes only to a draft release, which stays editable until
+# the publishing run makes it public: it attaches the demo video whose size and SHA-256
+# the release commit declares, since a published release is immutable.
+release-preflight release-candidate release-body release-verify-tag release-demo release-published release-announced release-cleanup release-audit: uv-version
 	$(UV) run --no-project --python 3.12 python scripts/release/maintainer.py $(patsubst release-%,%,$@) $(ARGS)
 
 cli:
