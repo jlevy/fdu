@@ -5,11 +5,11 @@ title: Native reader test stale_bytes_in_the_buffer_never_reach_a_listing failed
 kind: bug
 status: open
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 created_at: 2026-10-05T02:24:38.500Z
-updated_at: 2026-10-05T02:24:38.500Z
+updated_at: 2026-10-09T05:22:59.142Z
 ---
 `scan::linux_dents::tests::stale_bytes_in_the_buffer_never_reach_a_listing` failed once in CI, in the MSRV (1.85) job of https://github.com/jlevy/fdu/actions/runs/37254623682, on PR #169's head 5c6b4016:
 
@@ -27,3 +27,7 @@ Ruled out by reading the code: the H185 searchability latch is per listing, and 
 Open: whether an attribute changes over time on the runner's filesystem (allocated blocks, or ctime or mtime granularity), or the reader has a real nondeterministic fault.
 
 Next step: make the assertion name the entries and fields that differ (fresh-only and reused-only, with their attrs), so the next occurrence says which field moved. If it is an attribute that changes between reads, compare the kind and name sets exactly and the attrs only where the filesystem holds them stable, or settle the files (sync) before the first read. If it is the reader, fix it.
+
+## Notes
+
+Recurred 2026-10-09 on Engine on Linux arm64 at #189 head 2a643cfd (scan::linux_dents::tests::stale_bytes_in_the_buffer_never_reach_a_listing: 'a garbage-filled buffer changed the listing', linux_dents.rs:1103); the PR changes no crate; the job passed at f5b5ac4b and on main a6b441c4. Rerun with --failed.
