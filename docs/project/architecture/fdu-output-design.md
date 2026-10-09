@@ -46,6 +46,35 @@ Secondary breakdowns follow the same convention, such as
 `477,298 lines (439,949 nonblank, 37,349 blank)` with the parenthetical detail gray.
 Apply these roles consistently across human report views.
 
+## Grouped Rows
+
+The grouped views (`types`, `families`, `languages`, and `documents`) share one row
+layout. A row’s first line holds its size, share, label, and file count.
+Each further measure goes on its own line below, in a fixed order: lines with their
+breakdown, words with pages, the generated, vendored, and documentation counts, then
+each coverage reason other than analyzed.
+A continuation line leaves the size, share, and label columns blank and starts two
+columns right of the file count, so it reads as a breakdown of that tally:
+
+```text
+    39 MiB   77.6%  rst                4,064 files
+                                         834,425 lines (633,499 nonblank, 200,926 blank)
+                                         4,390,955 words (17,563.8 pages)
+                                         4,063 documentation
+   5.0 MiB   12.8%  xml                130 files
+                                         84,380 lines (82,696 nonblank, 1,684 blank)
+```
+
+A row with only a file count stays on one line.
+Stacking makes a row as wide as its widest measure rather than all of them together.
+On one line, the Linux kernel’s DOCUMENTS rows reached 154 columns; stacked, its
+`--view code,documents` report is at most 88 columns wide.
+Every continuation in a section starts at one column, because the label column is padded
+to the section’s widest label.
+The code overview is a table with a column per measure, so neither its rows nor its
+TOTAL row stack; the grouped views print no total row in text.
+Machine formats are unchanged.
+
 ## Content Reports and Names
 
 Analyzer names describe measurements (`lines`, `code`, `words`); canonical view names

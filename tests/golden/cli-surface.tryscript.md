@@ -241,6 +241,9 @@ Use `--size apparent` when logical file lengths are wanted instead of allocated 
 
 Stdout holds only the result: rows, column headings, and, when several views are shown,
 an all-caps header per view, such as `LANGUAGES (3 of 15)` when a row limit hid some.
+A grouped row (`families`, `types`, `languages`, `documents`) ends its first line at its
+file count; its other measures, such as lines, words, and files not analyzed, are
+indented lines under that count, not rows of their own.
 Every explanation follows on stderr, one prefixed line each, in this order: `note:` for
 what the result covers and how to read it, `warn:` for an operation that failed or an
 answer nothing verified, `tip:` for a runnable change, and, after text reports, `perf:`

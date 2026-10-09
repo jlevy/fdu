@@ -146,7 +146,8 @@ what makes this block stable across platforms.
 ```console
 $ fdu --cache off --color never --view types --limit 10 --size apparent project
      128 B   47.6%  archive            1 file
-      71 B   26.4%  markdown           2 files, 2 documentation
+      71 B   26.4%  markdown           2 files
+                                         2 documentation
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file
@@ -175,14 +176,16 @@ TREE
 
 TYPES
      128 B   47.6%  archive            1 file
-      71 B   26.4%  markdown           2 files, 2 documentation
+      71 B   26.4%  markdown           2 files
+                                         2 documentation
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file
 
 FAMILIES
      128 B   47.6%  binary             1 file
-      71 B   26.4%  prose              2 files, 2 documentation
+      71 B   26.4%  prose              2 files
+                                         2 documentation
       64 B   23.8%  code               3 files
        6 B    2.2%  unknown            1 file
 

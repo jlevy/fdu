@@ -174,9 +174,19 @@ Code lines   Share  Comments   Blank  Analyzed files  Language
    164,842  100.0%    19,885  15,798         395/398  TOTAL      (0 gitignored)
 
 DOCUMENTS
-   7.5 MiB   67.9%  markdown           381 files, 145,935 lines (129,677 nonblank, 16,258 blank), 651,479 words (2,605.9 pages), 8 generated, 346 documentation
-   1.6 MiB   21.8%  text               66 files, 31,754 lines (31,571 nonblank, 183 blank), 209,075 words (836.3 pages), 10 documentation
-   648 KiB   10.3%  html               2 files, 2,354 lines (2,319 nonblank, 35 blank), 98,515 words (394.0 pages), 1 documentation
+   7.5 MiB   67.9%  markdown           381 files
+                                         145,935 lines (129,677 nonblank, 16,258 blank)
+                                         651,479 words (2,605.9 pages)
+                                         8 generated
+                                         346 documentation
+   1.6 MiB   21.8%  text               66 files
+                                         31,754 lines (31,571 nonblank, 183 blank)
+                                         209,075 words (836.3 pages)
+                                         10 documentation
+   648 KiB   10.3%  html               2 files
+                                         2,354 lines (2,319 nonblank, 35 blank)
+                                         98,515 words (394.0 pages)
+                                         1 documentation
 ```
 
 On stderr, before the `perf:` line:
@@ -192,8 +202,10 @@ Code lines leave out comments and blank lines, which have columns of their own.
 Analyzed files counts the files measured out of the source files selected, and a
 language fdu has no counter for shows a dash rather than zero, as Make and Perl do.
 The notes count unsupported and unclassified files instead of treating them as zero
-lines. In DOCUMENTS, a page is 250 words (`--words-per-page`), and the suffix counts
-files detected as generated or as documentation.
+lines.
+In DOCUMENTS, each format’s measures are listed under its file count: lines, words
+and pages, at 250 words a page (`--words-per-page`), then the files detected as
+generated or as documentation.
 
 Each language row shows its gitignored share.
 `--ignored=exclude` skips gitignored trees such as local builds and environments,

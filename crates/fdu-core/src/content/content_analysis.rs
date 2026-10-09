@@ -1553,8 +1553,12 @@ mod tests {
         let text =
             crate::report_format::render(&rendered, crate::report_format::Format::Text, false)
                 .expect("compatible report format");
+        // A grouped row stacks each measure on a line of its own below the file count.
+        let measures = text.lines().map(str::trim_start).collect::<Vec<_>>();
         assert!(
-            text.contains("1 lines (1 nonblank, 0 blank), 2 words"),
+            measures.windows(2).any(|pair| {
+                pair[0] == "1 lines (1 nonblank, 0 blank)" && pair[1].starts_with("2 words")
+            }),
             "unsupported code coverage cannot turn prose lines into a zero code partition: {text}"
         );
         let content = index.content().expect("content");
@@ -1795,8 +1799,11 @@ mod tests {
             crate::report_format::render(&languages, crate::report_format::Format::Text, false)
                 .expect("compatible report format");
         assert!(text.contains("—"), "an unavailable 0/0 share needs a distinct marker: {text}");
+        let measures = text.lines().map(str::trim_start).collect::<Vec<_>>();
         assert!(
-            text.contains("1 lines (1 nonblank, 0 blank), 1 unsupported"),
+            measures
+                .windows(2)
+                .any(|pair| pair == ["1 lines (1 nonblank, 0 blank)", "1 unsupported"]),
             "unsupported code falls back to the valid line partition: {text}"
         );
         assert!(!text.contains("0.0%"), "unmeasured is not a zero percentage: {text}");

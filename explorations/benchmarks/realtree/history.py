@@ -918,10 +918,36 @@ def root_totals(document: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 _DOCUMENT_ROW = re.compile(
-    r"^\s*[0-9.]+ [KMGTP]?i?B\s+\S+\s+(?P<format>\S+)\s+(?P<files>[0-9][0-9,]*) files?, "
+    r"^\s*[0-9][0-9.,]* [KMGTP]?i?B\s+\S+\s+(?P<format>\S+)\s+(?P<files>[0-9][0-9,]*) files?, "
     r"(?P<lines>[0-9][0-9,]*) lines \([^)]*\), (?P<words>[0-9][0-9,]*) words\b"
 )
+#: A grouped row's first line, which opens with its size cell.
+_ROW_START = re.compile(r"^\s*[0-9][0-9.,]* [KMGTP]?i?B\s")
 _SECTION_HEADER = re.compile(r"^[A-Z][A-Z ]*[A-Z]$")
+
+
+def _folded_rows(lines: Sequence[str]) -> List[str]:
+    """Grouped rows with their continuation lines joined back onto the first line.
+
+    From 0.4.0 a grouped row ends its first line at the file count and puts each further
+    measure on an indented line of its own below it, with the size cell blank. Joined
+    with `, `, those lines read exactly as the one line earlier builds printed, so one
+    pattern parses every build.
+    """
+    rows: List[str] = []
+    for line in lines:
+        continues = (
+            bool(rows)
+            and _ROW_START.match(rows[-1]) is not None
+            and line[:1].isspace()
+            and bool(line.strip())
+            and _ROW_START.match(line) is None
+        )
+        if continues:
+            rows[-1] = f"{rows[-1]}, {line.strip()}"
+        else:
+            rows.append(line)
+    return rows
 
 
 def document_totals(stdout: bytes) -> Optional[Dict[str, int]]:
@@ -929,7 +955,8 @@ def document_totals(stdout: bytes) -> Optional[Dict[str, int]]:
 
     The view prints one row per document format and no total row, so the rows are
     summed. In a multi-view report only the DOCUMENTS section counts: the LANGUAGES
-    section prints rows of the same shape for code.
+    section prints rows of the same shape for code. A row stacked over several lines,
+    as 0.4.0 and later print it, is folded back into one first.
     """
     lines = stdout.decode("utf-8", errors="replace").splitlines()
     if "DOCUMENTS" in (line.strip() for line in lines):
@@ -941,7 +968,7 @@ def document_totals(stdout: bytes) -> Optional[Dict[str, int]]:
             section.append(line)
     else:
         section = lines
-    rows = [matched for matched in map(_DOCUMENT_ROW.match, section) if matched]
+    rows = [matched for matched in map(_DOCUMENT_ROW.match, _folded_rows(section)) if matched]
     if not rows:
         return None
 

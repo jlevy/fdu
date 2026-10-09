@@ -108,6 +108,14 @@ The GitHub release text is
   (`Percentage column: code lines` is now `note: percentages are shares of code lines`),
   share-floor omissions, a single view’s row bound, `Ranked by`, and the code overview’s
   coverage lines.
+- Grouped rows stack their measures.
+  In `types`, `families`, `languages`, and `documents`, a row’s first line ends at its
+  file count, and each further measure is a line of its own indented under it: lines
+  with their breakdown, words with pages, the generated, vendored, and documentation
+  counts, and each reason files were not analyzed.
+  A row with only a file count is unchanged.
+  `fdu . --view code,documents` on the Linux kernel source is now at most 88 columns
+  wide, where its widest DOCUMENTS row was 154. Machine formats are unchanged.
 - Notes and tips are consolidated: one note for what totals include, one listing every
   display limit that hid something (`note: display limits: below 1% of root, depth 5`),
   and one runnable tip that lifts them all

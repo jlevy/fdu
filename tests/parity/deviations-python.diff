@@ -1026,7 +1026,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -fdu: --view code needs code analysis, which --watch cannot keep current; use a one-shot report
 +fdu: view code needs code analysis; this index was opened with analyze none
   ✗ Every View One Walk Can Answer
-@@ -22,10 +22,10 @@
+@@ -23,10 +23,10 @@
        39 B   50.6%  Python  1 file
        38 B   49.4%  Rust    1 file
  LARGEST  (2 of 7)
@@ -1049,7 +1049,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -24,10 +24,10 @@
+@@ -29,10 +29,10 @@
           1   25.0%         1      1             1/1  Python   (0 gitignored)
           4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
  LARGEST  (2 of 7)
@@ -1073,9 +1073,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -28,10 +28,10 @@
-       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
-       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+@@ -42,10 +42,10 @@
+                                          1 documentation
+                                          1 binary
  LARGEST  (2 of 7)
 -80 B  assets[SEP]logo.png
 -42 B  docs[SEP]guide.md

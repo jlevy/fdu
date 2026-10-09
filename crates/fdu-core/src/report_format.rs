@@ -26,6 +26,11 @@
 //! including cache rows and lifecycle totals, uses [`styled_bytes`] for its units and
 //! zero/large-value emphasis. Machine fields retain exact integer bytes.
 //!
+//! A grouped row's first line ends at its file count; each further measure (lines, words,
+//! flags, coverage reasons) is a continuation line of its own, its size, share, and label
+//! cells blank and its text two columns right of the file count. See the layout rules
+//! beside `render_text_metrics`.
+//!
 //! Tree columns are bar, root percentage, size, then indented name. One remainder
 //! row per tree uses those same columns and quantity styles for unlisted root branches.
 //! Its `… and` prefix is gray; the recursive hidden file count uses normal foreground.
@@ -1438,7 +1443,16 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
 //   size    right-aligned, width 10
 //   share   right-aligned, width 6
 //   label   left-aligned, padded to the section's widest label
-//   detail  free-form, after a single space
+//   files   the file count, after a single space, which ends the row's first line
+//
+// Every further measure a row carries is a continuation line of its own below it, in a
+// fixed order: lines with their breakdown, words with pages, generated, vendored, and
+// documentation counts, then each coverage reason other than analyzed. A continuation
+// leaves the size, share, and label cells blank and starts `TEXT_CONTINUATION_INDENT`
+// columns right of the file count, so it reads as a breakdown of that tally, and every
+// continuation in a section starts at one column. A row is then as wide as its widest
+// measure rather than the sum of them: joined on one line, the Linux kernel's DOCUMENTS
+// rows reached 154 columns. A row with nothing past its file count stays one line.
 //
 // The rule that is easy to get wrong: **a column's width is measured on visible text**.
 // `paint` wraps its argument in escape sequences, and a width specifier counts those
@@ -1451,6 +1465,8 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
 const TEXT_SIZE_WIDTH: usize = 10;
 /// The share column: right-aligned in a fixed width, never styled.
 const TEXT_SHARE_WIDTH: usize = 6;
+/// How far a grouped row's continuation lines start right of its file count.
+const TEXT_CONTINUATION_INDENT: usize = 2;
 
 /// A styled label padded to `width`, measured on the visible text.
 fn label_cell(label: &str, width: usize, style: AnsiStyle, color: bool) -> String {
@@ -1518,6 +1534,10 @@ fn human_percentage(part: u64, whole: u64, decimals: usize) -> String {
     format!("{:.*}%", decimals, ratio(part, whole) * 100.0)
 }
 
+/// One grouped section: TYPES, FAMILIES, LANGUAGES, or DOCUMENTS.
+///
+/// Each row's first line is its size, share, label, and file count; every further
+/// measure it carries is a continuation line of its own, as the layout rules above say.
 fn render_text_metrics(
     out: &mut String,
     view: ViewSpec,
@@ -1536,70 +1556,64 @@ fn render_text_metrics(
             TEXT_METRIC_LABEL_WIDTH,
         )
     };
+    // The file count starts one space past the size, share, and label cells, whose
+    // visible widths are fixed for the section, so every continuation shares one column.
+    let continuation = " "
+        .repeat(TEXT_SIZE_WIDTH + 2 + TEXT_SHARE_WIDTH + 2 + width + 1 + TEXT_CONTINUATION_INDENT);
     for row in &summary.rows {
         let selected = pick(size, row.bytes, row.allocated);
         let percentage =
             percentage_cell(row.share.numerator, row.share.denominator, 1, TEXT_SHARE_WIDTH, color);
-        let mut suffix =
-            format!("{} {}", human_count(row.files), plural(row.files, "file", "files"));
+        let mut measures = Vec::new();
         if let Some(physical_lines) = row.metrics.physical_lines.filter(|lines| *lines > 0) {
             let code_fully_analyzed = row.code_coverage.as_ref().is_some_and(|coverage| {
                 coverage.len() == 1 && coverage.get(&CoverageReason::Analyzed) == Some(&row.files)
             });
-            if let (true, Some(code_lines), Some(comment_lines), Some(code_blank_lines)) = (
-                code_fully_analyzed,
-                row.metrics.code_lines,
-                row.metrics.comment_lines,
-                row.metrics.code_blank_lines,
-            ) {
-                let breakdown = format!(
-                    "({} code, {} comment, {} blank)",
-                    human_count(code_lines),
-                    human_count(comment_lines),
-                    human_count(code_blank_lines)
-                );
-                let _ = write!(
-                    suffix,
-                    ", {} lines {}",
-                    human_count(physical_lines),
-                    detail(&breakdown, color)
-                );
-            } else {
-                let _ = write!(
-                    suffix,
-                    ", {} lines {}",
-                    human_count(physical_lines),
-                    detail(
-                        &format!(
-                            "({} nonblank, {} blank)",
-                            human_count(row.metrics.nonblank_lines.expect("lines requested")),
-                            human_count(row.metrics.blank_lines.expect("lines requested"))
-                        ),
-                        color
+            let breakdown =
+                if let (true, Some(code_lines), Some(comment_lines), Some(code_blank_lines)) = (
+                    code_fully_analyzed,
+                    row.metrics.code_lines,
+                    row.metrics.comment_lines,
+                    row.metrics.code_blank_lines,
+                ) {
+                    format!(
+                        "({} code, {} comment, {} blank)",
+                        human_count(code_lines),
+                        human_count(comment_lines),
+                        human_count(code_blank_lines)
                     )
-                );
-            }
+                } else {
+                    format!(
+                        "({} nonblank, {} blank)",
+                        human_count(row.metrics.nonblank_lines.expect("lines requested")),
+                        human_count(row.metrics.blank_lines.expect("lines requested"))
+                    )
+                };
+            measures.push(format!(
+                "{} lines {}",
+                human_count(physical_lines),
+                detail(&breakdown, color)
+            ));
         }
         if let Some(page) = pages(row, summary.words_per_page).filter(|page| page.words > 0) {
             let page_tenths = page.words.saturating_mul(10) / page.words_per_page;
-            let _ = write!(
-                suffix,
-                ", {} words {}",
+            measures.push(format!(
+                "{} words {}",
                 human_count(page.words),
                 detail(
                     &format!("({}.{:01} pages)", human_count(page_tenths / 10), page_tenths % 10),
                     color,
                 )
-            );
+            ));
         }
-        if row.generated_files > 0 {
-            let _ = write!(suffix, ", {} generated", human_count(row.generated_files));
-        }
-        if row.vendored_files > 0 {
-            let _ = write!(suffix, ", {} vendored", human_count(row.vendored_files));
-        }
-        if row.documentation_files > 0 {
-            let _ = write!(suffix, ", {} documentation", human_count(row.documentation_files));
+        for (count, flag) in [
+            (row.generated_files, "generated"),
+            (row.vendored_files, "vendored"),
+            (row.documentation_files, "documentation"),
+        ] {
+            if count > 0 {
+                measures.push(format!("{} {flag}", human_count(count)));
+            }
         }
         let coverage = match view {
             ViewSpec::Languages => row.code_coverage.as_ref().unwrap_or(&row.lines_coverage),
@@ -1608,13 +1622,12 @@ fn render_text_metrics(
         };
         for (reason, count) in coverage {
             if *reason != CoverageReason::Analyzed {
-                let _ =
-                    write!(suffix, ", {} {}", human_count(*count), human_coverage_label(*reason));
+                measures.push(format!("{} {}", human_count(*count), human_coverage_label(*reason)));
             }
         }
         let _ = writeln!(
             out,
-            "{}  {}  {} {suffix}",
+            "{}  {}  {} {} {}",
             styled_bytes(selected, TEXT_SIZE_WIDTH, color, false),
             percentage,
             label_cell(
@@ -1623,7 +1636,12 @@ fn render_text_metrics(
                 STYLE_CATEGORY,
                 color
             ),
+            human_count(row.files),
+            plural(row.files, "file", "files"),
         );
+        for measure in measures {
+            let _ = writeln!(out, "{continuation}{measure}");
+        }
     }
 }
 
@@ -4668,6 +4686,11 @@ mod tests {
         assert_eq!(strip_ansi(&colored), render(&types, Format::Text, false));
     }
 
+    /// Where a non-language grouped row's continuation lines start: past the size, share,
+    /// and floored label cells and the space before the file count, then two more.
+    const TEXT_METRIC_INDENT: usize =
+        TEXT_SIZE_WIDTH + 2 + TEXT_SHARE_WIDTH + 2 + TEXT_METRIC_LABEL_WIDTH + 1 + 2;
+
     #[test]
     fn metric_breakdowns_and_ranked_paths_keep_span_boundaries() {
         let mut metrics = fixture(&[ViewSpec::Types]);
@@ -4680,7 +4703,8 @@ mod tests {
         let colored = render(&metrics, Format::Text, true);
         assert!(
             colored.contains(&format!(
-                "1,234 files, 477,298 lines {}",
+                "1,234 files\n{}477,298 lines {}\n",
+                " ".repeat(TEXT_METRIC_INDENT),
                 detail("(439,949 nonblank, 37,349 blank)", true)
             )),
             "{colored:?}"
@@ -4696,6 +4720,81 @@ mod tests {
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
             assert!(!render(&largest, format, true).contains('\u{1b}'));
         }
+    }
+
+    /// A grouped row's first line is its tabulated cells and file count; each further
+    /// measure is a line of its own, two columns right of the file count, with the size,
+    /// share, and label cells left blank. The widest row then no longer sets the report's
+    /// width, which on the Linux kernel's DOCUMENTS was 154 columns (fdu-r7lw).
+    #[test]
+    fn grouped_rows_stack_each_further_measure_under_the_file_count() {
+        for view in [ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents]
+        {
+            let mut metrics = fixture(&[view]);
+            let Section::Metrics { summary, .. } = &mut metrics.sections[0] else {
+                panic!("{view:?} should be a metric section")
+            };
+            let row = &mut summary.rows[0];
+            row.files = 4_064;
+            row.metrics.physical_lines = Some(834_425);
+            row.metrics.nonblank_lines = Some(633_499);
+            row.metrics.blank_lines = Some(200_926);
+            row.metrics.document_words = Some(4_390_955);
+            row.generated_files = 2;
+            row.vendored_files = 3;
+            row.documentation_files = 4_063;
+            row.code_coverage = None;
+            row.words_coverage = None;
+            row.lines_coverage = std::collections::BTreeMap::from([
+                (CoverageReason::Analyzed, 3_997),
+                (CoverageReason::Binary, 60),
+                (CoverageReason::Unsupported, 7),
+            ]);
+            let plain = render(&metrics, Format::Text, false);
+            let lines = plain.lines().collect::<Vec<_>>();
+            // In columns, not bytes: an unmeasured share is the three-byte `—`.
+            let at = lines[0].find("4,064 files").expect("the file count ends the first line");
+            let column = display_width(&lines[0][..at]);
+            assert!(lines[0].ends_with("4,064 files"), "{plain}");
+            let indent = " ".repeat(column + 2);
+            let stacked = [
+                "834,425 lines (633,499 nonblank, 200,926 blank)",
+                "4,390,955 words (17,563.8 pages)",
+                "2 generated",
+                "3 vendored",
+                "4,063 documentation",
+                "60 binary",
+                "7 unsupported",
+            ]
+            .map(|measure| format!("{indent}{measure}"));
+            assert_eq!(lines[1..=stacked.len()], stacked, "{view:?}:\n{plain}");
+            assert!(plain.lines().all(|line| !line.ends_with(' ')), "{plain:?}");
+
+            let colored = render(&metrics, Format::Text, true);
+            assert_eq!(strip_ansi(&colored), plain, "color must not move a continuation");
+            for (measure, breakdown) in [
+                ("834,425 lines", "(633,499 nonblank, 200,926 blank)"),
+                ("4,390,955 words", "(17,563.8 pages)"),
+            ] {
+                let expected = format!("\n{indent}{measure} {}\n", detail(breakdown, true));
+                assert!(colored.contains(&expected), "{view:?}: {colored:?}");
+            }
+        }
+
+        // The non-language views share a label floor, so their continuations sit at one
+        // column across sections; a row with nothing past its file count stays one line.
+        let mut types = fixture(&[ViewSpec::Types]);
+        let Section::Metrics { summary, .. } = &mut types.sections[0] else { panic!("types") };
+        assert_eq!(summary.rows.len(), 2, "a measured row and a bare one");
+        summary.rows[0].files = 12;
+        summary.rows[0].documentation_files = 12;
+        summary.rows[1].files = 1;
+        let plain = render(&types, Format::Text, false);
+        let lines = plain.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 3, "{plain}");
+        assert_eq!(lines[1], format!("{}12 documentation", " ".repeat(TEXT_METRIC_INDENT)));
+        assert!(lines[2].ends_with(" 1 file"), "{plain}");
+        assert_eq!(lines[2].find("1 file"), lines[0].find("12 files"), "{plain}");
     }
 
     #[test]
