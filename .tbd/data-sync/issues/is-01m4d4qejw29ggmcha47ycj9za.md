@@ -3,16 +3,20 @@ type: is
 id: is-01m4d4qejw29ggmcha47ycj9za
 title: Record the 0.4.0 Linux demo from the release candidate and embed it in README and release notes
 kind: task
-status: open
+status: closed
 priority: 1
-version: 7
+version: 8
 labels:
   - release
   - docs
 dependencies: []
 parent_id: is-01m47z5n33np3b15yena1k3hqt
 created_at: 2026-10-08T06:55:32.944Z
-updated_at: 2026-10-09T04:39:01.989Z
+updated_at: 2026-10-09T07:31:37.968Z
+closed_at: 2026-10-09T07:31:37.967Z
+close_reason: "Done 2026-10-09: fdu-demo.mp4 (3,784,222 bytes, sha256 31e720b3...) is a verified asset of the immutable v0.4.0 release, attached by make release-demo to the draft; the README GIF (docs/media/fdu-demo.gif) renders and animates on the homepage and links releases/latest/download/fdu-demo.mp4, which returns the declared MP4."
+resolution: null
+duplicate_of: null
 ---
 Maintainer decision 2026-10-07: the 0.4.0 demo video is GitHub-hosted and lands before the tag.
 
