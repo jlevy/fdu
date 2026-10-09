@@ -71,10 +71,11 @@ directory or named like a README, CHANGELOG, or CONTRIBUTING file, is in machine
 only (`detection.flags.documentation`). In DOCUMENTS nearly every file is one, and as a
 line under a document row it read as a measure of the documents themselves.
 Stacking makes a row as wide as its widest measure rather than all of them together.
-On one line, the Linux kernel’s DOCUMENTS rows reached 154 columns; stacked, its
-`--view code,documents` report is at most 88 columns wide.
-Every continuation in a section starts at one column, because the label column is padded
-to the section’s widest label.
+On one line, the Linux kernel’s DOCUMENTS rows reached 154 columns; stacked, the
+standard output of its `--view code,documents` report is at most 88 columns wide.
+The `perf:` line on standard error is still about 210 columns, and fitting it is open
+work. Every continuation in a section starts at one column, because the label column is
+padded to the section’s widest label.
 The code overview is a table with a column per measure, so neither its rows nor its
 TOTAL row stack; the grouped views print no total row in text.
 Machine formats are unchanged.

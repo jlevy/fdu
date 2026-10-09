@@ -41,6 +41,8 @@ export interface Capture {
   master: string;
   fps: number;
   scale: number;
+  /** CSS pixels of background around the window; null when derived from a kept master. */
+  margin: number | null;
   width: number;
   height: number;
   frames: number;
@@ -185,6 +187,7 @@ export async function capture(castPath: string, masterPath: string, options: Ren
       master: masterPath,
       fps,
       scale,
+      margin: options.margin ?? 32,
       width: stage.size.width * scale,
       height: stage.size.height * scale,
       frames: total,
@@ -245,6 +248,7 @@ export function masterInfo(masterPath: string, scale: number): Capture {
     master: masterPath,
     fps: Math.round((num ?? 60) / (den || 1)),
     scale,
+    margin: null,
     width: Number(stream.width),
     height: Number(stream.height),
     frames: Number(stream.nb_read_packets),

@@ -114,8 +114,10 @@ The GitHub release text is
   with their breakdown, words with pages, the generated and vendored counts, and each
   reason files were not analyzed.
   A row with only a file count is unchanged.
-  `fdu . --view code,documents` on the Linux kernel source is now at most 88 columns
-  wide, where its widest DOCUMENTS row was 154. Machine formats are unchanged.
+  On the Linux kernel source the standard output of `fdu . --view code,documents` is now
+  at most 88 columns wide, where its widest DOCUMENTS row was 154; the `perf:` line on
+  standard error is still longer.
+  Machine formats are unchanged.
 - Human grouped rows no longer show a documentation count (`4,063 documentation`). It
   counts files under a `doc`, `docs`, or `documentation` directory or named like a
   README, CHANGELOG, or CONTRIBUTING file, which in DOCUMENTS is nearly every file, and

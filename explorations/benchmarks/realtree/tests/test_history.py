@@ -803,6 +803,12 @@ class AnswerCheckTests(unittest.TestCase):
         # Before 0.2.0 the numbers had no thousands separators.
         early = "   380 KiB    0.6%  markdown           62 files, 6604 lines (5016 nonblank, 1588 blank), 29693 words (118.7 pages), 61 documentation\n"
         self.assertEqual(history.document_totals(early.encode())["words"], 29693)
+        # A size with a thousands separator once dropped its row from the joined form.
+        separated = " 1,010 KiB    1.2%  latex              1 file, 234 lines (228 nonblank, 6 blank), 1,334 words (5.3 pages)\n"
+        self.assertEqual(
+            history.document_totals(separated.encode()),
+            {"formats": 1, "files": 1, "lines": 234, "words": 1334},
+        )
         # In a multi-view report the LANGUAGES rows look the same and must not count.
         multi = (
             "CODE\nCode lines  Language\n\nDOCUMENTS\n" + single + "\nLANGUAGES\n"
