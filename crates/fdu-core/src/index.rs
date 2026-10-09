@@ -4751,6 +4751,19 @@ impl Index {
         &self,
         wanted: impl Fn((u64, u64)) -> Option<T>,
     ) -> Option<(T, PathBuf)> {
+        self.entered_directory_where(wanted, |_, _| true)
+    }
+
+    /// [`Self::entered_directory_with`], keeping only a directory `confirmed` accepts, given
+    /// what `wanted` returned for it and its path under the root.
+    ///
+    /// `confirmed` is asked only of a directory that would be the least so far, so a caller
+    /// that checks each against the filesystem pays for few.
+    pub(crate) fn entered_directory_where<T>(
+        &self,
+        wanted: impl Fn((u64, u64)) -> Option<T>,
+        confirmed: impl Fn(&T, &Path) -> bool,
+    ) -> Option<(T, PathBuf)> {
         let mut least: Option<(T, PathBuf)> = None;
         for (slot, cell) in self.arena.iter().enumerate() {
             let Slot::Occupied { generation, entry } = cell else { continue };
@@ -4768,7 +4781,7 @@ impl Index {
                 continue;
             }
             let Some(path) = self.path_of(id) else { continue };
-            if least.as_ref().is_none_or(|(_, held)| path < *held) {
+            if least.as_ref().is_none_or(|(_, held)| path < *held) && confirmed(&found, &path) {
                 least = Some((found, path));
             }
         }

@@ -709,7 +709,7 @@ fn run_root(
     // summary keeps every directory it entered.
     let entered = |index: &crate::Index| {
         aliases.and_then(|(aliases, own)| {
-            index.entered_directory_with(|identity| aliases.other_root(identity, own))
+            reached_root(index, aliases, own, plan.verify == Verify::Filesystem)
         })
     };
     match plan.retained {
@@ -1039,6 +1039,49 @@ fn for_root(error: Error, root: &NamedRoot, several: bool) -> Error {
             Error::Snapshot(format!("{}: {message}", root.label.display()))
         }
         other => other,
+    }
+}
+
+/// Another root, other than the one at `own`, that `index` entered through an alias, and
+/// the directory under its root where it did ([`RootAliases`]).
+///
+/// An index its run `verified` against the tree holds each directory's identity as the
+/// tree has it now. A snapshot answered without touching the tree holds each as of the walk
+/// that wrote it, and an inode reused since, or a device numbered anew across a remount,
+/// can match a root that index never reached; so a match there is kept only when the
+/// directory, stated now, is still that root (review D5 on #192). That is one stat for each
+/// match, and none for a report that has none.
+fn reached_root(
+    index: &crate::Index,
+    aliases: &RootAliases,
+    own: usize,
+    verified: bool,
+) -> Option<(usize, std::path::PathBuf)> {
+    let other = |identity| aliases.other_root(identity, own);
+    if verified {
+        return index.entered_directory_with(other);
+    }
+    index.entered_directory_where(other, |root, at| {
+        live_directory_identity(&index.root_path().join(at)).and_then(other) == Some(*root)
+    })
+}
+
+/// The device and inode of the directory at `path` as it is now, without following a final
+/// symlink, which a walk would not have entered; `None` where nothing is there, it is not a
+/// directory, or the platform has no identities.
+fn live_directory_identity(path: &Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::symlink_metadata(path)
+            .ok()
+            .filter(std::fs::Metadata::is_dir)
+            .map(|metadata| (metadata.dev(), metadata.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
     }
 }
 
@@ -5040,6 +5083,103 @@ mod tests {
             let (request, delivery) = roots_split(&roots, &depth(1), &query);
             let listed = prepare_roots_report(&request, &delivery).expect("listed, not entered");
             drop(listed.pending.join_all());
+        }
+    }
+
+    /// The full index finds a firmlink as the summary fold and the folded tree do, and a
+    /// cache-only read of the snapshot it leaves finds it again, confirmed against the tree
+    /// as it is now (reviews D5 and D9 on #192). `/usr/local` is a firmlink onto the data
+    /// volume's `usr/local`, and the data volume's `usr` is small and readable to depth 2,
+    /// so its walk completes and its snapshot is written, which the refusal does not cost
+    /// it. Probed rather than assumed, so a host without the firmlink skips with a message.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_firmlink_is_found_by_the_full_index_and_in_its_snapshot() {
+        use std::os::unix::fs::MetadataExt;
+        let identity =
+            |path: &str| fs::metadata(path).map(|metadata| (metadata.dev(), metadata.ino())).ok();
+        let (outer, inner) = ("/System/Volumes/Data/usr", "/usr/local");
+        let reached = "/System/Volumes/Data/usr/local";
+        if identity(reached).is_none() || identity(reached) != identity(inner) {
+            eprintln!("skipped: {inner} is not a firmlink into {outer} on this host");
+            return;
+        }
+        let roots = Roots::resolve(&[outer, inner]).expect("the paths show no overlap");
+        let refused = |result: Result<RootsPrepared>, tier: &str| match result {
+            Err(Error::InvalidRequest(crate::query::RequestError::RootReachedInside {
+                inner: found,
+                outer: walked,
+                at,
+            })) => assert_eq!(
+                (found.as_path(), walked.as_path(), at.as_path()),
+                (Path::new(inner), Path::new(outer), Path::new(reached)),
+                "{tier}"
+            ),
+            other => panic!(
+                "{tier}: expected the firmlink refused, got {:?}",
+                other.map(|prepared| prepared.report.status)
+            ),
+        };
+        let cache = tempfile::tempdir().expect("cache dir");
+        let on = OpenFixture {
+            scan: ScanConfig { max_depth: Some(2), ..ScanConfig::default() },
+            ..config(CachePolicy::On, None)
+        };
+        let (request, delivery) = roots_split(&roots, &on, &summary_query());
+        let delivery = under(cache.path(), &delivery);
+        refused(prepare_roots_report(&request, &delivery), "the full index");
+        let snapshot = crate::default_cache_path_in(Path::new(outer), Some(cache.path()))
+            .expect("path")
+            .expect("a directory names a path");
+        assert!(snapshot.exists(), "the outer root's walk was complete and its snapshot kept");
+        let stale = Delivery { stale_ok: true, ..delivery };
+        refused(prepare_roots_report(&request, &stale), "the cache-only read");
+    }
+
+    /// A snapshot answered without touching the tree holds each directory's identity as of
+    /// the walk that wrote it, so a match against another root's identity is kept only when
+    /// the directory, stated now, is still that root's; an index its run verified is the
+    /// tree, and its match stands (review D5 on #192).
+    #[cfg(unix)]
+    #[test]
+    fn a_snapshots_match_is_confirmed_against_the_tree_as_it_is_now() {
+        use std::os::unix::fs::MetadataExt;
+        let base = tempfile::tempdir().expect("tempdir");
+        let root = base.path().canonicalize().expect("canonical");
+        for name in ["other", "moved"] {
+            fs::create_dir(root.join(name)).expect("directory");
+        }
+        let metadata = fs::metadata(root.join("other")).expect("stat");
+        let other = (metadata.dev(), metadata.ino());
+        let aliases = RootAliases::of(&[(other, 1)]);
+        // An index that holds `name` with the other root's identity, and a file under it.
+        let holding = |name: &str| {
+            let mut index = crate::Index::new(&root);
+            let ops = vec![
+                crate::Op::Upsert {
+                    path: PathBuf::from(name),
+                    kind: EntryKind::Dir,
+                    attrs: crate::Attrs { dev: other.0, inode: other.1, ..crate::Attrs::default() },
+                },
+                crate::Op::Upsert {
+                    path: Path::new(name).join("f"),
+                    kind: EntryKind::File,
+                    attrs: crate::Attrs { size: 1, inode: 99, ..crate::Attrs::default() },
+                },
+            ];
+            index.apply(&crate::Observation::new(ops)).expect("apply");
+            index
+        };
+        assert_eq!(
+            reached_root(&holding("other"), &aliases, 0, false),
+            Some((1, PathBuf::from("other"))),
+            "still that root's directory"
+        );
+        // Gone since, or another directory there now, as an inode reused would leave it.
+        for name in ["gone", "moved"] {
+            let stored = holding(name);
+            assert_eq!(reached_root(&stored, &aliases, 0, true), Some((1, PathBuf::from(name))));
+            assert_eq!(reached_root(&stored, &aliases, 0, false), None, "{name}");
         }
     }
 
