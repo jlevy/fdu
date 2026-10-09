@@ -183,11 +183,18 @@ START HERE
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
+    fdu docs src                               several paths as one report, with a total
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size, each
   with its age: how long ago anything it counts last changed. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
+
+  Several paths are what each would report, added: every size, row, share, and
+  bound is over the union, once. The tree starts with a (total) row, each root
+  is a row named as given, and flat paths are printed after their root's label.
+  A root inside another, or the same directory twice, is refused. --watch,
+  --cache-status, and --cache-clear take one PATH.
 
   code and documents read file contents; --analyze is the extra control for
   analysis a view does not imply:
@@ -276,7 +283,7 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
+  Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
                                                         beyond what the views imply

@@ -582,14 +582,33 @@ Two stacked pull requests on gh-stack, the age column first.
 
 ### Phase 2: Several Roots (second pull request)
 
-- [ ] Named-roots type, labels, validation, overlap refusal by identity
-- [ ] Per-root requests and cache paths; execution retains per-root state; pending
+- [x] Named-roots type, labels, validation, overlap refusal by identity
+- [x] Per-root requests and cache paths; execution retains per-root state; pending
   saves; one progress handle; combined outcome
-- [ ] Accumulate/finalize split for each section and the multi-index reader
-- [ ] Tree assembly with a section total, per-root remainders, and bounds applied once
-- [ ] Root indexes on rows and issues; status, provenance, and note merges
-- [ ] Command line `PATH...` and refusals; Python `report(paths)`; parity shim
-- [ ] Goldens over two fixtures, the path-independence cases, docs
+- [x] Accumulate/finalize split for each section and the multi-index reader
+- [x] Tree assembly with a section total, per-root remainders, and bounds applied once
+- [x] Root indexes on rows and issues; status, provenance, and note merges
+- [x] Command line `PATH...` and refusals; Python `report(paths)`; parity shim
+- [x] Goldens over two fixtures, the path-independence cases, docs
+
+Decided during implementation:
+
+- Where the name decides an order (`--sort name`, and every tiebreak), flat rows of
+  different roots rank by label first, then by path, so text that prints `label/path`
+  reads as sorted; ordering by the relative path alone would interleave the roots.
+  Labels that compare equal keep the caller’s order.
+  Each root’s rows are ordered among themselves exactly as alone, which keeps the
+  per-root bound exact for a sorted top-k.
+- A root row keeps the single-root rule that the root’s own time never counts, so
+  `ages/installed` in `fdu ages/installed ages/docs` shows what `fdu ages/installed`
+  shows at its root, not what `fdu ages` shows for `installed/`; a golden pins it.
+- Combined totals that no `u64` holds are refused (`UnrepresentableTotal`), as one
+  root’s already are, so every sum across roots is exact.
+- `TreeStatus::errors` holds `StatusIssue { root, issue }`, an explicit pairing, rather
+  than a parallel list of root positions.
+- One root through `prepare_roots_report` is `prepare_report` with the snapshot path
+  derived from the cache directory; validating the roots first means `--stale-ok` over a
+  file now fails as not a directory rather than as a missing snapshot.
 
 ## Testing Strategy
 

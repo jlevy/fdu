@@ -25,6 +25,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `FileRow` gains `modified_at`, and `Report` gains `age_reference_at`; each `datetime`
   is timezone-aware UTC, derived from the nanoseconds and floored to the microsecond.
 - Rust: `TreeNode` gains `mtime_ns`, `complete`, and `age_ns`.
+- Several paths in one report: `fdu docs src` answers what `fdu docs` and `fdu src`
+  would, added. Sizes, counts, rows, shares, and display bounds are taken over every root
+  together, once. The tree shows a `(total)` row and each root as a row named by how it
+  was given, every share of the total; flat listings print each path after its root’s
+  label, as `find docs src` does.
+  A root equal to or inside another is refused, naming both, including an alias through
+  a symlink, a macOS firmlink, or a bind mount.
+  Each root’s snapshot lives where its own would.
+  `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+- Machine output over several roots: the envelope’s `root` is null and `roots` lists
+  each root’s `label` and canonical `path`; a tree section has `tree: null`, a `total`
+  row, and `trees`, one tree per root, each with its own `remainder`; list rows, status
+  errors, and `.gitignore` refusals carry `root`, the position of their root in `roots`,
+  and keep their paths relative to it.
+  A report over one root is unchanged.
+- Python: `fdu.report` takes one path or a sequence of them.
+  Over several roots `Report.root` is `None` and `Report.roots` is a tuple of
+  `ReportRoot`; `TreeSection` gains `total` (`TreeTotal`) and `trees` (`RootTree`);
+  `FileRow`, `OperationError`, and `RefusedControl` gain `root`.
+- Rust: `Roots` and `NamedRoot` name a report’s roots and validate them before any scan;
+  `RootsRequest` shares one request across them; `report_roots` reads one report from
+  one index per root; and `prepare_roots_report`, with its progress and scan-diagnostics
+  variants, runs each root’s plan and returns each root’s pending save and telemetry
+  (`RootsPrepared`). `PerformanceSummary::sum` totals them.
+  `RequestError` gains `NoRoots`, `RootsOverlap`, and `RootsRepeated`.
 
 ### Changed
 
@@ -50,6 +75,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   record for its directory, unless it is the scan root or the selection leaves
   directories out; the record shape and `fdu.stream/2` are unchanged.
 - Rust: `TreeNode` struct literals need the three new fields.
+- **Breaking (Rust):** `Report::root` is `Option<PathBuf>`, `None` over several roots,
+  beside the new `Report::roots`; `TreeStatus::errors` holds
+  `StatusIssue { root, issue }` rather than `Issue`; `FileRow` and `RefusedControl` gain
+  `root`; `Section::Tree` gains `roots`; `ProgressSnapshot` gains `root`, and over
+  several roots a run’s phase starts over at each root while its counters keep adding.
+- **Breaking (Python):** `Report.root` is `Path | None`.
+- The `PATH` argument is `PATH...`; help reads `Usage: fdu [OPTIONS] <PATH>...`. The
+  progress line names the root being walked and its position, `src (2/3)`, and the
+  `perf:` line sums every root’s walk and names each root’s tier when they differ.
 - On Linux the default one-shot tree stats each directory and symlink again, as every
   other route does, so a directory’s age there counts its own time and equals its age
   under `--long` or a cached run.

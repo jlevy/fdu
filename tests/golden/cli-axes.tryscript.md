@@ -999,9 +999,9 @@ project[SEP]src[SEP]omega.rs
 ? 0
 ```
 
-Machine formats name the roots in the envelope, where `root` is null, and keep every path
-relative to its root: the tree section has a `total` and one tree per root, each carrying
-its own remainder.
+Machine formats name the roots in the envelope, where `root` is null, and keep every
+path relative to its root: the tree section has a `total` and one tree per root, each
+carrying its own remainder.
 
 ```console
 $ fdu --cache off --view tree --depth all --size apparent --format json ages/installed ages/docs

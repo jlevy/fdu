@@ -27,7 +27,7 @@ kind of outcome.
 | `selfwarm` | The request itself, then `auto`, `on`, and `--stale-ok` in turn |
 | `mutation` | A warming request, then a file change: rewrite, touch, add, delete, `.gitignore` edits, a symlink retarget, or an unreadable directory |
 | `cross` | Cold and warm, read through `fdu.report`, `fdu.open`, and `fdu.scan`, one-shot CLI reports, and the complete initial CLI watch report |
-| `roots` | Several disjoint subtrees as one report: the cold answer against the merge of each subtree's own cold answer (sums, unions, and each root's own tree), then the same answer served by `--stale-ok` from snapshots each subtree left alone, and through `fdu.report` with a list |
+| `roots` | Several disjoint subtrees as one report: the cold answer against the merge of each subtree’s own cold answer (sums, unions, and each root’s own tree), then the same answer served by `--stale-ok` from snapshots each subtree left alone, and through `fdu.report` with a list |
 
 [`matrix.py`](matrix.py) defines the requests, warmers, mutations, and the two tiers.
 The watch route participates only where its delivery is supported: metadata analysis

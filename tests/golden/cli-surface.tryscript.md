@@ -237,6 +237,20 @@ Without code analysis, language percentages are byte shares; with it, the rows a
 comment, and blank-line metrics and use code-line shares.
 Use `--size apparent` when logical file lengths are wanted instead of allocated bytes.
 
+Several disjoint paths are one report, what each would report added:
+
+```bash
+fdu docs src                               # a (total) row, then each root as a row
+fdu docs src --view=largest --limit=10     # the ten largest files across both
+```
+
+Every size, row, share, and bound is taken over the union, once.
+Text prints each path after its root’s label (`docs/guide.md`); JSON keeps paths
+relative to their root, sets `root` to null, names the roots in `roots`, and gives rows,
+errors, and refusals a `root` index into it.
+A root inside another, or the same directory twice, is refused.
+`--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+
 ## Read the Result and Its Notes
 
 Stdout holds only the result: rows, column headings, and, when several views are shown,
@@ -347,7 +361,7 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
+| Scope | What is scanned and cached? | `PATH...`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
 | Content | Which file bodies are read beyond what the views imply? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
@@ -786,11 +800,18 @@ START HERE
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
+    fdu docs src                               several paths as one report, with a total
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size, each
   with its age: how long ago anything it counts last changed. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
+
+  Several paths are what each would report, added: every size, row, share, and
+  bound is over the union, once. The tree starts with a (total) row, each root
+  is a row named as given, and flat paths are printed after their root's label.
+  A root inside another, or the same directory twice, is refused. --watch,
+  --cache-status, and --cache-clear take one PATH.
 
   code and documents read file contents; --analyze is the extra control for
   analysis a view does not imply:
@@ -882,7 +903,7 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
+  Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
                                                         beyond what the views imply

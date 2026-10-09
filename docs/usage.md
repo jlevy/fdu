@@ -53,6 +53,48 @@ fdu . --analyze=code --view=languages
 fdu . --analyze=lines --view=languages
 ```
 
+## Report on Several Paths
+
+```shell
+fdu docs src
+```
+
+Several paths are one report: what `fdu docs` and `fdu src` would answer, added.
+Sizes, counts, rows, shares, and display bounds are taken over every root together,
+once, so `--limit 20` is twenty rows of the union and a 1% share is 1% of the total.
+
+```console
+$ fdu docs src
+██████████   100%      40 MiB     2m  (total) 1,212 files
+██████░░░░    62%      25 MiB     2m    docs/ 496 files
+███░░░░░░░    28%      11 MiB     4d      experiments/ 312 files
+████░░░░░░    38%      15 MiB     2m    src/ 716 files
+```
+
+- The tree starts with a `(total)` row, then each root as a row named by how it was
+  given, whatever its share; `--depth` counts below each root, and `--breadth` never
+  hides one. Roots are ordered as rows are, by size unless `--sort` says otherwise.
+- A root row’s age never counts the root’s own time, as one root’s never does, so the
+  `docs` row reads what `fdu docs` shows at its root; `fdu .` can show a younger
+  `docs/`, whose own time it counts.
+  The total’s age is the newest of the roots’.
+- Flat listings print each path after its root’s label, as `find docs src` does:
+  `docs/guide.md`.
+- Each root reads its own `.gitignore` files, as it would alone; a rule in a shared
+  parent applies to neither.
+- A root equal to or inside another is refused, naming both, since its paths would count
+  twice: `fdu src src/core` exits 2. The check sees through a symlink, a macOS firmlink
+  (`/Users` and `/System/Volumes/Data/Users`), and a bind mount on Unix; on Windows it
+  compares canonical paths only.
+  It is conservative: `fdu / /mnt/usb --one-filesystem` is refused although the walk
+  would not have entered the second.
+- Each root’s snapshot lives where that root’s own would, under one cache directory.
+- `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+
+Machine formats keep every path relative to its root and say which root it is under
+([machine output](machine-output.md#several-roots)). Python takes a sequence:
+`fdu.report(["docs", "src"])`.
+
 ## Choose a View
 
 `--view` is a comma-separated list.
