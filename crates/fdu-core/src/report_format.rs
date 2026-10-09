@@ -1935,17 +1935,19 @@ fn render_text_tree(
 ) {
     let RenderOptions { color, bar_size } = options;
     let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
-    // The age column is as wide as the section's widest cell, so a first pass measures
-    // every row; a section with no rows has no column.
-    let age_width = root.map_or(0, |root| {
-        let mut widest = 0;
+    // The age column is as wide as the section's widest cell, so a first pass formats
+    // every row's cell, in the order the rows print, and the rows reuse them rather than
+    // formatting each age twice (review C8 on #191); a section with no rows has no column.
+    let mut ages = Vec::new();
+    if let Some(root) = root {
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            widest = widest.max(display_width(&tree_age_cell(node).0));
-            stack.extend(node.children.iter());
+            ages.push(tree_age_cell(node));
+            stack.extend(node.children.iter().rev());
         }
-        widest
-    });
+    }
+    let age_width = ages.iter().map(|(age, _)| display_width(age)).max().unwrap_or(0);
+    let mut ages = ages.into_iter();
     if let Some(root) = root {
         let grand = pick(size, root.bytes, root.allocated);
         let mut stack = vec![(root, 0)];
@@ -1971,7 +1973,7 @@ fn render_text_tree(
                     )
                 )
             };
-            let (age, style) = tree_age_cell(node);
+            let (age, style) = ages.next().expect("one age cell per row, in row order");
             let _ = writeln!(
                 out,
                 "{bar_prefix}{}  {}  {}  {indent}{}{}{}",

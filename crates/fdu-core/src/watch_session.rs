@@ -152,6 +152,10 @@ impl Persistence {
 /// touch that leaves `3m` at `3m` would otherwise repaint nothing; the other formats show
 /// the exact time or none. Whether a row counts, and so what each row shows, already
 /// follows from the rendering.
+///
+/// Each row adds its exact fields as fixed-width bytes rather than formatted text (review
+/// C10 on #191). The machine formats add nothing here: their rendering, which the identity
+/// already holds, carries both fields on every row.
 fn write_shown_activity(
     identity: &mut impl std::io::Write,
     report: &Report,
@@ -159,6 +163,9 @@ fn write_shown_activity(
 ) -> std::io::Result<()> {
     use crate::report_format::Format;
 
+    if format.is_machine() {
+        return Ok(());
+    }
     // Text renders whichever presentation the query asked for.
     let shown = if format == Format::Text { report.format } else { format };
     for section in &report.sections {
@@ -166,19 +173,39 @@ fn write_shown_activity(
             crate::query::Section::Tree { root: Some(root), .. } => {
                 let mut stack = vec![&**root];
                 while let Some(node) = stack.pop() {
-                    writeln!(identity, "{:?} {:?}", node.mtime_ns, node.complete)?;
+                    write_activity(identity, node.mtime_ns, node.complete)?;
                     stack.extend(node.children.iter());
                 }
             }
             crate::query::Section::Files { rows, .. } if shown == Format::Long => {
                 for row in rows {
-                    writeln!(identity, "{} {:?}", row.mtime_ns, row.complete)?;
+                    write_activity(identity, Some(row.mtime_ns), row.complete)?;
                 }
             }
             _ => {}
         }
     }
     Ok(())
+}
+
+/// One row's exact activity, as ten bytes: whether it has a time, the time, and its
+/// completeness, which is absent, false, or true.
+fn write_activity(
+    identity: &mut impl std::io::Write,
+    mtime_ns: Option<i64>,
+    complete: Option<bool>,
+) -> std::io::Result<()> {
+    let mut record = [0_u8; 10];
+    if let Some(mtime_ns) = mtime_ns {
+        record[0] = 1;
+        record[1..9].copy_from_slice(&mtime_ns.to_le_bytes());
+    }
+    record[9] = match complete {
+        None => 0,
+        Some(false) => 1,
+        Some(true) => 2,
+    };
+    identity.write_all(&record)
 }
 
 fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
