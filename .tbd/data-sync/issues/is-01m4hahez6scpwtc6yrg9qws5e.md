@@ -3,9 +3,9 @@ type: is
 id: is-01m4hahez6scpwtc6yrg9qws5e
 title: "Address PR #192 review D: several roots fix-round verification"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -24,7 +24,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-09T21:54:05.916Z
-updated_at: 2026-10-09T21:54:30.284Z
+updated_at: 2026-10-09T23:37:15.998Z
 started_at: 2026-10-09T21:54:30.280Z
+closed_at: 2026-10-09T23:37:15.951Z
+close_reason: "Review D on #192 addressed: all nine findings fixed (98451612..0d6011da); disposition reply posted on the PR."
+resolution: null
+duplicate_of: null
 ---
 Review D (round 2, follow-up) on PR #192 at 35266cab: https://github.com/jlevy/fdu/pull/192#issuecomment-6089866519
