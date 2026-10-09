@@ -4864,8 +4864,12 @@ mod tests {
         };
         assert_eq!(files(&prepared.report), files(&alone.report), "no snapshot was counted");
         assert!(prepared.pending.join_all().is_empty(), "every save succeeded");
-        let written = fs::read_dir(&inside).map_or(0, Iterator::count);
-        assert!(written >= 2, "both roots' snapshots were written after the walks");
+        for root in &roots {
+            let snapshot = crate::default_cache_path_in(&root.path, Some(&inside))
+                .expect("path")
+                .expect("a directory names a path");
+            assert!(snapshot.exists(), "{} was written after the walks", snapshot.display());
+        }
     }
 
     /// One handle spans every root: the counters end at the sum of the roots' walked
