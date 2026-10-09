@@ -50,6 +50,35 @@ test("portable golden paths require the exact fixture root and unchanged other f
     classify(session(["80 B  assets[SEP]logo.png"], ["80 B  assets/logo.png"]))?.id,
     "portable-golden-pattern",
   );
+  // A tree row's age is measured from each run's own instant; normalise() has masked
+  // one in seconds as [TIME] by the time a hunk is classified.
+  const row = (age, name = "src/ 2 files") => `█░░░░░░░░░    13%        36 B  ${age}    ${name}`;
+  for (const age of ["[TIME]", "     [TIME]", "-[TIME]", "3m", "1mo", "26y", "1,000y"]) {
+    assert.equal(
+      classify(session([row("[AGE]")], [row(age)]))?.id,
+      "portable-golden-pattern",
+      `an age of ${age} is the golden's [AGE]`,
+    );
+  }
+  for (const age of ["unknown", "—", "3w", "0mo5", ""]) {
+    assert.equal(classify(session([row("[AGE]")], [row(age)])), null, `${age} is not an age`);
+  }
+  assert.equal(
+    classify(session([row("[AGE]")], [row("3m", "src/ 3 files")])),
+    null,
+    "the rest of an aged row must still match exactly",
+  );
+  const remainder = (blank) => `░░░░░░░░░░     2%         6 B  ${blank}    … and 1 more file`;
+  assert.equal(
+    classify(session([remainder("[AGE_BLANK]")], [remainder("       ")]))?.id,
+    "portable-golden-pattern",
+    "the remainder's blank age cell is as wide as the widest age",
+  );
+  assert.equal(
+    classify(session([remainder("[AGE_BLANK]")], [remainder("  x")])),
+    null,
+    "a blank cell holds nothing but spaces",
+  );
   assert.equal(
     classify(session(['{"path": "dist[JSON_SEP]a.tar.gz"}'], ['{"path": "dist/a.tar.gz"}']))?.id,
     "portable-golden-pattern",
@@ -98,6 +127,12 @@ test("portable numeric masking touches observed values only and rejects literal 
     normalisePortableValues(golden + '+"age_reference_ns": 1, "observed_at_ns": 2, "allocated": 4096\n'),
     normalisePortableValues(golden + '+"age_reference_ns": 9, "observed_at_ns": 8, "allocated": 8192\n'),
     'two observations of the same typed fields serialize to one stable artifact line',
+  );
+  const tree = '-{"age_ns": [AGE_NS], "children": [{"age_ns": null}, {"age_ns": [AGE_NS]}]}\n';
+  assert.equal(
+    normalisePortableValues(tree + '+{"age_ns": 12, "children": [{"age_ns": null}, {"age_ns": 34}]}\n'),
+    tree + '+{"age_ns": [AGE_NS_VALUE], "children": [{"age_ns": null}, {"age_ns": [AGE_NS_VALUE]}]}\n',
+    'every row age the golden names is masked, and a null age stays null',
   );
   assert.equal(
     classify(session(['"allocated": 123'], ['"allocated": [ALLOCATED_VALUE]'])),
@@ -217,6 +252,26 @@ test("the stale-answer warning accepts only its exact option translation", () =>
     classify(session([warning("--stale-ok")], [warning("stale_ok")]))?.id,
     "surface-label",
     "alone, the option label is the whole difference",
+  );
+});
+
+test("a renamed parameter beside a portable age is still the one label difference", () => {
+  const row = (age) => `██████████   100%       256 B  ${age}  . 7 files`;
+  const tip = (view) => `tip: show it: ${view} code,documents`;
+  assert.equal(
+    classify(session([row("[AGE]"), tip("--view")], [row("[TIME]"), tip("view")]))?.id,
+    "surface-label",
+    "the age is notation; the label is the difference",
+  );
+  assert.equal(
+    classify(session([row("[AGE]"), tip("--view")], [row("[TIME]  x"), tip("view")])),
+    null,
+    "a row that differs beyond its age is not absorbed",
+  );
+  assert.equal(
+    classify(session([row("[AGE]")], [row("3m")]))?.id,
+    "portable-golden-pattern",
+    "an age alone is the portable class, never a label",
   );
 });
 

@@ -35,6 +35,8 @@ export function normalisePortableValues(text) {
           let value = added[i].value;
           for (const [field, named, marker] of [
             ['age_reference_ns', 'AGE_NS', 'AGE_NS_VALUE'],
+            // A row's age is measured from each run's own instant, as the reference is.
+            ['age_ns', 'AGE_NS', 'AGE_NS_VALUE'],
             ['observed_at_ns', 'MTIME_NS', 'MTIME_NS_VALUE'],
             ['allocated', 'ALLOCATED', 'ALLOCATED_VALUE'],
           ]) {
@@ -92,6 +94,12 @@ const portablePatternMatches = (line, actual, file) => {
   // shapes; every other field must still compare byte-for-byte.
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = escaped
+    // A tree row's age cell is the golden pattern [AGE], measured from each run's own
+    // instant and right-aligned to the section's widest cell, and the remainder row's
+    // blank cell is [AGE_BLANK], as wide as that cell. normalise() has already masked an
+    // age in seconds as [TIME]; every other unit of the ladder is still checked.
+    .replaceAll('\\[AGE\\]', '\\s*-?(?:\\[TIME\\]|[0-9]{1,3}(?:,[0-9]{3})*(?:mo|[smhdy]))')
+    .replaceAll('\\[AGE_BLANK\\]', ' +')
     .replaceAll('\\[AGE_NS\\]', '(?:\\[AGE_NS_VALUE\\]|-?\\d+)')
     // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
     // numeric. The same named golden pattern appears in both fields.
@@ -188,9 +196,10 @@ export const CLASSES = [
     id: 'portable-golden-pattern',
     title: 'Portable golden spelling of the same fixture path',
     why: [
-      'The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a',
-      'platform separator. The Python replay prints the sandbox root and a literal',
-      'separator. Only the exact fixture root and otherwise identical lines match;',
+      'The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a',
+      'platform separator, and [AGE] for an age measured from the run\'s own instant.',
+      'The Python replay prints the sandbox root, a literal separator, and the age.',
+      'Only the exact fixture root, a well-formed age, and otherwise identical lines match;',
       'exact bound and omitted-view tip translations, and the stale-answer warning',
       'naming each surface\'s option, can accompany those lines.',
     ],
@@ -233,12 +242,23 @@ export const CLASSES = [
     ],
     // Strip the flag dashes and normalise -/_ ; if the lines then match exactly, the
     // label is the whole of the difference. Anything else and this class does not apply.
-    matches: ({ removed, added }) =>
+    // A line that differs only in the golden's portable spelling of a value, such as a
+    // tree row's [AGE] in a report whose tip names the parameter, is notation rather than
+    // a second difference, as a [SEP] already is; at least one line must be the label.
+    matches: ({ file, removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
       !removed.some(usesBoundTip) &&
-      removed.every((line, i) => sameName(line) === sameName(added[i])) &&
-      removed.some((line, i) => line !== added[i]),
+      removed.every(
+        (line, i) =>
+          sameName(line) === sameName(added[i]) || portablePatternMatches(line, added[i], file),
+      ) &&
+      removed.some(
+        (line, i) =>
+          line !== added[i] &&
+          sameName(line) === sameName(added[i]) &&
+          !portablePatternMatches(line, added[i], file),
+      ),
   },
   {
     id: 'surface-vocabulary',

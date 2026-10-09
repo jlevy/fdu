@@ -25,10 +25,11 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --limit 10 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -83,6 +84,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": 0,
           "complete": true,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": true,
           "sort_value": null,
           "classification": null
@@ -97,6 +99,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": true,
           "sort_value": null,
           "classification": {
@@ -117,6 +120,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -137,6 +141,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": 0,
           "complete": true,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": null
@@ -151,6 +156,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -171,6 +177,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": 0,
           "complete": true,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": null
@@ -185,6 +192,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -205,6 +213,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -225,6 +234,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -245,6 +255,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
+          "modified_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -267,10 +278,11 @@ $ fdu --cache off --format json --size apparent --limit 10 project
 ```console
 $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -325,6 +337,10 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
         "dirs": 3,
         "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
         "newest_mtime_ns": [MTIME_NS],
+        "mtime_ns": [MTIME_NS],
+        "complete": true,
+        "age_ns": [AGE_NS],
+        "modified_at": "[RFC3339]",
         "truncated": true,
         "omissions": [
           {"reason": "rows", "entries": 5, "files": 6, "bytes": 141, "allocated": [ALLOCATED]}
@@ -341,6 +357,10 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
             "dirs": 0,
             "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]},
             "newest_mtime_ns": [MTIME_NS],
+            "mtime_ns": [MTIME_NS],
+            "complete": true,
+            "age_ns": [AGE_NS],
+            "modified_at": "[RFC3339]",
             "truncated": true,
             "omissions": [
               {"reason": "depth", "entries": 1, "files": 1, "bytes": 128, "allocated": [ALLOCATED]}
@@ -377,10 +397,11 @@ age.
 ```console
 $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": 1,
@@ -435,6 +456,10 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
         "dirs": 3,
         "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
         "newest_mtime_ns": [MTIME_NS],
+        "mtime_ns": [MTIME_NS],
+        "complete": false,
+        "age_ns": null,
+        "modified_at": null,
         "truncated": false,
         "omissions": [],
         "children": [
@@ -449,6 +474,10 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "dirs": 0,
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": [MTIME_NS],
+            "mtime_ns": [MTIME_NS],
+            "complete": null,
+            "age_ns": [AGE_NS],
+            "modified_at": "[RFC3339]",
             "truncated": false,
             "omissions": [],
             "children": []
@@ -464,6 +493,10 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "dirs": 0,
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": [MTIME_NS],
+            "mtime_ns": [MTIME_NS],
+            "complete": null,
+            "age_ns": [AGE_NS],
+            "modified_at": "[RFC3339]",
             "truncated": false,
             "omissions": [],
             "children": []
@@ -479,6 +512,10 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "dirs": 0,
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": [MTIME_NS],
+            "mtime_ns": [MTIME_NS],
+            "complete": null,
+            "age_ns": [AGE_NS],
+            "modified_at": "[RFC3339]",
             "truncated": false,
             "omissions": [],
             "children": []
@@ -494,6 +531,10 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "dirs": 0,
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": null,
+            "mtime_ns": [MTIME_NS],
+            "complete": false,
+            "age_ns": null,
+            "modified_at": null,
             "truncated": false,
             "omissions": [],
             "children": []
@@ -509,6 +550,10 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "dirs": 0,
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": null,
+            "mtime_ns": [MTIME_NS],
+            "complete": false,
+            "age_ns": null,
+            "modified_at": null,
             "truncated": false,
             "omissions": [],
             "children": []
@@ -524,6 +569,10 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "dirs": 0,
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": null,
+            "mtime_ns": [MTIME_NS],
+            "complete": false,
+            "age_ns": null,
+            "modified_at": null,
             "truncated": false,
             "omissions": [],
             "children": []
@@ -549,10 +598,11 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,

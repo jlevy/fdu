@@ -145,16 +145,27 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(provenance, dict):
         raise TypeError("report provenance must be an object")
     reference = content.pop("age_reference_ns", None)
+    # The same instant, rendered: it describes when the answer was read, as the reference
+    # does, and each row's `modified_at` is compared as it is.
+    content.pop("age_reference_at", None)
+
+    def residual(row: dict[str, Any]) -> None:
+        # Exact zero means the age agrees with its clock and mtime. Comparing this
+        # residual preserves age bugs while allowing different read times.
+        if "age_ns" in row and reference is not None and row["age_ns"] is not None:
+            row["age_ns"] = row["age_ns"] - (reference - row["mtime_ns"])
+
     for section in content.get("reports", []):
         for row in section.get("files", []):
-            if "age_ns" in row and reference is not None:
-                # Exact zero means the age agrees with its clock and mtime. Comparing
-                # this residual preserves age bugs while allowing different read times.
-                row["age_ns"] = (
-                    row["age_ns"] - (reference - row["mtime_ns"])
-                    if row["age_ns"] is not None
-                    else None
-                )
+            residual(row)
+        # Every tree node carries the activity it counts and its age, so the folded tier a
+        # cold tree takes and the full index a warm one reads are compared row by row.
+        tree = section.get("tree")
+        nodes = [tree] if isinstance(tree, dict) else []
+        while nodes:
+            node = nodes.pop()
+            residual(node)
+            nodes.extend(node.get("children", []))
     return content, provenance
 
 

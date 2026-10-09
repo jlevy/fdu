@@ -620,7 +620,7 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/10`, a `--watch`
+- `schema` before parsing anything else: a report carries `fdu.report/11`, a `--watch`
   stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. Treat an
   unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
@@ -935,7 +935,7 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -982,7 +982,7 @@ fdu 0.4.0[DEV_REVISION]
 
 ```console
 $ fdu --cache off --color never --size apparent .
-░░░░░░░░░░      —         0 B  . 0 files
+░░░░░░░░░░      —         0 B  —  . 0 files
 ! note: root size is zero, so shares are undefined
 ! tip: show more: --min-share=0%
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan

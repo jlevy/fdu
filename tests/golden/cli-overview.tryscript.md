@@ -11,6 +11,8 @@ env:
   NO_COLOR: "1"
   TZ: UTC
 patterns:
+  AGE_BLANK: ' +'
+  AGE: '\s*-?[0-9]{1,3}(?:,[0-9]{3})*(?:s|m|h|d|mo|y)'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
   PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
 ---
@@ -27,34 +29,34 @@ directory.
 
 ```console
 $ fdu --cache off --color never --size apparent realistic-project
-██████████   100%     7.6 KiB  . 16 files
-█████░░░░░    55%     4.1 KiB    src/ 7 files
-███░░░░░░░    34%     2.6 KiB      index/ 4 files
-█░░░░░░░░░    11%       886 B        snapshot.rs
-█░░░░░░░░░     9%       685 B        tree.rs
-█░░░░░░░░░     8%       641 B        format/ 1 file
-█░░░░░░░░░     8%       641 B          binary.rs
-█░░░░░░░░░     6%       462 B        mod.rs
-██░░░░░░░░    18%     1.4 KiB      commands/ 2 files
-█░░░░░░░░░     9%       726 B        scan.rs
-█░░░░░░░░░     9%       710 B        report.rs
-░░░░░░░░░░     2%       184 B      main.rs
-██░░░░░░░░    19%     1.4 KiB    docs/ 3 files
-█░░░░░░░░░    14%     1.1 KiB      guides/ 2 files
-█░░░░░░░░░     8%       653 B        cache.md
-█░░░░░░░░░     6%       475 B        performance.md
-░░░░░░░░░░     4%       343 B      reference/ 1 file
-░░░░░░░░░░     4%       343 B        cli.md
-██░░░░░░░░    15%     1.1 KiB    tests/ 3 files
-█░░░░░░░░░    12%       973 B      cli/ 2 files
-█░░░░░░░░░     7%       520 B        overview.rs
-█░░░░░░░░░     6%       453 B        cache.rs
-░░░░░░░░░░     3%       232 B      unit/ 1 file
-░░░░░░░░░░     3%       232 B        index.rs
-░░░░░░░░░░     5%       381 B    README.md
-░░░░░░░░░░     4%       285 B    benches/ 1 file
-░░░░░░░░░░     4%       285 B      reconcile.rs
-░░░░░░░░░░     2%       172 B    Cargo.toml
+██████████   100%     7.6 KiB  [AGE]  . 16 files
+█████░░░░░    55%     4.1 KiB  [AGE]    src/ 7 files
+███░░░░░░░    34%     2.6 KiB  [AGE]      index/ 4 files
+█░░░░░░░░░    11%       886 B  [AGE]        snapshot.rs
+█░░░░░░░░░     9%       685 B  [AGE]        tree.rs
+█░░░░░░░░░     8%       641 B  [AGE]        format/ 1 file
+█░░░░░░░░░     8%       641 B  [AGE]          binary.rs
+█░░░░░░░░░     6%       462 B  [AGE]        mod.rs
+██░░░░░░░░    18%     1.4 KiB  [AGE]      commands/ 2 files
+█░░░░░░░░░     9%       726 B  [AGE]        scan.rs
+█░░░░░░░░░     9%       710 B  [AGE]        report.rs
+░░░░░░░░░░     2%       184 B  [AGE]      main.rs
+██░░░░░░░░    19%     1.4 KiB  [AGE]    docs/ 3 files
+█░░░░░░░░░    14%     1.1 KiB  [AGE]      guides/ 2 files
+█░░░░░░░░░     8%       653 B  [AGE]        cache.md
+█░░░░░░░░░     6%       475 B  [AGE]        performance.md
+░░░░░░░░░░     4%       343 B  [AGE]      reference/ 1 file
+░░░░░░░░░░     4%       343 B  [AGE]        cli.md
+██░░░░░░░░    15%     1.1 KiB  [AGE]    tests/ 3 files
+█░░░░░░░░░    12%       973 B  [AGE]      cli/ 2 files
+█░░░░░░░░░     7%       520 B  [AGE]        overview.rs
+█░░░░░░░░░     6%       453 B  [AGE]        cache.rs
+░░░░░░░░░░     3%       232 B  [AGE]      unit/ 1 file
+░░░░░░░░░░     3%       232 B  [AGE]        index.rs
+░░░░░░░░░░     5%       381 B  [AGE]    README.md
+░░░░░░░░░░     4%       285 B  [AGE]    benches/ 1 file
+░░░░░░░░░░     4%       285 B  [AGE]      reconcile.rs
+░░░░░░░░░░     2%       172 B  [AGE]    Cargo.toml
 ! perf: took [PERF_TIME] to walk 16 files (7.6 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -76,10 +78,10 @@ $ node -e "const fs=require('node:fs'); fs.mkdirSync('shallow-project/pending',{
 
 ```console
 $ fdu --cache off --color never --size apparent --scan-depth 1 shallow-project
-██████████   100%     9.7 KiB  . 2 files
-██████████   100%     9.7 KiB    large
-░░░░░░░░░░     0%         0 B    pending/ 0 files
-░░░░░░░░░░    <1%         1 B    … and 1 more file
+██████████   100%     9.7 KiB  unknown  . 2 files
+██████████   100%     9.7 KiB  [AGE]    large
+░░░░░░░░░░     0%         0 B  unknown    pending/ 0 files
+░░░░░░░░░░    <1%         1 B  [AGE_BLANK]    … and 1 more file
 ! note: totals include descendants
 ! note: display limits: below 1% of root
 ! note: incomplete subtrees remain visible below the size threshold

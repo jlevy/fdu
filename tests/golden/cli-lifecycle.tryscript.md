@@ -13,6 +13,7 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
+  AGE: '\s*-?[0-9]{1,3}(?:,[0-9]{3})*(?:s|m|h|d|mo|y)'
   BYTES: '\d+'
   HUMAN_SIZE: '[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9])? (?:B|KiB|MiB|GiB|TiB|PiB)'
   # Fingerprints change with the engine version and the type rules, not with the tree.
@@ -86,17 +87,17 @@ No cached snapshots.
 
 ```console
 $ fdu --cache on --size apparent project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -142,17 +143,17 @@ Stdout carries the answer alone; stderr says it is stale and how to get a fresh 
 
 ```console
 $ fdu --cache on --size apparent project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -445,17 +446,17 @@ Cache already empty.
 
 ```console
 $ fdu --cache on --size apparent project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -481,17 +482,17 @@ accounting, it differs per platform, and it is not bytes a clear could reclaim.
 
 ```console
 $ fdu --cache on --size apparent project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -624,17 +625,17 @@ $ fdu --cache-status=all project
 
 ```console
 $ fdu --cache on --size apparent project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -664,17 +665,17 @@ Cache cleared.
 
 ```console
 $ fdu --cache on --size apparent project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -706,17 +707,17 @@ belong to a running writer, and only a sidecar no snapshot still wants.
 
 ```console
 $ fdu --cache on --size apparent project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0

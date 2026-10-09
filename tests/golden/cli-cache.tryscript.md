@@ -27,10 +27,11 @@ patterns:
 ```console
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -112,10 +113,11 @@ one.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -203,10 +205,11 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a 
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -286,10 +289,11 @@ Under `auto` the report scans fresh and leaves the snapshot as it found it.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -369,10 +373,11 @@ fixture expanded
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -443,10 +448,11 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -527,10 +533,11 @@ $ fdu --watch --stale-ok project
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": 1,
@@ -611,10 +618,11 @@ A run that writes replaces the corrupt file.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": 1,
@@ -695,10 +703,11 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -764,10 +773,11 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
 ```console
 $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -831,10 +841,11 @@ stronger snapshot usable by a subsequent default `--stale-ok` request.
 ```console
 $ fdu --no-gitignore --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -884,10 +895,11 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
 ```console
 $ fdu --stale-ok --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -948,10 +960,11 @@ way out.
 ```console
 $ fdu --no-gitignore --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
