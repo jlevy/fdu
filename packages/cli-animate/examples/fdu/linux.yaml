@@ -13,8 +13,8 @@
 # recording measures the drive. The intro states the tree's size and file count; update
 # it to match the clone.
 title: "fdu: the Linux kernel, real time"
-# 164 columns fit every result row; only the perf lines wrap.
-terminal: { cols: 164, rows: 48, font_size: 14 }
+# 140 columns fit every result row, since grouped rows stack their measures; only the perf lines wrap.
+terminal: { cols: 140, rows: 48, font_size: 14 }
 typing: { seed: 9 }
 path: [../../../../target/release]
 cwd: $FDU_DEMO_TREES/linux

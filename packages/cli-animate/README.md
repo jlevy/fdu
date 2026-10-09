@@ -98,7 +98,7 @@ cli-animate serve out/showcase.cast
 | `render <cast> [-o video] [--profile web\|gif\|master] [--master path]` | Capture the cast and deliver one profile; write `<video>.json` |
 | `deliver <master> -o video [--profile web\|gif]` | Derive another delivery from a kept master, without capturing again |
 | `verify <cast> <master>` | Check the lossless master frame-exactly against the cast |
-| `make <scenario> [--out dir] [--gif]` | Fonts, record, capture, verify, and deliver in one step |
+| `make <scenario> [--out dir] [--gif] [--margin px]` | Fonts, record, capture, verify, and deliver in one step; `--margin 0` crops to the window’s edge |
 | `serve <cast>` | Serve the replay page on localhost |
 | `fonts` | Fetch Planetaire Mono Text v0.2.0, verified by SHA-256 |
 | `doctor` | Report required programs and assets |
