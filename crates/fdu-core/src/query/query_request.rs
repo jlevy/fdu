@@ -3811,11 +3811,13 @@ mod tests {
     /// stays itself, and a leading `.` stays because it is how the caller named the root.
     #[test]
     fn root_labels_are_normalized_by_their_components() {
-        let (_temporary, base) = roots_fixture();
+        let (temporary, base) = roots_fixture();
+        // Spelled from the temporary directory as the system names it: the canonical one
+        // is a verbatim path on Windows, where `/` and `.` are names, not separators.
         for spelling in ["a/", "a//", "a/./"] {
-            let given = format!("{}/{spelling}", base.display());
+            let given = format!("{}/{spelling}", temporary.path().display());
             let roots = Roots::resolve(&[given.as_str()]).expect("a directory");
-            assert_eq!(roots.first().label, base.join("a"), "{spelling}");
+            assert_eq!(roots.first().label, temporary.path().join("a"), "{spelling}");
             assert_eq!(roots.first().path, base.join("a"), "{spelling}");
         }
         let current = Roots::resolve(&["."]).expect("the working directory");
@@ -3839,16 +3841,20 @@ mod tests {
 
     #[test]
     fn a_root_named_twice_is_refused_naming_both_spellings() {
-        let (_temporary, base) = roots_fixture();
+        let (temporary, base) = roots_fixture();
         let a = base.join("a");
         assert_eq!(
             roots_refusal(&[&a, &a]),
             RequestError::RootsRepeated { first: a.clone(), second: a.clone() }
         );
-        let respelled = PathBuf::from(format!("{}/./a/", base.display()));
+        // Spelled from the temporary directory as the system names it, not from the
+        // canonical one: on Windows that is a verbatim path, where `/` and `.` are names
+        // rather than separators, so no caller could spell a root that way.
+        let spelled = temporary.path().join("a");
+        let respelled = PathBuf::from(format!("{}/./a/", temporary.path().display()));
         assert_eq!(
-            roots_refusal(&[&a, &respelled]),
-            RequestError::RootsRepeated { first: a.clone(), second: a.clone() },
+            roots_refusal(&[&spelled, &respelled]),
+            RequestError::RootsRepeated { first: spelled.clone(), second: spelled.clone() },
             "one directory spelled two ways normalizes to one label"
         );
         let relative = Path::new("./src");
