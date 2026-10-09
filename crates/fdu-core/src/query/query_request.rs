@@ -638,13 +638,16 @@ fn first_overlap(facts: &[RootFacts]) -> Option<Overlap> {
         for first in same.into_iter().chain(alias) {
             consider(first.min(position), first.max(position), true);
         }
+        // A root is never inside itself: a directory bind-mounted beneath itself
+        // (`mount --bind /a /a/b/c`) has its own identity among its ancestors, which the
+        // pairwise comparison this replaced never asked about (review D6 on #192).
         for ancestor in root.canonical.ancestors().skip(1) {
-            if let Some(&outer) = by_path.get(ancestor) {
+            if let Some(&outer) = by_path.get(ancestor).filter(|outer| **outer != position) {
                 consider(outer, position, false);
             }
         }
         for identity in &root.ancestors {
-            if let Some(&outer) = by_identity.get(identity) {
+            if let Some(&outer) = by_identity.get(identity).filter(|outer| **outer != position) {
                 consider(outer, position, false);
             }
         }
@@ -4001,6 +4004,20 @@ mod tests {
         }
         let disjoint: Vec<RootFacts> = (0..2_000).map(|i| at(&format!("/r/{i}"))).collect();
         assert_eq!(first_overlap(&disjoint), None);
+        // A root is never paired with itself (review D6 on #192): `/a` bind-mounted at
+        // `/a/b/c` gives that root `/a`'s identity, which is also among its ancestors.
+        let identified = |canonical: &str, identity, ancestors: &[(u64, u64)]| RootFacts {
+            canonical: PathBuf::from(canonical),
+            identity: Some(identity),
+            ancestors: ancestors.to_vec(),
+        };
+        let looped = identified("/a/b/c", (1, 2), &[(1, 3), (1, 2), (1, 1)]);
+        assert_eq!(first_overlap(&[looped.clone(), identified("/x", (1, 9), &[(1, 1)])]), None);
+        assert_eq!(
+            first_overlap(&[looped, identified("/a", (1, 2), &[(1, 1)])]),
+            Some(Overlap { outer: 0, inner: 1, same: true }),
+            "the directory it is bound from is the same directory"
+        );
     }
 
     /// A path under one of a report's roots prints after the root's label when there are
