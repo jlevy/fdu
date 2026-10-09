@@ -26,12 +26,11 @@ use crate::content::{
 };
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, ScanScope};
-use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
+use crate::index::{EntryId, ExtTally, Index, RollUpScalars, newer};
 use crate::query::query_request::{Basis, Request};
 use crate::query::query_selection::{
     Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey,
 };
-use crate::query::query_subtrees::newer;
 use crate::query::{Rejection, ReportProvenance, TreeStatus, query_subtrees};
 
 /// Which roll-up or listing a view reports.
@@ -1688,16 +1687,17 @@ pub(crate) fn report_in(
     let needs_walk = query.needs_selection_walk();
     let tree_views = query.views.iter().any(|view| query.tree_for(*view));
     // A tree row's age needs its newest activity and whether its subtree was listed in
-    // full. An unfiltered tree reads both from one pass over the index by id, which also
-    // proves which children a partial tree may hide below the share threshold. A walked
-    // tree folds activity in the walk and reads completeness from the subtree
-    // measurements, shared with the selection predicates; over a complete index with no
-    // scan depth every subtree is complete and they are not taken for the tree.
-    let activity = (tree_views && !needs_walk).then(|| query_subtrees::activity(index));
-    let needs_tree_measurements = tree_views
-        && needs_walk
-        && (index.state().coverage != crate::Coverage::Complete
-            || index.scope().max_depth.is_some());
+    // full. Over a complete index with no scan depth every subtree is complete, so an
+    // unfiltered tree reads each row's activity from the roll-up the index maintains and
+    // takes no pass. Otherwise an unfiltered tree reads both from one pass over the index
+    // by id, which also proves which children a partial tree may hide below the share
+    // threshold. A walked tree folds activity in the walk and, where a subtree can be
+    // unlisted, reads completeness from the subtree measurements it shares with the
+    // selection predicates.
+    let every_subtree_listed = query_subtrees::every_subtree_listed(index);
+    let activity = (tree_views && !needs_walk && !every_subtree_listed)
+        .then(|| query_subtrees::activity(index));
+    let needs_tree_measurements = tree_views && needs_walk && !every_subtree_listed;
     let directories = (needs_tree_measurements
         || (needs_walk
             && (query.selection.kinds.is_empty()
@@ -1709,7 +1709,7 @@ pub(crate) fn report_in(
     let recency = match (&activity, &walked) {
         (Some(table), _) => Some(TreeRecency::Unfiltered(table)),
         (None, Some(walked)) => Some(TreeRecency::Walked { walked, measured: tree_measurements }),
-        (None, None) => None,
+        (None, None) => tree_views.then_some(TreeRecency::Maintained(index)),
     };
     // Unfiltered metric and file views share one `FileRow` walk only when more than one
     // section consumes it. A single section keeps ownership of its one traversal, so a
@@ -1940,7 +1940,13 @@ impl Walked {
 /// Where a tree reads each directory row's newest activity and completeness.
 #[derive(Clone, Copy)]
 enum TreeRecency<'a> {
-    /// An unfiltered tree: one pass over the index by id ([`query_subtrees::activity`]).
+    /// An unfiltered tree over an index whose every subtree was listed
+    /// ([`query_subtrees::every_subtree_listed`]): each row's activity is read from the
+    /// roll-up the index maintains ([`query_subtrees::maintained_activity`]), and every
+    /// row is complete.
+    Maintained(&'a Index),
+    /// An unfiltered tree over an index that may hold an unlisted subtree: one pass over
+    /// the index by id ([`query_subtrees::activity`]).
     Unfiltered(&'a query_subtrees::ActivityTable),
     /// A walked tree: activity the walk folded over what the selection counts, and
     /// completeness from the subtree measurements when the index or its scope can leave
@@ -1955,6 +1961,7 @@ impl TreeRecency<'_> {
     /// The newest activity directory `id`'s row counts ([`TreeNode::mtime_ns`]).
     fn activity(self, id: EntryId) -> Option<i64> {
         match self {
+            Self::Maintained(index) => query_subtrees::maintained_activity(index, id),
             Self::Unfiltered(table) => table.get(id).and_then(|value| value.newest_ns),
             Self::Walked { walked, .. } => walked.activity_of(id),
         }
@@ -1966,6 +1973,7 @@ impl TreeRecency<'_> {
     /// a row; reading it as incomplete keeps it out of any share proof.
     fn complete(self, id: EntryId) -> bool {
         match self {
+            Self::Maintained(_) => true,
             Self::Unfiltered(table) => table.get(id).is_some_and(|value| value.complete),
             Self::Walked { measured, .. } => {
                 measured.is_none_or(|values| values.get(&id).is_some_and(|value| value.complete))

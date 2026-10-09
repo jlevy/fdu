@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::index::{EntryId, Index};
+use crate::index::{EntryId, Index, newer};
 use crate::query::query_selection::NameIdentity;
 use crate::query::{Candidate, IgnoredEntries, Selection};
 use crate::{Attrs, Coverage, EntryKind};
@@ -190,9 +190,8 @@ pub(super) struct DirectoryActivity {
 /// slot.
 ///
 /// Dense rather than keyed by id: an unfiltered tree reads it for every row it admits
-/// and every row it sorts by recency, and a retained index pays for this table on every
-/// report, so the read is a slot load rather than a search. A non-directory's slot is
-/// empty.
+/// and every row it sorts by recency, so the read is a slot load rather than a search. A
+/// non-directory's slot is empty.
 pub(super) struct ActivityTable {
     slots: Vec<Option<DirectoryActivity>>,
 }
@@ -221,6 +220,11 @@ impl ActivityTable {
 /// Newest activity and completeness of every directory, for a selection that admits
 /// every entry: [`measure`]'s recency and completeness without its sizes, its paths, or
 /// its selection.
+///
+/// The reader of an index that may hold an unlisted subtree, where completeness takes a
+/// pass anyway. Where every subtree was listed ([`every_subtree_listed`]) each directory
+/// is complete and its activity is maintained with its roll-up, so an unfiltered tree
+/// reads [`maintained_activity`] per row instead, and a test holds the two equal.
 ///
 /// One iterative post-order traversal by entry id and depth. A directory's activity is
 /// the newest of its own time (the report root's excepted), its non-directory children's
@@ -275,12 +279,25 @@ pub(super) fn activity(index: &Index) -> ActivityTable {
     ActivityTable { slots }
 }
 
-/// The later of two optional instants.
-pub(super) fn newer(left: Option<i64>, right: Option<i64>) -> Option<i64> {
-    match (left, right) {
-        (Some(left), Some(right)) => Some(left.max(right)),
-        (left, right) => left.or(right),
-    }
+/// Whether every subtree of `index` was listed in full: the whole index is complete and
+/// no scan depth left a directory retained but unlisted. [`measure`] and [`activity`] call
+/// every directory complete exactly then, so a tree needs neither for completeness.
+pub(super) fn every_subtree_listed(index: &Index) -> bool {
+    index.state().coverage == Coverage::Complete && index.scope().max_depth.is_none()
+}
+
+/// [`activity`]'s newest activity of live directory `id`, read from the roll-up the index
+/// maintains: its own time, the report root's excepted, and the newest activity beneath
+/// it ([`Index::newest_activity_below`]).
+///
+/// A field read per row where [`activity`] is a pass over every entry. A retained index
+/// (a library caller's [`Index`], an opened root, a watch session) answers report after
+/// report, and the pass cost each one a traversal of the whole index, whose entries an
+/// opened root's incrementally built arena scatters; reading only the rows a tree shows
+/// keeps those reports at the cost of their rows.
+pub(super) fn maintained_activity(index: &Index, id: EntryId) -> Option<i64> {
+    let own = (id != EntryId::ROOT).then(|| index.attrs_of(id).map(|attrs| attrs.mtime_ns));
+    newer(own.flatten(), index.newest_activity_below(id))
 }
 
 #[cfg(test)]
