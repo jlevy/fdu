@@ -5,14 +5,14 @@ title: Record the 0.4.0 Linux demo from the release candidate and embed it in RE
 kind: task
 status: open
 priority: 1
-version: 4
+version: 5
 labels:
   - release
   - docs
 dependencies: []
 parent_id: is-01m47z5n33np3b15yena1k3hqt
 created_at: 2026-10-08T06:55:32.944Z
-updated_at: 2026-10-08T18:08:44.461Z
+updated_at: 2026-10-09T02:05:25.394Z
 ---
 Maintainer decision 2026-10-07: the 0.4.0 demo video is GitHub-hosted and lands before the tag.
 
@@ -28,4 +28,4 @@ Blocked on disk space: ~1.8-3.8 GiB free on the internal SSD; needs a release bu
 
 ## Notes
 
-Shipping decision 2026-10-08: GIF inline + MP4 as a verified 12th release asset. Committed on #185 (3d0b2ec7: docs/media/fdu-demo.{mp4,gif}; d111a98c: README embed linking releases/latest/download/fdu-demo.mp4, notes embed at blob/v0.4.0 linking releases/download/v0.4.0/fdu-demo.mp4). Release tooling to attach it: separate PR (subagent, claude/release-demo-asset); must merge before #185.
+2026-10-09: #185 merged with the 164-column take. Maintainer asked for 140 columns, no margin, after grouped rows stack their measures (fdu-r7lw); re-record from that build in the follow-up PR.
