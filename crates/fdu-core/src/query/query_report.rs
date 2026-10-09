@@ -1793,7 +1793,10 @@ pub(crate) fn report_in(
 /// [`Error::InvalidRequest`](crate::Error::InvalidRequest) with
 /// [`RequestError::RootMismatch`] when the indexes are not the roots' indexes, one for one
 /// and in order; with [`RequestError::RootScopesDiffer`] when they hold different scan
-/// scopes; and whatever [`report`] refuses of any of them.
+/// scopes; with [`RequestError::RootReachedInside`] when, on Unix, one root's index
+/// entered a directory with another root's device and inode, as
+/// [`prepare_roots_report`](crate::prepare_roots_report) refuses it; and whatever
+/// [`report`] refuses of any of them.
 pub fn report_roots(
     indexes: &[&Index],
     roots: &Roots,
@@ -1819,6 +1822,21 @@ pub fn report_roots(
             first: indexes[0].root_path().to_path_buf(),
             other: other.root_path().to_path_buf(),
         }));
+    }
+    // An index that entered another root through an alias, a bind mount or a firmlink no
+    // path showed when the roots were resolved, would count that root's paths twice, and a
+    // several-root report refuses it as its walks do (review D3 on #192). Each index is
+    // compared as it was walked, with no filesystem read, so the read stays pure.
+    let aliases = roots.aliases();
+    if !aliases.is_empty() {
+        for (position, index) in indexes.iter().enumerate() {
+            let other = |identity| aliases.other_root(identity, position);
+            if let Some((inner, at)) = index.entered_directory_with(other) {
+                return Err(crate::Error::InvalidRequest(
+                    roots.reached_inside(position, inner, &at),
+                ));
+            }
+        }
     }
     let labels = roots.is_several().then_some(roots);
     read_roots(indexes, labels, request, generated_at, NameIdentity::Native)
@@ -8059,6 +8077,45 @@ mod tests {
             Err(crate::Error::InvalidRequest(RequestError::RootScopesDiffer { first, other }))
                 if first == Path::new("/docs") && other == Path::new("/src")
         ));
+    }
+
+    /// Indexes read into one report are compared against the roots' identities as each
+    /// was walked, and one that entered another root through an alias is refused, as a
+    /// several-root report refuses the walk that did (review D3 on #192): `/srv` beside
+    /// `/mnt/view/x`, where `/mnt/view` is `/srv/data` bound elsewhere. One that only
+    /// listed the directory, at the scan depth, counted nothing twice.
+    #[test]
+    fn report_roots_refuses_an_index_that_entered_another_root() {
+        let identity = |dev, inode| Attrs { inode, dev, ..Attrs::default() };
+        let roots = Roots::identified(vec![
+            (NamedRoot { label: "srv".into(), path: "/srv".into() }, (1, 3)),
+            (NamedRoot { label: "view/x".into(), path: "/mnt/view/x".into() }, (1, 30)),
+        ]);
+        let inner = rooted("/mnt/view/x", &[("f", EntryKind::File, 1, 1)]);
+        let outer = |entered: bool| {
+            let mut ops = vec![
+                upsert("data", EntryKind::Dir, identity(1, 10)),
+                upsert("data/x", EntryKind::Dir, identity(1, 30)),
+            ];
+            if entered {
+                ops.push(upsert("data/x/f", EntryKind::File, attrs(1, 1)));
+            }
+            let mut index = Index::new("/srv");
+            index.apply_ok(&Observation::new(ops));
+            index
+        };
+        let (entered, listed) = (outer(true), outer(false));
+        let request =
+            crate::test_support::read_of(&entered, query(&[ViewSpec::Tree], Selection::default()));
+        assert!(matches!(
+            report_roots(&[&entered, &inner], &roots, &request, generated_at()),
+            Err(crate::Error::InvalidRequest(RequestError::RootReachedInside { inner, outer, at }))
+                if inner == Path::new("view/x")
+                    && outer == Path::new("srv")
+                    && at == Path::new("srv").join("data").join("x")
+        ));
+        report_roots(&[&listed, &inner], &roots, &request, generated_at())
+            .expect("listed, not entered");
     }
 
     /// A flat row's size is a layout decision: the root index rides in padding today, and

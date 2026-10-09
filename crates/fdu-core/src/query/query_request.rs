@@ -375,6 +375,14 @@ impl Roots {
         Self { roots, identities }
     }
 
+    /// [`Self::named`], with the device and inode a test states for each root.
+    #[cfg(test)]
+    pub(crate) fn identified(roots: Vec<(NamedRoot, (u64, u64))>) -> Self {
+        let (roots, identities) =
+            roots.into_iter().map(|(root, identity)| (root, Some(identity))).unzip();
+        Self { roots, identities }
+    }
+
     /// Every root, in the caller's order.
     pub fn as_slice(&self) -> &[NamedRoot] {
         &self.roots
@@ -406,6 +414,16 @@ impl Roots {
             }
         }
         RootAliases { positions }
+    }
+
+    /// The refusal for root `outer`'s walk having entered root `inner` through an alias, at
+    /// `at` under `outer` ([`RequestError::RootReachedInside`]).
+    pub(crate) fn reached_inside(&self, outer: usize, inner: usize, at: &Path) -> RequestError {
+        RequestError::RootReachedInside {
+            inner: self.roots[inner].label.clone(),
+            outer: self.roots[outer].label.clone(),
+            at: labelled_path(Some(&self.roots), outer, at).into_owned(),
+        }
     }
 }
 

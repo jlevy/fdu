@@ -998,12 +998,7 @@ fn prepare_roots_internal(
         };
         saves.extend(run.save);
         if let Some((other, at)) = run.reached {
-            let inner = &roots.as_slice()[other];
-            let refusal = crate::query::RequestError::RootReachedInside {
-                inner: inner.label.clone(),
-                outer: root.label.clone(),
-                at: crate::query::labelled_path(Some(roots.as_slice()), position, &at).into_owned(),
-            };
+            let refusal = roots.reached_inside(position, other, &at);
             return Err(failed(Error::InvalidRequest(refusal), saves, progress));
         }
         states.push(run.state);
