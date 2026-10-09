@@ -307,8 +307,8 @@ listing it. A refresh or a reconciliation of one path re-reads its directory the
 way. Without that, a watch kept a directory aged as it was before its newest file was
 deleted or an old file was moved in, where a one-shot report read it as just changed.
 Every maintenance test had compared the index with itself or with a model fed the same
-operations, which cannot see a fact no operation carried, so a property test now holds
-a watched tree to a cold walk of the same tree after every generated step.
+operations, which cannot see a fact no operation carried, so a property test now holds a
+watched tree to a cold walk of the same tree after every generated step.
 
 ### Concurrency Guards
 
