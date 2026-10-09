@@ -5,7 +5,7 @@ title: "Release fdu 0.4.0: notes epilogue + content views imply analysis"
 kind: epic
 status: open
 priority: 1
-version: 25
+version: 26
 labels: []
 dependencies: []
 child_order_hints:
@@ -34,6 +34,10 @@ child_order_hints:
   - is-01m4fn9paq6cpqznw00ycka7qc
   - is-01m4fn9prqtf3qkq29agaa0q0j
 created_at: 2026-10-06T06:42:14.754Z
-updated_at: 2026-10-09T06:23:37.238Z
+updated_at: 2026-10-09T07:30:59.584Z
 ---
 Bring stack #174 -> #177 (plus the document-shares fix) through review, merge, release prep (version, CHANGELOG date, release notes), the release checklist (stability pass incl. correctness runbook, preflight, rehearsal, body), tag and publish (maintainer go-ahead), and a final demo video from the released build.
+
+## Notes
+
+PUBLISHED 2026-10-09 07:26:50Z. fdu 0.4.0 = release commit c041ed1c8ac5c588ac4fe964ab95bc14f1e5b0ac (#189 merge; tree 2c728b23), tag v0.4.0 (annotated, unsigned, object 81eb6a96, GitHub verified). Stability pass 15/15 on tree 2c728b23 (run as f405067d via make release-stability ARGS=... with FDU_QA_* exported; record /Users/levy/fdu-release/0.4.0-pass2/stability/). Preflight all ok (DEMO matched the declaration). Rehearsal https://github.com/jlevy/fdu/actions/runs/37893372604 (8 files verified; local notes.md byte-identical to the rehearsal's announcement notes, sha256 f2ad4aef...). make release-demo created the draft (first attempt hit the listing lag fdu-x81v; rerun reused it) and attached fdu-demo.mp4 (3,784,222 bytes, sha256 31e720b3..., state uploaded). Publishing run https://github.com/jlevy/fdu/actions/runs/37897343884 (all jobs success; release environment approved by the agent on the maintainer's explicit end-to-end go-ahead). Release https://github.com/jlevy/fdu/releases/tag/v0.4.0: immutable, 12 assets. make release-published: crates.io fdu-core, crates.io fdu, PyPI fdu all identical. make release-announced --cargo: body matches notes.md; 12 assets match (11 + declared demo); docs.rs fdu-core and fdu built; uvx fdu@0.4.0 and fdu@latest print fdu 0.4.0; cargo install --locked fdu prints fdu 0.4.0. First release with automatic announcement of a declared demo: Announce on GitHub succeeded and all twelve verified. Homepage: README GIF served from raw/main as image/gif (1,451,807 bytes, sha256 39a54b05...), renders and animates; releases/latest/download/fdu-demo.mp4 returns the declared MP4 byte for byte. release/v0.4.0 deleted by make release-cleanup.
