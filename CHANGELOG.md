@@ -7,6 +7,43 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The text tree shows each row’s age, between size and name: how long ago anything the
+  row counts last changed, the newest modification among its own entry and every entry
+  beneath it that it counts, files, directories, and symlinks alike.
+  The scan root’s own time never counts.
+  With no filter a directory’s tree age equals its `--long` age; under a filter each row
+  ages what it counts.
+  An age is gray `unknown` where part of the subtree was not listed, a gray `—` on a row
+  that counts nothing, and blank on the `… and N more files` row.
+- Machine output: tree nodes carry `mtime_ns`, `complete`, `age_ns`, and `modified_at`;
+  list rows carry `modified_at`; the envelope carries `age_reference_at` beside
+  `age_reference_ns`. Each `*_at` field is the RFC 3339 UTC rendering of its exact
+  nanoseconds, and `modified_at` is null wherever the time is only a lower bound.
+- Python: `TreeNode` gains `mtime_ns`, `complete`, `age_ns`, and `modified_at`,
+  `FileRow` gains `modified_at`, and `Report` gains `age_reference_at`; each `datetime`
+  is timezone-aware UTC, derived from the nanoseconds and floored to the microsecond.
+- Rust: `TreeNode` gains `mtime_ns`, `complete`, and `age_ns`.
+
+### Changed
+
+- **Breaking:** the report schema is `fdu.report/11`, for the fields above.
+- **Breaking:** ages past a month read in months of 30.44 days (`11mo`) and past a year
+  in years of 365.25 days (`3y`), in `--long` as in the tree, where they read in days
+  (`4,382d`). Time bounds still take days; `--modified-before 2mo` is refused and the
+  refusal names the days, as in `use 60d`.
+- **Breaking:** `--sort mtime` on a tree orders rows by the age the column shows, their
+  newest counted activity of any kind, where it ordered them by their newest regular
+  file. `newest_mtime_ns` keeps its files-only meaning.
+- A watch measures each repaint’s ages, and `Session::report` and Python’s
+  `Watch.report()` theirs, from the instant of that repaint, so a file written during
+  the session no longer shows a negative age.
+  The windows the query selects by stay the absolute bounds its request resolved when it
+  was built. A repaint is still skipped when nothing a reader sees changed: ages rolling
+  over repaint nothing, and any change in a row’s activity repaints.
+- Rust: `TreeNode` struct literals need the three new fields.
+
 ## [0.4.0] - 2026-10-09
 
 fdu 0.4.0 is a breaking release about what a report asks for and what it says.

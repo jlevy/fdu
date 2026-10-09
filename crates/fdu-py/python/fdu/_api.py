@@ -313,6 +313,10 @@ class Watch(Iterator[tuple[Change, ...]]):
         change, so redrawing them needs the session's own index rather than the one it was
         opened from. Reporting the opened index repaints numbers that stopped being true
         at the first event -- a display that looks like it works and does not.
+
+        Its ages are measured from the instant of this call, so a file written since the
+        watch started is not dated in the future; the time windows the query selects by
+        stay the absolute bounds they resolved to when the watch began.
         """
 
         handle = _call(self._native.report)

@@ -185,7 +185,8 @@ START HERE
     fdu . --view=recent --limit=10             ten most recently modified files
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
-  to depth 5, showing contents with at least 1% of the selected root size. Hidden
+  to depth 5, showing contents with at least 1% of the selected root size, each
+  with its age: how long ago anything it counts last changed. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 
   code and documents read file contents; --analyze is the extra control for
@@ -247,6 +248,9 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   --breadth caps children per directory; --limit caps data rows per section.
   Both default to all. --depth all expands levels. Omission notes name each bound.
   Display bounds never change totals or limit the filesystem scan.
+  A tree row's age is its newest counted change, of files, directories, and symlinks;
+  unknown where a subtree was not listed. Ages read s, m, h, d, mo (30.44 days), and
+  y (365.25 days); time bounds take days. --sort mtime orders rows by that age.
 
   --format paths gives matching paths only; --long adds size, age, and path.
   Flat lists are complete and size-ranked by default; --sort name lists by name.

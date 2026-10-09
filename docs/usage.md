@@ -111,15 +111,30 @@ add up to 100%, within display rounding.
 The default output is the directory tree: `fdu .`, `fdu . --view list`, and
 `fdu . --format tree` print the same bounded directory roll-ups.
 Significant files appear as leaves alongside directory totals.
-Each tree row shows a share bar, percentage of the selected root, size, then its
+Each tree row shows a share bar, percentage of the selected root, size, age, then its
 indented name. The single remainder row, when present, uses those same columns for
-unlisted root branches and ends `… and N more files`. A listed directory already
-represents its entire subtree, even when descendants are not expanded.
+unlisted root branches, with a blank age, and ends `… and N more files`. A listed
+directory already represents its entire subtree, even when descendants are not expanded.
 Listed root branches plus the remainder account for the root total.
 Unknown quantities are labeled unknown rather than estimated.
 `--bar-size=20` widens the bar; `--bar-size=0` or a negative value hides it.
 The default is 10 characters.
 This affects human trees only.
+
+A row’s age is how long ago anything it counts last changed: the newest modification
+among its own entry and every entry beneath it that it counts, files, directories, and
+symlinks alike, so deleting or renaming a file makes its directory young and a freshly
+installed tree reads as new even when its files keep archive times.
+The scan root’s own time does not count.
+With no filter, a directory’s age in the tree is its age in `--long`; under a filter,
+each row ages only what it counts, so `--kind file --modified-before 1y` never shows a
+row aged `3d`. An age is `unknown` where part of the subtree was not listed, and `—` on
+a row that counts nothing.
+`--sort mtime` orders tree rows by this age.
+Ages read in seconds, minutes, hours, days, months of 30.44 days (`mo`), and years of
+365.25 days (`y`), floored, so `11mo` is under a year.
+Time bounds take days, since a month has no fixed length: `--modified-before 60d`, not
+`2mo`.
 
 | Format | List output |
 | --- | --- |
@@ -208,8 +223,10 @@ directory, but its name alone does not prove ownership.
 Directory size sums eligible regular-file contents, excluding directory-inode and
 symlink bytes. Its modification time is the newest timestamp on the root or an eligible
 descendant, including directories and symlinks; an empty directory uses its own time.
-Long displays age relative to one request instant (`30d`, `2h`, or a negative age for a
-future timestamp). This measures modification activity, not access time or last use.
+Long displays age relative to one request instant (`30d`, `2h`, `3y`, or a negative age
+for a future timestamp), on the same ladder as the tree.
+A watch measures each repaint from its own instant.
+This measures modification activity, not access time or last use.
 `--size apparent` switches to logical file lengths without changing matching semantics.
 
 Exclusions apply throughout a matching directory’s subtree before size/age predicates.

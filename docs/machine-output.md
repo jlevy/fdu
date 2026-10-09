@@ -56,6 +56,7 @@ projection as a `tree` object, so inspect the payload key as well as `view`.
 | `complete` | Whether a directory’s eligible subtree was listed in full; false makes `bytes`, `allocated`, `files`, `dirs`, and `mtime_ns` lower bounds and `age_ns` null; null for other kinds |
 | `mtime_ns` | Signed epoch nanoseconds; a directory uses the newest eligible root/descendant timestamp |
 | `age_ns` | Signed age at `age_reference_ns`; negative for a future timestamp, null if the reference cannot be represented or the subtree is incomplete |
+| `modified_at` | `mtime_ns` as an RFC 3339 UTC instant to the nanosecond, or null when the subtree is incomplete and `mtime_ns` only a lower bound |
 | `ignored` | Boolean classification, or null when rules were unobserved or governing classification is unknown |
 | `sort_value` | Value of the requested content sort metric, or null when absent/unavailable |
 | `classification` | For a regular file: stable file type, family, detection source/confidence, and generated/vendor/documentation flags; null for other kinds |
@@ -63,14 +64,23 @@ projection as a `tree` object, so inspect the payload key as well as `view`.
 The request’s nullable `sort_metric` identifies the content metric used to rank rows.
 Unavailable values sort last in either direction, with deterministic path ties.
 
-The envelope’s `age_reference_ns` is the fixed request instant in epoch nanoseconds.
+The envelope’s `age_reference_ns` is the request instant every age is measured from, in
+epoch nanoseconds, and `age_reference_at` is the same instant as RFC 3339 UTC; both are
+null when it cannot be represented.
 When representable, `age_ns = age_reference_ns - mtime_ns`. Re-rendering a Report never
 samples another clock.
+A one-shot report samples the instant before its walk, so a file written during the walk
+can show a small negative age.
+A watch measures each repaint from that repaint’s own instant, so ages stay current over
+a long session, while the time windows it selects by stay the absolute bounds its
+request resolved when it was built.
 `provenance.generated_at` describes report generation and `provenance.scan_started_at`
 is the conservative incremental-sync watermark; neither should be substituted for the
 age reference. Signed age can exceed an i64 even though each timestamp fits one.
 Use an integer-preserving parser; nanosecond values exceed JavaScript’s exact binary64
 integer range.
+Each RFC 3339 field is the readable twin of an exact `*_ns` field, never a
+replacement for it.
 
 Directory metrics apply exclusions throughout the subtree before positive name/kind,
 size, and time predicates.
@@ -85,16 +95,49 @@ includes an entry whose governing `.gitignore` rules could not be verified.
 Known sibling tree rows retain their exact ignored subtotals.
 The report notes this condition; null never means zero ignored entries.
 
+## Tree Nodes
+
+A tree section’s `tree` is its root node, and every node lists its `children` in the
+section’s sort order.
+
+| Field | Meaning |
+| --- | --- |
+| `name` | Final path component, or `.` for the root |
+| `path`, optional `path_raw` | Relative path, empty for the root, and lossless platform-tagged identity for non-Unicode paths |
+| `kind` | `dir` or `file` |
+| `entry_ignored` | This entry’s own `.gitignore` classification, or null when its governing controls were not observed or could not be verified |
+| `bytes`, `allocated` | Apparent and allocated bytes of the regular files the row counts |
+| `files`, `dirs` | Regular files and directories the row counts beneath it; a file counts itself |
+| `ignored` | The part of those tallies `.gitignore` rules ignore, or null when governing rules were unobserved or unverified |
+| `newest_mtime_ns` | Newest modification among the regular files the row counts, or null when it counts none |
+| `mtime_ns` | Newest modification among every entry the row counts, of any kind; null when it counts none |
+| `complete` | Whether a directory’s subtree was listed in full; false makes its tallies and `mtime_ns` lower bounds; null for a file |
+| `age_ns` | Signed age of `mtime_ns` at `age_reference_ns`; null when the row counts nothing, its subtree is incomplete, or the reference cannot be represented |
+| `modified_at` | `mtime_ns` as an RFC 3339 UTC instant to the nanosecond; null when `mtime_ns` is null or only a lower bound |
+| `truncated` | Whether display bounds withheld any child |
+| `omissions` | First-exclusion records for the children display bounds withheld ([below](#tree-bounds)) |
+| `children` | The rows displayed beneath this one |
+
+A row counts its own entry when the selection admits it, and every entry beneath it that
+its tallies count. The report root is a traversal boundary, never an admitted entry, so
+its own time never counts.
+`mtime_ns` includes directory and symlink activity: deleting or renaming a file changes
+no surviving file’s time but is a modification of the subtree, and an install that
+preserves archive times, as npm and `tar` do, is dated by its directories.
+Under a selection that admits everything, a directory’s `mtime_ns` is its list row’s, so
+`--long` and the tree agree; under a filter each follows its own row’s population.
+`newest_mtime_ns` keeps its files-only meaning, which a summary reports too.
+`--sort mtime` orders tree rows by `mtime_ns`, the age the text column shows.
+An omission or remainder carries no time.
+
 ## Tree Bounds
 
 Each tree section states `limits`: `depth`, `min_share`, `breadth`, and `rows`. A null
 integer bound means unlimited; `min_share` is an exact percentage string.
 The default is depth 5, share `1%`, and unlimited breadth and rows.
-`tree` is null when no data row is admitted, including `--limit=0`. Each tree node has
-`entry_ignored`: `true` or `false` for that entry’s own `.gitignore` classification, or
-null when the governing controls were not observed or could not be verified.
-This remains independent of the node’s selected-subtree `ignored` tally, including for
-empty directories and zero-byte files.
+`tree` is null when no data row is admitted, including `--limit=0`. A node’s
+`entry_ignored` remains independent of its selected-subtree `ignored` tally, including
+for empty directories and zero-byte files.
 
 Sections and nodes carry `omissions`. Each item names `reason` (`share`, `breadth`,
 `depth`, or `rows`), the number of direct child roots omitted in `entries`, the

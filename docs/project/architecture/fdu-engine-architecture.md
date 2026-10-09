@@ -397,8 +397,14 @@ every matching root, including overlapping ones.
 Opened report budgets charge the subtree-measurement pass as well as selection and
 shaping.
 The default unfiltered tree still reads maintained roll-ups without constructing
-a flat inventory. See [machine output](../../machine-output.md) for age/reference fields
-and conversion rules.
+a flat inventory.
+Its age column adds one pass over the index by entry id, without paths:
+each directory’s newest activity counts directories and symlinks, which no roll-up
+keeps, and reads the roll-up’s newest regular file so that a folded index, which kept
+only the largest files as entries, still counts the times of the files it folded.
+A filtered tree folds the same maximum in its selection walk.
+See [machine output](../../machine-output.md) for age/reference fields and conversion
+rules.
 
 A derived report plan is transient execution state for a provably one-shot request.
 It produces the same `Report` shape and values as indexed execution.

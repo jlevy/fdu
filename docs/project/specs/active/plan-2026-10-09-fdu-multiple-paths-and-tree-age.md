@@ -57,17 +57,17 @@ $ fdu docs src
   `Index` for one root; several roots compose at report time.
 - **Overlapping roots.** A root equal to or inside another is refused
   ([below](#overlapping-roots-are-refused)).
-- **An age on remainder rows** (`… and 108 more files`).
-  See [Remainder rows](#remainder-rows-carry-no-age).
-- **A switch to hide the column.** There is no columns axis, and the six-axes rule
-  rules out a one-off flag; `--bar-size 0` remains the only column control.
+- **An age on remainder rows** (`… and 108 more files`). See
+  [Remainder rows](#remainder-rows-carry-no-age).
+- **A switch to hide the column.** There is no columns axis, and the six-axes rule rules
+  out a one-off flag; `--bar-size 0` remains the only column control.
 
 ## Background
 
 ### Ages
 
-Every walker reads each entry’s modification time on every platform, and the index
-keeps two recency values:
+Every walker reads each entry’s modification time on every platform, and the index keeps
+two recency values:
 
 - `RollUp.newest_mtime_ns`, maintained incrementally: the newest **regular file** under
   a directory, `0` in the roll-up and `null` in `RollUpSummary` when it has none.
@@ -80,23 +80,22 @@ keeps two recency values:
 
 [The directory query formats plan](plan-2026-09-20-directory-query-formats.md) kept them
 apart: summary keeps its released files-only meaning, a row’s age is subtree activity.
-`RollUp` documents why it excludes directories: their times change on every child add
-or remove, so a files-only “what changed recently” is not dominated by directories.
+`RollUp` documents why it excludes directories: their times change on every child add or
+remove, so a files-only “what changed recently” is not dominated by directories.
 The text tree shows neither value today.
 
 ### Several roots
 
-fdu takes exactly one PATH.
-`du`, `dust`, `fd`, `find`, and pdu take several; pdu joins them under a synthetic
-`(total)` root and removes overlapping ones
+fdu takes exactly one PATH. `du`, `dust`, `fd`, `find`, and pdu take several; pdu joins
+them under a synthetic `(total)` root and removes overlapping ones
 ([the pdu research](../../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)).
 Two open beads asked for this: `fdu-onoo` (several roots under a combined total) and
 `fdu-khu8`, whose open question 2 noted that one index per root composes easily in the
 library but that the command-line ergonomics and the cache story were undesigned.
 
 Everything below one report assumes one root: `Basis.root`, one `Index`, one snapshot
-file in `Delivery.cache_path`, one `Report.root`, root-relative row paths, and shares and
-bounds against that root’s total.
+file in `Delivery.cache_path`, one `Report.root`, root-relative row paths, and shares
+and bounds against that root’s total.
 Logical-word estimates are pooled from statistics that are never serialized, so two
 rendered reports cannot simply be added; a merge has to happen inside the engine, before
 bounds.
@@ -109,8 +108,9 @@ bounds.
 
 A tree row’s age is the newest modification time among the entries it counts: its own
 entry, when the selection admits it, and every entry beneath it that its tallies count,
-of any kind. The report root is a traversal boundary, never an admitted entry, so its
-own time never counts, as no list row shows the root either.
+of any kind.
+The report root is a traversal boundary, never an admitted entry, so its own
+time never counts, as no list row shows the root either.
 A row that counts no entries has no age.
 
 For an admit-all selection this is exactly the list row’s definition, `SubtreeValues`,
@@ -125,13 +125,13 @@ Counting directory and symlink activity, rather than files alone, is deliberate:
 - **It answers the column’s question.** Deleting or renaming a file changes no surviving
   file’s time, but it is a modification of the subtree.
 - **Files-only lies about installed trees.** npm writes package files with a fixed 1985
-  time and `tar` preserves archive times, so a `node_modules` installed today reads about
-  `40y` by files alone and shows its install time by activity.
+  time and `tar` preserves archive times, so a `node_modules` installed today reads
+  about `40y` by files alone and shows its install time by activity.
 - **It agrees with `--long`.** A third definition of age would make two views report two
   ages for one directory.
 
-The cost, which is why `RollUp` excludes directories, is that churn (a lock file
-created and removed) makes a directory look recent.
+The cost, which is why `RollUp` excludes directories, is that churn (a lock file created
+and removed) makes a directory look recent.
 For a column labelled age, recent activity is the truthful answer, and the files-only
 value stays available as `newest_mtime_ns`.
 
@@ -193,11 +193,11 @@ Each repaint, and `Session::report` (which Python’s `Watch.report` calls), now
 with a copy of the request whose `now` is that repaint’s instant; the windows do not
 slide, because they are already absolute.
 The skip-identical-repaints check compares the exact `mtime_ns` and `complete` of every
-rendered row, plus what it compares today, with the age reference held fixed, so an
-idle tree repaints nothing while its ages roll over and any change in a row’s activity
+rendered row, plus what it compares today, with the age reference held fixed, so an idle
+tree repaints nothing while its ages roll over and any change in a row’s activity
 repaints. The `Request.now` doc comment, the machine-output reference (“fixed request
-instant”), the Python README, the skill, and the design principles’ watch section
-(which calls the default tree size-only) are amended.
+instant”), the Python README, the skill, and the design principles’ watch section (which
+calls the default tree size-only) are amended.
 
 A one-shot report samples `now` before the walk, so a write during the walk can show a
 small negative age (`-2s`). It is printed as measured, as `--long` already does.
@@ -209,7 +209,8 @@ The folded one-shot tier counts most files in a tally without keeping their time
 today only the full index could give the remainder an age; showing one on one route and
 not the other would make the route part of the answer.
 The cell is blank, which keeps columns aligned, and the parent row’s age covers
-everything beneath it. Machine-format omissions carry no time.
+everything beneath it.
+Machine-format omissions carry no time.
 Keeping a maximum in the folded tally would make it possible on both routes and is
 recorded as a follow-up.
 
@@ -232,16 +233,15 @@ an old tree does not read as `4,382d`:
 | under 365.25 d | months of 30.44 days, `11mo` |
 | otherwise | years of 365.25 days, `3y` |
 
-Units switch at their own length, so no cell reads `0mo` or `0y`.
-Values are floored toward zero and signed: `-5m` for a future time, `-0s` under a second
-ahead, as today. A cell is at most four characters plus a sign below a century.
+Units switch at their own length, so no cell reads `0mo` or `0y`. Values are floored
+toward zero and signed: `-5m` for a future time, `-0s` under a second ahead, as today.
+A cell is at most four characters plus a sign below a century.
 `mo` and `y` are display units only.
 `parse_age` refuses them because a month or year has no fixed length to resolve a window
 against (the reasoning at `query_values.rs` stands); its refusal now names the day
-equivalent (`use 60d`).
-The `--long` column changes with the ladder: the unit tests that pin `30d` and
-`1,000d`, and the `cli-axes` golden that expects days for its 2000-01-01 fixture (now
-`26y`), move with it.
+equivalent (`use 60d`). The `--long` column changes with the ladder: the unit tests that
+pin `30d` and `1,000d`, and the `cli-axes` golden that expects days for its 2000-01-01
+fixture (now `26y`), move with it.
 
 #### Machine formats
 
@@ -252,7 +252,8 @@ The `--long` column changes with the ladder: the unit tests that pin `30d` and
 `modified_at` is the RFC 3339 UTC rendering of `mtime_ns` from the existing
 `format_rfc3339_nanos` (`2026-10-09T07:26:50.123456789Z`), and it is `null` whenever the
 age is null for incompleteness: a lower bound rendered as an instant would present it as
-a modification time. The integer fields stay; they are exact and already read.
+a modification time.
+The integer fields stay; they are exact and already read.
 The schema becomes `fdu.report/11`.
 
 Python’s tree-node and list-row models gain the same fields.
@@ -267,26 +268,27 @@ A new engine type beside `Basis` models the roots of one report: a non-empty, or
 list, each with a **label** and its canonical path.
 The label is the path as the caller gave it, normalized by its components
 (`PathBuf::from_iter(path.components())`), which drops repeated and trailing separators
-without turning `/` into an empty string or `C:\` into a drive-relative `C:`.
-A label that is not valid UTF-8 serializes with a `label_raw`, as paths already do.
+without turning `/` into an empty string or
+`C:\` into a drive-relative `C:`. A label that is not valid UTF-8 serializes with a `label_raw`,
+as paths already do.
 
 Constructing it validates every root before anything is scanned: each must exist and be
 a directory, with the errors and exit codes one root already has, and no two may
-overlap.
-The rest of the request is shared: the engine derives one per-root `Request` from one
-spec, each with today’s single-root identity — basis, snapshot, content sidecar, cache
-policy — so a root answered from cache and a root walked cold can sit in one report.
+overlap. The rest of the request is shared: the engine derives one per-root `Request`
+from one spec, each with today’s single-root identity — basis, snapshot, content
+sidecar, cache policy — so a root answered from cache and a root walked cold can sit in
+one report.
 
 #### Overlapping roots are refused
 
 `fdu a a/b` cannot be the sum of `fdu a` and `fdu a/b`: every path under `a/b` would
-count twice, and fdu counts each path once ([usage](../../../usage.md)).
-Collapsing the inner root would be a guess about intent and would change `.gitignore`
-results, since rules come only from inside the scanned root.
+count twice, and fdu counts each path once ([usage](../../../usage.md)). Collapsing the
+inner root would be a guess about intent and would change `.gitignore` results, since
+rules come only from inside the scanned root.
 So a root equal to or inside another is refused, naming both labels
-(`fdu: src/core is inside src; name one or the other`).
-Refusing is the reversible choice: accepting overlap later is additive, while changing
-what a total means after release is not.
+(`fdu: src/core is inside src; name one or the other`). Refusing is the reversible
+choice: accepting overlap later is additive, while changing what a total means after
+release is not.
 
 Canonical paths alone miss aliases: on macOS, `/Users` and `/System/Volumes/Data/Users`
 are the same directory through a firmlink, and Linux bind mounts behave the same way.
@@ -298,9 +300,9 @@ though the scope would not have descended into the second root.
 #### Caches
 
 `Delivery.cache_path` names one snapshot file, derived today from the one root.
-A report over several roots takes the cache directory instead (explicit or default),
-and the engine derives each root’s snapshot path with `default_cache_path_in`, the
-function the command line uses for one root.
+A report over several roots takes the cache directory instead (explicit or default), and
+the engine derives each root’s snapshot path with `default_cache_path_in`, the function
+the command line uses for one root.
 A delivery that names a single explicit snapshot file is refused with several roots.
 Each root that defers a snapshot write returns its own pending save, and the caller
 completes them all.
@@ -316,10 +318,10 @@ combined total reaches it of its own root, so each root keeps a superset of what
 merged tree can show.
 
 One progress handle spans the run, so counters are cumulative; the progress frame names
-the root being walked and its position (`src (2/3)`).
-Any root that fails fails the run; under `--allow-partial` a partial root makes the
-report partial. The `perf:` line sums walked files and bytes and names each cache tier
-when the roots differ.
+the root being walked and its position (`src (2/3)`). Any root that fails fails the run;
+under `--allow-partial` a partial root makes the report partial.
+The `perf:` line sums walked files and bytes and names each cache tier when the roots
+differ.
 
 #### Reading several indexes into one report
 
@@ -346,9 +348,9 @@ when every root is) and one ordinary tree per root, built as follows:
 2. Every root is a row whatever its share, a zero-byte root included, because the caller
    named it; `--breadth` does not apply to the roots, and `--depth` counts below each
    root, as for that root alone.
-3. Roots are ordered by the existing tree sorter, with their labels as names, so ties and
-   `--reverse` behave as for any rows; under a metric sort a root has no value and sorts
-   last.
+3. Roots are ordered by the existing tree sorter, with their labels as names, so ties
+   and `--reverse` behave as for any rows; under a metric sort a root has no value and
+   sorts last.
 4. The row cap (`--limit`) and `--limit 0` are applied once, over the assembled
    pre-order with the total row first, using each root’s own completeness.
    Rows past the cap, root rows included, are omitted with the usual records.
@@ -400,12 +402,13 @@ and `--kind`’s vocabulary and gains nothing.
 
 - **Command line.** `PATH...` takes one or more (usage `fdu [OPTIONS] <PATH>...`).
   `--watch`, `--cache-status`, and `--cache-clear` refuse a second PATH with a usage
-  error naming the limit. Help, `--docs`, and the skill describe several roots.
+  error naming the limit.
+  Help, `--docs`, and the skill describe several roots.
 - **Python.** `fdu.report` takes one path or a sequence of paths in its first argument,
   testing for `str` and `os.PathLike` before treating it as a sequence; the `root=`
-  keyword keeps working. `Report.roots` is a tuple of labelled roots or `None`;
-  `Report.root` is `None` for several; rows gain `root`.
-  `fdu.open` and `fdu.scan` stay single-root.
+  keyword keeps working.
+  `Report.roots` is a tuple of labelled roots or `None`; `Report.root` is `None` for
+  several; rows gain `root`. `fdu.open` and `fdu.scan` stay single-root.
   The parity shim accepts several positionals, so the golden corpus replays on both
   surfaces.
 
@@ -473,20 +476,21 @@ Two stacked pull requests on gh-stack, the age column first.
 
 ## Testing Strategy
 
-- **Engine unit tests.**
-  Ages are unknown for incomplete subtrees, absent for empty rows, and negative for
-  future times. The ladder is pinned at every unit boundary, including `-0s`.
-  Roots validation covers duplicates, nesting, a symlink alias, a firmlink alias where the
-  host has one, trailing separators, `/`, and a non-UTF-8 label.
+- **Engine unit tests.** Ages are unknown for incomplete subtrees, absent for empty
+  rows, and negative for future times.
+  The ladder is pinned at every unit boundary, including `-0s`. Roots validation covers
+  duplicates, nesting, a symlink alias, a firmlink alias where the host has one,
+  trailing separators, `/`, and a non-UTF-8 label.
   Multi-root sections equal the merge of single-root ones for disjoint fixtures,
   including pooled word estimates and unknown ignored shares.
-  In the tree, every root is a row and `--depth` counts per root; `--limit` applies once;
-  per-root remainders appear; shares are of the total. Flat top-k is exact across roots.
+  In the tree, every root is a row and `--depth` counts per root; `--limit` applies
+  once; per-root remainders appear; shares are of the total.
+  Flat top-k is exact across roots.
 - **Path independence.** Folded-versus-full ages; several-root requests against the
   merge of single-root cold answers.
 - **Watch.** A file modified after the session starts shows a non-negative age on the
-  next repaint; an idle tree still repaints nothing; a touch inside one age bucket
-  still repaints.
+  next repaint; an idle tree still repaints nothing; a touch inside one age bucket still
+  repaints.
 - **Goldens.** Default tree sessions use the existing `AGE` pattern for the column
   (fixture times are fresh, so ages are never literals); a new session over two fixtures
   covers the text tree, a flat listing, JSON shape, and the overlap refusal.

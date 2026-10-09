@@ -96,15 +96,20 @@ A one-level summary of the clone, its hidden `.git/` directory included:
 
 ```console
 $ fdu . --depth=1
-██████████   100%      63 MiB  . 1,185 files (4.0 KiB gitignored)
-████░░░░░░    41%      25 MiB    .git/ 28 files
-████░░░░░░    38%      24 MiB    docs/ 492 files
-█░░░░░░░░░     9%     5.5 MiB    crates/ 126 files
-█░░░░░░░░░     8%     4.8 MiB    explorations/ 286 files
-░░░░░░░░░░     2%     1.2 MiB    tests/ 112 files (4.0 KiB gitignored)
-░░░░░░░░░░     1%     700 KiB    scripts/ 43 files
-░░░░░░░░░░     2%     972 KiB    … and 98 more files
+██████████   100%      63 MiB  1m  . 1,185 files (4.0 KiB gitignored)
+████░░░░░░    41%      25 MiB  1m    .git/ 28 files
+████░░░░░░    38%      24 MiB  1m    docs/ 492 files
+█░░░░░░░░░     9%     5.5 MiB  1m    crates/ 126 files
+█░░░░░░░░░     8%     4.8 MiB  1m    explorations/ 286 files
+░░░░░░░░░░     2%     1.2 MiB  1m    tests/ 112 files (4.0 KiB gitignored)
+░░░░░░░░░░     1%     700 KiB  1m    scripts/ 43 files
+░░░░░░░░░░     2%     972 KiB        … and 98 more files
 ```
+
+Beside each size is the row’s age: how long ago anything it counts last changed, a file
+or a directory, here the clone itself a minute earlier.
+An age reads in seconds, minutes, hours, days, months (`mo`), or years (`y`), and is
+`unknown` where part of a subtree could not be listed.
 
 The result goes to stdout.
 On stderr, notes and a suggestion follow, then a `perf:` line with the run’s timing,
