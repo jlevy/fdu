@@ -3,9 +3,9 @@ type: is
 id: is-01m4fxax3s3274rk55njmnrksk
 title: "Roots: command line PATH..., Python report(paths), parity shim"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -16,7 +16,11 @@ parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
 hold: null
 hold_until: null
 created_at: 2026-10-09T08:44:05.109Z
-updated_at: 2026-10-09T16:17:20.626Z
+updated_at: 2026-10-09T16:40:52.225Z
 started_at: 2026-10-09T16:17:20.625Z
+closed_at: 2026-10-09T16:40:52.223Z
+close_reason: CLI PATH..., one-PATH refusals for --watch/--cache-status/--cache-clear, progress frame with root position, summed perf line naming each tier, labelled status warnings (b6b2d1b5); Python fdu.report(path or sequence), Report.roots/ReportRoot, TreeSection.total/trees, root on rows/errors/refusals, stubs, parity shim with several positionals (bf4fa8db); goldens and path-independence roots phase (9ea8d76c)
+resolution: null
+duplicate_of: null
 ---
 CLI: PATH... (usage fdu [OPTIONS] <PATH>...); --watch, --cache-status, --cache-clear refuse a second PATH (usage error naming the limit); perf: line sums and names tiers when roots differ; text prints label/path. Python: fdu.report takes a path or a sequence (test str and os.PathLike first; root= keyword still works); Report.roots tuple or None; Report.root None for several; rows gain root; stubs. Parity shim accepts several positionals.
