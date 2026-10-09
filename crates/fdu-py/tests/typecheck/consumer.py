@@ -39,6 +39,19 @@ for tree_section in tree_report.sections:
         changed: datetime | None = node.modified_at
         print(reference_at, activity, listed, age, changed)
 
+several: fdu.Report = fdu.report([Path("docs"), "src"], cache=fdu.CachePolicy.OFF)
+one_root: Path | None = several.root
+labelled: tuple[fdu.ReportRoot, ...] | None = several.roots
+for several_section in several.sections:
+    if isinstance(several_section, fdu.TreeSection):
+        total: fdu.TreeTotal | None = several_section.total
+        trees: tuple[fdu.RootTree, ...] = several_section.trees
+        print(one_root, labelled, total, trees)
+    elif isinstance(several_section, fdu.FilesSection) and labelled is not None:
+        for row in several_section.files:
+            if row.root is not None:
+                print(labelled[row.root].path / row.path)
+
 registry: str = '[[kind]]\nid = "notes"\nfamily = "prose"\nextensions = ["md"]\n'
 live: opened.OpenedIndex = opened.OpenedIndex.open(
     Path("."), opened.OpenedOptions(max_files=10_000, type_rules=registry)

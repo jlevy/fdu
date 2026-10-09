@@ -963,7 +963,7 @@ impl PyOneShot {
 /// say (fdu-elnn).
 #[pyfunction]
 #[pyo3(signature = (
-    root,
+    roots,
     *,
     cache = "auto",
     stale_ok = false,
@@ -1000,7 +1000,7 @@ impl PyOneShot {
 )]
 fn report_once(
     py: Python<'_>,
-    root: PathBuf,
+    roots: Vec<PathBuf>,
     cache: &str,
     stale_ok: bool,
     cache_dir: Option<PathBuf>,
@@ -1033,6 +1033,9 @@ fn report_once(
     // bounds resolve against come from one reading rather than two.
     let now = SystemTime::now();
     let scan_depth = max_depth.map(|depth| depth.to_string());
+    // Several roots share one request, built for the first and rooted at each by the
+    // engine; an empty list is the engine's refusal, after the request's own.
+    let first = roots.first().cloned().unwrap_or_default();
     let fresh = RequestSpec {
         scan_depth: scan_depth.as_deref(),
         one_filesystem,
@@ -1040,7 +1043,7 @@ fn report_once(
         control_budget,
         control_line_limit,
         analyze: Some(analyze),
-        ..RequestSpec::new(&root)
+        ..RequestSpec::new(&first)
     };
     // Refused before any scan, in the API's own names; the engine refuses the same request
     // with the same typed value for a Rust caller.
@@ -1066,12 +1069,16 @@ fn report_once(
         words_per_page,
     )?;
 
+    let cache =
+        parse_cache_policy(cache, AxisNames::FIELDS.cache).map_err(|error| value_error(&error))?;
+    // The cache directory, then the roots, in the order one root's report has always
+    // failed; each root's snapshot is named under this one directory by the engine.
+    let cache_dir = fdu_core::default_cache_dir(cache_dir.as_deref()).map_err(to_py_err)?;
+    let roots = fdu_core::query::Roots::resolve(&roots).map_err(to_py_err)?;
     let delivery = Delivery {
-        cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
-            .map_err(|error| value_error(&error))?,
+        cache,
         stale_ok,
-        cache_path: fdu_core::default_cache_path_in(&root, cache_dir.as_deref())
-            .map_err(to_py_err)?,
+        cache_path: None,
         workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
         batch_size: fdu_core::ScanConfig::default().batch_size,
         order: fdu_core::ScanOrder::default(),
@@ -1081,11 +1088,15 @@ fn report_once(
         watch: None,
     };
 
-    let prepared = py.detach(|| fdu_core::prepare_report(&request, &delivery));
-    let (report, pending_save, _performance) = prepared.map_err(to_py_err)?;
-    // Joined before returning: the command line overlaps the write with rendering, but a
-    // caller who gets a value back should not still owe the filesystem a write.
-    pending_save.join().map_err(to_py_err)?;
+    let request = fdu_core::query::RootsRequest::new(roots, request);
+    let prepared =
+        py.detach(|| fdu_core::prepare_roots_report(&request, &delivery, cache_dir.as_deref()));
+    let fdu_core::RootsPrepared { report, pending, .. } = prepared.map_err(to_py_err)?;
+    // Joined before returning: the command line overlaps the writes with rendering, but a
+    // caller who gets a value back should not still owe the filesystem a write. Every
+    // root's save is joined before the first failure is raised.
+    let joined: Vec<_> = pending.into_iter().map(fdu_core::PendingSave::join).collect();
+    joined.into_iter().collect::<fdu_core::Result<Vec<()>>>().map_err(to_py_err)?;
     Ok(PyOneShot { report })
 }
 
