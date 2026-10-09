@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 80 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 83 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
@@ -284,6 +284,9 @@ dead end.
 | 200 | [Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change](#exp-200--linux-h187-sorts-only-what-the-folded-tree-keeps-a-38-consumer-cut-with-no-wall-change) | H187 | `default-tree` | -0.3% | ❌ rejected |
 | 201 | [Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees](#exp-201--linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-faster-and-ahead-of-every-pdu-mode-on-both-real-trees) | H185, H186, H188, H189 | `default-tree` | -3.1% | 📏 baseline |
 | 202 | [Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees](#exp-202--linux-the-030-release-end-to-end-the-default-tree-48-faster-than-021-and-ahead-of-pdu-and-diskus-on-all-three-trees) | — | `default-tree` | -48.0% | 📏 baseline |
+| 209 | [macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower](#exp-209--macos-h191-a-per-report-activity-pass-makes-a-retained-tree-report-6-and-20-times-slower) | H191 | `index-second-report` | +496.2% | ❌ rejected |
+| 210 | [macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report](#exp-210--macos-h192-maintained-activity-leaves-the-age-column-per-row-work-7-and-18-microseconds-a-report) | H192 | `index-second-report` | +5.8% | ✅ accepted |
+| 211 | [macOS: H192 replicated over an opened root, 23 microseconds a report](#exp-211--macos-h192-replicated-over-an-opened-root-23-microseconds-a-report) | H192 | `opened-second-report` | +17.8% | ✅ accepted |
 
 ## The experiments
 
@@ -6662,6 +6665,112 @@ anchor; no decision rests on it.
 Full record:
 [`exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md`](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)
 
+### exp-209 — macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower
+
+❌ rejected · 2026-10-09 · H191 · commit `66652033`
+
+Control: 148ef78e probe: main before the age column
+
+Candidate: 66652033 probe: the age column, each row aged by a per-report activity pass
+
+**`index-second-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 372.8 | 374.1 | -2.27% (n.s.) | [-10.78%, +5.71%] |
+| component (ms) | 0.1 | 0.8 | +496.23% (regression) | [+451.68%, +964.74%] |
+| cpu (ms) | 652.6 | 657.9 | -0.36% (n.s.) | [-4.92%, +6.75%] |
+| user (ms) | 231.1 | 232.2 | +0.08% (n.s.) | [-2.99%, +2.46%] |
+| system (ms) | 425.4 | 423.0 | +0.05% (n.s.) | [-8.22%, +9.78%] |
+| peak rss (MiB) | 27.5 | 27.7 | +1.50% (n.s.) | [-4.51%, +9.19%] |
+
+Other jobs, wall time: `default-tree` -2.1% (n.s.), `opened-second-report` -18.2%.
+
+Cost to carry: 932 lines; no new dependencies.
+
+fac3d744, the pass with its tests
+
+**Rejected:** Second tree report over a retained Index 0.128 -> 0.789 ms, +496.23%
+[+451.68%, +964.74%], and over an opened root 0.252 -> 4.92 ms, +1,544.52%
+[+251.98%, +4,579.65%]: work per entry on every retained report; default-tree wall
+-2.07% [-12.16%, +9.55%] on a loaded host, peak RSS +10.41% from the per-slot table.
+Replaced by the maintained per-directory maximum (H192, exp-210).
+
+Full record:
+[`exp-209-macos-h191-a-per-report-activity-pass-makes-a-retained-tree-.md`](../experiments/exp-209-macos-h191-a-per-report-activity-pass-makes-a-retained-tree-.md)
+
+### exp-210 — macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report
+
+✅ accepted · 2026-10-09 · H192 · commit `10ae731f`
+
+Control: 148ef78e probe: main before the age column
+
+Candidate: 10ae731f probe: the age column, each directory keeping its newest activity
+beside its roll-up
+
+**`index-second-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 320.0 | 335.3 | +5.69% (n.s.) | [-6.42%, +14.15%] |
+| component (ms) | 0.1 | 0.1 | +5.79% (regression) | [+2.66%, +7.52%] |
+| cpu (ms) | 960.2 | 982.1 | +2.04% (n.s.) | [-15.05%, +7.30%] |
+| user (ms) | 217.7 | 217.4 | -0.98% (n.s.) | [-1.67%, +3.01%] |
+| system (ms) | 749.4 | 762.4 | +2.57% (n.s.) | [-18.05%, +10.10%] |
+| peak rss (MiB) | 26.7 | 26.8 | +1.24% (n.s.) | [-2.41%, +4.86%] |
+
+Other jobs, wall time: `cold-scan-index` -0.6% (n.s.), `default-tree` +3.4% (n.s.),
+`opened-second-report` +1.6% (regression), `warm-snapshot-load` -0.2% (n.s.).
+
+Cost to carry: 208 lines; no new dependencies.
+
+10ae731f, the maintained maximum replacing the pass on complete indexes
+
+**Accepted:** Second tree report over a retained Index +5.79% [+2.66%, +7.52%], 7.5 us,
+and over an opened root +13.70% [+11.68%, +14.69%], 18.5 us: per-row work, against the
+0.66 and 4.7 ms the pass added (exp-209); cold-scan-index wall -0.64% [-4.99%, +2.87%]
+and warm-snapshot-load wall -0.24% non-inferior, snapshot load component +2.21%
+[+0.53%, +2.71%] within +3%; default-tree wall +3.37% [-11.80%, +13.10%] unresolved on a
+loaded host. Accepted against the per-row bar review A on #191 set; Linux unmeasured
+(fdu-088k).
+
+Full record:
+[`exp-210-macos-h192-maintained-activity-leaves-the-age-column-per-row.md`](../experiments/exp-210-macos-h192-maintained-activity-leaves-the-age-column-per-row.md)
+
+### exp-211 — macOS: H192 replicated over an opened root, 23 microseconds a report
+
+✅ accepted · 2026-10-09 · H192 · commit `10ae731f`
+
+Control: 148ef78e probe: main before the age column
+
+Candidate: 10ae731f probe: the age column, each directory keeping its newest activity
+beside its roll-up
+
+**`opened-second-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1130.1 | 1121.4 | -0.80% (n.s.) | [-3.83%, +2.54%] |
+| component (ms) | 0.1 | 0.2 | +17.79% (regression) | [+15.06%, +21.38%] |
+| cpu (ms) | 1175.0 | 1176.2 | -0.66% (n.s.) | [-2.24%, +1.48%] |
+| user (ms) | 837.8 | 839.4 | -0.19% (n.s.) | [-0.65%, +0.76%] |
+| system (ms) | 336.9 | 335.8 | -1.86% (n.s.) | [-6.35%, +3.37%] |
+| peak rss (MiB) | 110.0 | 109.8 | -0.22% (n.s.) | [-0.67%, +0.35%] |
+
+Other jobs, wall time: `warm-snapshot-load` +0.3% (n.s.).
+
+Cost to carry: 208 lines; no new dependencies.
+
+the same change as exp-210
+
+**Accepted:** Replicates exp-210 on the same binaries: second tree report over an opened
+root +17.79% [+15.06%, +21.38%], 23 us, per-row work under the H192 bar; wall -0.80%
+[-3.83%, +2.54%]; warm-snapshot-load component +1.73% [-5.25%, +13.99%] and wall +0.35%
+too wide to bound on a loaded host, so exp-210 remains the snapshot-load evidence.
+
+Full record:
+[`exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md`](../experiments/exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -6927,6 +7036,14 @@ state rather than a change.
 | 158 | Current content-query oracle and leftover | `content-query` | 37,903.9 | 38,337.2 | +1.0% | ✅ accepted |
 | 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ⏳ in progress |
 | 170 | macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout | `aggregate-summary` | 293.7 | 270.8 | -4.3% | ✅ accepted |
+
+### rustup (77,355 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 209 | macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower | `index-second-report` | 372.8 | 374.1 | -2.3% | ❌ rejected |
+| 210 | macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report | `index-second-report` | 320.0 | 335.3 | +5.7% | ✅ accepted |
+| 211 | macOS: H192 replicated over an opened root, 23 microseconds a report | `opened-second-report` | 1,130.1 | 1,121.4 | -0.8% | ✅ accepted |
 
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
