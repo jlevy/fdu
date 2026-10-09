@@ -7,7 +7,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-10-08
+## [0.4.0] - 2026-10-09
 
 fdu 0.4.0 is a breaking release about what a report asks for and what it says.
 A content view now requests the analysis it shows: `fdu . --view code,documents` counts

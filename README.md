@@ -19,7 +19,7 @@ tool fits better: see [when to use each](#comparison-to-alternatives).
 
 *fdu 0.4.0 on the Linux kernel source (1.7 GiB, 95,938 files), recorded in real time on
 an M1 Pro: one run of each command, not a benchmark.
-Click to download the full-resolution video (MP4, 4.5 MB).*
+Click to download the full-resolution video (MP4, 3.8 MB).*
 
 <!-- The speed claim above is repeated, without numbers, in crates/fdu/README.md,
 crates/fdu-py/README.md, crates/fdu/src/skills/SKILL.md, and the --docs guide in

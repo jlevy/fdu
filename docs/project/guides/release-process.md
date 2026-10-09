@@ -319,7 +319,7 @@ With cli-animate built and aliased as its
 the checkout:
 
 ```shell
-cli-animate make packages/cli-animate/examples/fdu/linux.yaml --out ~/fdu-demo --gif
+cli-animate make packages/cli-animate/examples/fdu/linux.yaml --out ~/fdu-demo --gif --margin 0
 ```
 
 That delivers `~/fdu-demo/linux.mp4` and `~/fdu-demo/linux.gif`. Copy the GIF over
