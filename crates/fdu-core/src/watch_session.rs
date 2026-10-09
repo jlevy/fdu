@@ -1105,6 +1105,42 @@ mod tests {
         assert!(matches!(session.persist_due(started + interval * 2), SaveOutcome::Skipped));
     }
 
+    /// A watch keeps its snapshot where one root's report would: a cache directory names
+    /// the file for the session's root, and a start under `On` writes it there (review D9
+    /// on #192).
+    #[test]
+    fn a_watch_names_its_snapshot_in_a_cache_directory() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        std::fs::write(root.path().join("file.txt"), b"content").expect("file");
+        let expected = crate::default_cache_path_in(root.path(), Some(cache.path()))
+            .expect("path")
+            .expect("a directory names a path");
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: ScanConfig::default().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            stale_ok: false,
+            cache: crate::CachePolicy::On,
+            cache_path: None,
+            cache_dir: Some(cache.path().to_path_buf()),
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let _session = Session::start(request, delivery).expect("session");
+        assert!(expected.exists(), "the start wrote where the directory names");
+        assert!(crate::snapshot::load(&expected).expect("read snapshot").is_some());
+    }
+
     #[test]
     fn startup_save_failure_keeps_the_session_live_and_retries() {
         let root = tempfile::tempdir().expect("root");

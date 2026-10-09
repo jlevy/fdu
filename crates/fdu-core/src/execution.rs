@@ -4894,7 +4894,7 @@ mod tests {
     }
 
     /// A cache directory names one root's snapshot on every route that takes a delivery,
-    /// where `default_cache_path_in` names it.
+    /// where `default_cache_path_in` names it: a one-shot report, an open, and a refresh.
     #[test]
     fn a_cache_directory_names_one_roots_snapshot_on_every_route() {
         let (_base, roots) = two_root_tree();
@@ -4914,8 +4914,14 @@ mod tests {
         pending.join().expect("save");
         assert!(expected.exists(), "the one-shot report wrote where the directory names");
         fs::remove_file(&expected).expect("remove");
-        crate::open(&request.basis, &delivery).expect("open");
+        let (mut index, _) = crate::open(&request.basis, &delivery).expect("open");
         assert!(expected.exists(), "an open wrote where the directory names");
+        // A refresh that finds a change writes it there too (review D9 on #192); the watch
+        // session's case is among its own tests, behind its build feature.
+        fs::remove_file(&expected).expect("remove");
+        fs::write(root.join("added.txt"), b"added").expect("a change to write");
+        crate::refresh(&mut index, &request.basis, &delivery).expect("refresh");
+        assert!(expected.exists(), "a refresh wrote where the directory names");
         // A file and no directory, or neither, is the delivery as given.
         let file = Delivery { cache_path: Some(expected.clone()), cache_dir: None, ..delivery };
         assert_eq!(file.for_root(root).expect("unchanged"), file);
