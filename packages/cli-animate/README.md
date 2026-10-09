@@ -95,7 +95,7 @@ cli-animate serve out/showcase.cast
 | Command | Does |
 | --- | --- |
 | `record <scenario> [-o cast]` | Run the scenario for real; write the cast and `*.receipt.json` |
-| `render <cast> [-o video] [--profile web\|gif\|master] [--master path]` | Capture the cast and deliver one profile; write `<video>.json` |
+| `render <cast> [-o video] [--profile web\|gif\|master] [--master path] [--margin px]` | Capture the cast and deliver one profile; write `<video>.json` |
 | `deliver <master> -o video [--profile web\|gif]` | Derive another delivery from a kept master, without capturing again |
 | `verify <cast> <master>` | Check the lossless master frame-exactly against the cast |
 | `make <scenario> [--out dir] [--gif] [--margin px]` | Fonts, record, capture, verify, and deliver in one step; `--margin 0` crops to the window’s edge |

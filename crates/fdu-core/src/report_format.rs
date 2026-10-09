@@ -1446,13 +1446,18 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
 //   files   the file count, after a single space, which ends the row's first line
 //
 // Every further measure a row carries is a continuation line of its own below it, in a
-// fixed order: lines with their breakdown, words with pages, generated, vendored, and
-// documentation counts, then each coverage reason other than analyzed. A continuation
-// leaves the size, share, and label cells blank and starts `TEXT_CONTINUATION_INDENT`
-// columns right of the file count, so it reads as a breakdown of that tally, and every
-// continuation in a section starts at one column. A row is then as wide as its widest
-// measure rather than the sum of them: joined on one line, the Linux kernel's DOCUMENTS
-// rows reached 154 columns. A row with nothing past its file count stays one line.
+// fixed order: lines with their breakdown, words with pages, generated and vendored
+// counts, then each coverage reason other than analyzed. A continuation leaves the size,
+// share, and label cells blank and starts `TEXT_CONTINUATION_INDENT` columns right of the
+// file count, so it reads as a breakdown of that tally, and every continuation in a
+// section starts at one column. A row is then as wide as its widest measure rather than
+// the sum of them: joined on one line, the Linux kernel's DOCUMENTS rows reached 154
+// columns. A row with nothing past its file count stays one line.
+//
+// The documentation-file count is machine output only (`documentation_files`). It
+// counts files under a doc, docs, or documentation directory or named like a README,
+// CHANGELOG, or CONTRIBUTING file, which in DOCUMENTS is nearly every file, and a line
+// under a document row would read as a measure of the documents themselves.
 //
 // The rule that is easy to get wrong: **a column's width is measured on visible text**.
 // `paint` wraps its argument in escape sequences, and a width specifier counts those
@@ -1606,11 +1611,9 @@ fn render_text_metrics(
                 )
             ));
         }
-        for (count, flag) in [
-            (row.generated_files, "generated"),
-            (row.vendored_files, "vendored"),
-            (row.documentation_files, "documentation"),
-        ] {
+        // `documentation_files` stays out of human rows; see the layout rules above.
+        for (count, flag) in [(row.generated_files, "generated"), (row.vendored_files, "vendored")]
+        {
             if count > 0 {
                 measures.push(format!("{} {flag}", human_count(count)));
             }
@@ -4762,13 +4765,14 @@ mod tests {
                 "4,390,955 words (17,563.8 pages)",
                 "2 generated",
                 "3 vendored",
-                "4,063 documentation",
                 "60 binary",
                 "7 unsupported",
             ]
             .map(|measure| format!("{indent}{measure}"));
             assert_eq!(lines[1..=stacked.len()], stacked, "{view:?}:\n{plain}");
             assert!(plain.lines().all(|line| !line.ends_with(' ')), "{plain:?}");
+            // The documentation-file count is machine output only.
+            assert!(!plain.contains("documentation"), "{view:?}:\n{plain}");
 
             let colored = render(&metrics, Format::Text, true);
             assert_eq!(strip_ansi(&colored), plain, "color must not move a continuation");
@@ -4782,19 +4786,23 @@ mod tests {
         }
 
         // The non-language views share a label floor, so their continuations sit at one
-        // column across sections; a row with nothing past its file count stays one line.
+        // column across sections; a row with nothing shown past its file count, its
+        // documentation-file count included, stays one line.
         let mut types = fixture(&[ViewSpec::Types]);
         let Section::Metrics { summary, .. } = &mut types.sections[0] else { panic!("types") };
         assert_eq!(summary.rows.len(), 2, "a measured row and a bare one");
         summary.rows[0].files = 12;
-        summary.rows[0].documentation_files = 12;
+        summary.rows[0].generated_files = 12;
         summary.rows[1].files = 1;
+        summary.rows[1].documentation_files = 1;
         let plain = render(&types, Format::Text, false);
         let lines = plain.lines().collect::<Vec<_>>();
         assert_eq!(lines.len(), 3, "{plain}");
-        assert_eq!(lines[1], format!("{}12 documentation", " ".repeat(TEXT_METRIC_INDENT)));
+        assert_eq!(lines[1], format!("{}12 generated", " ".repeat(TEXT_METRIC_INDENT)));
         assert!(lines[2].ends_with(" 1 file"), "{plain}");
         assert_eq!(lines[2].find("1 file"), lines[0].find("12 files"), "{plain}");
+        let json = render(&types, Format::Json, false);
+        assert!(json.contains("\"documentation\": 1}"), "machine output keeps it: {json}");
     }
 
     #[test]

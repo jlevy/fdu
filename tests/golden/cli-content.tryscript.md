@@ -74,7 +74,6 @@ $ fdu --cache off --analyze code --view types --sort count --limit all --size ap
                                          4 lines (3 code, 1 comment, 0 blank)
                                          1 generated
                                          1 vendored
-                                         1 documentation
       15 B    6.1%  rust               1 file
                                          1 lines (1 code, 0 comment, 0 blank)
       24 B    9.8%  unknown            1 file
@@ -109,11 +108,9 @@ $ fdu --cache off --view documents --size apparent content-project
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 ! note: percentages are shares of document words
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
@@ -158,11 +155,9 @@ DOCUMENTS
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 ! note: percentages are shares of code lines (LANGUAGES), document words (DOCUMENTS)
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
@@ -921,7 +916,6 @@ $ fdu --cache off --color never --size apparent --analyze lines content-project
                                          7 lines (5 nonblank, 2 blank)
       77 B   30.1%  prose              3 files
                                          8 lines (5 nonblank, 3 blank)
-                                         2 documentation
                                          1 binary
       22 B    8.6%  data               1 file
                                          3 lines (3 nonblank, 0 blank)
@@ -945,11 +939,9 @@ $ fdu --cache off --color never --size apparent --analyze words content-project
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 ! note: percentages are shares of document words
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
@@ -968,11 +960,9 @@ DOCUMENTS
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 ! note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ! note: 2 languages analyzed
@@ -1014,11 +1004,9 @@ $ fdu --cache off --color never --size apparent --analyze code --view documents 
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 ! note: percentages are shares of document words
 ! note: code analysis not shown by documents
@@ -1052,11 +1040,9 @@ $ fdu --cache off --color never --size apparent --view documents content-project
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 ! note: percentages are shares of document words
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
@@ -1075,11 +1061,9 @@ DOCUMENTS
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 ! note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
 ! note: 2 languages analyzed
@@ -1131,7 +1115,6 @@ FAMILIES  (2 of 4)
 TYPES  (2 of 6)
       80 B   31.2%  image              1 file
       42 B   16.4%  markdown           1 file
-                                         1 documentation
 
 EXTENSIONS  (2 of 6)
       80 B  .png         1 file
@@ -1182,7 +1165,6 @@ TYPES  (2 of 6)
                                          1 binary
       42 B   16.4%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
-                                         1 documentation
 
 EXTENSIONS  (2 of 6)
       80 B  .png         1 file
@@ -1237,7 +1219,6 @@ TYPES  (2 of 6)
       42 B   16.4%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
 
 EXTENSIONS  (2 of 6)
       80 B  .png         1 file
@@ -1253,11 +1234,9 @@ DOCUMENTS
       42 B   66.7%  markdown           1 file
                                          5 lines (3 nonblank, 2 blank)
                                          6 words (0.0 pages)
-                                         1 documentation
       35 B   33.3%  text               2 files
                                          3 lines (2 nonblank, 1 blank)
                                          3 words (0.0 pages)
-                                         1 documentation
                                          1 binary
 
 LARGEST  (2 of 7)

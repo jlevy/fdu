@@ -178,15 +178,12 @@ DOCUMENTS
                                          145,935 lines (129,677 nonblank, 16,258 blank)
                                          651,479 words (2,605.9 pages)
                                          8 generated
-                                         346 documentation
    1.6 MiB   21.8%  text               66 files
                                          31,754 lines (31,571 nonblank, 183 blank)
                                          209,075 words (836.3 pages)
-                                         10 documentation
    648 KiB   10.3%  html               2 files
                                          2,354 lines (2,319 nonblank, 35 blank)
                                          98,515 words (394.0 pages)
-                                         1 documentation
 ```
 
 On stderr, before the `perf:` line:
@@ -204,8 +201,8 @@ language fdu has no counter for shows a dash rather than zero, as Make and Perl 
 The notes count unsupported and unclassified files instead of treating them as zero
 lines.
 In DOCUMENTS, each format’s measures are listed under its file count: lines, words
-and pages, at 250 words a page (`--words-per-page`), then the files detected as
-generated or as documentation.
+and pages, at 250 words a page (`--words-per-page`), then any files detected as
+generated or vendored.
 
 Each language row shows its gitignored share.
 `--ignored=exclude` skips gitignored trees such as local builds and environments,
