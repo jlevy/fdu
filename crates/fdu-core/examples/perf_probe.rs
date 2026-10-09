@@ -1116,15 +1116,25 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 ///
 /// The oracle is `tallies`, read off the total row over several roots and off the root
 /// node or summary row over one, so one root's run checks against an independent walk as
-/// `default-tree` does. Over child roots the tallies are the children's, without the
-/// files at the top of the root, so a run like that is measured without the oracle.
+/// `default-tree` does. Over child roots of a root that holds only directories, the
+/// children's tallies are the root's but for the children themselves, which the root's
+/// walk counts as directories and theirs do not; adding them back makes the same oracle
+/// hold, so a run over the children and a run over the root pair in one measured run. A
+/// root holding anything but directories is refused, since a file at its top is in no
+/// child.
 fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
     let paths = if arguments.child_roots {
-        let mut children: Vec<PathBuf> = std::fs::read_dir(&arguments.root)?
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-            .map(|entry| entry.path())
-            .collect();
+        let mut children = Vec::new();
+        for entry in std::fs::read_dir(&arguments.root)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                return Err(ProbeError(format!(
+                    "--child-roots needs a root that holds only directories; {} is not one",
+                    entry.path().display()
+                )));
+            }
+            children.push(entry.path());
+        }
         children.sort();
         if children.is_empty() {
             return Err(ProbeError("--child-roots found no subdirectory".into()));
@@ -1133,6 +1143,7 @@ fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
     } else {
         arguments.roots.clone()
     };
+    let children = if arguments.child_roots { paths.len() as u64 } else { 0 };
     let (basis, delivery) =
         open_plan(&paths[0], &arguments.scan, CachePolicy::Auto, None, AnalysisRequest::default());
     let view = if tree { ViewSpec::Tree } else { ViewSpec::Summary };
@@ -1177,6 +1188,7 @@ fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
     });
     let (files, dirs, bytes, allocated, newest) =
         tallies.ok_or_else(|| ProbeError("the report returned no tallies".to_string()))?;
+    let dirs = dirs + children;
     let mut summary = Summary {
         files,
         dirs,
