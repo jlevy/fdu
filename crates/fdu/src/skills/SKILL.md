@@ -100,8 +100,15 @@ errors, and refusals a `root` index into it.
 A tree section over several roots has `tree: null`, a `total` row, and `trees`, one tree
 per root, each with its own `remainder` and a `root` index.
 Every PATH is a directory: `fdu */` names only the directories here, where `fdu *` stops
-at the first file. A root inside another, or the same directory twice, is refused.
-`--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+at the first file. A root inside another, or the same directory twice, is refused (exit
+2), so `fdu */` is too where one directory here is a symlink to another, such as a
+virtualenv’s `lib64 -> lib`; name the directories without the link.
+Each root is walked separately and pays a walk’s fixed cost, so many small roots are
+much slower than one walk of their parent: 625 small directories took 1.72 s as roots
+against 0.23 s for their parent, about 7 times as long (exp-216, macOS, uncontrolled
+host). To see every directory’s size here, prefer one walk:
+`fdu --depth 1 --min-share 0% .`. `--watch`, `--cache-status`, and `--cache-clear` take
+one PATH.
 
 ## Read the Result and Its Notes
 

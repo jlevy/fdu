@@ -90,6 +90,10 @@ $ fdu docs src
   `docs` is scanned alone.
 - Every PATH is a directory: `fdu *` stops at the first file it meets, and `fdu */`
   names only the directories here.
+  `fdu */` is refused in its turn where one directory here is a symlink to another, as a
+  Linux virtualenv’s `lib64 -> lib` is (`lib64 is the same directory as lib`): name the
+  directories without the link, `fdu bin include lib`, or walk their parent once, as
+  below.
 - A root equal to or inside another is refused, naming both, since its paths would count
   twice: `fdu src src/core` exits 2. Before any walk the check compares canonical paths,
   which sees through a symlink, and on Unix device and inode numbers, which sees a root
@@ -97,13 +101,20 @@ $ fdu docs src
   `/System/Volumes/Data/Users` on macOS). A root that is itself an alias into another
   root’s tree, such as a bind mount, or `/usr/local` beside `/System/Volumes/Data` on
   macOS, is found on Unix when the walk of the other root enters it, and the report is
-  refused then; a walk that stops above it, at `--scan-depth` or at a filesystem
-  boundary under `--one-filesystem`, counted nothing twice and is not refused.
-  Windows compares canonical paths only, so an alias such as a `subst` drive goes
-  unnoticed there. The check before the walk is conservative:
-  `fdu / /mnt/usb --one-filesystem` is refused although the walk would not have entered
-  the second.
-- Roots are walked one after another, so many small roots each pay a walk’s fixed cost.
+  refused then, also with exit status 2; a walk that stops above it, at `--scan-depth`
+  or at a filesystem boundary under `--one-filesystem`, counted nothing twice and is not
+  refused. Windows compares canonical paths only, so an alias such as a `subst` drive
+  goes unnoticed there.
+  The check before the walk is conservative: `fdu / /mnt/usb --one-filesystem` is
+  refused although the walk would not have entered the second.
+- Each root is walked separately, one after another, and every walk pays a fixed cost
+  however little it holds, so many small roots are much slower than one walk of their
+  parent. Over 625 small directories as roots, `fdu */` took 1.72 s where one walk of
+  their parent took 0.23 s, about 7 times as long
+  ([exp-216](project/experiments/exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md),
+  measured on macOS on a busy, uncontrolled host).
+  To see every entry here one level down in one walk, use
+  `fdu --depth 1 --min-share 0% .`.
 - Each root’s snapshot lives where that root’s own would, under one cache directory, and
   none is written until every root has been walked.
 - `--watch`, `--cache-status`, and `--cache-clear` take one PATH.

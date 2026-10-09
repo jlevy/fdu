@@ -1550,7 +1550,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,254 +1,1 @@
+@@ -1,258 +1,1 @@
 -fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1610,9 +1610,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Several paths are what each would report, added: every size, row, share, and
 -  bound is over the union, once. The tree starts with a (total) row, each root
 -  is a row named as given, and flat paths are printed after their root's label.
--  Every PATH is a directory; `fdu */` names only the directories here. A root
--  inside another, or the same directory twice, is refused. --cache-status and
--  --cache-clear take one PATH, as does --watch.
+-  Every PATH is a directory; `fdu */` names only the directories here, and is
+-  refused where one is a symlink to another (lib64 -> lib). Each root is walked
+-  separately and pays a walk's fixed cost: 625 small roots took 1.72 s, one
+-  walk of their parent 0.23 s, about 7x (exp-216, macOS, uncontrolled host).
+-  One walk shows every entry one level down: `fdu --depth 1 --min-share 0% .`
+-  A root inside another, or the same directory twice, is refused (exit 2).
+-  --cache-status and --cache-clear take one PATH, as does --watch.
 -
 -  code and documents read file contents; --analyze is the extra control for
 -  analysis a view does not imply:

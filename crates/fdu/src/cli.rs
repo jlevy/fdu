@@ -193,9 +193,13 @@ START HERE
   Several paths are what each would report, added: every size, row, share, and
   bound is over the union, once. The tree starts with a (total) row, each root
   is a row named as given, and flat paths are printed after their root's label.
-  Every PATH is a directory; `fdu */` names only the directories here. A root
-  inside another, or the same directory twice, is refused. --cache-status and
-  --cache-clear take one PATH",
+  Every PATH is a directory; `fdu */` names only the directories here, and is
+  refused where one is a symlink to another (lib64 -> lib). Each root is walked
+  separately and pays a walk's fixed cost: 625 small roots took 1.72 s, one
+  walk of their parent 0.23 s, about 7x (exp-216, macOS, uncontrolled host).
+  One walk shows every entry one level down: `fdu --depth 1 --min-share 0% .`
+  A root inside another, or the same directory twice, is refused (exit 2).
+  --cache-status and --cache-clear take one PATH",
             $one_path_watch,
             r".
 
@@ -1087,7 +1091,10 @@ impl Cli {
     /// A PATH that names no directory says so by the name it was given and what to type
     /// instead, since `fdu *`, the way `du -sh *` is typed, meets a file in nearly every
     /// directory and fdu reports on directories (review A5 on #192); the exit status is
-    /// still a filesystem error's. Every other error is the engine's.
+    /// still a filesystem error's. The message stays one line: what `fdu */` costs over
+    /// many small directories, the one-walk alternative, and the symlinked sibling that
+    /// refuses it in turn are in `--docs`, usage, and the skill (review D2). Every other
+    /// error is the engine's.
     fn root_error(&self, error: fdu_core::Error) -> anyhow::Error {
         if let fdu_core::Error::Io { path, source } = &error {
             let given = (source.kind() == io::ErrorKind::NotADirectory)

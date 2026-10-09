@@ -420,12 +420,18 @@ root’s tree: a bind mount, or `/usr/local` beside `/System/Volumes/Data` on ma
 own ancestors never pass through the outer root (review A3 on #192). On Unix each root’s
 walk therefore compares the directories it enters with the other roots’ identities, on
 every tier: the full and folded indexes keep every directory they entered, a cache-only
-load reads the snapshot’s, and the summary fold, which keeps none, states every
-directory over several roots and checks each as it arrives.
-A walk that enters another root refuses the report as overlapping, naming both labels
-and where it met it (`RequestError::RootReachedInside`); a walk that only lists it, at
-the scan depth or across a filesystem boundary, counted nothing twice and is not
-refused.
+load reads the snapshot’s, and the summary tier, whose fold keeps none, states every
+directory over several roots and checks each as it arrives in a watch beside the fold.
+One root’s fold holds no alias state and checks nothing per entry for it (review D4). A
+snapshot read without touching the tree holds each directory’s identity as of its walk,
+so a match there is refused only after one stat shows the directory is still that root,
+since an inode reused or a device renumbered since could match a root the snapshot never
+reached (review D5). `report_roots` runs the same check over the indexes a caller
+composes, with no filesystem read (review D3). A walk that enters another root refuses
+the report as overlapping, naming both labels and where it met it
+(`RequestError::RootReachedInside`), and the command line exits 2, as for an overlap the
+paths show (review D1); a walk that only lists it, at the scan depth or across a
+filesystem boundary, counted nothing twice and is not refused.
 
 #### Caches
 
@@ -436,12 +442,14 @@ A report over several roots takes a cache directory instead, as a delivery field
 `None` in either field means no cache there, never a default: a surface that caches by
 default passes its resolved default directory (review A4 on #192), and every route
 resolves a directory to its root’s file before it reads or writes
-(`Delivery::for_root`). A delivery that names a single explicit snapshot file is refused
-with several roots, and one that names both a file and a directory is refused
-everywhere. No root’s snapshot is written until every root has been walked, since the
-cache directory can lie inside a later root, whose walk would then count a write in
-progress (review B3); the writes then run together on at most as many threads as the
-machine runs at once, and the caller joins them in one handle.
+(`Delivery::for_root`). `plan` counts a directory as a cache location, as the file it
+names would be, so a delivery planned before it is resolved describes the route that
+runs (review D7). A delivery that names a single explicit snapshot file is refused with
+several roots, and one that names both a file and a directory is refused everywhere.
+No root’s snapshot is written until every root has been walked, since the cache
+directory can lie inside a later root, whose walk would then count a write in progress
+(review B3); the writes then run together on at most as many threads as the machine runs
+at once, and the caller joins them in one handle.
 
 #### Execution
 

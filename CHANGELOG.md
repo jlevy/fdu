@@ -35,11 +35,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   runs through an alias of another.
   A root that is itself an alias into another’s tree, a bind mount or a macOS firmlink
   such as `/usr/local` beside `/System/Volumes/Data`, is refused on Unix when the other
-  root’s walk enters it; Windows compares paths only.
-  Every PATH is a directory; a file is refused naming the command that lists only the
-  directories, `fdu */`. Roots are walked one after another, and each root’s snapshot
-  lives where its own would, written once every root has been walked, on a bounded
-  number of threads. `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+  root’s walk enters it, with exit status 2 as before the walk; Windows compares paths
+  only. Every PATH is a directory; a file is refused naming the command that lists only
+  the directories, `fdu */`, which is itself refused where one directory is a symlink to
+  another (`lib64 -> lib`). Each root is walked separately and pays a walk’s fixed cost,
+  so many small roots are much slower than one walk of their parent: 625 small
+  directories took 1.72 s as roots against 0.23 s for their parent, about 7 times as
+  long (exp-216, macOS, uncontrolled host); `fdu --depth 1 --min-share 0% .` shows every
+  entry one level down in one walk.
+  Each root’s snapshot lives where its own would, written once every root has been
+  walked, on a bounded number of threads.
+  `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
 - Machine output over several roots: the envelope’s `root` is null and `roots` lists
   each root’s `label` and canonical `path`; a tree section has `tree: null`, a `total`
   row, and `trees`, one tree per root, each with its own `remainder`; list rows, status
@@ -53,12 +59,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rust: `Roots` and `NamedRoot` name a report’s roots and validate them before any scan;
   `RootsRequest` shares one request across them, and `RootsRequest::resolve` validates
   paths, request, and delivery in the order one root always failed in; `report_roots`
-  reads one report from one index per root, refusing indexes of different scopes; and
-  `prepare_roots_report`, with its progress and scan-diagnostics variants, runs each
-  root’s plan and returns the roots’ pending saves in one handle, with each root’s
-  telemetry (`RootsPrepared`). `PerformanceSummary::sum` totals them,
-  `PendingSave::join_all` names each failed write, `labelled_path` is the one rule text
-  uses for a path under one of several roots, and `ReportSource::weaker` ranks sources.
+  reads one report from one index per root, refusing indexes of different scopes and, on
+  Unix, an index that entered another root through an alias; and `prepare_roots_report`,
+  with its progress and scan-diagnostics variants, runs each root’s plan and returns the
+  roots’ pending saves in one handle, with each root’s telemetry (`RootsPrepared`).
+  `PerformanceSummary::sum` totals them, `PendingSave::join_all` names each failed
+  write, `labelled_path` is the one rule text uses for a path under one of several
+  roots, and `ReportSource::weaker` ranks sources.
   `Delivery::cache_dir` names a directory in which each root’s snapshot is named, and
   `Delivery::for_root` resolves it for one root; every route honors it.
   `RequestError` gains `NoRoots`, `RootsOverlap`, `RootsRepeated`, `RootReachedInside`,
