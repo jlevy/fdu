@@ -111,11 +111,19 @@ The GitHub release text is
 - Grouped rows stack their measures.
   In `types`, `families`, `languages`, and `documents`, a row’s first line ends at its
   file count, and each further measure is a line of its own indented under it: lines
-  with their breakdown, words with pages, the generated, vendored, and documentation
-  counts, and each reason files were not analyzed.
+  with their breakdown, words with pages, the generated and vendored counts, and each
+  reason files were not analyzed.
   A row with only a file count is unchanged.
-  `fdu . --view code,documents` on the Linux kernel source is now at most 88 columns
-  wide, where its widest DOCUMENTS row was 154. Machine formats are unchanged.
+  On the Linux kernel source the standard output of `fdu . --view code,documents` is now
+  at most 88 columns wide, where its widest DOCUMENTS row was 154; the `perf:` line on
+  standard error is still longer.
+  Machine formats are unchanged.
+- Human grouped rows no longer show a documentation count (`4,063 documentation`). It
+  counts files under a `doc`, `docs`, or `documentation` directory or named like a
+  README, CHANGELOG, or CONTRIBUTING file, which in DOCUMENTS is nearly every file, and
+  it read as a measure of the documents.
+  Machine output keeps it unchanged: each row’s `detection.flags.documentation` count
+  and each file’s `classification.flags.documentation`.
 - Notes and tips are consolidated: one note for what totals include, one listing every
   display limit that hid something (`note: display limits: below 1% of root, depth 5`),
   and one runnable tip that lifts them all

@@ -41,6 +41,8 @@ export interface Capture {
   master: string;
   fps: number;
   scale: number;
+  /** CSS pixels of background around the window; null when derived from a kept master. */
+  margin: number | null;
   width: number;
   height: number;
   frames: number;
@@ -95,6 +97,7 @@ export async function capture(castPath: string, masterPath: string, options: Ren
   if (missingFaces().length > 0) throw new CliError('fonts are missing or unverified: run `cli-animate fonts` first');
   const fps = options.fps ?? 60;
   const scale = options.scale ?? 2;
+  const margin = options.margin ?? 32;
   const ffmpeg = findProgram('ffmpeg');
   const executablePath = options.chromePath ?? process.env.CHROME_PATH;
 
@@ -121,7 +124,7 @@ export async function capture(castPath: string, masterPath: string, options: Ren
   try {
     // Lay out in a viewport larger than any window, then shrink it to the stage.
     const page = await browser.newPage({ viewport: { width: 4000, height: 3000 }, deviceScaleFactor: scale });
-    const query = new URLSearchParams({ mode: 'capture', margin: String(options.margin ?? 32), font: String(options.fontSize ?? 22) });
+    const query = new URLSearchParams({ mode: 'capture', margin: String(margin), font: String(options.fontSize ?? 22) });
     await page.goto(`${server.url}/stage.html?${query.toString()}`);
     await page.waitForFunction(() => 'stageReady' in window || 'stageError' in window, null, { timeout: 30_000 });
     const failure = await page.evaluate(() => (window as unknown as { stageError?: string }).stageError);
@@ -185,6 +188,7 @@ export async function capture(castPath: string, masterPath: string, options: Ren
       master: masterPath,
       fps,
       scale,
+      margin,
       width: stage.size.width * scale,
       height: stage.size.height * scale,
       frames: total,
@@ -245,6 +249,7 @@ export function masterInfo(masterPath: string, scale: number): Capture {
     master: masterPath,
     fps: Math.round((num ?? 60) / (den || 1)),
     scale,
+    margin: null,
     width: Number(stream.width),
     height: Number(stream.height),
     frames: Number(stream.nb_read_packets),

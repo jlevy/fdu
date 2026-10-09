@@ -289,7 +289,6 @@ $ fdu --analyze lines --view families --size apparent project
                                          1 binary
       71 B   26.4%  prose              2 files
                                          6 lines (4 nonblank, 2 blank)
-                                         2 documentation
       64 B   23.8%  code               3 files
                                          4 lines (4 nonblank, 0 blank)
        6 B    2.2%  unknown            1 file

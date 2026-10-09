@@ -128,6 +128,11 @@ either bound, which is also the total row’s share.
 For `document_words` it can differ from the total row’s own `document_words` and
 `pages.words`, in either direction: logical words are derived after pooling, so a pooled
 total of mixed formats is not the sum of its rows.
+Each grouped metric row, and its total row, carries a `detection` object: `sources` and
+`confidence` count its files by how their type was detected, and `flags` counts its
+files detected as `generated`, `vendored`, or `documentation` (under a `doc`, `docs`, or
+`documentation` directory, or named like a README, CHANGELOG, or CONTRIBUTING file).
+Human rows show the generated and vendored counts but not the documentation count.
 
 A code tally has `source_files`, `analyzed_files`, `code_lines`, `comment_lines`,
 `blank_lines`, `missing_records`, and a `coverage` reason map.
