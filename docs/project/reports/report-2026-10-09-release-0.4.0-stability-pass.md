@@ -24,7 +24,8 @@ bounded analyze of a medium-tree subdirectory and its reuse.
 `FDU_QA_MEDIUM_ANALYZE` was unset, and the Linux tree keeps its documentation in
 `Documentation/`, not the `docs/` the harness defaults to.
 Content analysis did run on that tree, under the pty probe’s `--analyze all`, but not as
-a harness check.
+a harness check. So the harness ran 47 checks against 0.3.0’s 49; `fdu-15gr` tracks
+making the pass record such a gap as a skip.
 
 | Gate or phase | Verdict |
 | --- | --- |
@@ -108,10 +109,22 @@ record. Every step ran on 2026-10-09; times are UTC.
 `Announce on GitHub` succeeded, `make release-demo` attached the declared demo, and
 `make release-announced` verified all twelve assets.
 
-Not recorded here: the three checks
-[After Publishing](../guides/release-process.md#after-publishing) leaves to the eye, the
-crates.io and PyPI pages and `fdu --install-skill`; and Phase 6’s watched window, which
-stays pending as it did for 0.3.0.
+The release coordinator ran the three checks
+[After Publishing](../guides/release-process.md#after-publishing) leaves to the eye
+after publication:
+
+- PyPI `fdu` 0.4.0 renders its README (`text/markdown; variant=GFM`, 13,829 characters)
+  and lists the source distribution and five wheels (macOS arm64 and x86_64, manylinux
+  aarch64 and x86_64, Windows amd64).
+- crates.io `fdu-core` and `fdu` 0.4.0 are not yanked and render their READMEs (3,960
+  and 6,929 bytes of HTML); every link in them resolves (both crate pages 200 as HTML,
+  docs.rs, uv’s docs, PyPI, and each GitHub file on `main`, a few of which returned
+  GitHub’s transient 503 and 200 on retry or raw).
+- `uv tool run --no-config --no-build --isolated --python 3.12 fdu@0.4.0 --install-skill`,
+  in an empty project, installed `.agents/skills/fdu/SKILL.md` and
+  `.claude/skills/fdu/SKILL.md`.
+
+Phase 6’s watched window stays pending, as it did for 0.3.0.
 
 Follow-ups live in two places: the 0.4.1 epic, `fdu-chcx`, which holds the fixes for
 totals that do not match, the 0.4.0 review residue, and the report path’s recorded
