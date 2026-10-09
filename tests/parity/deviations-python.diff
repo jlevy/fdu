@@ -234,6 +234,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
+  ✓ A Row’s Age Is the Same on Every Route
+  ✓ A Row’s Age Is the Same on Every Route
+  ✓ A Row’s Age Is the Same on Every Route
+  ✓ A Row’s Age Is the Same on Every Route
 FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Scan Without a Cache
 @@ -1,10 +1,10 @@

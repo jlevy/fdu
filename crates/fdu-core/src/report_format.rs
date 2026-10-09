@@ -1997,8 +1997,15 @@ fn render_text_tree(
 /// A tree row's age cell and its style: the row's age, or the gray word `unknown` when
 /// its subtree was not listed in full or the reference cannot be represented, or a gray
 /// dash when the row counts no entry at all, as a missing percentage is.
+///
+/// Completeness comes first. A row whose subtree was not listed in full is `unknown` even
+/// when it has counted nothing yet, such as the root of `--scan-depth 0` or an opened
+/// root before its first listing: the dash says the subtree holds nothing to count, and
+/// nobody has looked.
 fn tree_age_cell(node: &TreeNode) -> (String, Option<AnsiStyle>) {
-    if node.mtime_ns.is_none() {
+    if node.complete == Some(false) {
+        (human_age(None), Some(STYLE_DETAIL))
+    } else if node.mtime_ns.is_none() {
         ("—".to_string(), Some(STYLE_DETAIL))
     } else if node.age_ns.is_none() {
         (human_age(None), Some(STYLE_DETAIL))
@@ -4035,6 +4042,25 @@ mod tests {
         );
         let colored = render(&answer, Format::Text, true);
         assert!(colored.contains(&paint("—", STYLE_DETAIL, true)), "{colored:?}");
+
+        // A root nobody listed (`--scan-depth 0`) has counted nothing either, but its age
+        // is unknown: the dash would claim the subtree holds nothing.
+        let mut unlisted = Index::new_with_scope(
+            "/root",
+            ScanScope { max_depth: Some(0), ..ScanScope::default() },
+        );
+        unlisted.set_initial_freshness(true);
+        let lone = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let answer = report(&unlisted, &crate::test_support::read_of(&unlisted, lone), &provenance)
+            .expect("report");
+        let Section::Tree { root: Some(root), .. } = &answer.sections[0] else {
+            panic!("expected a tree with a root row")
+        };
+        assert_eq!((root.mtime_ns, root.complete), (None, Some(false)), "{root:?}");
+        let text = render(&answer, Format::Text, false);
+        assert!(text.contains("  unknown  . 0 files\n"), "{text}");
+        let colored = render(&answer, Format::Text, true);
+        assert!(colored.contains(&paint("unknown", STYLE_DETAIL, true)), "{colored:?}");
     }
 
     #[test]

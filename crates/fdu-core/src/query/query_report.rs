@@ -4712,9 +4712,11 @@ mod tests {
             &index,
             query(&[ViewSpec::Tree], whole(Selection::default())),
         );
-        request.now = UNIX_EPOCH + Duration::from_nanos(50);
+        // A `SystemTime` is 100 ns apart on Windows, so the reference sits on a multiple of
+        // that: a finer one would be truncated to an earlier instant there.
+        request.now = UNIX_EPOCH;
         let root = tree_of(&report(&index, &request, generated_at()).expect("report"));
-        assert_eq!(ages_of(&root)[Path::new("docs")].2, Some(-20), "70 is after 50");
+        assert_eq!(ages_of(&root)[Path::new("docs")].2, Some(-70), "70 is after the epoch");
 
         let by_activity = tree_of(&run(
             &index,
@@ -6953,13 +6955,16 @@ mod tests {
         let mut actual = String::new();
         for (label, index, selection) in cases {
             // Ages are incidental here, and one fixture is written to disk as the test
-            // runs. Read each tree at the instant of its newest activity, so every age is
-            // `0s` however long ago the fixture was written.
+            // runs. Read each tree a microsecond after its newest activity, so every age is
+            // `0s` however long ago the fixture was written. Not at that instant itself: a
+            // `SystemTime` is 100 ns apart on Windows, and the instant would be truncated to
+            // one before the newest time there, which renders `-0s`.
             let query = query(&[ViewSpec::Tree], selection);
             let newest = tree_of(&run(index, &query)).mtime_ns.expect("every tree has activity");
             let mut request = crate::test_support::read_of(index, query);
-            request.now =
-                UNIX_EPOCH + Duration::from_nanos(u64::try_from(newest).expect("after the epoch"));
+            request.now = UNIX_EPOCH
+                + Duration::from_nanos(u64::try_from(newest).expect("after the epoch"))
+                + Duration::from_micros(1);
             let report = report(index, &request, generated_at()).expect("report");
             actual.push_str(label);
             actual.push('\n');

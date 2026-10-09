@@ -863,3 +863,59 @@ $ fdu --cache off --size apparent --scan-depth 2 --kind dir --include .venv --so
 {"view": "list", "bound": null, "files": [{"path": "a[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "modified_at": null, "ignored": false, "sort_value": null, "classification": null}, {"path": "d[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "modified_at": null, "ignored": false, "sort_value": null, "classification": null}, {"path": "empty[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "modified_at": null, "ignored": false, "sort_value": null, "classification": null}]}
 ? 0
 ```
+
+## A Row’s Age Is the Same on Every Route
+
+The fixture stamps each time in the middle of its unit, so the ages read exactly.
+`installed/` was installed three days ago from an archive that kept its files’
+one-year-old times. Its own time is its newest activity, so it reads `3d`, where its
+files alone would read `1y`. `docs/` holds a file newer than the directory, and the
+root’s own time never counts, so the root reads the newest of its rows.
+
+```console
+$ node bin/directory-ages.cjs
+? 0
+```
+
+The default tree is answered from the folded one-shot index.
+
+```console
+$ fdu --cache off --size apparent --depth all ages
+██████████   100%       900 B   3d  . 3 files
+████░░░░░░    44%       400 B   3d    installed/ 1 file
+████░░░░░░    44%       400 B   1y      pkg/ 1 file
+████░░░░░░    44%       400 B   1y        index.js
+███░░░░░░░    33%       300 B  2mo    docs/ 1 file
+███░░░░░░░    33%       300 B  2mo      notes.md
+██░░░░░░░░    22%       200 B   1y    old/ 1 file
+██░░░░░░░░    22%       200 B   1y      data.bin
+! perf: took [PERF_TIME] to walk 3 files (900 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+`--cache on` builds the full index it can store, and shows the same ages.
+
+```console
+$ fdu --cache on --size apparent --depth all ages
+██████████   100%       900 B   3d  . 3 files
+████░░░░░░    44%       400 B   3d    installed/ 1 file
+████░░░░░░    44%       400 B   1y      pkg/ 1 file
+████░░░░░░    44%       400 B   1y        index.js
+███░░░░░░░    33%       300 B  2mo    docs/ 1 file
+███░░░░░░░    33%       300 B  2mo      notes.md
+██░░░░░░░░    22%       200 B   1y    old/ 1 file
+██░░░░░░░░    22%       200 B   1y      data.bin
+! perf: took [PERF_TIME] to walk 3 files (900 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+`--long` measures each directory as a list row, and gives each the same age again.
+
+```console
+$ fdu --cache off --size apparent --kind dir --long ages
+     400 B       3d installed
+     400 B       1y installed[SEP]pkg
+     300 B      2mo docs
+     200 B       1y old
+? 0
+```

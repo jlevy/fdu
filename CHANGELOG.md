@@ -30,9 +30,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Breaking:** the report schema is `fdu.report/11`, for the fields above.
 - **Breaking:** ages past a month read in months of 30.44 days (`11mo`) and past a year
-  in years of 365.25 days (`3y`), in `--long` as in the tree, where they read in days
-  (`4,382d`). Time bounds still take days; `--modified-before 2mo` is refused and the
-  refusal names the days, as in `use 60d`.
+  in years of 365.25 days (`3y`), in `--long` as in the tree; they previously read in
+  days (`4,382d`). Time bounds still take days; `--modified-before 2mo` is refused and
+  the refusal names the days, as in `use 60d`.
 - **Breaking:** `--sort mtime` on a tree orders rows by the age the column shows, their
   newest counted activity of any kind, where it ordered them by their newest regular
   file. `newest_mtime_ns` keeps its files-only meaning.
@@ -43,6 +43,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was built. A repaint is still skipped when nothing a reader sees changed: ages rolling
   over repaint nothing, and any change in a row’s activity repaints.
 - Rust: `TreeNode` struct literals need the three new fields.
+- On Linux the default one-shot tree stats each directory and symlink again, as every
+  other route does, so a directory’s age there counts its own time and equals its age
+  under `--long` or a cached run.
+  0.3.0 had stopped those stats because the tree read none of their attributes; the age
+  column reads their times.
+  This gives back that change’s measured gain, 3.6% of the default tree on a
+  directory-dense `node_modules` tree and no resolvable change on the Linux v6.12 source
+  tree
+  ([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)).
+  macOS lists every child’s attributes in bulk and is unaffected, except in a directory
+  that falls back to the portable reader, which now stats them too.
 
 ## [0.4.0] - 2026-10-09
 

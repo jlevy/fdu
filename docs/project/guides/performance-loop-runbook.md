@@ -1138,7 +1138,13 @@ rebuild them from this list and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-203** and **H191**; exp-202 is the 0.3.0 release standing.
+**Ids.** Next free are **exp-212** and **H193**; exp-202 is the 0.3.0 release standing.
+exp-203–208 are reserved for the platform review’s macOS cells (M1–M6 in
+[its protocol](../research/research-2026-09-29-platform-review-of-the-linux-round.md)),
+which assigned them before any ran.
+exp-209–211 and H191–H192 record the tree age column’s two designs on
+[#191](https://github.com/jlevy/fdu/pull/191), macOS only: the per-report activity pass
+rejected and the maintained per-directory maximum accepted.
 exp-196 and H184 record `fdu-d2fn`, the automount fix; the pdu track (`fdu-faqa`, branch
 `claude/pdu-uniform-lead`) used exp-197–201 and H185–H190. exp-173–202 and H162–H190 are
 Linux work.
