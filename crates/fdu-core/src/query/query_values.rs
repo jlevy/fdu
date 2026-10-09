@@ -18,6 +18,22 @@ use crate::engine_contract::{Error, Result};
 /// Nanoseconds in one second.
 const NANOS_PER_SEC: u32 = 1_000_000_000;
 
+/// Seconds in one day, the longest unit the age grammar accepts but a week.
+const DAY_SECONDS: u64 = 86_400;
+
+/// Seconds in the display month of 30.44 days, a twelfth of a Julian year to the
+/// hundredth of a day.
+///
+/// A display unit only, for human ages such as `2mo`: the age grammar refuses months
+/// ([`age_unit_seconds`]), because a window has to resolve against a fixed length and a
+/// calendar month has none. Twelve of them exceed [`YEAR_SECONDS`], so no age reads
+/// `12mo`.
+pub(crate) const MONTH_SECONDS: u64 = 2_630_016;
+
+/// Seconds in the display year of 365.25 days, the Julian year; a display unit only, as
+/// [`MONTH_SECONDS`] is.
+pub(crate) const YEAR_SECONDS: u64 = 31_557_600;
+
 /// The most fractional digits an `@epoch` value can carry before the rest is ignored.
 const MAX_FRACTION_DIGITS: usize = 9;
 
@@ -138,20 +154,60 @@ pub fn format_rfc3339(time: SystemTime) -> String {
 /// index and Python API already carry integer nanoseconds; formatting those values directly
 /// keeps their representation byte-for-byte portable.
 pub(crate) fn format_rfc3339_nanos(timestamp: i64) -> String {
+    with_rfc3339_nanos(timestamp, str::to_owned)
+}
+
+/// Hand [`format_rfc3339_nanos`]'s text to `f` without allocating it.
+///
+/// Machine output writes one instant per row (`modified_at`), and building a `String` for
+/// each was most of what that field cost a large report (review C7 on #191, exp-212).
+pub(crate) fn with_rfc3339_nanos<R>(timestamp: i64, f: impl FnOnce(&str) -> R) -> R {
     let nanos_per_second = i64::from(NANOS_PER_SEC);
     let seconds = timestamp.div_euclid(nanos_per_second);
     let nanos = u32::try_from(timestamp.rem_euclid(nanos_per_second)).unwrap_or(0);
-    format_rfc3339_parts(seconds, nanos)
+    with_rfc3339_parts(seconds, nanos, f)
 }
 
 fn format_rfc3339_parts(seconds: i64, nanos: u32) -> String {
+    with_rfc3339_parts(seconds, nanos, str::to_owned)
+}
+
+/// The one layout, `YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ`, written into a fixed buffer.
+///
+/// Every year from 0 to 9999 takes exactly four digits, so the text is always thirty
+/// bytes and fits on the stack. A year outside that range, which only a corrupt or
+/// adversarial timestamp reaches, takes the general `format!` spelling, whose padding
+/// and sign the fast path reproduces exactly for every year it covers.
+fn with_rfc3339_parts<R>(seconds: i64, nanos: u32, f: impl FnOnce(&str) -> R) -> R {
     let days = seconds.div_euclid(86_400);
     let time_of_day = seconds.rem_euclid(86_400);
     let (year, month, day) = civil_from_days(days);
     let (hour, minute, second) =
         (time_of_day / 3_600, (time_of_day % 3_600) / 60, time_of_day % 60);
+    let Ok(four_digit_year @ 0..=9_999) = u64::try_from(year) else {
+        return f(&format!(
+            "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:09}Z"
+        ));
+    };
+    let mut text = *b"0000-00-00T00:00:00.000000000Z";
+    write_digits(&mut text[0..4], four_digit_year);
+    write_digits(&mut text[5..7], u64::from(month));
+    write_digits(&mut text[8..10], u64::from(day));
+    // Each is in range by `rem_euclid` above, so the conversions cannot fail.
+    write_digits(&mut text[11..13], u64::try_from(hour).unwrap_or(0));
+    write_digits(&mut text[14..16], u64::try_from(minute).unwrap_or(0));
+    write_digits(&mut text[17..19], u64::try_from(second).unwrap_or(0));
+    write_digits(&mut text[20..29], u64::from(nanos));
+    f(std::str::from_utf8(&text).expect("the layout is ASCII digits and separators"))
+}
 
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:09}Z")
+/// Write `value`'s low decimal digits into `slot`, zero-padded to its width.
+fn write_digits(slot: &mut [u8], mut value: u64) {
+    for byte in slot.iter_mut().rev() {
+        // A single decimal digit always fits a byte.
+        *byte = b'0' + u8::try_from(value % 10).unwrap_or(0);
+        value /= 10;
+    }
 }
 
 /// The proleptic Gregorian date some number of days from the Unix epoch.
@@ -292,30 +348,35 @@ fn age_unit_duration(input: &str, unit: &str, count: u64) -> Result<Duration> {
     if matches!(unit.as_str(), "ms" | "msec" | "msecs" | "millisecond" | "milliseconds") {
         return Ok(Duration::from_millis(count));
     }
-    let seconds = age_unit_seconds(input, &unit)?
+    let seconds = age_unit_seconds(input, &unit, count)?
         .checked_mul(count)
         .ok_or_else(|| when_error(input, "age is larger than this machine can represent"))?;
     Ok(Duration::from_secs(seconds))
 }
 
-/// Seconds in one whole-second age unit.
-fn age_unit_seconds(input: &str, unit: &str) -> Result<u64> {
+/// Seconds in one whole-second age unit; `count` of them is what a refusal translates.
+fn age_unit_seconds(input: &str, unit: &str, count: u64) -> Result<u64> {
     const MINUTE: u64 = 60;
     const HOUR: u64 = 60 * MINUTE;
-    const DAY: u64 = 24 * HOUR;
     Ok(match unit {
         "s" | "sec" | "secs" | "second" | "seconds" => 1,
         "m" | "min" | "mins" | "minute" | "minutes" => MINUTE,
         "h" | "hr" | "hrs" | "hour" | "hours" => HOUR,
-        "d" | "day" | "days" => DAY,
-        "w" | "week" | "weeks" => 7 * DAY,
+        "d" | "day" | "days" => DAY_SECONDS,
+        "w" | "week" | "weeks" => 7 * DAY_SECONDS,
         // Calendar units are rejected rather than approximated: a month is not a fixed
         // number of days, and a file age that quietly means 30.44 days is a bug waiting
-        // for a bug report nobody can reproduce.
+        // for a bug report nobody can reproduce. Human output does show ages in months
+        // and years ([`MONTH_SECONDS`]), so the refusal names the whole days the display
+        // units would mean, floored as the display is, and the caller decides.
         "mo" | "mon" | "month" | "months" | "y" | "yr" | "yrs" | "year" | "years" => {
+            let length = if unit.starts_with('m') { MONTH_SECONDS } else { YEAR_SECONDS };
+            let days = u128::from(count) * u128::from(length) / u128::from(DAY_SECONDS);
             return Err(when_error(
                 input,
-                "calendar units are not supported because they are not a fixed length; use days, as in `30d` or `365d`",
+                &format!(
+                    "calendar units are not supported because they are not a fixed length; use days, as in `{days}d`"
+                ),
             ));
         }
         _ => {
@@ -662,6 +723,51 @@ mod tests {
     }
 
     #[test]
+    fn the_fixed_buffer_layout_matches_the_general_spelling() {
+        // The buffer path covers years 0 to 9999 by hand; `format!` is the definition it
+        // must reproduce byte for byte, and the fallback beyond that range.
+        let general = |seconds: i64, nanos: u32| {
+            let (year, month, day) = civil_from_days(seconds.div_euclid(86_400));
+            let time = seconds.rem_euclid(86_400);
+            let (hour, minute, second) = (time / 3_600, (time % 3_600) / 60, time % 60);
+            format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:09}Z")
+        };
+        // Integer nanoseconds span only about 1677 to 2262, so every value they can hold
+        // takes the buffer; sample that whole range, its ends included.
+        let mut nanos =
+            vec![0, -1, 1, 1_786_386_151_123_456_789, -1_000_000_000, i64::MIN, i64::MAX];
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        for _ in 0..2_000 {
+            state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            nanos.push(i64::from_ne_bytes(state.to_ne_bytes()));
+        }
+        for timestamp in nanos {
+            let seconds = timestamp.div_euclid(i64::from(NANOS_PER_SEC));
+            let fraction = u32::try_from(timestamp.rem_euclid(i64::from(NANOS_PER_SEC)))
+                .expect("a remainder of a second fits u32");
+            let expected = general(seconds, fraction);
+            assert_eq!(format_rfc3339_nanos(timestamp), expected, "{timestamp}");
+            with_rfc3339_nanos(timestamp, |text| assert_eq!(text, expected));
+        }
+        // Whole seconds reach the years either side of the buffer's range, through
+        // `format_rfc3339`'s seconds: the fallback must spell them as `format!` does.
+        let year_zero = -62_167_219_200;
+        let year_ten_thousand = 253_402_300_800;
+        for seconds in [year_zero - 1, year_zero, year_ten_thousand - 1, year_ten_thousand] {
+            for fraction in [0, 999_999_999] {
+                assert_eq!(format_rfc3339_parts(seconds, fraction), general(seconds, fraction));
+            }
+        }
+        assert_eq!(format_rfc3339_parts(year_zero, 0), "0000-01-01T00:00:00.000000000Z");
+        assert_eq!(format_rfc3339_parts(year_zero - 1, 0), "-001-12-31T23:59:59.000000000Z");
+        assert_eq!(
+            format_rfc3339_parts(year_ten_thousand - 1, 999_999_999),
+            "9999-12-31T23:59:59.999999999Z"
+        );
+        assert_eq!(format_rfc3339_parts(year_ten_thousand, 0), "10000-01-01T00:00:00.000000000Z");
+    }
+
+    #[test]
     fn epoch_values_accept_an_optional_fraction() {
         assert_eq!(epoch_nanos("@1786386151"), 1_786_386_151_000_000_000);
         // Truncated to the platform's tick, then compared in the same units, so this
@@ -684,15 +790,19 @@ mod tests {
         assert_eq!(time_rejection("2026-02-29T00:00:00Z"), "day is not a day of that month");
     }
 
+    /// Months and years are display units only: the grammar refuses them and names the
+    /// whole days the display units stand for, floored as the display floors them.
     #[test]
     fn calendar_units_are_rejected_with_a_days_suggestion() {
-        for value in ["3mo", "3months", "1y", "2years"] {
-            assert!(
-                time_rejection(value).contains("use days"),
-                "{value} should suggest days, got {:?}",
-                time_rejection(value)
-            );
+        for (value, days) in
+            [("2mo", 60), ("3months", 91), ("1y", 365), ("2years", 730), ("3yr", 1_095), ("0y", 0)]
+        {
+            let hint = time_rejection(value);
+            assert!(hint.contains("not a fixed length"), "{value}: {hint}");
+            assert!(hint.ends_with(&format!("use days, as in `{days}d`")), "{value}: {hint}");
         }
+        assert_eq!(MONTH_SECONDS, 3_044 * DAY_SECONDS / 100);
+        assert_eq!(YEAR_SECONDS, 36_525 * DAY_SECONDS / 100);
     }
 
     #[test]

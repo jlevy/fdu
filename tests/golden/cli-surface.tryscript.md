@@ -279,6 +279,16 @@ Hidden and ignored entries are included.
 A parenthetical amount such as `(73 MiB gitignored)` is included in the row total.
 Directories get a `/` suffix, except `.` and `..`; file names and structured paths do
 not change.
+Between size and name each row shows its age: how long ago anything it counts
+last changed, files, directories, and symlinks alike, never the scanned root’s own time.
+Ages read `42s`, `59m`, `23h`, `30d`, `11mo` (months of 30.44 days), and `3y` (years of
+365.25 days), floored.
+An age is `unknown` where part of the subtree was not listed, and `—` on a row that
+counts nothing.
+With no filter a directory’s age matches its `--long` age; under a filter
+each row ages only what it counts.
+`--sort mtime` orders tree rows by this age.
+Time bounds take days: `--modified-before 60d`, not `2mo`.
 
 Color is on only when the output is a terminal or `--color=always` is given, so piped
 tree bars are plain: `█` for usage and `░` for unused width.
@@ -322,8 +332,8 @@ rows were bounded away.
 Per-boundary `entries` counts hidden roots, while `files` counts regular files
 recursively. Unknown amounts are null.
 The text equivalent is one root-level line with the same bar, percentage, and size
-columns as the tree rows, followed by `… and N more files`. These columns represent the
-remaining share of the selected root.
+columns as the tree rows, a blank age, and `… and N more files`. These columns represent
+the remaining share of the selected root.
 Unknown size or count stays unknown; an unknown hidden size has no numeric share.
 Fully expanded, fully observed trees have no remainder line and no display-limit notes.
 Check completeness separately: unreadable directories and scan-depth restrictions still
@@ -544,6 +554,11 @@ Paths escapes control characters only and keeps stdout to paths; bound and rule 
 go to stderr. Long adds size and signed age.
 Machine rows retain exact `mtime_ns`, `age_ns`, directory `files`/`dirs`, and the
 report’s `age_reference_ns`; unknown ages are null.
+Tree nodes carry the same `mtime_ns`, `complete`, and `age_ns` as the text column,
+beside `newest_mtime_ns`, the newest regular file alone.
+`modified_at` and the envelope’s `age_reference_at` are the same instants in RFC 3339
+UTC; `modified_at` is null wherever the time is only a lower bound.
+A `--watch` repaint measures its ages from its own instant.
 
 Tree/Paths/Long require one compatible list view.
 Use automatic Text or machine output for grouped/mixed views and Full.
@@ -620,7 +635,7 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/10`, a `--watch`
+- `schema` before parsing anything else: a report carries `fdu.report/11`, a `--watch`
   stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. Treat an
   unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
@@ -773,7 +788,8 @@ START HERE
     fdu . --view=recent --limit=10             ten most recently modified files
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
-  to depth 5, showing contents with at least 1% of the selected root size. Hidden
+  to depth 5, showing contents with at least 1% of the selected root size, each
+  with its age: how long ago anything it counts last changed. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 
   code and documents read file contents; --analyze is the extra control for
@@ -838,6 +854,9 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   --breadth caps children per directory; --limit caps data rows per section.
   Both default to all. --depth all expands levels. Omission notes name each bound.
   Display bounds never change totals or limit the filesystem scan.
+  A tree row's age is its newest counted change, of files, directories, and symlinks;
+  unknown where a subtree was not listed. Ages read s, m, h, d, mo (30.44 days), and
+  y (365.25 days); time bounds take days. --sort mtime orders rows by that age.
 
   --format paths gives matching paths only; --long adds size, age, and path.
   Flat lists are complete and size-ranked by default; --sort name lists by name.
@@ -935,7 +954,7 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -982,7 +1001,7 @@ fdu 0.4.0[DEV_REVISION]
 
 ```console
 $ fdu --cache off --color never --size apparent .
-░░░░░░░░░░      —         0 B  . 0 files
+░░░░░░░░░░      —         0 B  —  . 0 files
 ! note: root size is zero, so shares are undefined
 ! tip: show more: --min-share=0%
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan

@@ -393,7 +393,7 @@ a patch. The tool version is inventoried in
 like any executable dependency.
 The Python API has no such check, so review still holds it.
 A machine-output field change requires a version bump of the schema that carries it: the
-report (`fdu.report/10`), the watch stream (`fdu.stream/2`), and cache status
+report (`fdu.report/11`), the watch stream (`fdu.stream/2`), and cache status
 (`fdu.cache/3`) each version independently, as
 [the surface architecture](../architecture/fdu-surface-architecture.md#machine-output-schemas)
 lists. The bump rule protects consumers of a released schema.

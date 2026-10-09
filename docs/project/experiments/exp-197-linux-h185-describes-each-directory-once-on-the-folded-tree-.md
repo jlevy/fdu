@@ -377,13 +377,13 @@ experiment:
     new_failure_modes: []
     notes: ""
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: default-tree
     primary_metric: wall_ns
     change_pct: -3.551
-    reason: "quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the --no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%; placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25% [-4.46%, +0.25%] off, not resolvable, no regression on the --no-controls arm and the controls-on arm too wide to bound; statx 79,961 -> 70,416 and 92,836 -> 87,006; answers identical"
+    reason: "quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the --no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%; placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25% [-4.46%, +0.25%] off, not resolvable, no regression on the --no-controls arm and the controls-on arm too wide to bound; statx 79,961 -> 70,416 and 92,836 -> 87,006; answers identical; superseded by the age column on #191, which stats every directory and symlink on the folded tree again so a row's age counts their times (H193 measures the give-back, fdu-088k)"
     commit: c0da65ae
-    kept: candidate
+    kept: control
 ---
 ## What was predicted
 
@@ -500,3 +500,11 @@ latch when run as an unprivileged user.
 `statx` is 72,075 on `node-modules-dense` and 87,656 on `linux-v6.12` with the proof,
 against the 70,416 and 87,006 above, so 83% and 89% of the saving is kept; the
 difference is below what a 20-pair cell resolves and was not re-measured on wall.
+
+**Superseded by the age column** ([#191](https://github.com/jlevy/fdu/pull/191),
+2026-10-09). A tree row’s age counts each directory’s and symlink’s own time, so the
+folded tree stats every child again, as the full index does, and the product no longer
+carries this change: its kept arm is now the control (review C11 on #191). So the
+evidence report no longer credits today’s engine with this saving.
+What the give-back costs is pre-registered as H193 and measured on Linux before 0.5.0
+(`fdu-088k`).

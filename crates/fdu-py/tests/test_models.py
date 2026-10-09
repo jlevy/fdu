@@ -376,6 +376,10 @@ def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
         "dirs": 0,
         "ignored": None,
         "newest_mtime_ns": None,
+        "mtime_ns": None,
+        "complete": True,
+        "age_ns": None,
+        "modified_at": None,
         "truncated": False,
         "omissions": [],
         "children": [],
@@ -412,6 +416,10 @@ def test_native_json_fallback_parses_a_deep_rendered_report_end_to_end() -> None
         "dirs": 0,
         "ignored": None,
         "newest_mtime_ns": None,
+        "mtime_ns": None,
+        "complete": True,
+        "age_ns": None,
+        "modified_at": None,
         "truncated": False,
         "omissions": [],
         "children": [],
@@ -480,7 +488,7 @@ def _tree_section(tree: object) -> dict[str, object]:
 
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema": "fdu.report/10",
+        "schema": "fdu.report/11",
         "generator": "fdu 0.1.0",
         "root": "/root",
         "request": {
@@ -522,6 +530,100 @@ def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
         "analysis": None,
         "reports": sections,
     }
+
+
+def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
+    """``modified_at`` comes from ``mtime_ns``, floored to the microsecond toward the past,
+    and is absent wherever the time is only a lower bound or the row counts nothing."""
+
+    def node(name: str, mtime_ns: int | None, complete: bool | None) -> dict[str, object]:
+        return {
+            "name": name,
+            "path": name,
+            "kind": "dir" if complete is not None else "file",
+            "entry_ignored": None,
+            "bytes": 0,
+            "allocated": 0,
+            "files": 0,
+            "dirs": 0,
+            "ignored": None,
+            "newest_mtime_ns": None,
+            "mtime_ns": mtime_ns,
+            "complete": complete,
+            "age_ns": None,
+            # Deliberately not what the value is derived from.
+            "modified_at": "not consulted",
+            "truncated": False,
+            "omissions": [],
+            "children": [],
+        }
+
+    before_epoch = node("before", -1, True)
+    incomplete = node("partial", 5_000, False)
+    empty = node("empty", None, True)
+    after = node("after", 1_786_386_151_123_456_789, None)
+    root = {**node(".", 1_786_386_151_123_456_789, True), "path": ""}
+    root["children"] = [before_epoch, incomplete, empty, after]
+    wire = _envelope([_tree_section(root)])
+    wire["age_reference_ns"] = -1_500
+    report = report_from_dict(wire)
+    assert report.age_reference_at == datetime(1969, 12, 31, 23, 59, 59, 999998, tzinfo=UTC)
+    section = report.sections[0]
+    assert isinstance(section, TreeSection) and section.tree is not None
+    rows = {child.name: child for child in section.tree.children}
+    assert rows["before"].modified_at == datetime(1969, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)
+    assert rows["partial"].modified_at is None and rows["partial"].mtime_ns == 5_000
+    assert rows["empty"].modified_at is None and rows["empty"].complete is True
+    stamp = rows["after"].modified_at
+    assert stamp == datetime(2026, 8, 10, 18, 22, 31, 123456, tzinfo=UTC)
+    assert stamp is not None and stamp.utcoffset() is not None
+    assert rows["after"].complete is None
+
+    files = report_from_dict(
+        _envelope(
+            [
+                {
+                    "view": "list",
+                    "bound": None,
+                    "files": [
+                        {
+                            "path": "a",
+                            "kind": "dir",
+                            "bytes": 0,
+                            "allocated": 0,
+                            "mtime_ns": 1_000,
+                            "files": 0,
+                            "dirs": 0,
+                            "complete": False,
+                            "age_ns": None,
+                            "modified_at": None,
+                            "ignored": None,
+                            "sort_value": None,
+                            "classification": None,
+                        },
+                        {
+                            "path": "b",
+                            "kind": "file",
+                            "bytes": 0,
+                            "allocated": 0,
+                            "mtime_ns": 2_999,
+                            "files": None,
+                            "dirs": None,
+                            "complete": None,
+                            "age_ns": 1,
+                            "modified_at": "1970-01-01T00:00:00.000002999Z",
+                            "ignored": None,
+                            "sort_value": None,
+                            "classification": None,
+                        },
+                    ],
+                }
+            ]
+        )
+    ).sections[0]
+    assert isinstance(files, FilesSection)
+    assert files.files[0].modified_at is None
+    assert files.files[1].modified_at == datetime(1970, 1, 1, 0, 0, 0, 2, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("positive", [True, False])
@@ -573,6 +675,10 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
         "dirs": 0,
         "ignored": {**share, "dirs": 0},
         "newest_mtime_ns": 1,
+        "mtime_ns": 1,
+        "complete": True,
+        "age_ns": 9,
+        "modified_at": "1970-01-01T00:00:00.000000001Z",
         "truncated": False,
         "omissions": [],
         "children": [],

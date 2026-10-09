@@ -33,9 +33,24 @@ Zero sizes such as `0 B` are gray.
 Other smaller sizes and file counts use the ordinary foreground color.
 Percentages below 1% are gray, using the exact ratio before rounding.
 These styles apply wherever human output presents those values.
-Tree rows put the share bar first, then the percentage of the selected root, size, and
-indented filename.
+Tree rows put the share bar first, then the percentage of the selected root, size, age,
+and indented filename.
 Keep these columns aligned across directory, file, and remainder rows.
+
+The age column sits between size and name, as `--long` puts age between size and path.
+It is right-aligned to the widest age cell in its section, with two-space gutters on
+either side, and its width is measured on visible text, so a gray cell pads like a plain
+one. A row’s age is the newest modification among the entries it counts, of any kind,
+never the report root’s own time; [machine output](../../machine-output.md#tree-nodes)
+states the definition.
+An age whose subtree was not listed in full is the gray word `unknown`, as `--long`
+prints it, because a lower-bound maximum is not an age.
+A row that counts no entry, such as an empty root, shows a gray `—`, as a missing
+percentage does. The remainder row’s age cell is blank: it stands for rows the bounds
+hid, most of which the folded one-shot tier counted without keeping a time, and its
+parent row’s age already covers them.
+A section with no rows has no age column.
+There is no flag to hide it; `--bar-size 0` remains the only column control.
 Write `attic/ 3,508 files (43 MiB gitignored)`: file counts are outside parentheses,
 while embedded gitignored amounts are parenthesized and gray.
 The gitignored amount is a subset already included in the row total, not additional
@@ -159,6 +174,24 @@ Structured formats retain exact numeric byte values, and executable flag values 
 their parser syntax.
 Durations, percentages, and scaled byte units keep their own precision rules.
 
+Human ages use the one shared `human_age` formatter, in the tree’s age column and in
+`--long`. It climbs one ladder, and each unit holds until the next one’s length:
+
+| Age | Shown as |
+| --- | --- |
+| under 60 s | seconds, `42s` |
+| under 60 min | minutes, `59m` |
+| under 24 h | hours, `23h` |
+| under 30.44 d | days, `30d` |
+| under 365.25 d | months of 30.44 days, `11mo` |
+| otherwise | years of 365.25 days, `3y` |
+
+No cell reads `0mo` or `0y`, and an old tree reads `12y` rather than `4,382d`. The
+amount is floored toward zero and signed: a future time reads `-5m`, and one less than a
+second ahead reads `-0s`. Below a century a cell is at most four characters and a sign.
+Months and years are display units only; the age grammar refuses them, because a window
+needs a fixed length, and its refusal names the days the unit stands for.
+
 ## Streams and Categories
 
 Formatted results belong on stdout.
@@ -249,11 +282,11 @@ Each tree has at most one remainder line below its selected root.
 Only its `… and` prefix is gray; the file count uses normal foreground, and percentages
 and sizes use the same styling as ordinary rows, including gray shares below 1%, gray
 zero sizes, and bold sizes of at least 1 GiB. It uses the same bar, percentage, and size
-columns as tree rows; its name column reads `… and N more files`. The bar and percentage
-show the combined hidden share of the selected root.
+columns as tree rows, with a blank age cell; its name column reads `… and N more files`.
+The bar and percentage show the combined hidden share of the selected root.
 
 ```text
-█░░░░░░░░░    12%     1.2 MiB  … and 12,345 more files
+█░░░░░░░░░    12%     1.2 MiB         … and 12,345 more files
 ```
 
 The size and recursive file count cover unlisted immediate branches of the selected
@@ -280,7 +313,8 @@ JSON, JSONL, and YAML tree sections expose `remainder` with `files`, `bytes`,
 collapsed under listed directories.
 The existing `limits` fields provide the corresponding bound values; per-node
 `omissions` retain detailed boundaries for debugging.
-Report schema `fdu.report/10` uses this root-branch accounting for the remainder.
+The report schema has used this root-branch accounting for the remainder since
+`fdu.report/10`.
 
 Explain accounting and applicable bounds once at the end, then offer one remedy:
 

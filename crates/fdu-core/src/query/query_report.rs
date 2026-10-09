@@ -26,7 +26,7 @@ use crate::content::{
 };
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, ScanScope};
-use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
+use crate::index::{EntryId, ExtTally, Index, RollUpScalars, newer};
 use crate::query::query_request::{Basis, Request};
 use crate::query::query_selection::{
     Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey,
@@ -713,8 +713,35 @@ pub struct TreeNode {
     /// when the selection excludes ignored entries and the whole row when it admits only
     /// them.
     pub ignored: Option<IgnoredTally>,
-    /// Newest modification time in this subtree, when it holds any files.
+    /// Newest modification time among the regular files in this subtree, when it holds
+    /// any: the files-only recency of [`SummaryRow::newest_mtime_ns`], which a summary
+    /// reports and which no directory's own churn moves.
     pub newest_mtime_ns: Option<i64>,
+    /// Newest modification time among the entries this row counts, or `None` when it
+    /// counts none.
+    ///
+    /// The row's own entry counts when the selection admits it, and so does every entry
+    /// beneath it that the row's tallies count, of any kind: a directory's time moves when
+    /// an entry in it is created, renamed, or removed, which no surviving file's time
+    /// records, and a symlink is an entry like any other. The report root is a traversal
+    /// boundary rather than an entry, so its own time never counts, as no list row shows
+    /// it either. Under a selection that admits everything this is a list row's
+    /// [`FileRow::mtime_ns`] for the same directory, so a tree and `--long` agree; under a
+    /// filter each follows its own row's population. A lower bound when
+    /// [`Self::complete`] is false.
+    pub mtime_ns: Option<i64>,
+    /// Whether every directory in this row's subtree was listed in full, so its tallies and
+    /// [`Self::mtime_ns`] are exact rather than lower bounds; `None` for a file.
+    ///
+    /// False at a scan-depth boundary, below a listing that failed, and in an opened root
+    /// for a directory discovery has not listed yet, by the rule a list row's
+    /// [`FileRow::complete`] follows.
+    pub complete: Option<bool>,
+    /// Signed nanoseconds from [`Self::mtime_ns`] to the report's
+    /// [`Report::age_reference_ns`], negative for a time after it; `None` when the row
+    /// counts nothing, when its subtree is incomplete, since a lower-bound maximum is not
+    /// an age, or when the reference cannot be represented.
+    pub age_ns: Option<i128>,
     /// Children reported beneath this node.
     pub children: Vec<TreeNode>,
     /// Disjoint child subtrees first excluded at this node's display boundary.
@@ -1657,13 +1684,20 @@ pub(crate) fn report_in(
 
     let query = &request.query;
     let content = request.basis.content;
-    // Share subtree measurements between selection predicates and partial-tree proof.
-    // Complete unfiltered metadata reports keep their retained-rollup fast path.
     let needs_walk = query.needs_selection_walk();
-    let needs_tree_measurements = query.views.iter().any(|view| query.tree_for(*view))
-        && !query.min_share_for().admits(0, 1)
-        && (index.state().coverage != crate::Coverage::Complete
-            || index.scope().max_depth.is_some());
+    let tree_views = query.views.iter().any(|view| query.tree_for(*view));
+    // A tree row's age needs its newest activity and whether its subtree was listed in
+    // full. Over a complete index with no scan depth every subtree is complete, so an
+    // unfiltered tree reads each row's activity from the roll-up the index maintains and
+    // takes no pass. Otherwise an unfiltered tree reads both from one pass over the index
+    // by id, which also proves which children a partial tree may hide below the share
+    // threshold. A walked tree folds activity in the walk and, where a subtree can be
+    // unlisted, reads completeness from the subtree measurements it shares with the
+    // selection predicates.
+    let every_subtree_listed = query_subtrees::every_subtree_listed(index);
+    let activity = (tree_views && !needs_walk && !every_subtree_listed)
+        .then(|| query_subtrees::activity(index));
+    let needs_tree_measurements = tree_views && needs_walk && !every_subtree_listed;
     let directories = (needs_tree_measurements
         || (needs_walk
             && (query.selection.kinds.is_empty()
@@ -1672,6 +1706,11 @@ pub(crate) fn report_in(
     // One traversal serves every filtered view in the request.
     let walked = needs_walk.then(|| walk(index, &query.selection, identity, directories.as_ref()));
     let tree_measurements = directories.as_ref().filter(|_| needs_tree_measurements);
+    let recency = match (&activity, &walked) {
+        (Some(table), _) => Some(TreeRecency::Unfiltered(table)),
+        (None, Some(walked)) => Some(TreeRecency::Walked { walked, measured: tree_measurements }),
+        (None, None) => tree_views.then_some(TreeRecency::Maintained(index)),
+    };
     // Unfiltered metric and file views share one `FileRow` walk only when more than one
     // section consumes it. A single section keeps ownership of its one traversal, so a
     // bounded file view does not clone every path before sorting and truncating it.
@@ -1712,27 +1751,13 @@ pub(crate) fn report_in(
                 content,
                 walked.as_ref(),
                 unfiltered_rows.as_deref(),
-                tree_measurements,
+                recency,
             )
         })
         .collect();
 
     let age_reference_ns = crate::query::system_time_to_nanos(request.now);
-    for section in &mut sections {
-        if let Section::Files { rows, .. } = section {
-            for row in rows {
-                // An incomplete subtree's mtime is a lower bound, and a lower-bound
-                // maximum is not an age: the activity that would make the directory
-                // younger may sit in the part that was never listed.
-                row.age_ns = match row.complete {
-                    Some(false) => None,
-                    Some(true) | None => {
-                        age_reference_ns.map(|now| i128::from(now) - i128::from(row.mtime_ns))
-                    }
-                };
-            }
-        }
-    }
+    measure_ages(&mut sections, age_reference_ns);
     let ignore_rules = index.control_coverage();
     let (mut notes, mut tips) = display_notes(query, content, &ignore_rules);
     if content.includes_words() {
@@ -1764,7 +1789,12 @@ pub(crate) fn report_in(
         }
     }
     tips.extend(retained_refusals_tip(query, &ignore_rules));
-    if tree_measurements.is_some_and(|values| values.values().any(|value| !value.complete)) {
+    // Completeness rises to the root, so the root is incomplete exactly when some
+    // directory below it is.
+    if tree_views
+        && !query.min_share_for().admits(0, 1)
+        && recency.is_some_and(|recency| !recency.complete(EntryId::ROOT))
+    {
         notes.push("note: incomplete subtrees remain visible below the size threshold".to_owned());
     }
     if index.observes_controls() && !index.ignored_classification_complete_below(Path::new("")) {
@@ -1875,7 +1905,7 @@ struct Walked {
     ///
     /// A row's `ignored` stays `None` until an ignored entry is admitted beneath it;
     /// [`Self::summary_of`] is what reads it as the index's observation says.
-    per_directory: BTreeMap<EntryId, SummaryRow>,
+    per_directory: BTreeMap<EntryId, DirectoryTally>,
     /// Filtered per-extension tallies.
     by_ext: BTreeMap<String, ExtTally>,
     /// The ignored part of each filtered per-extension tally, for extensions that have one.
@@ -1894,11 +1924,124 @@ struct Walked {
 impl Walked {
     /// One directory's filtered totals, with an ignored share exactly when observed.
     fn summary_of(&self, id: EntryId) -> SummaryRow {
-        let mut row = self.per_directory.get(&id).copied().unwrap_or_default();
+        let mut row = self.per_directory.get(&id).map(|tally| tally.summary).unwrap_or_default();
         row.ignored = (self.observed && !self.unknown_ignored.contains(&id))
             .then(|| row.ignored.unwrap_or_default());
         row
     }
+
+    /// The newest modification time among the entries one directory's row counts, its own
+    /// entry included when the selection admitted it ([`TreeNode::mtime_ns`]).
+    fn activity_of(&self, id: EntryId) -> Option<i64> {
+        self.per_directory.get(&id).and_then(|tally| tally.newest_activity_ns)
+    }
+}
+
+/// Where a tree reads each directory row's newest activity and completeness.
+#[derive(Clone, Copy)]
+enum TreeRecency<'a> {
+    /// An unfiltered tree over an index whose every subtree was listed
+    /// ([`query_subtrees::every_subtree_listed`]): each row's activity is read from the
+    /// roll-up the index maintains ([`query_subtrees::maintained_activity`]), and every
+    /// row is complete.
+    Maintained(&'a Index),
+    /// An unfiltered tree over an index that may hold an unlisted subtree: one pass over
+    /// the index by id ([`query_subtrees::activity`]).
+    Unfiltered(&'a query_subtrees::ActivityTable),
+    /// A walked tree: activity the walk folded over what the selection counts, and
+    /// completeness from the subtree measurements when the index or its scope can leave
+    /// a subtree unlisted. Without them every subtree is complete.
+    Walked {
+        walked: &'a Walked,
+        measured: Option<&'a BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
+    },
+}
+
+impl TreeRecency<'_> {
+    /// The newest activity directory `id`'s row counts ([`TreeNode::mtime_ns`]).
+    fn activity(self, id: EntryId) -> Option<i64> {
+        match self {
+            Self::Maintained(index) => query_subtrees::maintained_activity(index, id),
+            Self::Unfiltered(table) => table.get(id).and_then(|value| value.newest_ns),
+            Self::Walked { walked, .. } => walked.activity_of(id),
+        }
+    }
+
+    /// Whether directory `id`'s subtree was listed in full ([`TreeNode::complete`]).
+    ///
+    /// A directory the measurements do not hold was pruned by the selection and is never
+    /// a row; reading it as incomplete keeps it out of any share proof.
+    fn complete(self, id: EntryId) -> bool {
+        match self {
+            Self::Maintained(_) => true,
+            Self::Unfiltered(table) => table.get(id).is_some_and(|value| value.complete),
+            Self::Walked { measured, .. } => {
+                measured.is_none_or(|values| values.get(&id).is_some_and(|value| value.complete))
+            }
+        }
+    }
+}
+
+/// Measure every row age in `sections` from `reference_ns`, the report's age reference.
+///
+/// The one rule for list rows and tree nodes alike: a signed difference from the row's
+/// newest counted modification, and no age at all when the row counts nothing, when the
+/// reference cannot be represented, or when the subtree is incomplete. An incomplete
+/// subtree's time is a lower bound, and a lower-bound maximum is not an age: the activity
+/// that would make the directory younger may sit in the part that was never listed.
+fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>) {
+    let age = |mtime_ns: Option<i64>, complete: Option<bool>| match complete {
+        Some(false) => None,
+        Some(true) | None => Some(i128::from(reference_ns?) - i128::from(mtime_ns?)),
+    };
+    for section in sections {
+        match section {
+            Section::Files { rows, .. } => {
+                for row in rows {
+                    row.age_ns = age(Some(row.mtime_ns), row.complete);
+                }
+            }
+            Section::Tree { root: Some(root), .. } => {
+                // Iterative, as every tree traversal here is: a deep tree must not
+                // exhaust the stack.
+                let mut stack: Vec<&mut TreeNode> = vec![&mut **root];
+                while let Some(node) = stack.pop() {
+                    node.age_ns = age(node.mtime_ns, node.complete);
+                    stack.extend(node.children.iter_mut());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Report {
+    /// Measure this report's ages from another reference instant, in epoch nanoseconds.
+    ///
+    /// Every age is a function of a row's modification time, its completeness, and the
+    /// reference, so this gives exactly the ages the same read at that reference has. A
+    /// watch session uses it to compare two repaints with the reference held fixed, so
+    /// ages that only grew older do not count as a change.
+    #[cfg(feature = "watch")]
+    pub(crate) fn measure_ages_from(&mut self, reference_ns: Option<i64>) {
+        self.age_reference_ns = reference_ns;
+        measure_ages(&mut self.sections, reference_ns);
+    }
+}
+
+/// One directory's filtered totals in the walk, beside the newest activity its tree row
+/// counts.
+///
+/// Activity is not a [`SummaryRow`] field because a summary keeps its files-only recency
+/// (`newest_mtime_ns`); it rides in the same map entry so the walk folds it with no
+/// lookup of its own.
+#[derive(Clone, Copy, Default)]
+struct DirectoryTally {
+    summary: SummaryRow,
+    /// The newest modification time among the counted entries beneath the directory, of
+    /// any kind, and of the directory itself once its post-order visit adds its own time
+    /// when the selection counted it.
+    newest_activity_ns: Option<i64>,
 }
 
 /// One directory's unfiltered totals from the roll-up state the index maintains, with its
@@ -1947,34 +2090,41 @@ fn walk(
         "a selection by ignored state over an unobserving index is refused before the walk"
     );
 
-    // (id, path, post-order, covered by a selected ancestor)
-    let mut stack = vec![(EntryId::ROOT, PathBuf::new(), false, false)];
-    while let Some((id, path, expanded, covered)) = stack.pop() {
+    // (id, path, post-order, covered by a selected ancestor, own time when counted)
+    //
+    // A directory's own time rides on its frame rather than being folded into its entry
+    // when its parent counts it: the post-order visit adds it, with no lookup of its own.
+    // The root's frame carries none, as the root is a traversal boundary.
+    let mut stack = vec![(EntryId::ROOT, PathBuf::new(), false, false, None)];
+    while let Some((id, path, expanded, covered, own_time)) = stack.pop() {
         if expanded {
             // Post-order: every child has finished, so fold their totals into this one.
             // `total` already carries this directory's own admitted files and admitted
             // directory children, both tallied in the pre-order pass below; what is left
             // is to add what each child subtree found deeper down.
             let mut total = walked.per_directory.remove(&id).unwrap_or_default();
+            total.newest_activity_ns = newer(total.newest_activity_ns, own_time);
             if let Some(children) = index.children_of(id) {
                 for (_, child) in children {
                     if let Some(sub) = walked.per_directory.get(&child) {
                         let sub = *sub;
-                        merge_summary(&mut total, &sub);
+                        merge_summary(&mut total.summary, &sub.summary);
+                        total.newest_activity_ns =
+                            newer(total.newest_activity_ns, sub.newest_activity_ns);
                         if walked.unknown_ignored.contains(&child) {
                             walked.unknown_ignored.insert(id);
                         }
                     }
                 }
             }
-            if total.files > 0 || total.dirs > 0 {
+            if total.summary.files > 0 || total.summary.dirs > 0 {
                 walked.visible.insert(id);
             }
             walked.per_directory.insert(id, total);
             continue;
         }
 
-        stack.push((id, path.clone(), true, covered));
+        stack.push((id, path.clone(), true, covered, own_time));
         let Some(children) = index.children_of(id) else {
             continue;
         };
@@ -2040,8 +2190,9 @@ fn walk(
             if matches {
                 walked.rows.push(row.clone());
             }
-            if matches || (covered && classification_admitted && selection.ignored.admits(ignored))
-            {
+            let counted = matches
+                || (covered && classification_admitted && selection.ignored.admits(ignored));
+            if counted {
                 if classification.is_none() {
                     walked.unknown_ignored.insert(id);
                 }
@@ -2052,8 +2203,15 @@ fn walk(
                     walked.visible.insert(child);
                 }
 
+                let tally = walked.per_directory.entry(id).or_default();
+                // Every counted entry is activity in its directory's row, whatever its
+                // kind; a directory's own time is added by its own post-order visit.
+                if kind != EntryKind::Dir {
+                    tally.newest_activity_ns =
+                        newer(tally.newest_activity_ns, Some(attrs.mtime_ns));
+                }
                 if kind == EntryKind::File {
-                    let own = walked.per_directory.entry(id).or_default();
+                    let own = &mut tally.summary;
                     own.files += 1;
                     own.bytes += attrs.size;
                     own.allocated += attrs.allocated;
@@ -2083,7 +2241,7 @@ fn walk(
                     // counting there reported directories the selection had rejected.
                     // `--kind file` answered "6 files, 3 directories", and a summary
                     // disagreed with the files view over the very same query.
-                    let own = walked.per_directory.entry(id).or_default();
+                    let own = &mut tally.summary;
                     own.dirs += 1;
                     if ignored {
                         own.ignored.get_or_insert_with(IgnoredTally::default).dirs += 1;
@@ -2092,7 +2250,8 @@ fn walk(
             }
 
             if kind == EntryKind::Dir {
-                stack.push((child, child_path, false, covered || matches));
+                let own_time = counted.then_some(attrs.mtime_ns);
+                stack.push((child, child_path, false, covered || matches, own_time));
             }
         }
     }
@@ -2157,10 +2316,11 @@ fn build_section(
     content: AnalysisSet,
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
-    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
+    recency: Option<TreeRecency<'_>>,
 ) -> Section {
     if query.tree_for(view) {
-        let (root, omissions) = tree_node(index, query, content, walked, tree_measurements);
+        let recency = recency.expect("a tree view reads recency from its pass or its walk");
+        let (root, omissions) = tree_node(index, query, content, walked, recency);
         let limits = TreeDisplayLimits {
             depth: query.depth_for(view),
             min_share: query.min_share_for(),
@@ -3040,7 +3200,7 @@ fn tree_node(
     query: &Query,
     content: AnalysisSet,
     walked: Option<&Walked>,
-    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
+    recency: TreeRecency<'_>,
 ) -> (Option<TreeNode>, Vec<TreeOmission>) {
     let unfiltered = (walked.is_none() && matches!(query.selection.sort, Some(SortKey::Metric(_))))
         .then(|| every_entry(index));
@@ -3069,6 +3229,9 @@ fn tree_node(
         dirs: root_summary.dirs,
         ignored: root_summary.ignored,
         newest_mtime_ns: root_summary.newest_mtime_ns,
+        mtime_ns: recency.activity(EntryId::ROOT),
+        complete: Some(recency.complete(EntryId::ROOT)),
+        age_ns: None,
         children: Vec::new(),
         omissions: Vec::new(),
         truncated: false,
@@ -3085,7 +3248,7 @@ fn tree_node(
         };
         return (None, vec![omitted]);
     }
-    expand(index, query, walked, &metric_values, tree_measurements, &mut root);
+    expand(index, query, walked, &metric_values, recency, &mut root);
     if let Some(cap) = query.limit_for(ViewSpec::Tree).limit() {
         root = cap_tree_rows(root, cap, index.state().coverage == crate::Coverage::Complete);
     }
@@ -3261,7 +3424,7 @@ fn expand(
     query: &Query,
     walked: Option<&Walked>,
     metric_values: &BTreeMap<PathBuf, u64>,
-    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
+    recency: TreeRecency<'_>,
     node: &mut TreeNode,
 ) {
     /// One node awaiting its children.
@@ -3286,6 +3449,9 @@ fn expand(
             dirs: node.dirs,
             ignored: node.ignored,
             newest_mtime_ns: node.newest_mtime_ns,
+            mtime_ns: node.mtime_ns,
+            complete: node.complete,
+            age_ns: node.age_ns,
             children: Vec::new(),
             omissions: Vec::new(),
             truncated: false,
@@ -3306,17 +3472,8 @@ fn expand(
         let (id, depth) = (built[cursor].id, built[cursor].depth);
         let path = built[cursor].node.path.clone();
 
-        let (mut rows, below_share) = child_rows(
-            index,
-            query,
-            walked,
-            metric_values,
-            tree_measurements,
-            id,
-            &path,
-            &threshold,
-            grand,
-        );
+        let (mut rows, below_share) =
+            child_rows(index, query, walked, metric_values, recency, id, &path, &threshold, grand);
         // A folded index kept only files that can reach the share, so the files it folded
         // here are rows below it as well.
         record_omission(
@@ -3388,7 +3545,7 @@ fn child_rows(
     query: &Query,
     walked: Option<&Walked>,
     metric_values: &BTreeMap<PathBuf, u64>,
-    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
+    recency: TreeRecency<'_>,
     id: EntryId,
     path: &Path,
     threshold: &ShareThreshold,
@@ -3453,10 +3610,11 @@ fn child_rows(
         // A complete child below a partial root's observed total is also below the true
         // (at least as large) total. Only an incomplete child's own unknown contents
         // prevent that proof; unrelated scan errors do not.
-        let child_complete = kind == EntryKind::File
-            || tree_measurements
-                .is_none_or(|values| values.get(&child).is_some_and(|subtree| subtree.complete));
-        if child_complete && !threshold.admits(value, grand) {
+        let (mtime_ns, complete) = match kind {
+            EntryKind::File => (summary.newest_mtime_ns, None),
+            _ => (recency.activity(child), Some(recency.complete(child))),
+        };
+        if complete != Some(false) && !threshold.admits(value, grand) {
             below_share.push(RowFacts {
                 files: summary.files,
                 bytes: summary.bytes,
@@ -3478,6 +3636,9 @@ fn child_rows(
                 dirs: summary.dirs,
                 ignored: summary.ignored,
                 newest_mtime_ns: summary.newest_mtime_ns,
+                mtime_ns,
+                complete,
+                age_ns: None,
                 children: Vec::new(),
                 omissions: Vec::new(),
                 truncated: false,
@@ -3497,7 +3658,9 @@ fn child_rows(
                 SizeMetric::Allocated => row.allocated,
             },
             count: |(row, _): &(TreeNode, EntryId)| row.files,
-            mtime: |(row, _): &(TreeNode, EntryId)| row.newest_mtime_ns,
+            // The activity the age column shows, so the order matches the column it sorts
+            // and the order a list sorted by recency already has.
+            mtime: |(row, _): &(TreeNode, EntryId)| row.mtime_ns,
             name: borrowed_name(|(row, _): &(TreeNode, EntryId)| {
                 std::borrow::Cow::Borrowed(row.name.as_str())
             }),
@@ -3984,6 +4147,185 @@ mod tests {
         let root = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
         assert!(root.truncated, "a file leaf is hidden by depth zero");
         assert_eq!(root.bytes, 7);
+    }
+
+    /// One tree row's activity, completeness, and age.
+    type RowAge = (Option<i64>, Option<bool>, Option<i128>);
+
+    /// Every row of a tree by path, with its [`RowAge`].
+    fn ages_of(root: &TreeNode) -> BTreeMap<PathBuf, RowAge> {
+        let mut rows = BTreeMap::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            rows.insert(node.path.clone(), (node.mtime_ns, node.complete, node.age_ns));
+            stack.extend(node.children.iter());
+        }
+        rows
+    }
+
+    /// Every bound lifted, so a tree shows every row its selection counts.
+    fn whole(selection: Selection) -> Selection {
+        Selection {
+            depth: Some(Bound::All),
+            breadth: Some(Bound::All),
+            limit: Some(Bound::All),
+            min_share: Some(ShareThreshold::parse("0%").expect("share")),
+            ..selection
+        }
+    }
+
+    /// The sample with a directory and a symlink newer than any file, an empty directory,
+    /// and an other entry, beside directories whose own times are older than their files.
+    fn active_sample() -> Index {
+        let mut index = sample();
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, attrs(0, 3)),
+            upsert("docs", EntryKind::Dir, attrs(0, 4)),
+            upsert("src/deep", EntryKind::Dir, attrs(0, 6)),
+            upsert("src/empty", EntryKind::Dir, attrs(0, 60)),
+            upsert("docs/link", EntryKind::Symlink, attrs(9, 70)),
+            upsert("fifo", EntryKind::Other, attrs(0, 80)),
+        ]));
+        index.set_initial_freshness(true);
+        index
+    }
+
+    /// A tree row's age is the newest time among the entries it counts, of any kind and
+    /// its own included, measured from the request's instant; the root's own time never
+    /// counts. Under a selection that admits everything it is the list row's for the same
+    /// directory, and the unfiltered pass and the walk agree on it.
+    #[test]
+    fn tree_rows_age_their_counted_activity_as_list_rows_do() {
+        let index = active_sample();
+        let joined = |parts: &[&str]| parts.iter().collect::<PathBuf>();
+        let expected = BTreeMap::from([
+            (PathBuf::new(), (Some(80), Some(true), Some(-80))),
+            (joined(&["src"]), (Some(60), Some(true), Some(-60))),
+            (joined(&["src", "deep"]), (Some(40), Some(true), Some(-40))),
+            (joined(&["src", "empty"]), (Some(60), Some(true), Some(-60))),
+            (joined(&["docs"]), (Some(70), Some(true), Some(-70))),
+            (joined(&["notes.txt"]), (Some(5), None, Some(-5))),
+            (joined(&["src", "main.rs"]), (Some(10), None, Some(-10))),
+            (joined(&["src", "lib.rs"]), (Some(20), None, Some(-20))),
+            (joined(&["src", "deep", "nested.rs"]), (Some(40), None, Some(-40))),
+            (joined(&["docs", "guide.md"]), (Some(30), None, Some(-30))),
+        ]);
+        let unfiltered =
+            tree_of(&run(&index, &query(&[ViewSpec::Tree], whole(Selection::default()))));
+        assert_eq!(ages_of(&unfiltered), expected);
+        // A flat files view beside the tree takes the walk, which must agree.
+        let walked =
+            run(&index, &query(&[ViewSpec::Tree, ViewSpec::Files], whole(Selection::default())));
+        assert_eq!(ages_of(&tree_of(&walked)), expected);
+        // The list row of each directory carries the same time.
+        for row in files_of(&run(
+            &index,
+            &flat(Selection { kinds: vec![EntryKind::Dir], ..Selection::default() }),
+        )) {
+            assert_eq!(expected[&row.path].0, Some(row.mtime_ns), "{}", row.path.display());
+        }
+        // `newest_mtime_ns` keeps its files-only meaning.
+        assert_eq!(unfiltered.newest_mtime_ns, Some(40));
+        // A root's own time is not activity: an empty root counts nothing and has no age.
+        let mut empty = Index::new("/empty");
+        empty.set_initial_freshness(true);
+        let root = tree_of(&run(&empty, &query(&[ViewSpec::Tree], Selection::default())));
+        assert_eq!((root.mtime_ns, root.complete, root.age_ns), (None, Some(true), None));
+    }
+
+    /// Under a filter a row ages what it counts: `--kind file` counts no directory's own
+    /// time, a window leaves its newest entries out, and a row that counts nothing has no
+    /// age at all.
+    #[test]
+    fn a_filtered_tree_row_ages_only_what_its_selection_counts() {
+        let index = active_sample();
+        let files = tree_of(&run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                whole(Selection { kinds: vec![EntryKind::File], ..Selection::default() }),
+            ),
+        ));
+        let rows = ages_of(&files);
+        assert_eq!(rows[Path::new("")].0, Some(40), "the newest file, not the fifo");
+        assert_eq!(rows[Path::new("src")].0, Some(40), "not src/empty's own time");
+        assert_eq!(rows[Path::new("docs")].0, Some(30), "not the symlink");
+        assert!(!rows.contains_key(Path::new("src/empty")), "an empty directory counts nothing");
+
+        let older = tree_of(&run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                whole(Selection {
+                    modified: crate::query::query_selection::ModifiedWindow {
+                        since: None,
+                        before: Some(25),
+                    },
+                    ..Selection::default()
+                }),
+            ),
+        ));
+        assert_eq!(older.mtime_ns, Some(20), "src/lib.rs is the newest entry before 25");
+        assert_eq!(older.age_ns, Some(-20));
+
+        let nothing = tree_of(&run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                whole(Selection { include: vec![pattern("absent")], ..Selection::default() }),
+            ),
+        ));
+        assert_eq!((nothing.mtime_ns, nothing.complete, nothing.age_ns), (None, Some(true), None));
+    }
+
+    /// An incomplete subtree keeps its lower-bound activity and has no age; a time after
+    /// the reference is a negative age; and `--sort mtime` orders by the activity the age
+    /// column shows, so a directory whose newest entry is a symlink sorts by it.
+    #[test]
+    fn tree_ages_are_unknown_when_incomplete_and_sort_by_activity() {
+        let mut bounded = Index::new_with_scope(
+            "/root",
+            crate::ScanScope { max_depth: Some(2), ..crate::ScanScope::default() },
+        );
+        bounded.apply_ok(&Observation::new(vec![
+            upsert("env", EntryKind::Dir, attrs(0, 5)),
+            upsert("env/lib", EntryKind::Dir, attrs(0, 7)),
+            upsert("env/a.bin", EntryKind::File, attrs(100, 40)),
+            upsert("docs", EntryKind::Dir, attrs(0, 5)),
+            upsert("docs/guide.md", EntryKind::File, attrs(30, 50)),
+        ]));
+        bounded.set_initial_freshness(true);
+        for views in [&[ViewSpec::Tree][..], &[ViewSpec::Tree, ViewSpec::Files]] {
+            let rows =
+                ages_of(&tree_of(&run(&bounded, &query(views, whole(Selection::default())))));
+            assert_eq!(rows[Path::new("")], (Some(50), Some(false), None), "{views:?}");
+            assert_eq!(rows[Path::new("env")], (Some(40), Some(false), None), "{views:?}");
+            assert_eq!(rows[Path::new("docs")], (Some(50), Some(true), Some(-50)), "{views:?}");
+        }
+
+        let index = active_sample();
+        let mut request = crate::test_support::read_of(
+            &index,
+            query(&[ViewSpec::Tree], whole(Selection::default())),
+        );
+        // A `SystemTime` is 100 ns apart on Windows, so the reference sits on a multiple of
+        // that: a finer one would be truncated to an earlier instant there.
+        request.now = UNIX_EPOCH;
+        let root = tree_of(&report(&index, &request, generated_at()).expect("report"));
+        assert_eq!(ages_of(&root)[Path::new("docs")].2, Some(-70), "70 is after the epoch");
+
+        let by_activity = tree_of(&run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                whole(Selection { sort: Some(SortKey::Mtime), ..Selection::default() }),
+            ),
+        ));
+        assert_eq!(
+            by_activity.children.iter().map(|row| row.name.as_str()).collect::<Vec<_>>(),
+            ["docs", "src", "notes.txt"],
+            "docs's symlink (70) is newer than anything in src (60)"
+        );
     }
 
     #[test]
@@ -5179,7 +5521,9 @@ mod tests {
         assert_eq!(remainder.reasons, vec![TreeOmissionReason::Depth]);
         let text = crate::report_format::render(&report, crate::report_format::Format::Text, false)
             .expect("render");
-        assert!(text.contains("—     unknown    … and more files (count unknown)"));
+        // The root's age is unknown too, and the remainder's age cell is blank beneath it.
+        assert!(text.contains("100 B  unknown  . 1 file"), "{text}");
+        assert!(text.contains("—     unknown             … and more files (count unknown)"));
     }
 
     /// A failed listing must not turn off the default threshold for verified siblings.
@@ -5202,7 +5546,12 @@ mod tests {
             std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
         )]);
         let selection = Selection { size: SizeMetric::Apparent, ..Selection::default() };
-        let report = run(&index, &query(&[ViewSpec::Tree], selection.clone()));
+        // An hour after every time in the tree, as the command-line test that shares this
+        // golden stamps its fixture an hour and a half minute back.
+        let mut request =
+            crate::test_support::read_of(&index, query(&[ViewSpec::Tree], selection.clone()));
+        request.now = UNIX_EPOCH + Duration::from_secs(3_600);
+        let report = report(&index, &request, generated_at()).expect("report");
         assert!(!report.status.complete);
         assert_eq!(
             crate::report_format::render(&report, crate::report_format::Format::Text, false)
@@ -5903,21 +6252,18 @@ mod tests {
             upsert("f2", EntryKind::File, attrs(2, 50)),
         ]));
         let id = |path: &str| index.lookup(Path::new(path)).expect("an indexed path");
-        let measured = |bytes: u64, complete| query_subtrees::SubtreeValues {
-            bytes,
-            allocated: bytes.div_ceil(512) * 512,
-            mtime_ns: 0,
-            files: 1,
-            dirs: 0,
+        let measured = |newest_ns, complete| query_subtrees::DirectoryActivity {
+            newest_ns: Some(newest_ns),
             complete,
         };
-        let measurements: BTreeMap<EntryId, query_subtrees::SubtreeValues> = [
-            (id("big"), measured(1_000, true)),
-            (id("small"), measured(5, true)),
-            (id("tiny"), measured(3, false)),
-        ]
-        .into_iter()
-        .collect();
+        let activity = query_subtrees::ActivityTable::of(
+            &index,
+            [
+                (id("big"), measured(10, true)),
+                (id("small"), measured(20, true)),
+                (id("tiny"), measured(30, false)),
+            ],
+        );
         // Apparent bytes, so the shares below are the file sizes' rather than their
         // allocated blocks', which round every small file up to one.
         let query = query(
@@ -5931,17 +6277,22 @@ mod tests {
             &query,
             None,
             &BTreeMap::new(),
-            Some(&measurements),
+            TreeRecency::Unfiltered(&activity),
             EntryId::ROOT,
             Path::new(""),
             &ShareThreshold::one_percent(),
             grand,
         );
         // 1% of 1,210 is 12.1: `big` and `f1` clear it, `tiny` does not but is incomplete,
-        // and the rows come sorted by size, largest first, as the tree sorts them.
+        // and the rows come sorted by size, largest first, as the tree sorts them. Each
+        // directory row carries its activity and completeness, and a file its own time.
         assert_eq!(
             rows.iter().map(|(row, id)| (row.name.as_str(), row.bytes, *id)).collect::<Vec<_>>(),
             [("big", 1_000, id("big")), ("f1", 200, id("f1")), ("tiny", 3, id("tiny"))]
+        );
+        assert_eq!(
+            rows.iter().map(|(row, _)| (row.mtime_ns, row.complete)).collect::<Vec<_>>(),
+            [(Some(10), Some(true)), (Some(40), None), (Some(30), Some(false))]
         );
         assert!(rows.iter().all(|(row, _)| row.path.as_path() == Path::new(&row.name)));
         // `small` and `f2` are below the share: their facts alone, `small` with the ignored
@@ -5969,6 +6320,9 @@ mod tests {
                 dirs: 3,
                 ignored: None,
                 newest_mtime_ns: None,
+                mtime_ns: None,
+                complete: Some(complete),
+                age_ns: None,
                 children: Vec::new(),
                 omissions: Vec::new(),
                 truncated: false,
@@ -6188,7 +6542,18 @@ mod tests {
         ];
         let mut actual = String::new();
         for (label, index, selection) in cases {
-            let report = run(index, &query(&[ViewSpec::Tree], selection));
+            // Ages are incidental here, and one fixture is written to disk as the test
+            // runs. Read each tree a microsecond after its newest activity, so every age is
+            // `0s` however long ago the fixture was written. Not at that instant itself: a
+            // `SystemTime` is 100 ns apart on Windows, and the instant would be truncated to
+            // one before the newest time there, which renders `-0s`.
+            let query = query(&[ViewSpec::Tree], selection);
+            let newest = tree_of(&run(index, &query)).mtime_ns.expect("every tree has activity");
+            let mut request = crate::test_support::read_of(index, query);
+            request.now = UNIX_EPOCH
+                + Duration::from_nanos(u64::try_from(newest).expect("after the epoch"))
+                + Duration::from_micros(1);
+            let report = report(index, &request, generated_at()).expect("report");
             actual.push_str(label);
             actual.push('\n');
             actual.push_str(

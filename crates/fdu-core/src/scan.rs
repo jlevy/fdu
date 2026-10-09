@@ -2977,11 +2977,18 @@ fn scan_concurrent_detached(
                 unreachable!("the shared runner consumes scale-up messages")
             }
         };
-        // A folded index takes H72's listing policy (H185); the full index stats every
-        // entry, since its directory attributes are the cache's freshness fingerprint.
-        let worker: WalkWorker =
-            if retention.is_some() { walk_detached_folding_worker } else { walk_detached_worker };
-        run_concurrent_walk(root, config, root_dev, pool, diagnostics, policy, worker, &mut consume)
+        // A folded index and a full one observe every entry alike, so a tree row's age is
+        // the same on either ([`DetachedEmission`]).
+        run_concurrent_walk(
+            root,
+            config,
+            root_dev,
+            pool,
+            diagnostics,
+            policy,
+            walk_detached_worker,
+            &mut consume,
+        )
     };
     if let Some(error) = build_error {
         return Err(error);
@@ -3211,8 +3218,9 @@ trait WalkEmission {
         diagnostics: Option<&ScanDiagnosticsRecorder>,
     );
 
-    /// The transient summary and the folded index take directory and symlink kind from
-    /// the listing, with default attributes (H72, H185); every other route stats them.
+    /// The transient summary takes directory and symlink kind from the listing, with
+    /// default attributes (H72), because nothing it reports reads them; every other route
+    /// stats them.
     fn skip_dir_symlink_stat(&self) -> bool {
         false
     }
@@ -3509,15 +3517,16 @@ const DETACHED_SPARE_CHILD_CAPACITY: usize = 64;
 /// screen and context-switch profile point at that contention for the index tier's gap
 /// to its peers. A reused listing carries exactly the facts a fresh one would: the same
 /// path bytes, and children and control only from this directory's listing.
+///
+/// Every child is stated, on the full index's route and the folded index's alike, so
+/// neither takes H72's listing policy. A tree row's age counts each directory's and
+/// symlink's own modification time, and the folded index answers the default one-shot
+/// tree: with default attributes there, a directory would be aged by its files alone on
+/// that route and by its activity on every full-index route. The full index's directory
+/// attributes are also the cache's freshness fingerprint. H185 once skipped these stats
+/// on the folded route, for 3.6% of the default tree on a directory-dense Linux tree
+/// (exp-197); the age column gave that back (`fdu-088k` measures the cost).
 struct DetachedEmission {
-    /// H72's listing policy for the folded index (H185): a directory or symlink takes its
-    /// kind from `d_type` and default attributes, as the transient summary does. A
-    /// one-shot tree report reads no directory's or symlink's own attributes: its rows
-    /// carry roll-ups, `newest_mtime_ns` is the files', symlinks and other kinds
-    /// contribute nothing, and `dev` is read only under `--one-filesystem`, where the
-    /// policy keeps the stat. The full index keeps every stat: its directory attributes
-    /// are the cache's freshness fingerprint.
-    skip_dir_symlink_stat: bool,
     directories: Vec<DetachedDirectory>,
     /// Emptied listings ready to be reused by [`WalkEmission::begin_directory`].
     spare: Vec<DetachedDirectory>,
@@ -3528,10 +3537,9 @@ struct DetachedEmission {
 }
 
 impl DetachedEmission {
-    fn new(skip_dir_symlink_stat: bool) -> Self {
+    fn new() -> Self {
         let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
         Self {
-            skip_dir_symlink_stat,
             directories: Vec::new(),
             spare: Vec::new(),
             spare_list: Vec::new(),
@@ -3565,10 +3573,6 @@ impl DetachedEmission {
 
 impl WalkEmission for DetachedEmission {
     type Directory = DetachedDirectory;
-
-    fn skip_dir_symlink_stat(&self) -> bool {
-        self.skip_dir_symlink_stat
-    }
 
     fn begin_directory(&mut self, path: &Path) -> Self::Directory {
         let Some(mut directory) = self.spare.pop() else {
@@ -3666,31 +3670,6 @@ fn walk_detached_worker(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
 ) -> ScanReport {
-    walk_detached_with(root, config, root_dev, queue, sender, diagnostics, false)
-}
-
-/// [`walk_detached_worker`] for a folded index, which describes each directory once, by
-/// its own listing (H185): see [`DetachedEmission::skip_dir_symlink_stat`].
-fn walk_detached_folding_worker(
-    root: &Path,
-    config: &ScanConfig,
-    root_dev: u64,
-    queue: &DirectoryQueue,
-    sender: &std::sync::mpsc::Sender<WalkMessage>,
-    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
-) -> ScanReport {
-    walk_detached_with(root, config, root_dev, queue, sender, diagnostics, true)
-}
-
-fn walk_detached_with(
-    root: &Path,
-    config: &ScanConfig,
-    root_dev: u64,
-    queue: &DirectoryQueue,
-    sender: &std::sync::mpsc::Sender<WalkMessage>,
-    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
-    skip_dir_symlink_stat: bool,
-) -> ScanReport {
     let report = walk_worker_with(
         root,
         config,
@@ -3698,7 +3677,7 @@ fn walk_detached_with(
         queue,
         sender,
         diagnostics,
-        DetachedEmission::new(skip_dir_symlink_stat),
+        DetachedEmission::new(),
     );
     // A walker leaves only when the queue is empty with nothing in flight, or when its
     // consumer is gone, so the walk is over. The index may still be assembling the
@@ -6085,6 +6064,7 @@ fn reconcile_target_inner(
     }
 
     if !subtree.as_os_str().is_empty() {
+        push_directory_attributes(target, &root, subtree, &mut batch)?;
         let baseline = target.expectation(subtree)?;
         let absolute = root.join(subtree);
         let (kind, attrs) = match observe_path(&absolute) {
@@ -7287,6 +7267,43 @@ fn remove_known_children(
     flush_reconcile_batch(target, batch, sink, report)
 }
 
+/// Re-read the own attributes of the directory `subtree` lives in, without listing it.
+///
+/// Whatever happened at `subtree` (an entry created, removed, or moved in) moved that
+/// directory's own modification time, and the walk below never reads it: the directory
+/// is outside the subtree. So a refresh of a removed path, or a reconciliation of one a
+/// watch invalidated, left its directory aged by its old time, where a cold walk of the
+/// same tree reads it as just changed (B1 on #191). This joins the walk's first batch, so
+/// the directory's time commits with the subtree's facts.
+///
+/// Only a directory the index holds is refreshed, conditional on the entry it holds, and
+/// only when its attributes moved; a directory that is gone or no longer one is the
+/// business of a walk of it. The root is never read: its own time counts toward no row,
+/// and a cold walk does not record it.
+fn push_directory_attributes(
+    target: &ReconcileTarget<'_>,
+    root: &Path,
+    subtree: &Path,
+    batch: &mut Vec<ObservationOp>,
+) -> Result<()> {
+    let Some(directory) = subtree.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+        return Ok(());
+    };
+    let baseline = target.expectation(directory)?;
+    let PathState::Present { kind: EntryKind::Dir, attrs: held } = baseline.state else {
+        return Ok(());
+    };
+    if let Ok((EntryKind::Dir, attrs)) = observe_path(&root.join(directory)) {
+        if attrs != held {
+            batch.push(ObservationOp::if_state(
+                Op::Upsert { path: directory.to_path_buf(), kind: EntryKind::Dir, attrs },
+                baseline,
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn push_reconcile_upsert(
     target: &ReconcileTarget<'_>,
     path: &Path,
@@ -7909,26 +7926,32 @@ mod tests {
         }
     }
 
-    /// H185: a folded index describes each directory once, by its own listing, so its
-    /// directory and symlink entries carry the listing's default attributes, as the
-    /// transient summary's do (H72); the full index keeps the parent's stat, which is the
-    /// cache's freshness fingerprint. Under `--one-filesystem` descent reads each
-    /// directory's device, so the folded walk keeps that stat too. macOS lists every
-    /// child's attributes in bulk and Windows never takes the skip, so neither shows it.
-    #[cfg(all(unix, not(target_os = "macos")))]
+    /// A folded index reads each directory's and symlink's own attributes, exactly as the
+    /// full index does. A tree row's age counts a directory's and a symlink's own
+    /// modification time, and the folded index answers the default one-shot tree, so a
+    /// directory there with the listing's default attributes would be aged by its files
+    /// alone, and by its activity on every full-index route. H185 once took H72's listing
+    /// policy on this route; the age column gave that back.
+    ///
+    /// Each platform's native listing (`linux_dents`, macOS bulk listing) is checked, and
+    /// so is the portable reader a declined directory falls back to: a test hook covering
+    /// the root sends every directory there. Windows has no unprivileged symlink and never
+    /// took the skip.
+    #[cfg(unix)]
     #[test]
-    fn a_folded_index_takes_directory_and_symlink_kinds_from_the_listing() {
+    fn a_folded_index_reads_every_directory_and_symlink_attribute() {
         let root = tempfile::tempdir().expect("temp root");
         write_file(&root.path().join("dir/file.txt"), b"contents");
         write_file(&root.path().join("dir/nested/deep.txt"), b"more");
         write_file(&root.path().join("top.txt"), b"top");
         std::os::unix::fs::symlink("top.txt", root.path().join("link")).expect("symlink");
+        std::os::unix::fs::symlink("nested", root.path().join("dir/inner")).expect("symlink");
         let canonical = root.path().canonicalize().expect("canonical root");
         let retention = crate::execution::TreeRetention {
             largest_files: 100,
             size: crate::query::SizeMetric::Allocated,
         };
-        let attrs_by_kind = |index: &Index| -> Vec<(EntryKind, bool)> {
+        let directories_and_symlinks = |index: &Index| -> Vec<(PathBuf, EntryKind, Attrs)> {
             let mut seen = Vec::new();
             let mut stack = vec![(PathBuf::new(), crate::EntryId::ROOT)];
             while let Some((path, id)) = stack.pop() {
@@ -7936,42 +7959,50 @@ mod tests {
                 for (name, child) in children {
                     let kind = index.kind_of(child).expect("live child");
                     let attrs = index.attrs_of(child).expect("live child");
-                    seen.push((kind, *attrs == Attrs::default()));
+                    if matches!(kind, EntryKind::Dir | EntryKind::Symlink) {
+                        seen.push((path.join(name), kind, *attrs));
+                    }
                     if kind.is_dir() {
                         stack.push((path.join(name), child));
                     }
                 }
             }
-            seen.sort_by_key(|(kind, defaulted)| (*kind as u8, *defaulted));
+            seen.sort_by(|left, right| left.0.cmp(&right.0));
             seen
         };
 
-        for threads in [1, 4] {
-            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
-            let (folded, _, _) =
-                scan_into_folded_index(&canonical, &config, retention, false).expect("folded");
-            let (full, _) = scan_into_index(&canonical, &config).expect("full");
-            for (kind, defaulted) in attrs_by_kind(&folded) {
-                assert_eq!(
-                    defaulted,
-                    matches!(kind, EntryKind::Dir | EntryKind::Symlink),
-                    "{threads} workers: a folded {kind:?} takes its kind from the listing"
-                );
-            }
-            assert!(
-                attrs_by_kind(&full).iter().all(|(_, defaulted)| !defaulted),
-                "{threads} workers: the full index stats every entry"
-            );
-
-            let bound = ScanConfig { one_filesystem: true, ..config };
-            let (folded, _, _) =
-                scan_into_folded_index(&canonical, &bound, retention, false).expect("folded");
-            for (kind, defaulted) in attrs_by_kind(&folded) {
-                assert_eq!(
-                    defaulted,
-                    kind == EntryKind::Symlink,
-                    "{threads} workers, one filesystem: directories keep their device"
-                );
+        for portable in [false, true] {
+            let _hook = portable.then(|| install_walk_hook(&canonical, |_| None));
+            for threads in [1, 4] {
+                for one_filesystem in [false, true] {
+                    let config = ScanConfig {
+                        threads: Some(threads),
+                        one_filesystem,
+                        ..ScanConfig::default()
+                    };
+                    let label = format!(
+                        "{threads} workers, portable {portable}, one filesystem {one_filesystem}"
+                    );
+                    let (folded, _, _) =
+                        scan_into_folded_index(&canonical, &config, retention, false)
+                            .expect("folded");
+                    let (full, _) = scan_into_index(&canonical, &config).expect("full");
+                    let folded = directories_and_symlinks(&folded);
+                    assert_eq!(folded.len(), 4, "{label}: two directories and two symlinks");
+                    for (path, kind, attrs) in &folded {
+                        assert_ne!(
+                            *attrs,
+                            Attrs::default(),
+                            "{label}: the folded {kind:?} {path:?} was stated"
+                        );
+                        assert_ne!(attrs.mtime_ns, 0, "{label}: {path:?} carries its own time");
+                    }
+                    assert_eq!(
+                        folded,
+                        directories_and_symlinks(&full),
+                        "{label}: the folded and full indexes read the same attributes"
+                    );
+                }
             }
         }
     }
@@ -7982,7 +8013,7 @@ mod tests {
         // them. A reused listing must be indistinguishable from a fresh one, including
         // after the consumer returned it unapplied, as it does after a build error.
         let (sender, receiver) = std::sync::mpsc::channel();
-        let mut emission = DetachedEmission::new(false);
+        let mut emission = DetachedEmission::new();
 
         let mut skipped = emission.begin_directory(Path::new("a/much/longer/relative/path"));
         skipped.children.push(DetachedChild {

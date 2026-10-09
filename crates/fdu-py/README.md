@@ -226,10 +226,19 @@ directory output. Largest/recent remain regular-file presets, with optional Path
 output.
 
 Directory `FileRow` values carry subtree `bytes`, `allocated`, `files`, `dirs`,
-`complete`, `mtime_ns`, and `age_ns`; non-directory counts are `None`. A directory whose
-subtree was not listed in full has `complete=False`, lower-bound sizes, and
-`age_ns=None`. The fixed `Report.age_reference_ns` explains age, including negative
-future ages and pre-epoch mtime.
+`complete`, `mtime_ns`, `age_ns`, and `modified_at`; non-directory counts are `None`. A
+directory whose subtree was not listed in full has `complete=False`, lower-bound sizes,
+`age_ns=None`, and `modified_at=None`. Each `TreeNode` carries the same `mtime_ns`,
+`complete` (`None` for a file), `age_ns`, and `modified_at`: the newest modification
+among the entries the row counts, of any kind, never the report root’s own time, and
+`None` when it counts nothing.
+Its `newest_mtime_ns` keeps the newest regular file alone.
+`Report.age_reference_ns` is the instant every age is measured from, including negative
+future ages and pre-epoch mtime, and `Report.age_reference_at` is that instant as a
+`datetime`. A `Watch.report()` measures from the instant it is called; the windows its
+query selects by stay as the query resolved them.
+`modified_at` and `age_reference_at` are timezone-aware UTC `datetime` values derived
+from the exact nanoseconds, floored to the microsecond.
 An unrepresentable reference yields `None` age.
 Exclusions win throughout the subtree; nested roots may overlap, while grouped totals
 count their union once.
@@ -259,7 +268,7 @@ The terminal gives that remainder one root-level line, such as
 `… and 12,345 more files`, with its combined size and root share in the usual columns.
 Use `report.render(bar_size=20)` for wider bars, or `bar_size=0` (also negative values)
 to hide them; the default is 10. Machine formats are unchanged.
-Machine reports use `fdu.report/10`. Machine List output is complete unless explicitly
+Machine reports use `fdu.report/11`. Machine List output is complete unless explicitly
 limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).

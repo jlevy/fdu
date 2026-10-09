@@ -24,7 +24,7 @@ from runner import Invocation, _read_jsonl_report, case_key, compare, normalize
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/10",
+        "schema": "fdu.report/11",
         "request": {
             "scope": {"read_controls": True},
             "analyze": [],
@@ -190,6 +190,31 @@ class CompareTests(unittest.TestCase):
         wrong = timed(200, 209)
         self.assertEqual(
             compare(cli(earlier), cli(wrong), policy="auto").paths, ("reports[].files[].age_ns",)
+        )
+
+    def test_tree_node_ages_are_compared_as_residuals_at_every_depth(self) -> None:
+        def timed(reference: int, root_age: int | None, leaf_age: int) -> dict[str, Any]:
+            leaf = {"name": "f", "mtime_ns": 30, "age_ns": leaf_age, "children": []}
+            tree = {"name": ".", "mtime_ns": 40, "age_ns": root_age, "children": [leaf]}
+            return answer(
+                age_reference_ns=reference,
+                age_reference_at=f"read at {reference}",
+                reports=[{"tree": tree}],
+            )
+
+        earlier = timed(100, 60, 70)
+        self.assertEqual(
+            compare(cli(earlier), cli(timed(500, 460, 470)), policy="auto").kind, "same"
+        )
+        self.assertEqual(earlier["reports"][0]["tree"]["children"][0]["age_ns"], 70)
+        self.assertEqual(
+            compare(cli(earlier), cli(timed(500, 460, 469)), policy="auto").paths,
+            ("reports[].tree.children[].age_ns",),
+        )
+        self.assertEqual(
+            compare(cli(earlier), cli(timed(500, None, 470)), policy="auto").paths,
+            ("reports[].tree.age_ns",),
+            "a known age and an unknown one are different answers",
         )
 
     def test_list_indices_are_generalized(self) -> None:

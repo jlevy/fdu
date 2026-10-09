@@ -12,7 +12,7 @@ import math
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -729,6 +729,9 @@ class FileRow:
     #: Signed modification age relative to Report.age_reference_ns; future is negative,
     #: and ``None`` when the reference is unrepresentable or the subtree is incomplete.
     age_ns: int | None = None
+    #: ``mtime_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
+    #: ``None`` when the subtree is incomplete and ``mtime_ns`` only a lower bound.
+    modified_at: datetime | None = None
 
 
 class TreeOmissionReason(StrEnum):
@@ -767,6 +770,7 @@ class TreeNode:
     allocated: int
     files: int
     dirs: int
+    #: The newest regular file's modification time in this subtree, or ``None`` with none.
     newest_mtime_ns: int | None
     truncated: bool
     children: tuple[TreeNode, ...]
@@ -775,6 +779,20 @@ class TreeNode:
     ignored: IgnoredTally | None = None
     #: Whether this entry itself is gitignored, or ``None`` when classification is unknown.
     entry_ignored: bool | None = None
+    #: The newest modification time among the entries this row counts, of any kind: its
+    #: own entry when the selection admits it and every counted entry beneath it, never
+    #: the report root's own time. ``None`` when the row counts nothing; a lower bound
+    #: when ``complete`` is false. The age the text tree shows.
+    mtime_ns: int | None = None
+    #: Whether the directory's subtree was listed in full; ``None`` for a file.
+    complete: bool | None = None
+    #: Signed age relative to Report.age_reference_ns; future is negative, and ``None``
+    #: when the row counts nothing, the subtree is incomplete, or the reference is
+    #: unrepresentable.
+    age_ns: int | None = None
+    #: ``mtime_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
+    #: ``None`` when the row counts nothing or its subtree is incomplete.
+    modified_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1006,7 +1024,12 @@ class Report:
     #: present and the refusals from ``status.ignore_rules``.
     notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
+    #: The instant every age in the report is measured from, in epoch nanoseconds, or
+    #: ``None`` when it cannot be represented.
     age_reference_ns: int | None = None
+    #: ``age_reference_ns`` as a timezone-aware UTC ``datetime``, floored to the
+    #: microsecond.
+    age_reference_at: datetime | None = None
     #: Actionable suggestions, separate from facts and formatted data.
     tips: tuple[str, ...] = ()
     #: What a reader must not miss about the answer itself, in the order a renderer
@@ -1238,6 +1261,23 @@ def _datetime(value: object) -> datetime | None:
     if not isinstance(value, str):
         raise TypeError(f"expected timestamp string, got {type(value).__name__}")
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _instant(nanos: int | None) -> datetime | None:
+    """A timezone-aware UTC `datetime` for epoch nanoseconds, floored to the microsecond.
+
+    Derived from the exact integer rather than parsed from the wire's RFC 3339 string, so
+    nothing depends on how a string rounds. Floor division floors toward the past, so an
+    instant before the epoch lands on the microsecond at or before it, as one after the
+    epoch does; truncating toward zero would move it later.
+    """
+
+    if nanos is None:
+        return None
+    return _EPOCH + timedelta(microseconds=nanos // 1_000)
 
 
 def _entry_tier_identity(value: Mapping[str, Any]) -> EntryTierIdentity:
@@ -1623,8 +1663,20 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             children=tuple(built[id(child)] for child in children),
             omissions=_tree_omissions(raw["omissions"]),
             ignored=_ignored_tally(raw["ignored"]),
+            mtime_ns=_optional_int(raw["mtime_ns"]),
+            complete=_optional_bool(raw["complete"]),
+            age_ns=_optional_int(raw["age_ns"]),
+            modified_at=_modified_at(raw["mtime_ns"], raw["complete"]),
         )
     return built[id(value)]
+
+
+def _modified_at(mtime_ns: object, complete: object) -> datetime | None:
+    """A row's ``modified_at``: its time, unless the subtree's time is only a lower bound."""
+
+    if mtime_ns is None or complete is False:
+        return None
+    return _instant(int(cast(int, mtime_ns)))
 
 
 def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Report:
@@ -1723,6 +1775,10 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             dirs=_optional_int(row["dirs"]) if "dirs" in row else None,
                             complete=_optional_bool(row["complete"]) if "complete" in row else None,
                             age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
+                            modified_at=_modified_at(
+                                row["mtime_ns"],
+                                _optional_bool(row["complete"]) if "complete" in row else None,
+                            ),
                             ignored=_ignored_flag(row["ignored"]),
                             sort_value=_optional_int(row["sort_value"]),
                             classification=_file_classification(row["classification"]),
@@ -1826,6 +1882,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         root=_wire_path(wire, "root"),
         request=request,
         age_reference_ns=_optional_int(wire.get("age_reference_ns")),
+        age_reference_at=_instant(_optional_int(wire.get("age_reference_ns"))),
         status=status,
         provenance=provenance,
         analysis=analysis,

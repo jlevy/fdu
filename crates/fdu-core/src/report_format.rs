@@ -71,9 +71,10 @@ use crate::control::ControlCoverage;
 use crate::emit::{Event, IoFmt, JsonSink, Scalar, Shape, Sink, YamlSink};
 use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source};
 use crate::query::{
-    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow,
-    MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TierState,
-    TreeNode, TypeRow, ViewSpec, format_rfc3339, format_rfc3339_nanos, pages,
+    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MONTH_SECONDS, MetricGroup,
+    MetricRow, MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow,
+    TierState, TreeNode, TypeRow, ViewSpec, YEAR_SECONDS, format_rfc3339, format_rfc3339_nanos,
+    pages, with_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -107,7 +108,10 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/10";
+///
+/// `fdu.report/11` gives tree nodes their age (`mtime_ns`, `complete`, `age_ns`, and
+/// `modified_at`), list rows `modified_at`, and the envelope `age_reference_at`.
+pub const REPORT_SCHEMA: &str = "fdu.report/11";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
@@ -266,16 +270,33 @@ fn flat_path(path: &Path) -> String {
         .collect()
 }
 
-/// A compact signed duration. Exact nanoseconds remain available in machine output.
+/// A compact signed age, the one formatter for the tree's age column and `--long`.
+/// Exact nanoseconds remain available in machine output.
+///
+/// Each unit holds until the next one's length: seconds under a minute, minutes under an
+/// hour, hours under a day, days under a display month of 30.44 days, months under a
+/// display year of 365.25 days, and years beyond. So no cell reads `0mo` or `0y`, and an
+/// old tree reads `12y` rather than `4,382d`. The amount is floored toward zero and the
+/// sign kept, so a time ahead of the reference reads `-5m`, and less than a second ahead
+/// `-0s`. Below a century a cell is at most four characters and a sign. Months and years
+/// are display units only: the age grammar refuses them ([`MONTH_SECONDS`]).
 fn human_age(age: Option<i128>) -> String {
+    const MINUTE: u128 = 60;
+    const HOUR: u128 = 60 * MINUTE;
+    const DAY: u128 = 24 * HOUR;
     let Some(age) = age else { return "unknown".to_string() };
     let seconds = age.unsigned_abs() / 1_000_000_000;
-    let (amount, unit) = if seconds >= 86400 {
-        (seconds / 86400, "d")
-    } else if seconds >= 3600 {
-        (seconds / 3600, "h")
-    } else if seconds >= 60 {
-        (seconds / 60, "m")
+    let (month, year) = (u128::from(MONTH_SECONDS), u128::from(YEAR_SECONDS));
+    let (amount, unit) = if seconds >= year {
+        (seconds / year, "y")
+    } else if seconds >= month {
+        (seconds / month, "mo")
+    } else if seconds >= DAY {
+        (seconds / DAY, "d")
+    } else if seconds >= HOUR {
+        (seconds / HOUR, "h")
+    } else if seconds >= MINUTE {
+        (seconds / MINUTE, "m")
     } else {
         (seconds, "s")
     };
@@ -504,6 +525,9 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     emit_field(sink, REPORT_FIELDS.age_reference_ns, true, |sink| match report.age_reference_ns {
         Some(value) => emit_scalar(sink, Scalar::I64(value)),
         None => emit_scalar(sink, Scalar::Null),
+    });
+    emit_field(sink, REPORT_FIELDS.age_reference_at, true, |sink| {
+        emit_instant(sink, report.age_reference_ns);
     });
     emit_field(sink, REPORT_FIELDS.request, true, |sink| emit_request(sink, report));
     emit_field(sink, REPORT_FIELDS.status, true, |sink| emit_status(sink, report));
@@ -886,6 +910,9 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
         Some(value) => emit_scalar(sink, Scalar::I128(value)),
         None => emit_scalar(sink, Scalar::Null),
     });
+    emit_field(sink, Field::nullable("modified_at"), true, |sink| {
+        emit_instant(sink, (row.complete != Some(false)).then_some(row.mtime_ns));
+    });
 
     emit_field(sink, Field::nullable("ignored"), true, |sink| match row.ignored {
         Some(value) => emit_scalar(sink, Scalar::Bool(value)),
@@ -914,6 +941,18 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
         None => emit_scalar(sink, Scalar::Null),
     });
     sink.event(Event::EndMap);
+}
+
+/// An instant as RFC 3339 UTC to the nanosecond, or null.
+///
+/// The readable twin of an exact `*_ns` field, never a replacement for it: a row's
+/// `modified_at` is null exactly when its time is a lower bound or absent, because a
+/// lower-bound maximum rendered as an instant would read as the time it was modified.
+fn emit_instant(sink: &mut impl Sink, nanos: Option<i64>) {
+    match nanos {
+        Some(nanos) => with_rfc3339_nanos(nanos, |text| emit_scalar(sink, Scalar::Str(text))),
+        None => emit_scalar(sink, Scalar::Null),
+    }
 }
 
 fn emit_summary_row(sink: &mut impl Sink, row: &SummaryRow) {
@@ -1179,6 +1218,18 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                         None => emit_scalar(sink, Scalar::Null),
                     }
                 });
+                emit_field(sink, Field::nullable("mtime_ns"), true, |sink| {
+                    emit_scalar(sink, node.mtime_ns.map_or(Scalar::Null, Scalar::I64));
+                });
+                emit_field(sink, Field::nullable("complete"), true, |sink| {
+                    emit_scalar(sink, node.complete.map_or(Scalar::Null, Scalar::Bool));
+                });
+                emit_field(sink, Field::nullable("age_ns"), true, |sink| {
+                    emit_scalar(sink, node.age_ns.map_or(Scalar::Null, Scalar::I128));
+                });
+                emit_field(sink, Field::nullable("modified_at"), true, |sink| {
+                    emit_instant(sink, node.mtime_ns.filter(|_| node.complete != Some(false)));
+                });
                 emit_field(sink, Field::always("truncated"), true, |sink| {
                     emit_scalar(sink, Scalar::Bool(node.truncated));
                 });
@@ -1238,6 +1289,7 @@ struct ReportFields {
     analysis: Field,
     reports: Field,
     age_reference_ns: Field,
+    age_reference_at: Field,
 }
 
 const REPORT_FIELDS: ReportFields = ReportFields {
@@ -1252,6 +1304,7 @@ const REPORT_FIELDS: ReportFields = ReportFields {
     analysis: Field::nullable("analysis"),
     reports: Field::when_set("reports"),
     age_reference_ns: Field::nullable("age_reference_ns"),
+    age_reference_at: Field::nullable("age_reference_at"),
 };
 
 /// Why a field is present in a wire document.
@@ -1882,6 +1935,19 @@ fn render_text_tree(
 ) {
     let RenderOptions { color, bar_size } = options;
     let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
+    // The age column is as wide as the section's widest cell, so a first pass formats
+    // every row's cell, in the order the rows print, and the rows reuse them rather than
+    // formatting each age twice (review C8 on #191); a section with no rows has no column.
+    let mut ages = Vec::new();
+    if let Some(root) = root {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            ages.push(tree_age_cell(node));
+            stack.extend(node.children.iter().rev());
+        }
+    }
+    let age_width = ages.iter().map(|(age, _)| display_width(age)).max().unwrap_or(0);
+    let mut ages = ages.into_iter();
     if let Some(root) = root {
         let grand = pick(size, root.bytes, root.allocated);
         let mut stack = vec![(root, 0)];
@@ -1907,11 +1973,13 @@ fn render_text_tree(
                     )
                 )
             };
+            let (age, style) = ages.next().expect("one age cell per row, in row order");
             let _ = writeln!(
                 out,
-                "{bar_prefix}{}  {}  {indent}{}{}{}",
+                "{bar_prefix}{}  {}  {}  {indent}{}{}{}",
                 percentage_cell(bytes, grand, 0, 5, color),
                 styled_bytes(bytes, 10, color, false),
+                right_cell(&age, age_width, style, color),
                 human_name(&node.name, node.kind, node.entry_ignored, color),
                 count,
                 ignored_suffix(node.ignored, size, selected, color),
@@ -1923,16 +1991,54 @@ fn render_text_tree(
     // bounds hide descendants at different depths. Reasons belong in the epilogue.
     if let Some(hidden) = hidden {
         let grand = root.map(|node| pick(size, node.bytes, node.allocated));
-        render_tree_remainder(out, &hidden, grand, usize::from(root.is_some()), size, options);
+        let depth = usize::from(root.is_some());
+        render_tree_remainder(out, &hidden, grand, depth, age_width, size, options);
+    }
+}
+
+/// A tree row's age cell and its style: the row's age, or the gray word `unknown` when
+/// its subtree was not listed in full or the reference cannot be represented, or a gray
+/// dash when the row counts no entry at all, as a missing percentage is.
+///
+/// Completeness comes first. A row whose subtree was not listed in full is `unknown` even
+/// when it has counted nothing yet, such as the root of `--scan-depth 0` or an opened
+/// root before its first listing: the dash says the subtree holds nothing to count, and
+/// nobody has looked.
+fn tree_age_cell(node: &TreeNode) -> (String, Option<AnsiStyle>) {
+    if node.complete == Some(false) {
+        (human_age(None), Some(STYLE_DETAIL))
+    } else if node.mtime_ns.is_none() {
+        ("—".to_string(), Some(STYLE_DETAIL))
+    } else if node.age_ns.is_none() {
+        (human_age(None), Some(STYLE_DETAIL))
+    } else {
+        (human_age(node.age_ns), None)
+    }
+}
+
+/// A cell right-aligned to `width`, measured on the visible text and padded outside the
+/// paint, as [`label_cell`] pads a left-aligned one.
+fn right_cell(text: &str, width: usize, style: Option<AnsiStyle>, color: bool) -> String {
+    let padding = " ".repeat(width.saturating_sub(display_width(text)));
+    match style {
+        Some(style) => format!("{padding}{}", paint(text, style, color)),
+        None => format!("{padding}{text}"),
     }
 }
 
 /// Human projection of the same remainder serialized in machine formats.
+///
+/// The age cell is blank: the remainder stands for rows the bounds hid, and the folded
+/// one-shot tier counts most of their files without keeping a time, so an age here would
+/// exist on one route and not another. The parent row's age already covers everything
+/// beneath it. The blank keeps the name column aligned with the rows above, and a section
+/// with no rows has no age column to keep.
 fn render_tree_remainder(
     out: &mut String,
     remainder: &crate::query::TreeRemainder,
     grand: Option<u64>,
     depth: usize,
+    age_width: usize,
     size: SizeMetric,
     options: RenderOptions,
 ) {
@@ -1967,7 +2073,8 @@ fn render_tree_remainder(
     let indent = "  ".repeat(depth);
     let note = format!("{} {files}", detail(&format!("{indent}… and"), color));
     let bar_prefix = if bar_size == 0 { String::new() } else { format!("{usage_bar}  ") };
-    let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {note}");
+    let age = if age_width == 0 { String::new() } else { format!("{}  ", " ".repeat(age_width)) };
+    let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {age}{note}");
 }
 
 /// Render a types section as aligned rows.
@@ -3455,6 +3562,7 @@ mod tests {
                 fields.root,
                 fields.root_raw,
                 fields.age_reference_ns,
+                fields.age_reference_at,
                 fields.request,
                 fields.status,
                 fields.provenance,
@@ -3810,19 +3918,151 @@ mod tests {
             ..Query::default()
         };
         let text = render(&fixture_for(&apparent), Format::Text, false);
+        // Every time in the fixture is a few nanoseconds after its epoch reference.
         assert_eq!(
             text,
             concat!(
-                "██████████   100%       120 B  . 2 files\n",
-                "████████░░    83%       100 B    src/ 1 file\n",
-                "████████░░    83%       100 B      main.rs\n",
-                "██░░░░░░░░    17%        20 B    notes.md\n",
+                "██████████   100%       120 B  -0s  . 2 files\n",
+                "████████░░    83%       100 B  -0s    src/ 1 file\n",
+                "████████░░    83%       100 B  -0s      main.rs\n",
+                "██░░░░░░░░    17%        20 B  -0s    notes.md\n",
             )
         );
 
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0].find("120 B"), lines[1].find("100 B"));
         assert_eq!(lines[0].find('█'), lines[1].find('█'));
+    }
+
+    /// The age column sits between size and name, right-aligned to the section's widest
+    /// cell: an age, the gray word `unknown` for a subtree not listed in full, a gray dash
+    /// for a row that counts nothing, and a blank on the remainder row, which keeps the
+    /// names aligned. Color changes none of the layout.
+    #[test]
+    fn the_tree_age_column_aligns_every_row_and_leaves_the_remainder_blank() {
+        const SECOND: i64 = 1_000_000_000;
+        let day = 86_400 * SECOND;
+        // `--scan-depth 2`: `env/lib` was retained and never listed.
+        let mut index = Index::new_with_scope(
+            "/root",
+            ScanScope { max_depth: Some(2), ..ScanScope::default() },
+        );
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert { path: "old".into(), kind: EntryKind::Dir, attrs: attrs(0, SECOND) },
+                Op::Upsert {
+                    path: "old/a.bin".into(),
+                    kind: EntryKind::File,
+                    attrs: attrs(1_000, SECOND),
+                },
+                Op::Upsert { path: "env".into(), kind: EntryKind::Dir, attrs: attrs(0, SECOND) },
+                Op::Upsert {
+                    path: "env/lib".into(),
+                    kind: EntryKind::Dir,
+                    attrs: attrs(0, SECOND),
+                },
+                Op::Upsert {
+                    path: "env/x.bin".into(),
+                    kind: EntryKind::File,
+                    attrs: attrs(500, SECOND),
+                },
+                Op::Upsert {
+                    path: "new.txt".into(),
+                    kind: EntryKind::File,
+                    attrs: attrs(300, 40 * day - 30 * SECOND),
+                },
+                Op::Upsert { path: "tiny".into(), kind: EntryKind::File, attrs: attrs(1, 2 * day) },
+            ]))
+            .expect("apply");
+        index.set_initial_freshness(true);
+        let query = Query {
+            views: vec![ViewSpec::Tree],
+            selection: Selection { size: SizeMetric::Apparent, ..Selection::default() },
+            ..Query::default()
+        };
+        let mut request = crate::test_support::read_of(&index, query);
+        request.now = UNIX_EPOCH + Duration::from_secs(40 * 86_400);
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: request.now,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let answer = report(&index, &request, &provenance).expect("report");
+        let text = render(&answer, Format::Text, false);
+        assert_eq!(
+            text,
+            concat!(
+                "██████████   100%     1.7 KiB  unknown  . 4 files\n",
+                "██████░░░░    56%     1,000 B      1mo    old/ 1 file\n",
+                "██████░░░░    56%     1,000 B      1mo      a.bin\n",
+                "███░░░░░░░    28%       500 B  unknown    env/ 1 file\n",
+                "███░░░░░░░    28%       500 B      1mo      x.bin\n",
+                "░░░░░░░░░░     0%         0 B  unknown      lib/ 0 files\n",
+                "██░░░░░░░░    17%       300 B      30s    new.txt\n",
+                "░░░░░░░░░░    <1%         1 B             … and 1 more file\n",
+            ),
+            "{text}"
+        );
+        assert_eq!(strip_ansi(&render(&answer, Format::Text, true)), text);
+
+        // Machine formats carry the exact activity, completeness, and signed age, and an
+        // RFC 3339 instant that is null wherever the time is a lower bound.
+        let json = compact_json(&render(&answer, Format::Json, false));
+        for expected in [
+            "\"age_reference_ns\": 3456000000000000, \
+             \"age_reference_at\": \"1970-02-10T00:00:00.000000000Z\"",
+            "\"name\": \".\", \"path\": \"\", \"kind\": \"dir\"",
+            "\"newest_mtime_ns\": 3455970000000000, \"mtime_ns\": 3455970000000000, \
+             \"complete\": false, \"age_ns\": null, \"modified_at\": null, \"truncated\": true",
+            "\"name\": \"old\", \"path\": \"old\", \"kind\": \"dir\"",
+            "\"newest_mtime_ns\": 1000000000, \"mtime_ns\": 1000000000, \"complete\": true, \
+             \"age_ns\": 3455999000000000, \"modified_at\": \"1970-01-01T00:00:01.000000000Z\"",
+            "\"newest_mtime_ns\": 3455970000000000, \"mtime_ns\": 3455970000000000, \
+             \"complete\": null, \"age_ns\": 30000000000, \
+             \"modified_at\": \"1970-02-09T23:59:30.000000000Z\"",
+        ] {
+            assert!(json.contains(&compact_json(expected)), "missing {expected}\nin {json}");
+        }
+        for format in [Format::Jsonl, Format::Yaml] {
+            let wire = render(&answer, format, false);
+            for field in ["age_reference_at", "mtime_ns", "complete", "age_ns", "modified_at"] {
+                assert!(wire.contains(field), "{format:?} lacks {field}: {wire}");
+            }
+        }
+
+        // An empty root counts nothing, so its cell is a dash, not an age.
+        let mut empty = Index::new_with_scope("/root", ScanScope::default());
+        empty.set_initial_freshness(true);
+        let lone = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let answer = report(&empty, &crate::test_support::read_of(&empty, lone), &provenance)
+            .expect("report");
+        assert_eq!(
+            render(&answer, Format::Text, false),
+            "░░░░░░░░░░      —         0 B  —  . 0 files\n"
+        );
+        let colored = render(&answer, Format::Text, true);
+        assert!(colored.contains(&paint("—", STYLE_DETAIL, true)), "{colored:?}");
+
+        // A root nobody listed (`--scan-depth 0`) has counted nothing either, but its age
+        // is unknown: the dash would claim the subtree holds nothing.
+        let mut unlisted = Index::new_with_scope(
+            "/root",
+            ScanScope { max_depth: Some(0), ..ScanScope::default() },
+        );
+        unlisted.set_initial_freshness(true);
+        let lone = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let answer = report(&unlisted, &crate::test_support::read_of(&unlisted, lone), &provenance)
+            .expect("report");
+        let Section::Tree { root: Some(root), .. } = &answer.sections[0] else {
+            panic!("expected a tree with a root row")
+        };
+        assert_eq!((root.mtime_ns, root.complete), (None, Some(false)), "{root:?}");
+        let text = render(&answer, Format::Text, false);
+        assert!(text.contains("  unknown  . 0 files\n"), "{text}");
+        let colored = render(&answer, Format::Text, true);
+        assert!(colored.contains(&paint("unknown", STYLE_DETAIL, true)), "{colored:?}");
     }
 
     #[test]
@@ -4154,7 +4394,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/10\""));
+        assert!(json.contains("\"schema\": \"fdu.report/11\""));
         assert!(json.contains("\"request\": {"));
         assert!(json.contains("\"status\": {"));
         assert!(json.contains("\"provenance\": {"));
@@ -4169,7 +4409,7 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/10");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/11");
         assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
@@ -4357,11 +4597,11 @@ mod tests {
                 "     164 B  2 files, 2 directories (128 B gitignored)\n",
                 "\n",
                 "TREE\n",
-                "██████████   100%       164 B  . 2 files (128 B gitignored)\n",
-                "████████░░    78%       128 B    dist/ 1 file (128 B gitignored)\n",
-                "████████░░    78%       128 B      a.gz (128 B gitignored)\n",
-                "██░░░░░░░░    22%        36 B    src/ 1 file\n",
-                "██░░░░░░░░    22%        36 B      b.rs\n",
+                "██████████   100%       164 B  -0s  . 2 files (128 B gitignored)\n",
+                "████████░░    78%       128 B  -0s    dist/ 1 file (128 B gitignored)\n",
+                "████████░░    78%       128 B  -0s      a.gz (128 B gitignored)\n",
+                "██░░░░░░░░    22%        36 B  -0s    src/ 1 file\n",
+                "██░░░░░░░░    22%        36 B  -0s      b.rs\n",
                 "\n",
                 "EXTENSIONS\n",
                 "     128 B  .gz          1 file (128 B gitignored)\n",
@@ -4424,7 +4664,8 @@ mod tests {
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
-            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \"ignored\": true, \"sort_value\": null, \"classification\": null}",
+            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \
+             \"modified_at\": \"1970-01-01T00:00:00.000000010Z\", \"ignored\": true, \"sort_value\": null, \"classification\": null}",
         ] {
             assert!(compact.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
@@ -4464,11 +4705,11 @@ mod tests {
     #[test]
     fn every_report_uses_one_schema_and_states_nullable_analysis() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/10\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/11\""));
         assert!(metadata.contains("\"analysis\": null"));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/10\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/11\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -5034,7 +5275,47 @@ mod tests {
             human_count_u128(u128::MAX),
             "340,282,366,920,938,463,463,374,607,431,768,211,455"
         );
-        assert_eq!(human_age(Some(1000 * 86400 * 1_000_000_000)), "1,000d");
+        let year = i128::from(YEAR_SECONDS) * 1_000_000_000;
+        assert_eq!(human_age(Some(1_000 * year)), "1,000y");
+    }
+
+    /// Every unit of the age ladder at both of its edges, the sign, and the floor: a unit
+    /// holds until the next one's length, so no cell reads `0mo` or `0y`.
+    #[test]
+    fn human_ages_climb_one_ladder_and_switch_units_at_their_own_length() {
+        const SECOND: i128 = 1_000_000_000;
+        let month = i128::from(MONTH_SECONDS) * SECOND;
+        let year = i128::from(YEAR_SECONDS) * SECOND;
+        for (age, shown) in [
+            (0, "0s"),
+            (SECOND - 1, "0s"),
+            (59 * SECOND, "59s"),
+            (60 * SECOND - 1, "59s"),
+            (60 * SECOND, "1m"),
+            (3_600 * SECOND - 1, "59m"),
+            (3_600 * SECOND, "1h"),
+            (86_400 * SECOND - 1, "23h"),
+            (86_400 * SECOND, "1d"),
+            (30 * 86_400 * SECOND, "30d"),
+            (month - 1, "30d"),
+            (month, "1mo"),
+            (2 * month, "2mo"),
+            (year - 1, "11mo"),
+            (year, "1y"),
+            (26 * year + month, "26y"),
+            (100 * year - 1, "99y"),
+            (-1, "-0s"),
+            (-SECOND, "-1s"),
+            (-5 * 60 * SECOND - 1, "-5m"),
+            (-2 * month, "-2mo"),
+        ] {
+            assert_eq!(human_age(Some(age)), shown, "{age} ns");
+        }
+        assert_eq!(human_age(None), "unknown");
+        // Below a century, at most four characters and a sign.
+        let widest =
+            [month * 11, year * 99, 59 * SECOND, 3_599 * SECOND].map(|age| human_age(Some(-age)));
+        assert!(widest.iter().all(|cell| cell.len() <= 5), "{widest:?}");
     }
 
     #[test]
@@ -5147,8 +5428,8 @@ mod tests {
                     assert!(line["█".repeat(width).len()..].starts_with("   100%"));
                 }
             }
-            assert!(lines[0].ends_with("120 B  . 2 files"), "{text:?}");
-            assert!(lines[1].ends_with("120 B    … and 2 more files"), "{text:?}");
+            assert!(lines[0].ends_with("120 B  -0s  . 2 files"), "{text:?}");
+            assert!(lines[1].ends_with("120 B         … and 2 more files"), "{text:?}");
             let mut streamed = Vec::new();
             write_with_options(&report, Format::Text, options, &mut streamed).expect("stream");
             assert_eq!(streamed, text.as_bytes());
@@ -5452,7 +5733,8 @@ mod tests {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
-                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \"ignored\": false, \"sort_value\": null, \
+                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \
+                 \"modified_at\": \"1970-01-01T00:00:00.000000000Z\", \"ignored\": false, \"sort_value\": null, \
                  \"classification\": {{\"file_type\": \"unknown\", \"family\": \"unknown\", \"source\": \"unknown\", \"confidence\": \"heuristic\", \
                  \"flags\": {{\"generated\": false, \"vendored\": false, \"documentation\": false}}}}}}"
             );

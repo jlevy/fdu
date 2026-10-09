@@ -318,10 +318,14 @@ pub struct Request {
     pub basis: Basis,
     /// Selection, views, and view options.
     pub query: Query,
-    /// The instant relative time windows were resolved against.
+    /// The instant relative time windows were resolved against, and the reference every
+    /// age in the answer is measured from.
     ///
-    /// Fixed when the request is built, so [`Selection::modified`] is absolute and a watch
-    /// that builds its request once at start never slides its window.
+    /// The windows are resolved when the request is built, so [`Selection::modified`] is
+    /// absolute and a watch that builds its request once at start never slides its window.
+    /// After that this field is only the age reference: a watch session reads each repaint
+    /// with a copy whose `now` is that repaint's instant, so ages stay current over a long
+    /// session while the question it answers stays the one it was built with.
     pub now: SystemTime,
     /// How the basis's analyzers were chosen.
     ///

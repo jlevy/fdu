@@ -27,11 +27,13 @@ def _stable(text: str) -> str:
     """Blank the fields that differ between any two runs, and only those."""
 
     text = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
-    # Long's age column uses each read's own instant too. Keep size and path exact;
-    # signed age arithmetic is checked on typed rows and the path-independence oracle.
+    # Long's and the tree's age columns use each read's own instant too, and the tree's
+    # is as wide as its widest cell, so the cell and the spaces around it are masked
+    # together, the remainder row's blank cell included. Keep size and name exact; signed
+    # age arithmetic is checked on typed rows and the path-independence oracle.
     text = re.sub(
-        r"^(\s*[\d.]+ (?:B|KiB|MiB|GiB|TiB|PiB) +)-?\d+[smhd](?= )",
-        r"\1[AGE]",
+        r"^(.*?[\d.] (?:B|KiB|MiB|GiB|TiB|PiB)) +(?:(?:-?[\d,]+(?:mo|[smhdy])|unknown|—) +)?",
+        r"\1 [AGE] ",
         text,
         flags=re.MULTILINE,
     )
@@ -858,7 +860,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/10"
+    assert wire["schema"] == "fdu.report/11"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 
