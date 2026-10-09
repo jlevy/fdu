@@ -40,7 +40,7 @@ experiment:
     warmups: 3
     interleaved: true
     control: "148ef78e probe: main before the age column"
-    candidate: "10ae731f probe: the age column, each directory keeping its newest activity beside its roll-up"
+    candidate: "probe built from the working tree that became 10ae731f, 44 minutes before that commit existed, so only the binary's sha256 ties it to source (review C4 on #191); it predates 1b3ac793 (the folded tree's restored stats) and e25f12e3 (the tree age cell). The age column, each directory keeping its newest activity beside its roll-up"
     control_binary:
       name: control
       sha256: d2ac70ff129f6c510100a0f58a27677015fec20af2f8d29b732f6e29e2182041
@@ -653,11 +653,11 @@ experiment:
     new_failure_modes: []
     notes: "10ae731f, the maintained maximum replacing the pass on complete indexes"
   verdict:
-    decision: accepted
+    decision: rejected
     primary_job: index-second-report
     primary_metric: component_ns
     change_pct: 5.788
-    reason: "Second tree report over a retained Index +5.79% [+2.66%, +7.52%], 7.5 us, and over an opened root +13.70% [+11.68%, +14.69%], 18.5 us: per-row work, against the 0.66 and 4.7 ms the pass added (exp-209); cold-scan-index wall -0.64% [-4.99%, +2.87%] and warm-snapshot-load wall -0.24% non-inferior, snapshot load component +2.21% [+0.53%, +2.71%] within +3%; default-tree wall +3.37% [-11.80%, +13.10%] unresolved on a loaded host. Accepted against the per-row bar review A on #191 set; Linux unmeasured (fdu-088k)."
+    reason: "not a speed decision: the cost record of the age column, a correctness feature that ships regardless, held to the per-row bar review A on #191 set after this run: second tree report over a retained Index +5.79% [+2.66%, +7.52%], 7.5 us, and over an opened root +13.70% [+11.68%, +14.69%], 18.5 us, against the 0.66 and 4.7 ms the pass added (exp-209); cold-scan-index wall -0.64% [-4.99%, +2.87%] and warm-snapshot-load wall -0.24% non-inferior, snapshot load component +2.21% [+0.53%, +2.71%]; opened-second-report wall +1.56% [+1.06%, +3.75%], not replicated in exp-211; default-tree wall +3.37% [-11.80%, +13.10%] not resolved on the loaded host; Linux unmeasured (fdu-088k, H193)"
     commit: 10ae731f
     kept: candidate
 ---
@@ -673,9 +673,9 @@ the one-shot default report, a cold walk into an index, and a snapshot load unch
 
 The plan’s goal as first written, no measurable change in the retained regime, was not
 the bar this result could meet, and review A on #191 asked for one it states.
-The bar it is accepted against was set there, after this run: a retained report’s cost
-may grow with the rows it shows, never with the entries beneath them, and a cold walk
-and a snapshot load stay within the +3% non-inferiority margin.
+The bar it is judged against was set there, after this run: a retained report’s cost may
+grow with the rows it shows, never with the entries beneath them, and a cold walk and a
+snapshot load stay within the +3% non-inferiority margin.
 
 ## What was measured
 
@@ -689,20 +689,39 @@ No sample was invalid and the tree was unchanged.
 - `index-second-report` component: 0.129 ms to 0.134 ms, +5.79% [+2.66%, +7.52%], a
   median 7.5 µs. Primary.
 - `opened-second-report` component: 0.135 ms to 0.153 ms, +13.70% [+11.68%, +14.69%],
-  18.5 µs; wall +1.56% [+1.06%, +3.75%].
-- `default-tree` wall +3.37% [−11.80%, +13.10%], too wide to bound at +3% on this host;
-  peak RSS +0.78% [−4.31%, +5.75%], so the pass’s +10.4% is gone.
+  18.5 µs. Its wall moved +1.56% [+1.06%, +3.75%], with CPU, user, and system time also
+  above zero: that is the open-plus-discovery lifecycle, not the report, and
+  [exp-211](exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md) did
+  not reproduce it (−0.80% [−3.83%, +2.54%]).
+- `default-tree` wall +3.37% [−11.80%, +13.10%], not resolved: an interval this wide
+  bounds nothing at the +3% margin.
+  Peak RSS +0.78% [−4.31%, +5.75%]; exp-209’s +10.4% was never attributed to the pass
+  (review C5 on #191), so this says nothing about it.
 - `cold-scan-index` wall −0.64% [−4.99%, +2.87%], non-inferior.
 - `warm-snapshot-load` wall −0.24% [−3.21%, +0.82%], non-inferior; component +2.21%
   [+0.53%, +2.71%], non-inferior at +3%.
 
 ## Decision
 
-Accepted against the per-row bar: 7.5 µs and 18.5 µs a report, against the 0.66 ms and
-4.7 ms the pass added, with a cold walk and a snapshot load within +3%. The one-shot
-default report shows no change this host can resolve.
+Not a speed decision, recorded as exp-196 records the automount fix: `rejected` as a
+speed claim, with the candidate kept, because the age column ships regardless of this
+measurement (review C3 on #191). As first recorded it was an accept, and the accept rule
+cannot produce one here: both primaries regressed with intervals wholly above zero, and
+the per-row bar it was judged against was set after this run, which the loop never
+allows as an accept.
+The run was also uncontrolled, and every job’s fail-closed qualification is
+`inconclusive`, which supports exploration only.
+
+What it does record is the column’s price against that bar: 7.5 µs and 18.5 µs a report,
+against the 0.66 ms and 4.7 ms the pass added, with a cold walk and a snapshot load
+non-inferior at +3% on wall.
+The one-shot default report’s change was not resolved on this host.
 Every figure is from one loaded macOS host.
+The measured binary predates two later changes on measured paths, `1b3ac793` (the folded
+tree stats directories and symlinks again) and `e25f12e3` (the tree’s age cell);
+[exp-212](exp-212-macos-the-age-column-re-measured-at-the-shipped-head-per-row.md)
+re-measures the shipped head with each binary tied to its commit.
 Linux is unmeasured, and there the folded default tree also reads each directory’s and
-symlink’s time again, giving back H185 (`fdu-088k` measures both).
-[exp-211](exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md)
+symlink’s time again, giving back H185; `fdu-088k` measures it as the pre-registered
+H193. [exp-211](exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md)
 replicates the opened root’s figure.

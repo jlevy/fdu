@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 83 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 85 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
@@ -278,15 +278,17 @@ dead end.
 | 194 | [Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12](#exp-194--linux-the-overnight-round-end-to-end-the-default-tree-39-faster-on-linux-v612) | — | `default-tree` | -39.0% | 📏 baseline |
 | 195 | [Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense](#exp-195--linux-the-overnight-round-end-to-end-the-default-tree-10-faster-on-node-modules-dense) | — | `default-tree` | -9.8% | 📏 baseline |
 | 196 | [Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger](#exp-196--linux-every-route-lists-through-the-native-reader-and-no-stat-of-a-child-mounts-an-autofs-trigger) | H184 | `warm-revalidate` | -2.7% | ❌ rejected |
-| 197 | [Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense](#exp-197--linux-h185-describes-each-directory-once-on-the-folded-tree-route-the-default-tree-4-faster-on-node-modules-dense) | H185 | `default-tree` | -3.6% | ✅ accepted |
+| 197 | [Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense](#exp-197--linux-h185-describes-each-directory-once-on-the-folded-tree-route-the-default-tree-4-faster-on-node-modules-dense) | H185 | `default-tree` | -3.6% | ↩︎ superseded |
 | 198 | [Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12](#exp-198--linux-h188-byte-wise-summary-fold-and-h189-pre-sized-control-reads-the-default-summary-6-faster-on-linux-v612) | H188, H189 | `aggregate-summary` | -6.2% | ✅ accepted |
 | 199 | [Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense](#exp-199--linux-h186-admits-tree-rows-before-building-them-the-default-tree-5-faster-on-node-modules-dense) | H186 | `default-tree` | -4.9% | ✅ accepted |
 | 200 | [Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change](#exp-200--linux-h187-sorts-only-what-the-folded-tree-keeps-a-38-consumer-cut-with-no-wall-change) | H187 | `default-tree` | -0.3% | ❌ rejected |
 | 201 | [Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees](#exp-201--linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-faster-and-ahead-of-every-pdu-mode-on-both-real-trees) | H185, H186, H188, H189 | `default-tree` | -3.1% | 📏 baseline |
 | 202 | [Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees](#exp-202--linux-the-030-release-end-to-end-the-default-tree-48-faster-than-021-and-ahead-of-pdu-and-diskus-on-all-three-trees) | — | `default-tree` | -48.0% | 📏 baseline |
 | 209 | [macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower](#exp-209--macos-h191-a-per-report-activity-pass-makes-a-retained-tree-report-6-and-20-times-slower) | H191 | `index-second-report` | +496.2% | ❌ rejected |
-| 210 | [macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report](#exp-210--macos-h192-maintained-activity-leaves-the-age-column-per-row-work-7-and-18-microseconds-a-report) | H192 | `index-second-report` | +5.8% | ✅ accepted |
-| 211 | [macOS: H192 replicated over an opened root, 23 microseconds a report](#exp-211--macos-h192-replicated-over-an-opened-root-23-microseconds-a-report) | H192 | `opened-second-report` | +17.8% | ✅ accepted |
+| 210 | [macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report](#exp-210--macos-h192-maintained-activity-leaves-the-age-column-per-row-work-7-and-18-microseconds-a-report) | H192 | `index-second-report` | +5.8% | ❌ rejected |
+| 211 | [macOS: H192 replicated over an opened root, 23 microseconds a report](#exp-211--macos-h192-replicated-over-an-opened-root-23-microseconds-a-report) | H192 | `opened-second-report` | +17.8% | ❌ rejected |
+| 212 | [macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row](#exp-212--macos-the-age-column-re-measured-at-the-shipped-head-per-row-retained-cost-and-a-quarter-microsecond-a-machine-row) | H192 | `index-second-report` | +0.2% | ❌ rejected |
+| 213 | [macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains](#exp-213--macos-h194-fixed-buffer-instants-halve-the-age-column-machine-format-cost-about-012-microseconds-a-row-remains) | H194 | `render-json` | +1.3% | ❌ rejected |
 
 ## The experiments
 
@@ -6490,7 +6492,7 @@ Full record:
 
 ### exp-197 — Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense
 
-✅ accepted · 2026-09-30 · H185 · commit `c0da65ae`
+↩︎ superseded · 2026-09-30 · H185 · commit `c0da65ae`
 
 Control: ebc06c78 probe (the final head of the round, the branch’s base engine)
 
@@ -6510,12 +6512,14 @@ Other jobs, wall time: `aggregate-summary` +2.1% (n.s.), `cold-scan-index` +0.9%
 
 Cost to carry: 136 lines; no new dependencies.
 
-**Accepted:** quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the
---no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%;
+**Superseded:** quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%],
+the --no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%;
 placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25%
 [-4.46%, +0.25%] off, not resolvable, no regression on the --no-controls arm and the
 controls-on arm too wide to bound; statx 79,961 -> 70,416 and 92,836 -> 87,006; answers
-identical.
+identical; superseded by the age column on #191, which stats every directory and symlink
+on the folded tree again so a row’s age counts their times (H193 measures the give-back,
+fdu-088k).
 
 Full record:
 [`exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md`](../experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)
@@ -6672,6 +6676,8 @@ Full record:
 Control: 148ef78e probe: main before the age column
 
 Candidate: 66652033 probe: the age column, each row aged by a per-report activity pass
+(the commit was named when recording; only the binary’s sha256 was recorded, so nothing
+ties the binary to it, review C4 on #191)
 
 **`index-second-report`** (cold start) — the comparison the verdict rests on
 
@@ -6693,20 +6699,23 @@ fac3d744, the pass with its tests
 **Rejected:** Second tree report over a retained Index 0.128 -> 0.789 ms, +496.23%
 [+451.68%, +964.74%], and over an opened root 0.252 -> 4.92 ms, +1,544.52%
 [+251.98%, +4,579.65%]: work per entry on every retained report; default-tree wall
--2.07% [-12.16%, +9.55%] on a loaded host, peak RSS +10.41% from the per-slot table.
-Replaced by the maintained per-directory maximum (H192, exp-210).
+-2.07% [-12.16%, +9.55%] and peak RSS +10.41% [+4.18%, +14.03%] on a loaded host, the
+RSS unattributed (the folded default tree’s per-slot table is about 85 KB, under 1% of
+its peak). Replaced by the maintained per-directory maximum (H192, exp-210).
 
 Full record:
 [`exp-209-macos-h191-a-per-report-activity-pass-makes-a-retained-tree-.md`](../experiments/exp-209-macos-h191-a-per-report-activity-pass-makes-a-retained-tree-.md)
 
 ### exp-210 — macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report
 
-✅ accepted · 2026-10-09 · H192 · commit `10ae731f`
+❌ rejected · 2026-10-09 · H192 · commit `10ae731f`
 
 Control: 148ef78e probe: main before the age column
 
-Candidate: 10ae731f probe: the age column, each directory keeping its newest activity
-beside its roll-up
+Candidate: probe built from the working tree that became 10ae731f, 44 minutes before
+that commit existed, so only the binary’s sha256 ties it to source (review C4 on #191);
+it predates 1b3ac793 (the folded tree’s restored stats) and e25f12e3 (the tree age
+cell). The age column, each directory keeping its newest activity beside its roll-up
 
 **`index-second-report`** (cold start) — the comparison the verdict rests on
 
@@ -6726,25 +6735,29 @@ Cost to carry: 208 lines; no new dependencies.
 
 10ae731f, the maintained maximum replacing the pass on complete indexes
 
-**Accepted:** Second tree report over a retained Index +5.79% [+2.66%, +7.52%], 7.5 us,
-and over an opened root +13.70% [+11.68%, +14.69%], 18.5 us: per-row work, against the
-0.66 and 4.7 ms the pass added (exp-209); cold-scan-index wall -0.64% [-4.99%, +2.87%]
-and warm-snapshot-load wall -0.24% non-inferior, snapshot load component +2.21%
-[+0.53%, +2.71%] within +3%; default-tree wall +3.37% [-11.80%, +13.10%] unresolved on a
-loaded host. Accepted against the per-row bar review A on #191 set; Linux unmeasured
-(fdu-088k).
+**Rejected:** not a speed decision: the cost record of the age column, a correctness
+feature that ships regardless, held to the per-row bar review A on #191 set after this
+run: second tree report over a retained Index +5.79% [+2.66%, +7.52%], 7.5 us, and over
+an opened root +13.70% [+11.68%, +14.69%], 18.5 us, against the 0.66 and 4.7 ms the pass
+added (exp-209); cold-scan-index wall -0.64% [-4.99%, +2.87%] and warm-snapshot-load
+wall -0.24% non-inferior, snapshot load component +2.21% [+0.53%, +2.71%];
+opened-second-report wall +1.56% [+1.06%, +3.75%], not replicated in exp-211;
+default-tree wall +3.37% [-11.80%, +13.10%] not resolved on the loaded host; Linux
+unmeasured (fdu-088k, H193).
 
 Full record:
 [`exp-210-macos-h192-maintained-activity-leaves-the-age-column-per-row.md`](../experiments/exp-210-macos-h192-maintained-activity-leaves-the-age-column-per-row.md)
 
 ### exp-211 — macOS: H192 replicated over an opened root, 23 microseconds a report
 
-✅ accepted · 2026-10-09 · H192 · commit `10ae731f`
+❌ rejected · 2026-10-09 · H192 · commit `10ae731f`
 
 Control: 148ef78e probe: main before the age column
 
-Candidate: 10ae731f probe: the age column, each directory keeping its newest activity
-beside its roll-up
+Candidate: the exp-210 probe, built from the working tree that became 10ae731f before
+that commit existed, so only the binary’s sha256 ties it to source (review C4 on #191);
+it predates 1b3ac793 and e25f12e3. The age column, each directory keeping its newest
+activity beside its roll-up
 
 **`opened-second-report`** (cold start) — the comparison the verdict rests on
 
@@ -6763,13 +6776,105 @@ Cost to carry: 208 lines; no new dependencies.
 
 the same change as exp-210
 
-**Accepted:** Replicates exp-210 on the same binaries: second tree report over an opened
-root +17.79% [+15.06%, +21.38%], 23 us, per-row work under the H192 bar; wall -0.80%
-[-3.83%, +2.54%]; warm-snapshot-load component +1.73% [-5.25%, +13.99%] and wall +0.35%
-too wide to bound on a loaded host, so exp-210 remains the snapshot-load evidence.
+**Rejected:** not a speed decision: replicates exp-210 on the same binaries as the cost
+record of the age column, which ships regardless, held to the per-row bar set after
+exp-210’s run: second tree report over an opened root +17.79% [+15.06%, +21.38%], 23 us;
+wall -0.80% [-3.83%, +2.54%], so exp-210’s +1.56% opened wall did not reproduce;
+warm-snapshot-load component +1.73% [-5.25%, +13.99%] and wall +0.35% too wide to bound
+on a loaded host, so exp-210 remains the snapshot-load evidence.
 
 Full record:
 [`exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md`](../experiments/exp-211-macos-h192-replicated-over-an-opened-root-23-microseconds-a-.md)
+
+### exp-212 — macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row
+
+❌ rejected · 2026-10-09 · H192 · commit `ae90aef4`
+
+Control: 148ef78e probe: main before the age column (sha256 d2ac70ff, the binary exp-209
+to exp-211 used; tied by the run variant notes)
+
+Candidate: ae90aef4 probe, clean tree: all of #191 code after reviews B and C (1b3ac793,
+e25f12e3, directory re-reads, C8, C10, C12, C13; sha256 d3254e26; tied by the run
+variant notes)
+
+**`index-second-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 292.7 | 287.4 | -1.74% | [-4.60%, -0.03%] |
+| component (ms) | 0.1 | 0.1 | +0.21% (n.s.) | [-2.36%, +1.61%] |
+| cpu (ms) | 802.8 | 780.8 | -2.62% | [-5.42%, -1.29%] |
+| user (ms) | 213.8 | 213.2 | -0.39% (n.s.) | [-1.80%, +0.34%] |
+| system (ms) | 588.5 | 563.7 | -3.81% | [-6.27%, -0.95%] |
+| peak rss (MiB) | 27.2 | 27.0 | -2.88% (n.s.) | [-5.01%, +2.71%] |
+
+Other jobs, wall time: `cold-scan-index` -0.8% (n.s.), `default-tree` +2.3% (n.s.),
+`opened-second-report` -0.5% (n.s.), `render-json` +4.3% (regression), `render-yaml`
++6.0% (regression), `warm-snapshot-load` -0.0% (n.s.).
+
+Cost to carry: 2908 lines; no new dependencies.
+
+the whole engine change of #191 against 148ef78e (18 source files, 2,646 insertions and
+262 deletions), including the review rounds
+
+**Rejected:** not a speed decision: the age column ships regardless, and this
+re-measures its price at the shipped head with each binary tied to its commit (review C4
+to C7 on #191): second tree report over a retained Index +0.21% [-2.36%, +1.61%] and
+over an opened root +11.49% [+8.42%, +14.22%], 17 us, per-row work; cold-scan-index wall
+-0.76% [-3.80%, +2.09%] and warm-snapshot-load wall -0.01% non-inferior; default-tree
+wall +2.33% [-2.99%, +4.64%] not resolved on the loaded host, its peak RSS +4.90%
+[+0.32%, +9.99%] unattributed; render-json wall +4.27% [+3.36%, +6.47%] and render-yaml
++5.98% [+4.10%, +7.62%], about 0.23 to 0.25 us a machine row (fdu-oiuc); opened wall and
+snapshot-load component signals of exp-210 did not reproduce; Linux unmeasured (H193,
+fdu-088k).
+
+Full record:
+[`exp-212-macos-the-age-column-re-measured-at-the-shipped-head-per-row.md`](../experiments/exp-212-macos-the-age-column-re-measured-at-the-shipped-head-per-row.md)
+
+### exp-213 — macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains
+
+❌ rejected · 2026-10-09 · H194 · commit `b2968074`
+
+Control: 148ef78e probe: main before the age column (sha256 d2ac70ff, the binary exp-209
+to exp-212 used; the run variant notes are empty, so the binding is stated in the record
+body)
+
+Candidate: b2968074 probe, clean tree: exp-212 candidate ae90aef4 plus each
+machine-output instant written into a fixed stack buffer instead of a String per row
+(review C7 on #191, fdu-oiuc; sha256 c4e01629; binding stated in the record body)
+
+**`render-json`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 748.2 | 760.1 | +1.30% (regression) | [+0.57%, +1.78%] |
+| component (ms) | 128.4 | 146.5 | +13.94% (regression) | [+13.60%, +14.76%] |
+| cpu (ms) | 1394.8 | 1358.6 | -0.99% (n.s.) | [-5.03%, +3.68%] |
+| user (ms) | 616.4 | 627.9 | +2.37% (regression) | [+1.89%, +2.89%] |
+| system (ms) | 780.5 | 732.4 | -3.09% (n.s.) | [-10.38%, +4.79%] |
+| peak rss (MiB) | 123.1 | 123.0 | -0.13% (n.s.) | [-0.62%, +1.12%] |
+
+Other jobs, wall time: `render-jsonl` +1.7% (regression), `render-yaml` +2.1%
+(regression).
+
+Cost to carry: 52 lines; no new dependencies.
+
+b2968074: a fixed thirty-byte layout for years 0 to 9999 with the general format!
+spelling kept as the fallback, in query_values.rs and the one call site (emit_instant)
+in report_format.rs, plus a 45-line test that holds the two spellings to the same bytes;
+the measured pair spans all of the #191 engine change against 148ef78e
+
+**Rejected:** not a speed decision: the age column ships regardless, and this measures
+the review C7 fix (b2968074, fdu-oiuc) against the pre-age control: render-json wall
++1.30% [+0.57%, +1.78%], component 128.4 to 146.5 ms; render-jsonl wall +1.73%
+[+0.59%, +3.84%]; render-yaml wall +2.15% [+0.97%, +2.55%], component 118.7 to 136.8 ms;
+read across runs against exp-212 (+4.27% and +5.98% wall, same control binary) the
+buffer removes about half the added render cost, and the residual of about 0.12 us a row
+is the new per-row data itself, accepted as the price of the machine-output timestamps;
+the Python eager instants are unmeasured.
+
+Full record:
+[`exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md`](../experiments/exp-213-macos-h194-fixed-buffer-instants-halve-the-age-column-machin.md)
 
 ## Absolute timings
 
@@ -6969,6 +7074,16 @@ state rather than a change.
 | 185 | Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
 | 195 | Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense | `default-tree` | 126.9 | 114.2 | -9.8% | 📏 baseline |
 
+### rustup (77,355 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 209 | macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower | `index-second-report` | 372.8 | 374.1 | -2.3% | ❌ rejected |
+| 210 | macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report | `index-second-report` | 320.0 | 335.3 | +5.7% | ❌ rejected |
+| 211 | macOS: H192 replicated over an opened root, 23 microseconds a report | `opened-second-report` | 1,130.1 | 1,121.4 | -0.8% | ❌ rejected |
+| 212 | macOS: the age column re-measured at the shipped head, per-row retained cost and a quarter microsecond a machine row | `index-second-report` | 292.7 | 287.4 | -1.7% | ❌ rejected |
+| 213 | macOS: H194 fixed-buffer instants halve the age column machine-format cost, about 0.12 microseconds a row remains | `render-json` | 748.2 | 760.1 | +1.3% | ❌ rejected |
+
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -7036,14 +7151,6 @@ state rather than a change.
 | 158 | Current content-query oracle and leftover | `content-query` | 37,903.9 | 38,337.2 | +1.0% | ✅ accepted |
 | 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ⏳ in progress |
 | 170 | macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout | `aggregate-summary` | 293.7 | 270.8 | -4.3% | ✅ accepted |
-
-### rustup (77,355 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 209 | macOS: H191 a per-report activity pass makes a retained tree report 6 and 20 times slower | `index-second-report` | 372.8 | 374.1 | -2.3% | ❌ rejected |
-| 210 | macOS: H192 maintained activity leaves the age column per-row work, 7 and 18 microseconds a report | `index-second-report` | 320.0 | 335.3 | +5.7% | ✅ accepted |
-| 211 | macOS: H192 replicated over an opened root, 23 microseconds a report | `opened-second-report` | 1,130.1 | 1,121.4 | -0.8% | ✅ accepted |
 
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -7122,7 +7229,7 @@ state rather than a change.
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| 197 | Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense | `default-tree` | 85.2 | 81.8 | -3.6% | ✅ accepted |
+| 197 | Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense | `default-tree` | 85.2 | 81.8 | -3.6% | ↩︎ superseded |
 | 199 | Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense | `default-tree` | 82.1 | 77.2 | -4.9% | ✅ accepted |
 
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady

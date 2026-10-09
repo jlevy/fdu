@@ -529,6 +529,10 @@ accepts, a rule between two flags, and a scan scope this build cannot honour, su
 `--allow-partial` accepts an operationally partial result and returns 0.
 
 `--watch` streams changes from a retained index.
+Creating, removing, or renaming an entry also changes its directory’s own modification
+time, so under `--view files` the record for that change is followed by an `upsert` for
+the directory, unless it is the scan root or the selection leaves directories out, and a
+watched tree ages the directory as a one-shot report does.
 `--interval` throttles rendering, not change detection; an idle tree performs no polling
 scan. On macOS, the kernel reports writes to a file only when it is closed, so watch
 shows a file held open for writing as of its last close; a one-shot report reads its

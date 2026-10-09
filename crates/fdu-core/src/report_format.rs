@@ -74,7 +74,7 @@ use crate::query::{
     CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MONTH_SECONDS, MetricGroup,
     MetricRow, MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow,
     TierState, TreeNode, TypeRow, ViewSpec, YEAR_SECONDS, format_rfc3339, format_rfc3339_nanos,
-    pages,
+    pages, with_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -1001,7 +1001,7 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool) {
 /// lower-bound maximum rendered as an instant would read as the time it was modified.
 fn emit_instant(sink: &mut impl Sink, nanos: Option<i64>) {
     match nanos {
-        Some(nanos) => emit_scalar(sink, Scalar::Str(&format_rfc3339_nanos(nanos))),
+        Some(nanos) => with_rfc3339_nanos(nanos, |text| emit_scalar(sink, Scalar::Str(text))),
         None => emit_scalar(sink, Scalar::Null),
     }
 }
@@ -2038,6 +2038,48 @@ struct TextTree {
     options: RenderOptions,
 }
 
+/// Every row's age cell, in the order the rows print, and the column's width.
+///
+/// The age column is as wide as the section's widest cell, so a first pass formats every
+/// row's cell and the rows reuse them rather than formatting each age twice (review C8 on
+/// #191). A section with no rows has no column.
+struct AgeCells {
+    cells: std::vec::IntoIter<(String, Option<AnsiStyle>)>,
+    width: usize,
+}
+
+impl AgeCells {
+    /// The cells of the given rows, in order: each a total row's cell or a whole tree's.
+    fn of<'a>(rows: impl IntoIterator<Item = AgeRows<'a>>) -> Self {
+        let mut cells = Vec::new();
+        for rows in rows {
+            match rows {
+                AgeRows::Cell(cell) => cells.push(cell),
+                AgeRows::Tree(root) => {
+                    let mut stack = vec![root];
+                    while let Some(node) = stack.pop() {
+                        cells.push(tree_age_cell(node));
+                        stack.extend(node.children.iter().rev());
+                    }
+                }
+            }
+        }
+        let width = cells.iter().map(|(age, _)| display_width(age)).max().unwrap_or(0);
+        Self { cells: cells.into_iter(), width }
+    }
+
+    /// The next row's cell.
+    fn next(&mut self) -> (String, Option<AnsiStyle>) {
+        self.cells.next().expect("one age cell per row, in row order")
+    }
+}
+
+/// Rows whose age cells [`AgeCells::of`] formats: one cell, or a tree's rows in pre-order.
+enum AgeRows<'a> {
+    Cell((String, Option<AnsiStyle>)),
+    Tree(&'a TreeNode),
+}
+
 impl TextTree {
     /// The tree of a report over one root: its rows, then one remainder line at the
     /// highest displayed level for what the bounds hid, or for the root itself when the
@@ -2049,12 +2091,11 @@ impl TextTree {
         omissions: &[crate::query::TreeOmission],
     ) {
         let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
-        // The age column is as wide as the section's widest cell, so a first pass measures
-        // every row; a section with no rows has no column.
-        let age_width = root.map_or(0, widest_age_cell);
+        let mut ages = AgeCells::of(root.map(AgeRows::Tree));
+        let age_width = ages.width;
         let grand = root.map(|root| pick(self.size, root.bytes, root.allocated));
         if let (Some(root), Some(grand)) = (root, grand) {
-            self.render_rows(out, root, 0, grand, age_width);
+            self.render_rows(out, root, 0, grand, &mut ages);
         }
         // One annotation at the highest displayed level, even when several independent
         // bounds hide descendants at different depths. Reasons belong in the epilogue.
@@ -2076,22 +2117,23 @@ impl TextTree {
         roots: &crate::query::RootTrees,
         omissions: &[crate::query::TreeOmission],
     ) {
+        // One column over the whole section: the total row and every root's tree.
         let total_age =
             roots.total.map(|total| age_cell(Some(total.complete), total.mtime_ns, total.age_ns));
-        let age_width = roots
-            .trees
-            .iter()
-            .map(|tree| widest_age_cell(&tree.tree))
-            .chain(total_age.iter().map(|(age, _)| display_width(age)))
-            .max()
-            .unwrap_or(0);
+        let mut ages = AgeCells::of(
+            total_age
+                .into_iter()
+                .map(AgeRows::Cell)
+                .chain(roots.trees.iter().map(|tree| AgeRows::Tree(&tree.tree))),
+        );
+        let age_width = ages.width;
         let grand = roots.total.map(|total| pick(self.size, total.bytes, total.allocated));
-        if let (Some(total), Some(grand), Some(age)) = (roots.total, grand, total_age) {
+        if let (Some(total), Some(grand)) = (roots.total, grand) {
             let name = paint("(total)", STYLE_NAME, self.options.color);
             let line = TextRow {
                 bytes: grand,
                 ignored: total.ignored,
-                age,
+                age: ages.next(),
                 name,
                 files: Some(total.files),
             };
@@ -2100,7 +2142,7 @@ impl TextTree {
         let depth = usize::from(roots.total.is_some());
         for tree in &roots.trees {
             let grand = grand.expect("a root tree is shown only below the total row");
-            self.render_rows(out, &tree.tree, depth, grand, age_width);
+            self.render_rows(out, &tree.tree, depth, grand, &mut ages);
             if let Some(hidden) = crate::query::TreeRemainder::from_tree(Some(&tree.tree), &[]) {
                 self.render_remainder(out, &hidden, Some(grand), depth + 1, age_width);
             }
@@ -2110,14 +2152,15 @@ impl TextTree {
         }
     }
 
-    /// A tree's rows in pre-order, its root at `depth`, each sharing `grand`.
+    /// A tree's rows in pre-order, its root at `depth`, each sharing `grand`, each taking
+    /// its age cell from `ages` in turn.
     fn render_rows(
         &self,
         out: &mut String,
         root: &TreeNode,
         depth: usize,
         grand: u64,
-        age_width: usize,
+        ages: &mut AgeCells,
     ) {
         let color = self.options.color;
         let mut stack = vec![(root, depth)];
@@ -2125,11 +2168,11 @@ impl TextTree {
             let line = TextRow {
                 bytes: pick(self.size, node.bytes, node.allocated),
                 ignored: node.ignored,
-                age: tree_age_cell(node),
+                age: ages.next(),
                 name: human_name(&node.name, node.kind, node.entry_ignored, color),
                 files: (node.kind != EntryKind::File).then_some(node.files),
             };
-            self.render_row(out, &line, grand, depth, age_width);
+            self.render_row(out, &line, grand, depth, ages.width);
             stack.extend(node.children.iter().rev().map(|child| (child, depth + 1)));
         }
     }
@@ -2200,17 +2243,6 @@ struct TextRow {
     name: String,
     /// The file count a directory or total shows; none for a file.
     files: Option<u64>,
-}
-
-/// The widest age cell among a tree's rows.
-fn widest_age_cell(root: &TreeNode) -> usize {
-    let mut widest = 0;
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        widest = widest.max(display_width(&tree_age_cell(node).0));
-        stack.extend(node.children.iter());
-    }
-    widest
 }
 
 /// A tree row's age cell and its style: the row's age, or the gray word `unknown` when

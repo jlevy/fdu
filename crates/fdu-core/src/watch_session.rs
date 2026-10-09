@@ -152,6 +152,10 @@ impl Persistence {
 /// touch that leaves `3m` at `3m` would otherwise repaint nothing; the other formats show
 /// the exact time or none. Whether a row counts, and so what each row shows, already
 /// follows from the rendering.
+///
+/// Each row adds its exact fields as fixed-width bytes rather than formatted text (review
+/// C10 on #191). The machine formats add nothing here: their rendering, which the identity
+/// already holds, carries both fields on every row.
 fn write_shown_activity(
     identity: &mut impl std::io::Write,
     report: &Report,
@@ -159,6 +163,9 @@ fn write_shown_activity(
 ) -> std::io::Result<()> {
     use crate::report_format::Format;
 
+    if format.is_machine() {
+        return Ok(());
+    }
     // Text renders whichever presentation the query asked for.
     let shown = if format == Format::Text { report.format } else { format };
     for section in &report.sections {
@@ -166,19 +173,39 @@ fn write_shown_activity(
             crate::query::Section::Tree { root: Some(root), .. } => {
                 let mut stack = vec![&**root];
                 while let Some(node) = stack.pop() {
-                    writeln!(identity, "{:?} {:?}", node.mtime_ns, node.complete)?;
+                    write_activity(identity, node.mtime_ns, node.complete)?;
                     stack.extend(node.children.iter());
                 }
             }
             crate::query::Section::Files { rows, .. } if shown == Format::Long => {
                 for row in rows {
-                    writeln!(identity, "{} {:?}", row.mtime_ns, row.complete)?;
+                    write_activity(identity, Some(row.mtime_ns), row.complete)?;
                 }
             }
             _ => {}
         }
     }
     Ok(())
+}
+
+/// One row's exact activity, as ten bytes: whether it has a time, the time, and its
+/// completeness, which is absent, false, or true.
+fn write_activity(
+    identity: &mut impl std::io::Write,
+    mtime_ns: Option<i64>,
+    complete: Option<bool>,
+) -> std::io::Result<()> {
+    let mut record = [0_u8; 10];
+    if let Some(mtime_ns) = mtime_ns {
+        record[0] = 1;
+        record[1..9].copy_from_slice(&mtime_ns.to_le_bytes());
+    }
+    record[9] = match complete {
+        None => 0,
+        Some(false) => 1,
+        Some(true) => 2,
+    };
+    identity.write_all(&record)
 }
 
 fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
@@ -1985,5 +2012,266 @@ mod tests {
             session.next_batch(Duration::from_secs(10)).expect("invalidation").expect("observed");
         assert!(batch.changes.iter().any(|change| change.kind == ChangeKind::Invalidate));
         assert!(text(&mut session).is_none());
+    }
+
+    /// Apply every hint scripted so far, however the worker batched them: the flush is a
+    /// barrier behind which each one is queued as an intent, and each intent is applied.
+    fn drain(session: &mut Session) -> Vec<Change> {
+        session.watcher.flush_capture().expect("flush the scripted hints");
+        let mut changes = Vec::new();
+        while let Some(batch) = session.next_batch(Duration::ZERO).expect("apply a batch") {
+            changes.extend(batch.changes);
+        }
+        changes
+    }
+
+    /// Hold the session's index to a cold walk of the same tree, now.
+    fn assert_matches_cold_walk(session: &Session, root: &std::path::Path, label: &str) {
+        session
+            .index
+            .read_with(|index| {
+                crate::query::assert_same_as_cold_walk(index, root, &session.scan, label);
+            })
+            .expect("read the session's index");
+    }
+
+    /// An old file and a newer one in `logs/`, and `logs/`'s own time behind the clock.
+    fn logs_fixture() -> tempfile::TempDir {
+        use crate::test_support::{stamped_file, wait_past_modification};
+
+        let root = tempfile::tempdir().expect("root");
+        stamped_file(&root.path().join("logs/a.log"), b"a", 1_000_000_000);
+        stamped_file(&root.path().join("logs/b.log"), b"b", 1_020_000_000);
+        std::fs::create_dir(root.path().join("archive")).expect("archive");
+        wait_past_modification(&root.path().join("logs"));
+        wait_past_modification(&root.path().join("archive"));
+        root
+    }
+
+    /// A directory's own time moves when an entry inside it is removed, and no backend
+    /// names the directory in that event; a cold walk reads the new time, so the watched
+    /// tree must too (B1 on #191). Removing a directory's newest file makes it young.
+    #[test]
+    fn a_removal_ages_its_directory_as_a_cold_walk_does() {
+        let root = logs_fixture();
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        std::fs::remove_file(root.path().join("logs/b.log")).expect("remove the newest file");
+        sender.send("remove\tlogs/b.log\n").expect("script the removal");
+        let changes = drain(&mut session);
+        assert_matches_cold_walk(&session, root.path(), "the newest file removed");
+        assert!(
+            changes.iter().any(|change| change.path == std::path::Path::new("logs")
+                && change.kind == ChangeKind::Upsert
+                && change.entry_kind == Some(EntryKind::Dir)),
+            "the directory's new time is a change record of the same shape: {changes:?}"
+        );
+    }
+
+    /// A rename inside the tree moves both directories' own times: the one the name left
+    /// and the one it arrived in, which keeps the file's old time (B1 on #191).
+    #[test]
+    fn a_rename_ages_both_directories_as_a_cold_walk_does() {
+        let root = logs_fixture();
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        std::fs::rename(root.path().join("logs/b.log"), root.path().join("archive/b.log"))
+            .expect("rename across directories");
+        sender
+            .send("rename-from\tlogs/b.log\nrename-to\tarchive/b.log\n")
+            .expect("script both sides of the rename");
+        drain(&mut session);
+        assert_matches_cold_walk(&session, root.path(), "a file renamed across directories");
+    }
+
+    /// A file moved in from outside the tree keeps its archive time, and its directory
+    /// reads as just changed, as `mv ~/Downloads/report.pdf docs/` leaves it (B1 on #191).
+    #[test]
+    fn a_move_in_ages_its_directory_as_a_cold_walk_does() {
+        let root = logs_fixture();
+        let outside = tempfile::tempdir().expect("outside the watched tree");
+        let report = outside.path().join("report.pdf");
+        crate::test_support::stamped_file(&report, b"pdf", 990_000_000);
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        std::fs::rename(&report, root.path().join("archive/report.pdf")).expect("move it in");
+        sender.send("rename-to\tarchive/report.pdf\n").expect("script the arrival");
+        drain(&mut session);
+        assert_matches_cold_walk(&session, root.path(), "an old file moved in");
+    }
+
+    /// Deterministic `SplitMix64`, so a failing sequence replays from its printed seed.
+    struct SplitMix(u64);
+
+    impl SplitMix {
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            let mut mixed = self.0;
+            mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            mixed ^ (mixed >> 31)
+        }
+
+        fn below(&mut self, bound: usize) -> usize {
+            usize::try_from(self.next() % u64::try_from(bound).expect("bound")).expect("index")
+        }
+    }
+
+    /// A tree a seeded sequence changes one step at a time, and what it holds.
+    struct GeneratedTree {
+        root: tempfile::TempDir,
+        outside: tempfile::TempDir,
+        random: SplitMix,
+        /// Every directory, the root first; the first [`Self::PERMANENT`] are never removed.
+        directories: Vec<PathBuf>,
+        files: Vec<PathBuf>,
+        names: u32,
+    }
+
+    impl GeneratedTree {
+        const PERMANENT: usize = 4;
+
+        fn new(seed: u64) -> Self {
+            let mut tree = Self {
+                root: tempfile::tempdir().expect("root"),
+                outside: tempfile::tempdir().expect("outside the watched tree"),
+                random: SplitMix(seed),
+                directories: vec![PathBuf::new(), "a".into(), "a/b".into(), "c".into()],
+                files: Vec::new(),
+                names: 0,
+            };
+            for directory in &tree.directories[1..] {
+                std::fs::create_dir_all(tree.root.path().join(directory)).expect("directory");
+            }
+            for _ in 0..4 {
+                let path = tree.fresh_name("f");
+                let stamp = tree.stamp();
+                crate::test_support::stamped_file(&tree.root.path().join(&path), b"seed", stamp);
+                tree.files.push(path);
+            }
+            tree
+        }
+
+        /// An old modification time, a few years after 2001.
+        fn stamp(&mut self) -> u64 {
+            1_000_000_000 + self.random.next() % 100_000_000
+        }
+
+        /// A name no entry has had, in a directory chosen at random.
+        fn fresh_name(&mut self, prefix: &str) -> PathBuf {
+            self.names += 1;
+            let directory = &self.directories[self.random.below(self.directories.len())];
+            directory.join(format!("{prefix}{}", self.names))
+        }
+
+        /// A generated directory with nothing beneath it, which a step may remove.
+        fn removable_directory(&self) -> Option<usize> {
+            (Self::PERMANENT..self.directories.len()).find(|&at| {
+                let directory = &self.directories[at];
+                !self.files.iter().any(|file| file.starts_with(directory))
+                    && !self
+                        .directories
+                        .iter()
+                        .any(|other| other != directory && other.starts_with(directory))
+            })
+        }
+
+        /// Make one change on disk and return the events for it that a backend naming
+        /// each side of a rename delivers.
+        fn step(&mut self) -> String {
+            let line = |verb: &str, path: &std::path::Path| {
+                format!("{verb}\t{}\n", path.to_string_lossy().replace('\\', "/"))
+            };
+            let on_disk = |tree: &Self, path: &std::path::Path| tree.root.path().join(path);
+            match self.random.below(7) {
+                0 | 1 => {
+                    let path = self.fresh_name("f");
+                    let bytes = vec![b'x'; self.random.below(64)];
+                    let stamp = self.stamp();
+                    crate::test_support::stamped_file(&on_disk(self, &path), &bytes, stamp);
+                    self.files.push(path.clone());
+                    line("create", &path)
+                }
+                2 if !self.files.is_empty() => {
+                    let path = self.files.swap_remove(self.random.below(self.files.len()));
+                    std::fs::remove_file(on_disk(self, &path)).expect("remove");
+                    line("remove", &path)
+                }
+                3 if !self.files.is_empty() => {
+                    let at = self.random.below(self.files.len());
+                    let to = self.fresh_name("f");
+                    let from = std::mem::replace(&mut self.files[at], to.clone());
+                    std::fs::rename(on_disk(self, &from), on_disk(self, &to))
+                        .expect("rename inside the tree");
+                    line("rename-from", &from) + &line("rename-to", &to)
+                }
+                4 => {
+                    let to = self.fresh_name("f");
+                    let staged = self.outside.path().join("staged");
+                    let stamp = self.stamp();
+                    crate::test_support::stamped_file(&staged, b"moved in", stamp);
+                    std::fs::rename(&staged, on_disk(self, &to)).expect("move in");
+                    self.files.push(to.clone());
+                    line("rename-to", &to)
+                }
+                5 if !self.files.is_empty() => {
+                    let path = self.files[self.random.below(self.files.len())].clone();
+                    let stamp = self.stamp();
+                    std::fs::File::options()
+                        .write(true)
+                        .open(on_disk(self, &path))
+                        .and_then(|file| {
+                            file.set_modified(std::time::UNIX_EPOCH + Duration::from_secs(stamp))
+                        })
+                        .expect("restamp");
+                    line("modify", &path)
+                }
+                // A new directory, or the removal of an empty one this sequence made:
+                // either moves its parent's own time.
+                _ => {
+                    if let Some(at) =
+                        self.removable_directory().filter(|_| self.random.below(2) == 0)
+                    {
+                        let directory = self.directories.remove(at);
+                        std::fs::remove_dir(on_disk(self, &directory)).expect("remove a directory");
+                        line("remove", &directory)
+                    } else {
+                        let directory = self.fresh_name("d");
+                        std::fs::create_dir(on_disk(self, &directory)).expect("make a directory");
+                        self.directories.push(directory.clone());
+                        line("create-dir", &directory)
+                    }
+                }
+            }
+        }
+    }
+
+    /// B2 on #191: a watched tree equals a cold walk of the same tree after every step of
+    /// a seeded sequence of creates, removals, renames inside the tree, moves in from
+    /// outside it, restamps, and new and removed directories, each file stamped with an
+    /// old time. Each step is scripted with the events a backend that names each side of
+    /// a rename delivers, and takes the same worker, coalescing, verification, and apply
+    /// path a real backend's events take, so the sequence is the same on every run.
+    ///
+    /// Every other maintenance test compares the index with itself, with a pass over it,
+    /// or with a model fed the same operations, and none of those can see a fact that no
+    /// operation carried. This one compares it with the disk.
+    #[test]
+    fn a_watched_tree_equals_a_cold_walk_after_every_generated_step() {
+        const SEEDS: [u64; 3] = [1, 0x5eed, 191];
+        const STEPS: usize = 24;
+        for seed in SEEDS {
+            let mut tree = GeneratedTree::new(seed);
+            let (mut session, sender) = scripted_session(tree.root.path(), tree_query());
+            let mut trace = Vec::new();
+            for step in 0..STEPS {
+                let script = tree.step();
+                trace.push(script.trim_end().replace('\n', "; "));
+                sender.send(&script).expect("script the step");
+                drain(&mut session);
+                assert_matches_cold_walk(
+                    &session,
+                    tree.root.path(),
+                    &format!("seed {seed:#x}, step {step}, trace {trace:?}"),
+                );
+            }
+        }
     }
 }

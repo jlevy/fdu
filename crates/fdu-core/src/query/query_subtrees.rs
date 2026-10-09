@@ -333,6 +333,73 @@ pub(crate) fn assert_maintained_activity(index: &Index, label: &str) {
     }
 }
 
+/// What one entry of an index says about the disk, for [`assert_same_as_cold_walk`].
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HeldEntry {
+    kind: EntryKind,
+    mtime_ns: i64,
+    /// A regular file's apparent size; a directory's varies by reader and filesystem.
+    size: Option<u64>,
+    /// A directory's tree-row activity, its maintained `mtime_ns`; `None` for any other kind.
+    activity: Option<i64>,
+}
+
+#[cfg(test)]
+fn held_entries(index: &Index) -> BTreeMap<PathBuf, HeldEntry> {
+    let mut held = BTreeMap::new();
+    let mut stack = vec![(PathBuf::new(), EntryId::ROOT)];
+    while let Some((path, id)) = stack.pop() {
+        let kind = index.kind_of(id).expect("a live entry");
+        let attrs = index.attrs_of(id).expect("a live entry");
+        held.insert(
+            path.clone(),
+            HeldEntry {
+                kind,
+                mtime_ns: attrs.mtime_ns,
+                size: (kind == EntryKind::File).then_some(attrs.size),
+                activity: if kind.is_dir() { maintained_activity(index, id) } else { None },
+            },
+        );
+        if kind.is_dir() {
+            for (name, child) in index.children_of(id).expect("a live directory") {
+                stack.push((path.join(name), child));
+            }
+        }
+    }
+    held
+}
+
+/// Assert that `index` holds what a cold walk of `root` under `scan` finds now: every
+/// entry, its kind and own modification time, each file's size, and each directory's
+/// tree-row activity.
+///
+/// The incremental routes are otherwise compared with themselves, with a pass over the
+/// same index, or with a model fed the same operations, and none of those can see a fact
+/// that no operation carried: a directory whose own time moved because an entry inside it
+/// was removed or renamed, which no event names (B1 on #191). This holds them to the
+/// disk instead.
+#[cfg(test)]
+pub(crate) fn assert_same_as_cold_walk(
+    index: &Index,
+    root: &Path,
+    scan: &crate::ScanConfig,
+    label: &str,
+) {
+    let (cold, report) = crate::scan::scan_into_index(root, scan).expect("cold walk");
+    assert!(report.is_complete(), "{label}: the cold walk is complete");
+    let (held, walked) = (held_entries(index), held_entries(&cold));
+    let differing: Vec<_> = walked
+        .keys()
+        .chain(held.keys())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| held.get(*path) != walked.get(*path))
+        .map(|path| (path.clone(), held.get(path).copied(), walked.get(path).copied()))
+        .collect();
+    assert!(differing.is_empty(), "{label}: (path, held, cold walk) differ: {differing:#?}");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

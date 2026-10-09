@@ -42,16 +42,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The windows the query selects by stay the absolute bounds its request resolved when it
   was built. A repaint is still skipped when nothing a reader sees changed: ages rolling
   over repaint nothing, and any change in a row’s activity repaints.
+- A watch, an opened root’s observation, and a refresh re-read the directory a created,
+  removed, or renamed entry lives in, so that directory’s own time, and with it its age,
+  matches a one-shot report: deleting a directory’s newest file, or moving an old file
+  in, makes it young there too.
+  Under `--view files` the record for such a change is now followed by an `upsert`
+  record for its directory, unless it is the scan root or the selection leaves
+  directories out; the record shape and `fdu.stream/2` are unchanged.
 - Rust: `TreeNode` struct literals need the three new fields.
 - On Linux the default one-shot tree stats each directory and symlink again, as every
   other route does, so a directory’s age there counts its own time and equals its age
   under `--long` or a cached run.
   0.3.0 had stopped those stats because the tree read none of their attributes; the age
   column reads their times.
-  This gives back that change’s measured gain, 3.6% of the default tree on a
-  directory-dense `node_modules` tree and no resolvable change on the Linux v6.12 source
-  tree
-  ([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)).
+  This is expected to give back most of that change’s gain, about 3% of the default tree
+  on a directory-dense `node_modules` tree and little on the Linux v6.12 source tree:
+  [exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)
+  measured the gain at 3.6%, and the version that shipped kept 83% of the stats it
+  saved. The give-back itself is measured on Linux before this release.
   macOS lists every child’s attributes in bulk and is unaffected, except in a directory
   that falls back to the portable reader, which now stats them too.
 

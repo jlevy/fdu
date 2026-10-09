@@ -238,6 +238,10 @@ Cache-status human aliases render its table.
 A List watch repaints snapshots.
 A Files watch streams raw changes in Text or machine formats; explicit Tree, Paths, and
 Long repaint snapshots instead.
+Creating, removing, or renaming an entry also moves its directory’s own modification
+time, so a Files watch follows that change with an `upsert` record for the directory,
+unless it is the scan root or the selection leaves directories out.
+It is an ordinary `fdu.stream/2` record: the schema and the record shape are unchanged.
 
 See [the usage guide](usage.md) for filter grammar and examples, and
 [the surface architecture](project/architecture/fdu-surface-architecture.md) for schema

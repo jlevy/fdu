@@ -299,6 +299,17 @@ while reported loss or ambiguity invalidates and reconciles the affected scope.
 The logical-clock check prevents an older sample from overwriting a newer commit; it is
 not a filesystem transaction.
 
+Verification reads one thing besides the paths the events name.
+Creating, removing, or renaming an entry moves its directory’s own modification time,
+and no backend names the directory in that event, so each batch also re-reads the
+attributes of the directory each verified path lives in, once per directory and without
+listing it. A refresh or a reconciliation of one path re-reads its directory the same
+way. Without that, a watch kept a directory aged as it was before its newest file was
+deleted or an old file was moved in, where a one-shot report read it as just changed.
+Every maintenance test had compared the index with itself or with a model fed the same
+operations, which cannot see a fact no operation carried, so a property test now holds a
+watched tree to a cold walk of the same tree after every generated step.
+
 ### Concurrency Guards
 
 Conditional observations carry generation and revision guards.
