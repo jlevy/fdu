@@ -42,6 +42,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The windows the query selects by stay the absolute bounds its request resolved when it
   was built. A repaint is still skipped when nothing a reader sees changed: ages rolling
   over repaint nothing, and any change in a row’s activity repaints.
+- A watch, an opened root’s observation, and a refresh re-read the directory a created,
+  removed, or renamed entry lives in, so that directory’s own time, and with it its
+  age, matches a one-shot report: deleting a directory’s newest file, or moving an old
+  file in, makes it young there too.
+  Under `--view files` the record for such a change is now followed by an `upsert`
+  record for its directory, unless it is the scan root or the selection leaves
+  directories out; the record shape and `fdu.stream/2` are unchanged.
 - Rust: `TreeNode` struct literals need the three new fields.
 - On Linux the default one-shot tree stats each directory and symlink again, as every
   other route does, so a directory’s age there counts its own time and equals its age
