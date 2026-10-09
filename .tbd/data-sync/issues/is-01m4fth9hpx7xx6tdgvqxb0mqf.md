@@ -3,9 +3,9 @@ type: is
 id: is-01m4fth9hpx7xx6tdgvqxb0mqf
 title: "Address PR #190 review A: record the by-eye checks, cite fdu-15gr"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 5
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -16,7 +16,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-09T07:55:08.724Z
-updated_at: 2026-10-09T07:55:16.426Z
+updated_at: 2026-10-09T08:05:41.742Z
 started_at: 2026-10-09T07:55:16.423Z
+closed_at: 2026-10-09T08:05:41.740Z
+close_reason: Review A addressed at 0b8e4af4 (CI 37901907719 success); disposition reply https://github.com/jlevy/fdu/pull/190#issuecomment-6076996872; PR marked ready
+resolution: null
+duplicate_of: null
 ---
 Review A on https://github.com/jlevy/fdu/pull/190 (https://github.com/jlevy/fdu/pull/190#issuecomment-6076843250), head c05712f1. Verdict: approve after A1.
