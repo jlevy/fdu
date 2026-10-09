@@ -704,9 +704,10 @@ pub struct Delivery {
     ///
     /// What a report over several roots takes, since one snapshot file cannot hold them:
     /// every route resolves it to its root's file before it reads or writes anything
-    /// ([`Self::for_root`]). A surface that caches by default passes its resolved default
-    /// directory here ([`default_cache_dir`](crate::default_cache_dir)); `None` means no
-    /// cache, as `cache_path: None` does, never a default.
+    /// ([`Self::for_root`]), and [`plan`](crate::plan) counts it as a cache location
+    /// before then, as it counts that file. A surface that caches by default passes its
+    /// resolved default directory here ([`default_cache_dir`](crate::default_cache_dir));
+    /// `None` means no cache, as `cache_path: None` does, never a default.
     pub cache_dir: Option<PathBuf>,
     /// Whether a partial answer is accepted as a success.
     pub accept_partial: bool,

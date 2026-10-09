@@ -445,8 +445,10 @@ pub fn throughput_rates(
 /// cost.  [`Delivery::stale_ok`] must answer from the snapshot without touching the tree,
 /// so it has no scan to reduce.  [`CachePolicy::On`] is an explicit request to leave a
 /// current snapshot, and honouring it means materialising the index that gets written —
-/// though with no cache path configured there is nothing to write, and the compact tier
-/// answers it like any other summary.
+/// though with no cache location configured, neither [`Delivery::cache_path`] nor
+/// [`Delivery::cache_dir`], there is nothing to write, and the compact tier answers it
+/// like any other summary. A delivery naming a cache directory plans as the one naming the
+/// file that directory names for the root would.
 ///
 /// A tree takes a folded index under the same route, policy, and analysis conditions,
 /// when `TreeRetention::for_request` finds the tree projection is its only reader and
@@ -506,8 +508,12 @@ pub fn plan(
     let summary_is_sufficient = request.query.views.as_slice() == [ViewSpec::Summary]
         && request.query.selection.is_unfiltered()
         && request.basis.scope.population == crate::query::IgnoredEntries::Include;
+    // A cache directory is a location as the file it names for this root is: a route
+    // resolves it to that file before it executes ([`Delivery::for_root`]), and the plan
+    // must describe the route that runs, not an uncached one (review D7 on #192).
+    let cache_located = delivery.cache_path.is_some() || delivery.cache_dir.is_some();
     let policy_requires_index =
-        delivery.stale_ok || (delivery.cache == CachePolicy::On && delivery.cache_path.is_some());
+        delivery.stale_ok || (delivery.cache == CachePolicy::On && cache_located);
     // What a later request can reuse decides both directions. A one-shot metadata query
     // cannot amortize loading and reconciling a snapshot: both paths stat every entry. On
     // macOS/APFS (494,031 entries), warm revalidation cost 4.8 s versus 3.6 s cold. Nor
@@ -2237,6 +2243,34 @@ mod tests {
                 "{name} needs the index to honour its contract"
             );
         }
+    }
+
+    /// A cache directory is a cache location to the planner, as the file it names for the
+    /// root is, so a delivery naming either plans one route (review D7 on #192): `On` with
+    /// a directory keeps the index it writes rather than planning the uncached tier.
+    #[test]
+    fn a_cache_directory_plans_as_the_file_it_names() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let shape = |plan: Plan| (plan.retained, plan.load, plan.verify, plan.persist);
+        for policy in [CachePolicy::Auto, CachePolicy::On, CachePolicy::Off] {
+            for query in [summary_query(), tree.clone()] {
+                let (request, delivery) = split(root.path(), &blind(policy, None), &query);
+                let directory = under(cache.path(), &delivery);
+                let file = directory.for_root(root.path()).expect("resolved");
+                assert!(file.cache_path.is_some() && file.cache_dir.is_none());
+                assert_eq!(
+                    shape(plan(&request, &directory, Route::OneShot).expect("plan")),
+                    shape(plan(&request, &file, Route::OneShot).expect("plan")),
+                    "{policy:?} {:?}",
+                    query.views
+                );
+            }
+        }
+        let (request, delivery) = split(root.path(), &blind(CachePolicy::On, None), &tree);
+        let planned = plan(&request, &under(cache.path(), &delivery), Route::OneShot);
+        assert_eq!(planned.expect("plan").retained, RetainedState::FullIndex);
     }
 
     #[test]
