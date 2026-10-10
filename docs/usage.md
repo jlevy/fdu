@@ -114,7 +114,9 @@ $ fdu docs src
   ([exp-216](project/experiments/exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md),
   measured on macOS on a busy, uncontrolled host).
   To see every entry here one level down in one walk, use
-  `fdu --depth 1 --min-share 0% .`.
+  `fdu --depth 1 --min-share 0% .`, which also counts hidden entries and the files here,
+  both of which `*/` leaves out, and does not walk the target of a symlink here, which
+  `*/` names as a root.
 - Each root’s snapshot lives where that root’s own would, under one cache directory, and
   none is written until every root has been walked.
 - `--watch`, `--cache-status`, and `--cache-clear` take one PATH.

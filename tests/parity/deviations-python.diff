@@ -47,7 +47,8 @@
 #  30  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
 #      platform separator, and [AGE] for an age measured from the run's own instant.
-#      The Python replay prints the sandbox root, a literal separator, and the age.
+#      The Python replay prints the sandbox root, a literal separator, and the age, whose
+#      cell is recorded as [AGE_VALUE] where the rest of its row matches the golden.
 #      Only the exact fixture root, a well-formed age, and otherwise identical lines match;
 #      exact bound and omitted-view tip translations, and the stale-answer warning
 #      naming each surface's option, can accompany those lines.
@@ -148,8 +149,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,2 +1,2 @@
 -██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
 -██████████   100%       269 B  [AGE_BLANK]    … and 7 more files
-+██████████   100%       269 B  [TIME]  . 7 files (128 B gitignored)
-+██████████   100%       269 B        … and 7 more files
++██████████   100%       269 B  [AGE_VALUE]  . 7 files (128 B gitignored)
++██████████   100%       269 B  [AGE_BLANK_VALUE]    … and 7 more files
     stderr:
 @@ -1,3 +1,3 @@
  note: totals include gitignored sizes and descendants
@@ -1103,18 +1104,18 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -█░░░░░░░░░     7%        17 B  [AGE]      notes.txt
 -█░░░░░░░░░     9%        22 B  [AGE]    data/ 1 file
 -█░░░░░░░░░     9%        22 B  [AGE]      settings.json
-+██████████   100%       256 B  [TIME]  . 7 files
-+████░░░░░░    38%        98 B  [TIME]    assets/ 2 files
-+███░░░░░░░    31%        80 B  [TIME]      logo.png
-+█░░░░░░░░░     7%        18 B  [TIME]      late.bin.txt
-+███░░░░░░░    30%        77 B  [TIME]    src/ 2 files
-+██░░░░░░░░    15%        39 B  [TIME]      tool.py
-+█░░░░░░░░░    15%        38 B  [TIME]      main.rs
-+██░░░░░░░░    23%        59 B  [TIME]    docs/ 2 files
-+██░░░░░░░░    16%        42 B  [TIME]      guide.md
-+█░░░░░░░░░     7%        17 B  [TIME]      notes.txt
-+█░░░░░░░░░     9%        22 B  [TIME]    data/ 1 file
-+█░░░░░░░░░     9%        22 B  [TIME]      settings.json
++██████████   100%       256 B  [AGE_VALUE]  . 7 files
++████░░░░░░    38%        98 B  [AGE_VALUE]    assets/ 2 files
++███░░░░░░░    31%        80 B  [AGE_VALUE]      logo.png
++█░░░░░░░░░     7%        18 B  [AGE_VALUE]      late.bin.txt
++███░░░░░░░    30%        77 B  [AGE_VALUE]    src/ 2 files
++██░░░░░░░░    15%        39 B  [AGE_VALUE]      tool.py
++█░░░░░░░░░    15%        38 B  [AGE_VALUE]      main.rs
++██░░░░░░░░    23%        59 B  [AGE_VALUE]    docs/ 2 files
++██░░░░░░░░    16%        42 B  [AGE_VALUE]      guide.md
++█░░░░░░░░░     7%        17 B  [AGE_VALUE]      notes.txt
++█░░░░░░░░░     9%        22 B  [AGE_VALUE]    data/ 1 file
++█░░░░░░░░░     9%        22 B  [AGE_VALUE]      settings.json
     stderr:
 @@ -1,2 +1,2 @@
  note: code and words analysis not shown by tree
@@ -1148,9 +1149,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -██████████   100%       256 B  [AGE]  . 7 files
 -████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
 -██████░░░░    62%       158 B  [AGE_BLANK]    … and 5 more files
-+██████████   100%       256 B  [TIME]  . 7 files
-+████░░░░░░    38%        98 B  [TIME]    assets/ 2 files
-+██████░░░░    62%       158 B        … and 5 more files
++██████████   100%       256 B  [AGE_VALUE]  . 7 files
++████░░░░░░    38%        98 B  [AGE_VALUE]    assets/ 2 files
++██████░░░░    62%       158 B  [AGE_BLANK_VALUE]    … and 5 more files
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
        77 B   30.1%  code               2 files
@@ -1184,9 +1185,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -██████████   100%       256 B  [AGE]  . 7 files
 -████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
 -██████░░░░    62%       158 B  [AGE_BLANK]    … and 5 more files
-+██████████   100%       256 B  [TIME]  . 7 files
-+████░░░░░░    38%        98 B  [TIME]    assets/ 2 files
-+██████░░░░    62%       158 B        … and 5 more files
++██████████   100%       256 B  [AGE_VALUE]  . 7 files
++████░░░░░░    38%        98 B  [AGE_VALUE]    assets/ 2 files
++██████░░░░    62%       158 B  [AGE_BLANK_VALUE]    … and 5 more files
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
@@ -1221,9 +1222,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -██████████   100%       256 B  [AGE]  . 7 files
 -████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
 -██████░░░░    62%       158 B  [AGE_BLANK]    … and 5 more files
-+██████████   100%       256 B  [TIME]  . 7 files
-+████░░░░░░    38%        98 B  [TIME]    assets/ 2 files
-+██████░░░░    62%       158 B        … and 5 more files
++██████████   100%       256 B  [AGE_VALUE]  . 7 files
++████░░░░░░    38%        98 B  [AGE_VALUE]    assets/ 2 files
++██████░░░░    62%       158 B  [AGE_BLANK_VALUE]    … and 5 more files
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
@@ -1293,17 +1294,17 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
 -█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
 -█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
 -░░░░░░░░░░     2%         6 B  [AGE_BLANK]    … and 1 more file
-+██████████   100%       269 B  [TIME]  . 7 files (128 B gitignored)
-+█████░░░░░    48%       128 B  [TIME]    dist/ 1 file (128 B gitignored)
-+█████░░░░░    48%       128 B  [TIME]      acorn-0.1.0.tar.gz (128 B gitignored)
-+██░░░░░░░░    18%        48 B  [TIME]    README.md
-+█░░░░░░░░░    13%        36 B  [TIME]    src/ 2 files
-+█░░░░░░░░░     7%        18 B  [TIME]      alpha.rs
-+█░░░░░░░░░     7%        18 B  [TIME]      omega.rs
-+█░░░░░░░░░    10%        28 B  [TIME]    Makefile
-+█░░░░░░░░░     9%        23 B  [TIME]    docs/ 1 file
-+█░░░░░░░░░     9%        23 B  [TIME]      FAQ.MD
-+░░░░░░░░░░     2%         6 B        … and 1 more file
++██████████   100%       269 B  [AGE_VALUE]  . 7 files (128 B gitignored)
++█████░░░░░    48%       128 B  [AGE_VALUE]    dist/ 1 file (128 B gitignored)
++█████░░░░░    48%       128 B  [AGE_VALUE]      acorn-0.1.0.tar.gz (128 B gitignored)
++██░░░░░░░░    18%        48 B  [AGE_VALUE]    README.md
++█░░░░░░░░░    13%        36 B  [AGE_VALUE]    src/ 2 files
++█░░░░░░░░░     7%        18 B  [AGE_VALUE]      alpha.rs
++█░░░░░░░░░     7%        18 B  [AGE_VALUE]      omega.rs
++█░░░░░░░░░    10%        28 B  [AGE_VALUE]    Makefile
++█░░░░░░░░░     9%        23 B  [AGE_VALUE]    docs/ 1 file
++█░░░░░░░░░     9%        23 B  [AGE_VALUE]      FAQ.MD
++░░░░░░░░░░     2%         6 B  [AGE_BLANK_VALUE]    … and 1 more file
     stderr:
 @@ -1,3 +1,3 @@
  note: totals include gitignored sizes and descendants
@@ -1326,9 +1327,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
 -██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
 -█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
 -█████░░░░░    52%       141 B  [AGE_BLANK]    … and 6 more files
-+██████████   100%       269 B  [TIME]  . 7 files (128 B gitignored)
-+█████░░░░░    48%       128 B  [TIME]    dist/ 1 file (128 B gitignored)
-+█████░░░░░    52%       141 B        … and 6 more files
++██████████   100%       269 B  [AGE_VALUE]  . 7 files (128 B gitignored)
++█████░░░░░    48%       128 B  [AGE_VALUE]    dist/ 1 file (128 B gitignored)
++█████░░░░░    52%       141 B  [AGE_BLANK_VALUE]    … and 6 more files
     stderr:
 @@ -1,3 +1,3 @@
  note: totals include gitignored sizes and descendants
@@ -1346,13 +1347,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
 -█░░░░░░░░░    10%        28 B  [AGE]    Makefile
 -█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
 -░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
-+██████████   100%       269 B  [TIME]  . 7 files (128 B gitignored)
-+█████░░░░░    48%       128 B  [TIME]    dist/ 1 file (128 B gitignored)
-+██░░░░░░░░    18%        48 B  [TIME]    README.md
-+█░░░░░░░░░    13%        36 B  [TIME]    src/ 2 files
-+█░░░░░░░░░    10%        28 B  [TIME]    Makefile
-+█░░░░░░░░░     9%        23 B  [TIME]    docs/ 1 file
-+░░░░░░░░░░     2%         6 B  [TIME]    .gitignore
++██████████   100%       269 B  [AGE_VALUE]  . 7 files (128 B gitignored)
++█████░░░░░    48%       128 B  [AGE_VALUE]    dist/ 1 file (128 B gitignored)
++██░░░░░░░░    18%        48 B  [AGE_VALUE]    README.md
++█░░░░░░░░░    13%        36 B  [AGE_VALUE]    src/ 2 files
++█░░░░░░░░░    10%        28 B  [AGE_VALUE]    Makefile
++█░░░░░░░░░     9%        23 B  [AGE_VALUE]    docs/ 1 file
++░░░░░░░░░░     2%         6 B  [AGE_VALUE]    .gitignore
  TYPES
       128 B   47.6%  archive            1 file
        71 B   26.4%  markdown           2 files
@@ -1536,10 +1537,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 @@ -1,4 +1,4 @@
  ██████████   100%     9.7 KiB  unknown  . 2 files
 -██████████   100%     9.7 KiB  [AGE]    large
-+██████████   100%     9.7 KiB       [TIME]    large
++██████████   100%     9.7 KiB  [AGE_VALUE]    large
  ░░░░░░░░░░     0%         0 B  unknown    pending/ 0 files
 -░░░░░░░░░░    <1%         1 B  [AGE_BLANK]    … and 1 more file
-+░░░░░░░░░░    <1%         1 B             … and 1 more file
++░░░░░░░░░░    <1%         1 B  [AGE_BLANK_VALUE]    … and 1 more file
     stderr:
 @@ -1,4 +1,4 @@
  note: totals include descendants
@@ -1550,7 +1551,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,258 +1,1 @@
+@@ -1,260 +1,1 @@
 -fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1613,8 +1614,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Every PATH is a directory; `fdu */` names only the directories here, and is
 -  refused where one is a symlink to another (lib64 -> lib). Each root is walked
 -  separately and pays a walk's fixed cost: 625 small roots took [TIME], one
--  walk of their parent [TIME], about 7x (exp-216, macOS, uncontrolled host).
--  One walk shows every entry one level down: `fdu --depth 1 --min-share 0% .`
+-  walk of their parent [TIME], about 7x (macOS, uncontrolled host). One walk
+-  shows every entry one level down: `fdu --depth 1 --min-share 0% .`, which
+-  also counts hidden entries and files, as `*/` does not, and does not walk
+-  the target of a symlink, which `*/` names as a root.
 -  A root inside another, or the same directory twice, is refused (exit 2).
 -  --cache-status and --cache-clear take one PATH, as does --watch.
 -

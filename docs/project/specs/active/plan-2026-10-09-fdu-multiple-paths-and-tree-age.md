@@ -616,16 +616,16 @@ Two stacked pull requests on gh-stack, the age column first.
 
 ### Phase 1: The Age Column (first pull request)
 
-- [ ] Root boundary in `measure`; the unfiltered pass; tests pinning it to `measure` on
+- [x] Root boundary in `measure`; the unfiltered pass; tests pinning it to `measure` on
   full and folded indexes
-- [ ] The filtered fold in `walk`; tree nodes carry `mtime_ns`, `complete`, `age_ns`;
+- [x] The filtered fold in `walk`; tree nodes carry `mtime_ns`, `complete`, `age_ns`;
   `--sort mtime` uses them
-- [ ] `human_age` ladder with `mo` and `y`; `parse_age` refusal names the day equivalent
-- [ ] Text column, blank remainder cell, `unknown` and `—` in gray
-- [ ] `modified_at`, `age_reference_at`, `fdu.report/11`, Python models
-- [ ] Per-repaint request instant in watch and `Session::report`; repaint check over
+- [x] `human_age` ladder with `mo` and `y`; `parse_age` refusal names the day equivalent
+- [x] Text column, blank remainder cell, `unknown` and `—` in gray
+- [x] `modified_at`, `age_reference_at`, `fdu.report/11`, Python models
+- [x] Per-repaint request instant in watch and `Session::report`; repaint check over
   exact activity
-- [ ] Goldens, docs, and the two performance measurements
+- [x] Goldens, docs, and the two performance measurements
 
 ### Phase 2: Several Roots (second pull request)
 
