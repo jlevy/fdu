@@ -72,6 +72,79 @@ export function normalisePortableValues(text) {
     return lines.join('\n');
 }
 
+// A tree row's age cell is right-aligned to the widest cell in its section, so an
+// observed row carries two readings of the clock: its own age, and padding sized by every
+// other row's. A section whose widest age reaches 10s, or a session that runs past a
+// minute, changes rows whose own text did not change, the remainder's blank cell
+// included, and the artifact, compared literally, failed by timing (review E1 on #192).
+// So where a golden row names the cell [AGE] or [AGE_BLANK] and the observed row matches
+// the rest of it exactly, the cell and its padding are recorded as one marker,
+// [AGE_VALUE] or [AGE_BLANK_VALUE]. A blank cell is masked only at the width of the age
+// cell above it, so the remainder's indentation, and with it its depth, is still checked.
+// run-parity calls this before it masks durations as [TIME], which would hide that width.
+const AGE_TOKEN = '-?[0-9]{1,3}(?:,[0-9]{3})*(?:mo|[smhdy])';
+const ageCellPattern = (golden) => {
+  const parts = sameSeparator(golden).split(/(\[AGE\]|\[AGE_BLANK\])/);
+  if (parts.length === 1) return null;
+  const source = parts
+    .map((part, i) => {
+      if (i % 2 === 0) return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return part === '[AGE]' ? `( *${AGE_TOKEN})` : '( +)';
+    })
+    .join('');
+  return { regex: new RegExp(`^${source}$`, 'd'), cells: parts.filter((_, i) => i % 2 === 1) };
+};
+export function maskAgeCells(text) {
+  const lines = text.split('\n');
+  let removed = [];
+  let added = [];
+  const flush = () => {
+    // Golden rows are taken in order, each by the first observed row that matches it.
+    let next = 0;
+    let width = null;
+    for (const { index, value } of added) {
+      for (let k = next; k < removed.length; k += 1) {
+        const pattern = ageCellPattern(removed[k]);
+        const match = pattern?.regex.exec(value);
+        if (!match) continue;
+        const spans = pattern.cells.map((cell, c) => ({ cell, span: match.indices[c + 1] }));
+        let rowWidth = width;
+        const aligned = spans.every(({ cell, span: [start, end] }) => {
+          if (cell === '[AGE]') {
+            rowWidth = end - start;
+            return true;
+          }
+          return end - start === rowWidth;
+        });
+        if (!aligned) continue;
+        width = rowWidth;
+        let masked = value;
+        for (const { cell, span: [start, end] } of spans.reverse()) {
+          const marker = cell === '[AGE]' ? '[AGE_VALUE]' : '[AGE_BLANK_VALUE]';
+          masked = masked.slice(0, start) + marker + masked.slice(end);
+        }
+        lines[index] = `+${masked}`;
+        next = k + 1;
+        break;
+      }
+    }
+    removed = [];
+    added = [];
+  };
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^(?:FAIL |PASS |  ✗ |  ✓ )/.test(line)) {
+      flush();
+    } else if (line.startsWith('-')) {
+      removed.push(line.slice(1));
+    } else if (line.startsWith('+')) {
+      added.push({ index: i, value: line.slice(1) });
+    }
+  }
+  flush();
+  return lines.join('\n');
+}
+
 // The golden stores a portable scan-root pattern, while the Python replay prints its
 // concrete sandbox root. Match only the fixture root for that session: accepting any
 // [SANDBOX] path would conceal a Python request that scanned a different directory.
@@ -96,10 +169,15 @@ const portablePatternMatches = (line, actual, file) => {
   const pattern = escaped
     // A tree row's age cell is the golden pattern [AGE], measured from each run's own
     // instant and right-aligned to the section's widest cell, and the remainder row's
-    // blank cell is [AGE_BLANK], as wide as that cell. normalise() has already masked an
-    // age in seconds as [TIME]; every other unit of the ladder is still checked.
-    .replaceAll('\\[AGE\\]', '\\s*-?(?:\\[TIME\\]|[0-9]{1,3}(?:,[0-9]{3})*(?:mo|[smhdy]))')
-    .replaceAll('\\[AGE_BLANK\\]', ' +')
+    // blank cell is [AGE_BLANK], as wide as that cell. maskAgeCells() has already
+    // recorded a cell whose row matches its golden as [AGE_VALUE] or [AGE_BLANK_VALUE];
+    // a cell it left, in a row that differs elsewhere, is still checked as an age, with
+    // normalise() having masked one in seconds as [TIME].
+    .replaceAll(
+      '\\[AGE\\]',
+      '(?:\\[AGE_VALUE\\]|\\s*-?(?:\\[TIME\\]|[0-9]{1,3}(?:,[0-9]{3})*(?:mo|[smhdy])))',
+    )
+    .replaceAll('\\[AGE_BLANK\\]', '(?:\\[AGE_BLANK_VALUE\\]| +)')
     .replaceAll('\\[AGE_NS\\]', '(?:\\[AGE_NS_VALUE\\]|-?\\d+)')
     // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
     // numeric. The same named golden pattern appears in both fields.
@@ -198,7 +276,8 @@ export const CLASSES = [
     why: [
       'The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a',
       'platform separator, and [AGE] for an age measured from the run\'s own instant.',
-      'The Python replay prints the sandbox root, a literal separator, and the age.',
+      'The Python replay prints the sandbox root, a literal separator, and the age, whose',
+      'cell is recorded as [AGE_VALUE] where the rest of its row matches the golden.',
       'Only the exact fixture root, a well-formed age, and otherwise identical lines match;',
       'exact bound and omitted-view tip translations, and the stale-answer warning',
       'naming each surface\'s option, can accompany those lines.',
