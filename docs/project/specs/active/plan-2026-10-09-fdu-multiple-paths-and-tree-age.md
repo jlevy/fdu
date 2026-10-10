@@ -49,7 +49,8 @@ $ fdu docs src
   change either way ([below](#computing-it)). On Linux it is expected to give back about
   3% of the default tree on a directory-dense tree, because every route must read
   directory and symlink times ([below](#every-route-reads-directory-and-symlink-times));
-  H193 measures that before release (`fdu-088k`).
+  H193 measured it before release (`fdu-088k`): 5.72% on the directory-dense tree, about
+  twice the expectation, and inside noise on the kernel tree.
 - A retained report pays the column’s per-row work and no work per entry, so its cost
   grows with the rows it shows, never with the tree beneath them.
   Measured on macOS at the shipped head, that is no resolved change over a retained
@@ -279,6 +280,25 @@ and the policy that shipped kept 83% of those `statx` calls saved, so the give-b
 should be that size or a little less.
 These predictions are pre-registered as H193, and `fdu-088k` measures them on Linux
 before 0.5.0 is released.
+
+Measured on 2026-10-10
+([exp-217](../../experiments/exp-217-linux-h193-the-age-column-costs-the-dense-tree-s-default-com.md),
+[exp-218](../../experiments/exp-218-linux-the-age-column-s-price-on-one-codebase-5-6-on-the-dens.md)):
+the `statx` counts are exactly the predicted ones, and the time is about twice the
+prediction on the dense tree.
+The default tree on `node-modules-dense` takes 5.72% [+3.53%, +10.46%] longer than
+0.4.0’s at 100 pairs, and 5.63% longer than the same code without the directory stats,
+so the column is all of it; on `linux-v6.12` the price is +0.42% [−1.28%, +2.97%]. It is
+kernel time: the column’s user-space instructions move 0.26%. pdu and diskus make the
+same call per directory, plus an `fstat` fdu does not, so the column brings fdu’s call
+count up to theirs rather than past it.
+H169’s third phase (H197,
+[exp-219](../../experiments/exp-219-linux-h197-parent-relative-directory-opens-cut-the-dense-tre.md))
+wins back 3.35% on the dense tree and is accepted there, on its own branch; ages still
+cost 1.6% to 4% over a walk that skips directory stats.
+A files-only age would cost nothing, since the folded tree already keeps
+`newest_mtime_ns`; that is a change to the definition above and the maintainer’s to
+make.
 
 One metadata read per directory and per symlink is the interface floor route-equal ages
 need: [the floor report](../../reports/report-2026-08-23-metadata-walk-floor.md)’s “per
@@ -639,7 +659,14 @@ measured about 2.4 ms a root on the default tree, 1.72 s against 0.23 s for the 
 and about 0.9 ms a root on the summary, about eight and three times the estimate.
 So `fdu */` over many small directories is several times slower than `fdu .` over their
 parent; usage says roots are walked one after another, and one walker pool across roots
-is `fdu-ich9`.
+is `fdu-ich9`. On Linux (2026-10-10, quiet, two-arm cells of 40 pairs;
+[exp-220](../../experiments/exp-220-linux-h195-quiet-rerun-one-root-s-summary-5-3-slower-on-the-.md)),
+the three jobs exp-214 left open came out three ways: `render-yaml` is faster at #192’s
+head on both real trees, `opened-second-report` is level but inconclusive at +3%, and
+`aggregate-summary` is 5.28% [+2.27%, +7.62%] slower on `node-modules-dense` with
+instruction and system-call counts that do not explain it, so H195 does not hold there.
+Several roots cost about 0.5 ms a root on Linux, a fifth of macOS’s
+([exp-221](../../experiments/exp-221-linux-several-roots-pay-about-0-5-ms-a-root-272-small-roots-.md)).
 
 Decided during implementation:
 
