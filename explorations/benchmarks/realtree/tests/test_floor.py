@@ -57,6 +57,7 @@ CONSISTENT = {
     "arena-spike": arena_line(10, 50),
     "aggregate": probe_line(10, 50),
     "index": probe_line(11, 50),
+    "tree": probe_line(10, 50),
 }
 
 
@@ -66,7 +67,8 @@ def instrument_key(argv):
         return f"parfloor-{argv[1]}"
     if name == "arena_spike":
         return "arena-spike"
-    return {"summary": "aggregate", "scan-index": "index"}.get(argv[1], argv[1])
+    return {"summary": "aggregate", "scan-index": "index",
+            "roots-default-tree": "tree"}.get(argv[1], argv[1])
 
 
 def pressure(cpu_busy_pct):
@@ -973,6 +975,16 @@ class ScoresAgainstTheFloor(unittest.TestCase):
             {"parfloor-stat": 100_000_000, "aggregate": 125_040_000}))["rows"]}
         self.assertEqual(rows["aggregate"]["x_floor"], 1.25)
         self.assertFalse(rows["aggregate"]["meets_threshold"])
+
+    def test_the_tree_tier_is_scored_but_has_no_threshold_to_close(self):
+        # Campaign 2 set closure thresholds for the aggregate and index tiers only, so the
+        # tree tier's ratio is a reading, never a closed or an open tier.
+        rows = {row["instrument"]: row for row in floor.score(self._subject(
+            {"parfloor-stat": 40_000_000, "tree": 46_000_000}))["rows"]}
+        self.assertEqual(rows["tree"]["role"], "tier")
+        self.assertEqual(rows["tree"]["x_floor"], 1.15)
+        self.assertIsNone(rows["tree"]["threshold"])
+        self.assertIsNone(rows["tree"]["meets_threshold"])
 
 
 class LeavesASpreadTierUndecided(unittest.TestCase):

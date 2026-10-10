@@ -303,11 +303,29 @@ INSTRUMENTS: Dict[str, Instrument] = {
         elapsed_key="component_ns",
         payload_key="summary",
     ),
+    # The default command's tier: the folded one-shot index and the rendered text tree,
+    # through the door `fdu PATH` takes. Since the age column (H193) it describes every
+    # directory and symlink once, as the floor does, where H185 had taken it below that.
+    # `.gitignore` is off for the reason it is off for the aggregate tier: the floor reads
+    # no control files. It has no closure threshold; campaign 2 set none for this tier.
+    "tree": Instrument(
+        id="tree",
+        role="tier",
+        description="fdu tree tier: the default tree over the folded index, rendered.",
+        argv=("{probe}", "roots-default-tree", "--no-controls", "--root", "{root}",
+              "--threads", "{workers}"),
+        tally_map={"dirs": "dirs", "files": "files", "apparent_bytes": "apparent_bytes",
+                   "allocated_bytes": "allocated_bytes"},
+        elapsed_key="component_ns",
+        payload_key="summary",
+    ),
 }
 
 #: The instruments a scoreboard runs, denominator first. This is the order of the first
 #: round only; later rounds follow `schedule`, and the table sorts rows by ratio.
-DEFAULT_INSTRUMENTS = ("parfloor-stat", "parfloor-enum", "arena-spike", "aggregate", "index")
+DEFAULT_INSTRUMENTS = (
+    "parfloor-stat", "parfloor-enum", "arena-spike", "aggregate", "index", "tree",
+)
 
 #: Names the ordering `schedule` produces, recorded with every subject.
 SCHEDULE_SCHEME = "carryover-balanced-v1"
