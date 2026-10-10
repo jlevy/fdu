@@ -3208,7 +3208,7 @@ trait WalkEmission {
         root_dev: u64,
         config: &ScanConfig,
         directory: &mut Self::Directory,
-        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        discovered: &mut Vec<QueuedDir>,
         report: &mut ScanReport,
         sender: &std::sync::mpsc::Sender<WalkMessage>,
         chunk_send_ns: &mut u64,
@@ -3433,7 +3433,7 @@ impl WalkEmission for StreamingEmission {
         root_dev: u64,
         config: &ScanConfig,
         _directory: &mut Self::Directory,
-        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        discovered: &mut Vec<QueuedDir>,
         report: &mut ScanReport,
         sender: &std::sync::mpsc::Sender<WalkMessage>,
         chunk_send_ns: &mut u64,
@@ -3617,7 +3617,7 @@ impl WalkEmission for DetachedEmission {
         root_dev: u64,
         config: &ScanConfig,
         directory: &mut Self::Directory,
-        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        discovered: &mut Vec<QueuedDir>,
         report: &mut ScanReport,
         _sender: &std::sync::mpsc::Sender<WalkMessage>,
         _chunk_send_ns: &mut u64,
@@ -3777,8 +3777,8 @@ fn walk_worker_with<E: WalkEmission>(
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
     let mut tally = ProgressTally::new(config.progress.as_ref());
-    let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
-    let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
+    let mut claimed: Vec<QueuedDir> = Vec::with_capacity(DIR_CLAIM);
+    let mut discovered: Vec<QueuedDir> = Vec::new();
     let mut consumer_gone = false;
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
@@ -3792,7 +3792,9 @@ fn walk_worker_with<E: WalkEmission>(
         let chunk_started = std::time::Instant::now();
         let mut chunk_send_ns: u64 = 0;
         let entries_before = report.entries;
-        for (rel_dir, depth, region) in claimed.drain(..) {
+        for (rel_dir, depth, region, parent) in claimed.drain(..) {
+            #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+            let () = parent;
             let abs_dir = root.join(&rel_dir);
             let mut directory = emission.begin_directory(&rel_dir);
             #[cfg(target_os = "macos")]
@@ -3848,19 +3850,25 @@ fn walk_worker_with<E: WalkEmission>(
                     skip_dir_symlink_stat: emission.skip_dir_symlink_stat(),
                     one_filesystem: config.one_filesystem,
                 };
+                // H197: a directory whose parent's descriptor was kept opens relative to
+                // it, resolving one component instead of the whole path.
+                let relative = parent
+                    .as_deref()
+                    .and_then(|parent| Some((parent.fd(), rel_dir.file_name()?)));
                 // Plain `if`, not `bool::then(|| …)`: the listing borrows the reader for the
                 // loop.
                 let listing = if walk_hook_covers(&abs_dir) {
                     None
                 } else {
-                    dents_reader.read(&abs_dir, policy)
+                    dents_reader.read_at(&abs_dir, relative, policy)
                 };
-                if let Some(listing) = listing {
+                if let Some(mut listing) = listing {
                     if let Some(diagnostics) = diagnostics {
                         diagnostics.linux_dents_succeeded();
                     }
                     report.dirs_read += 1;
-                    for entry in listing {
+                    let first_child = discovered.len();
+                    for entry in listing.by_ref() {
                         let (kind, attrs) = match entry.outcome {
                             linux_dents::Outcome::Observed { kind, attrs } => (kind, attrs),
                             linux_dents::Outcome::Failed(error) => {
@@ -3889,6 +3897,18 @@ fn walk_worker_with<E: WalkEmission>(
                         ) {
                             consumer_gone = true;
                             break 'walk;
+                        }
+                    }
+                    // Keep this directory's descriptor for the subdirectories it queued, so
+                    // each opens relative to it (H197). It closes once the last has opened,
+                    // or here when there are none or the descriptor budget is spent.
+                    if discovered.len() > first_child {
+                        if let Some(retained) =
+                            listing.take_directory().and_then(linux_dents::Retained::admit)
+                        {
+                            for child in &mut discovered[first_child..] {
+                                child.3 = Some(std::sync::Arc::clone(&retained));
+                            }
                         }
                     }
                     emission.finish_directory(directory);
@@ -4027,7 +4047,7 @@ fn record_detached_entry(
     config: &ScanConfig,
     children: &mut Vec<DetachedChild>,
     control: &mut Option<Op>,
-    discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+    discovered: &mut Vec<QueuedDir>,
     report: &mut ScanReport,
 ) {
     let disposition = crate::admission::decide(name, kind, config.hidden(), config.exclude_special);
@@ -4057,7 +4077,7 @@ fn record_detached_entry(
     children.push(DetachedChild { name: name.to_os_string(), kind, attrs, position });
     if should_descend(kind, attrs, depth, root_dev, config) {
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((rel_dir.join(name), depth + 1, child_region));
+        discovered.push((rel_dir.join(name), depth + 1, child_region, ParentDir::default()));
     }
 }
 
@@ -4158,7 +4178,7 @@ fn record_walk_entry(
     root_dev: u64,
     config: &ScanConfig,
     emission: &mut StreamingEmission,
-    discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+    discovered: &mut Vec<QueuedDir>,
     report: &mut ScanReport,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     chunk_send_ns: &mut u64,
@@ -4230,7 +4250,7 @@ fn record_walk_entry(
         // parent's. Region membership therefore costs one integer copy and never
         // inspects a path.
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((path, depth + 1, child_region));
+        discovered.push((path, depth + 1, child_region, ParentDir::default()));
     }
     true
 }
@@ -4660,6 +4680,17 @@ impl RegionId {
     const UNASSIGNED: Self = Self(usize::MAX);
 }
 
+/// What a queued directory carries beside its path, depth, and region: on glibc Linux,
+/// its parent's descriptor, when the walker that listed the parent kept it (H197).
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub(crate) type ParentDir = Option<std::sync::Arc<linux_dents::Retained>>;
+/// What a queued directory carries beside its path, depth, and region: nothing here.
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+pub(crate) type ParentDir = ();
+
+/// A directory waiting to be listed: relative path, depth, region, and [`ParentDir`].
+type QueuedDir = (PathBuf, usize, RegionId, ParentDir);
+
 /// Directories still to read, plus enough state to know when the walk is finished.
 ///
 /// The termination condition is the only subtle part: the queue being empty does not
@@ -4744,9 +4775,9 @@ impl Drop for DirectoryClaim<'_> {
 
 struct DirectoryQueueState {
     /// Depth-first's single stack. Unused under breadth-first.
-    pending: VecDeque<(PathBuf, usize, RegionId)>,
+    pending: VecDeque<QueuedDir>,
     /// Breadth-first's per-region work, indexed by [`RegionId`]. Each is a LIFO stack.
-    regions: Vec<Vec<(PathBuf, usize, RegionId)>>,
+    regions: Vec<Vec<QueuedDir>>,
     /// Regions with work, in round-robin order. A region appears at most once; the
     /// flag array is what keeps that true without scanning the ring.
     ready_ring: VecDeque<RegionId>,
@@ -4791,12 +4822,12 @@ impl DirectoryQueueState {
             worker_target: initial_workers,
             maximum_workers,
         };
-        state.push((root.0, root.1, RegionId::ROOT), order);
+        state.push((root.0, root.1, RegionId::ROOT, ParentDir::default()), order);
         state
     }
 
     /// Push one directory into the structure the order uses.
-    fn push(&mut self, item: (PathBuf, usize, RegionId), order: ScanOrder) {
+    fn push(&mut self, item: QueuedDir, order: ScanOrder) {
         self.ready_directories = self.ready_directories.saturating_add(1);
         match order {
             ScanOrder::DepthFirst => self.pending.push_back(item),
@@ -4849,7 +4880,7 @@ impl DirectoryQueueState {
         &mut self,
         limit: usize,
         order: ScanOrder,
-        into: &mut Vec<(PathBuf, usize, RegionId)>,
+        into: &mut Vec<QueuedDir>,
     ) -> usize {
         let before = into.len();
         match order {
@@ -4939,7 +4970,7 @@ impl DirectoryQueue {
     /// supposed to stay near zero.
     fn claim<'a>(
         &'a self,
-        into: &mut Vec<(PathBuf, usize, RegionId)>,
+        into: &mut Vec<QueuedDir>,
         timing: &mut WalkAttribution,
     ) -> Option<DirectoryClaim<'a>> {
         let mut state = self.lock_timed(timing);
@@ -4969,7 +5000,7 @@ impl DirectoryQueue {
 
     fn extend(
         &self,
-        directories: impl Iterator<Item = (PathBuf, usize, RegionId)>,
+        directories: impl Iterator<Item = QueuedDir>,
         timing: &mut WalkAttribution,
     ) {
         let mut state = self.lock_timed(timing);
@@ -6483,7 +6514,7 @@ struct DeferredReconcile {
     /// wave's sorted operations, in one batch, because the sort moves every removal after
     /// every other operation and a batch boundary could fall between the two.
     restated: Vec<Op>,
-    discovered: Vec<(PathBuf, usize, RegionId)>,
+    discovered: Vec<QueuedDir>,
     listed_incomplete: Vec<PathBuf>,
 }
 
@@ -6578,11 +6609,11 @@ fn reconcile_direct_parallel(
         // entries again and misreport the logical reconciliation pass.
         if overflowed.load(std::sync::atomic::Ordering::Relaxed) {
             let mut remaining: VecDeque<_> =
-                wave.into_iter().map(|(path, depth, _region)| (path, depth)).collect();
+                wave.into_iter().map(|(path, depth, _region, _parent)| (path, depth)).collect();
             let mut deferred = Vec::with_capacity(DIR_CLAIM);
             while !frontier.is_empty(config.order) {
                 frontier.take(DIR_CLAIM, config.order, &mut deferred);
-                remaining.extend(deferred.drain(..).map(|(path, depth, _region)| (path, depth)));
+                remaining.extend(deferred.drain(..).map(|(path, depth, _region, _parent)| (path, depth)));
             }
             return Ok(DirectParallelOutcome::RetrySerial { prefix: report, remaining });
         }
@@ -6662,7 +6693,7 @@ fn reconcile_wave_worker(
     root: &Path,
     root_dev: u64,
     config: &ScanConfig,
-    wave: &[(PathBuf, usize, RegionId)],
+    wave: &[QueuedDir],
     next: &std::sync::atomic::AtomicUsize,
     deferred_count: &std::sync::atomic::AtomicUsize,
     overflowed: &std::sync::atomic::AtomicBool,
@@ -6682,7 +6713,7 @@ fn reconcile_wave_worker(
             break;
         }
         let end = start.saturating_add(DIR_CLAIM).min(wave.len());
-        for (rel_dir, depth, region) in &wave[start..end] {
+        for (rel_dir, depth, region, _parent) in &wave[start..end] {
             let errors_before = result.scan.errors.len();
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
@@ -6817,7 +6848,12 @@ fn reconcile_wave_worker(
                         if should_descend(kind, attrs, *depth, root_dev, config) {
                             let child_region =
                                 if *depth == 0 { RegionId::UNASSIGNED } else { *region };
-                            result.discovered.push((rel_path, depth + 1, child_region));
+                            result.discovered.push((
+                                rel_path,
+                                depth + 1,
+                                child_region,
+                                ParentDir::default(),
+                            ));
                         } else if kind.is_dir() {
                             for name in collect_child_expectations(index, &rel_path).into_keys() {
                                 defer_reconcile_op(

@@ -45,11 +45,11 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use super::{Attrs, EntryKind, Searchability, compose_ns};
 
@@ -195,6 +195,16 @@ pub(crate) struct Entry<'a> {
 pub(crate) struct Listing<'a> {
     names: &'a [u8],
     entries: std::vec::Drain<'a, Dent>,
+    /// The directory's own descriptor, open until the listing is dropped unless a walker
+    /// takes it to open the directory's children relative to it (H197).
+    directory: Option<fs::File>,
+}
+
+impl Listing<'_> {
+    /// The listed directory's descriptor, for its children's relative opens (H197).
+    pub(crate) fn take_directory(&mut self) -> Option<fs::File> {
+        self.directory.take()
+    }
 }
 
 impl<'a> Iterator for Listing<'a> {
@@ -256,6 +266,20 @@ impl Reader {
     /// `macos_bulk::Reader::read` gives: a declined directory is counted by the portable
     /// retry, and counting it here as well would double it.
     pub(super) fn read(&mut self, path: &Path, policy: StatPolicy) -> Option<Listing<'_>> {
+        self.read_at(path, None, policy)
+    }
+
+    /// [`Self::read`], opening the directory relative to its parent's descriptor when the
+    /// walker kept one (H197): `parent` is that descriptor and the directory's own name.
+    /// The kernel then resolves one component rather than every component of `path`. An
+    /// open that fails there is retried by `path`, so a relative open never decides an
+    /// answer the absolute one would not have given.
+    pub(super) fn read_at(
+        &mut self,
+        path: &Path,
+        parent: Option<(RawFd, &OsStr)>,
+        policy: StatPolicy,
+    ) -> Option<Listing<'_>> {
         if self.statx.state() == STATX_UNAVAILABLE {
             return None;
         }
@@ -268,7 +292,7 @@ impl Reader {
         if self.entries.capacity() > RETAINED_ENTRIES {
             self.entries.shrink_to(RETAINED_ENTRIES);
         }
-        let Some(counts) = self.read_native(path, policy) else {
+        let Some((counts, directory)) = self.read_native(path, parent, policy) else {
             // Leave nothing half-parsed behind for the next listing.
             self.filled = 0;
             self.entries.clear();
@@ -280,17 +304,30 @@ impl Reader {
             c.stats += counts.stats;
             c.dir_enumeration_calls += counts.enumeration_calls;
         });
-        Some(Listing { names: &self.names[..self.filled], entries: self.entries.drain(..) })
+        Some(Listing {
+            names: &self.names[..self.filled],
+            entries: self.entries.drain(..),
+            directory: Some(directory),
+        })
     }
 
-    fn read_native(&mut self, path: &Path, policy: StatPolicy) -> Option<Counts> {
+    fn read_native(
+        &mut self,
+        path: &Path,
+        parent: Option<(RawFd, &OsStr)>,
+        policy: StatPolicy,
+    ) -> Option<(Counts, fs::File)> {
         // Any open failure declines, `ELOOP` from `O_NOFOLLOW` included: the portable
         // path reopens the directory and answers exactly as it always has.
-        let directory = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-            .open(path)
-            .ok()?;
+        let relative = parent.and_then(|(parent, name)| open_child_directory(parent, name));
+        let directory = match relative {
+            Some(directory) => directory,
+            None => fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+                .open(path)
+                .ok()?,
+        };
         let fd = directory.as_raw_fd();
         let mut counts = Counts::default();
         let mut searchability = Searchability::Unproven;
@@ -335,7 +372,7 @@ impl Reader {
             counts.enumeration_calls += 1;
             if filled == 0 {
                 // End of directory: the terminating call.
-                return Some(counts);
+                return Some((counts, directory));
             }
             if filled > CHUNK_BYTES {
                 // Impossible for a conforming kernel; fail closed.
@@ -389,6 +426,103 @@ impl Reader {
         }
         Some(())
     }
+}
+
+/// Open `name` inside the directory `parent` describes, with the flags the absolute open
+/// uses: read-only, a directory, never following a final symlink, close-on-exec (H197).
+///
+/// `None` for any failure, so the caller opens by path instead and every error is the one
+/// it has always reported. A name the kernel listed is at most `NAME_MAX` bytes with no
+/// NUL; anything else is declined rather than truncated.
+fn open_child_directory(parent: RawFd, name: &OsStr) -> Option<fs::File> {
+    let bytes = name.as_bytes();
+    let mut terminated = [0_u8; 256];
+    if bytes.len() >= terminated.len() || bytes.contains(&0) {
+        return None;
+    }
+    terminated[..bytes.len()].copy_from_slice(bytes);
+    loop {
+        // SAFETY: `terminated` is a NUL-terminated byte string that outlives the call,
+        // since its last byte, past `bytes.len() < 256`, is never written. `parent` is a
+        // descriptor the caller keeps open for the call. The flags request a new
+        // descriptor and no other effect.
+        let fd = unsafe {
+            libc::openat(
+                parent,
+                terminated.as_ptr().cast::<libc::c_char>(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd >= 0 {
+            // SAFETY: `openat` returned a descriptor this call created and nothing else
+            // holds, so the `File` owns it and closes it exactly once.
+            return Some(fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) }));
+        }
+        if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+            return None;
+        }
+    }
+}
+
+/// Descriptors kept for relative opens, process-wide ([`Retained`]).
+static RETAINED: AtomicUsize = AtomicUsize::new(0);
+
+/// A listed directory's descriptor, kept while its subdirectories wait in the walk's queue
+/// so that each opens relative to it (H197). It closes when the last of them has been
+/// opened. At most [`retained_budget`] are open at once; past that a subdirectory opens by
+/// its path, as every directory did before.
+#[derive(Debug)]
+pub(crate) struct Retained {
+    directory: fs::File,
+}
+
+impl Retained {
+    /// Keep `directory` if the budget allows; otherwise it is closed here.
+    pub(crate) fn admit(directory: fs::File) -> Option<std::sync::Arc<Self>> {
+        let budget = retained_budget();
+        let mut current = RETAINED.load(Ordering::Relaxed);
+        loop {
+            if current >= budget {
+                return None;
+            }
+            match RETAINED.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(std::sync::Arc::new(Self { directory })),
+                Err(now) => current = now,
+            }
+        }
+    }
+
+    pub(crate) fn fd(&self) -> RawFd {
+        self.directory.as_raw_fd()
+    }
+}
+
+impl Drop for Retained {
+    fn drop(&mut self) {
+        RETAINED.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// How many descriptors relative opens may hold: a quarter of the soft `RLIMIT_NOFILE`,
+/// at most 1,024, so a walk never takes the descriptors the rest of the process needs.
+/// The walk queue takes a region's directories last in, first out, so the descriptors a
+/// walk holds grow with its depth times its workers, far below this on any measured tree.
+fn retained_budget() -> usize {
+    static BUDGET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        // SAFETY: `limit` is a valid, exclusively borrowed `rlimit` for the call to fill.
+        let read = unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) };
+        if read != 0 {
+            return 0;
+        }
+        usize::try_from(limit.rlim_cur / 4).unwrap_or(usize::MAX).min(1_024)
+    })
 }
 
 /// One record's shape, or `None` when the bytes are not a valid `linux_dirent64`.
