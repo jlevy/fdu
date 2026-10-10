@@ -27,7 +27,13 @@ import {
 import { dirname, isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileAtomicSync } from './atomic-write.mjs';
-import { CLASSES, classify, normalisePortableValues, parseSessions } from './parity-classes.mjs';
+import {
+  CLASSES,
+  classify,
+  maskAgeCells,
+  normalisePortableValues,
+  parseSessions,
+} from './parity-classes.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -251,7 +257,7 @@ process.exit(1);
 // Strip what varies between any two runs, so the artifact records parity and nothing
 // else. Timings, temporary sandbox paths, and the run's own summary line are noise.
 function normalise(text) {
-  return text
+  const located = text
     .replace(/\u001b\[[0-9;]*m/g, '')
     .replaceAll(corpus, join(root, 'tests', 'parity', '.corpus'))
     .replace(/\\/g, '/')
@@ -270,7 +276,11 @@ function normalise(text) {
     // it became `797 metadata bytes`, so the mask had to follow the text it masks.
     .replace(/\b\d+ metadata bytes\b/g, '[N] metadata bytes')
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/g, '[RFC3339]')
-    .replace(/("(?:newest_)?mtime_ns":\s*)\d+/g, '$1[MTIME_NS]')
+    .replace(/("(?:newest_)?mtime_ns":\s*)\d+/g, '$1[MTIME_NS]');
+  // A tree row's age cell and its padding, where the golden names the cell, before the
+  // duration mask below can turn an age in seconds into [TIME] and leave padding the clock
+  // sized (review E1 on #192); maskAgeCells says why.
+  return maskAgeCells(located)
     .replace(/\b\d+(\.\d+)?\s?(ns|µs|ms|s)\b/g, '[TIME]')
     .replace(/^.*\d+ (passed|failed) \([^)]*\)$/gm, '')
     .replace(/^run-golden: .*$/gm, '')

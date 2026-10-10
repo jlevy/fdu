@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CLASSES, classify, normalisePortableValues, parseSessions } from "./parity-classes.mjs";
+import {
+  CLASSES,
+  classify,
+  maskAgeCells,
+  normalisePortableValues,
+  parseSessions,
+} from "./parity-classes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CORPUS = path.join(ROOT, "tests", "parity", "deviations-python.diff");
@@ -143,6 +149,60 @@ test("portable numeric masking touches observed values only and rejects literal 
     classify(session(['"allocated": [ALLOCATED]'], ['"allocated": NaN'])),
     null,
     'malformed numeric output remains visible',
+  );
+});
+
+test("a tree's age cells record no clock reading, and its remainder keeps its depth", () => {
+  // Review E1 on #192: the observed age and the padding the widest age sets reached the
+  // artifact, which then failed whenever a section's widest age gained a digit or a unit.
+  const golden = [
+    "  ✗ Depth Bounds the Rendered Tree, Not the Scan",
+    "@@ -1,4 +1,4 @@",
+    "-██████████   100%       269 B  [AGE]  . 7 files",
+    "-█████░░░░░    48%       128 B  [AGE]    dist/ 1 file",
+    "-█████░░░░░    48%       128 B  [AGE]      acorn.tar.gz",
+    "-██████████   100%       141 B  [AGE_BLANK]    … and 6 more files",
+  ];
+  const observed = (root, dist, file, width, indent = "  ") =>
+    [
+      ...golden,
+      `+██████████   100%       269 B  ${root.padStart(width)}  . 7 files`,
+      `+█████░░░░░    48%       128 B  ${dist.padStart(width)}    dist/ 1 file`,
+      `+█████░░░░░    48%       128 B  ${file.padStart(width)}      acorn.tar.gz`,
+      `+██████████   100%       141 B  ${" ".repeat(width)}  ${indent}… and 6 more files`,
+    ].join("\n");
+  const recorded = [
+    ...golden,
+    "+██████████   100%       269 B  [AGE_VALUE]  . 7 files",
+    "+█████░░░░░    48%       128 B  [AGE_VALUE]    dist/ 1 file",
+    "+█████░░░░░    48%       128 B  [AGE_VALUE]      acorn.tar.gz",
+    "+██████████   100%       141 B  [AGE_BLANK_VALUE]    … and 6 more files",
+  ].join("\n");
+  for (const [rendering, text] of [
+    ["every row at 9s", observed("9s", "9s", "9s", 2)],
+    ["9s beside 10s, an indented child, and a remainder", observed("10s", "10s", "9s", 3)],
+    ["a row at 1m", observed("1m", "59s", "59s", 3)],
+  ]) {
+    assert.equal(maskAgeCells(text), recorded, rendering);
+  }
+  const lines = (text) => text.split("\n").filter((line) => /^[-+]█/.test(line));
+  const removed = lines(recorded).filter((line) => line.startsWith("-")).map((line) => line.slice(1));
+  const added = lines(recorded).filter((line) => line.startsWith("+")).map((line) => line.slice(1));
+  assert.equal(classify(session(removed, added))?.id, "portable-golden-pattern");
+
+  const deeper = maskAgeCells(observed("9s", "9s", "9s", 2, "    "));
+  assert.ok(
+    deeper.endsWith("+██████████   100%       141 B          … and 6 more files"),
+    "a remainder one level deeper is not the golden's, so its blank cell is left as observed",
+  );
+  const renamed = maskAgeCells(observed("9s", "9s", "9s", 2).replace("9s    dist/", "9s    dust/"));
+  assert.ok(
+    renamed.includes("+█████░░░░░    48%       128 B  9s    dust/ 1 file"),
+    "a row that differs elsewhere keeps its age",
+  );
+  assert.ok(
+    renamed.includes("+█████░░░░░    48%       128 B  [AGE_VALUE]      acorn.tar.gz"),
+    "and the rows after it are still masked",
   );
 });
 
