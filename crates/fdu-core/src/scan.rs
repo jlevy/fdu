@@ -3852,9 +3852,8 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 // H197: a directory whose parent's descriptor was kept opens relative to
                 // it, resolving one component instead of the whole path.
-                let relative = parent
-                    .as_deref()
-                    .and_then(|parent| Some((parent.fd(), rel_dir.file_name()?)));
+                let relative =
+                    parent.as_deref().and_then(|parent| Some((parent.fd(), rel_dir.file_name()?)));
                 // Plain `if`, not `bool::then(|| …)`: the listing borrows the reader for the
                 // loop.
                 let listing = if walk_hook_covers(&abs_dir) {
@@ -4876,12 +4875,7 @@ impl DirectoryQueueState {
     /// happen to fan across the root's children — spread wider than breadth-first did.
     /// Locality still comes from the claim being a run of directories out of one
     /// region; it must not come from a worker refusing to leave.
-    fn take(
-        &mut self,
-        limit: usize,
-        order: ScanOrder,
-        into: &mut Vec<QueuedDir>,
-    ) -> usize {
+    fn take(&mut self, limit: usize, order: ScanOrder, into: &mut Vec<QueuedDir>) -> usize {
         let before = into.len();
         match order {
             ScanOrder::DepthFirst => {
@@ -4998,11 +4992,7 @@ impl DirectoryQueue {
         }
     }
 
-    fn extend(
-        &self,
-        directories: impl Iterator<Item = QueuedDir>,
-        timing: &mut WalkAttribution,
-    ) {
+    fn extend(&self, directories: impl Iterator<Item = QueuedDir>, timing: &mut WalkAttribution) {
         let mut state = self.lock_timed(timing);
         for item in directories {
             state.push(item, self.order);
@@ -6613,7 +6603,9 @@ fn reconcile_direct_parallel(
             let mut deferred = Vec::with_capacity(DIR_CLAIM);
             while !frontier.is_empty(config.order) {
                 frontier.take(DIR_CLAIM, config.order, &mut deferred);
-                remaining.extend(deferred.drain(..).map(|(path, depth, _region, _parent)| (path, depth)));
+                remaining.extend(
+                    deferred.drain(..).map(|(path, depth, _region, _parent)| (path, depth)),
+                );
             }
             return Ok(DirectParallelOutcome::RetrySerial { prefix: report, remaining });
         }
@@ -9913,7 +9905,9 @@ mod tests {
         let root = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
         claimed.clear();
         queue.extend(
-            (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
+            (0..4).map(|top| {
+                (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED, ParentDir::default())
+            }),
             &mut timing,
         );
         assert!(root.release(0, 0, &mut timing).is_none());
@@ -10051,12 +10045,18 @@ mod tests {
         let mut claimed = Vec::new();
 
         let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
-        queue.extend([(PathBuf::from("child"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("child"), 1, RegionId::UNASSIGNED, ParentDir::default())].into_iter(),
+            &mut timing,
+        );
         assert!(claim.release(2, 20, &mut timing).is_none());
 
         claimed.clear();
         let claim = queue.claim(&mut claimed, &mut timing).expect("child is claimable");
-        queue.extend([(PathBuf::from("grandchild"), 2, claimed[0].2)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("grandchild"), 2, claimed[0].2, ParentDir::default())].into_iter(),
+            &mut timing,
+        );
         assert_eq!(claim.release(1, 10, &mut timing), Some(2));
 
         let fast = WorkerCalibration::new(3, 11);
@@ -10103,12 +10103,18 @@ mod tests {
         let mut claimed = Vec::new();
 
         let first = queue.claim(&mut claimed, &mut timing).expect("first window");
-        queue.extend([(PathBuf::from("late"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("late"), 1, RegionId::UNASSIGNED, ParentDir::default())].into_iter(),
+            &mut timing,
+        );
         assert_eq!(first.release(2, 10, &mut timing), None, "fast prefix holds");
 
         claimed.clear();
         let late = queue.claim(&mut claimed, &mut timing).expect("late phase");
-        queue.extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("tail"), 2, RegionId::UNASSIGNED, ParentDir::default())].into_iter(),
+            &mut timing,
+        );
         assert_eq!(late.release(2, 40, &mut timing), None, "shadow cannot scale");
 
         let diagnostics = recorder.finish();
@@ -10143,13 +10149,23 @@ mod tests {
         let mut claimed = Vec::new();
 
         let root = queue.claim(&mut claimed, &mut timing).expect("root");
-        queue.extend([(PathBuf::from("narrow"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("narrow"), 1, RegionId::UNASSIGNED, ParentDir::default())].into_iter(),
+            &mut timing,
+        );
         assert_eq!(root.release(1, 20, &mut timing), None);
 
         claimed.clear();
         let narrow = queue.claim(&mut claimed, &mut timing).expect("narrow child");
         queue.extend(
-            (0..9).map(|index| (PathBuf::from(format!("wide-{index}")), 2, RegionId::UNASSIGNED)),
+            (0..9).map(|index| {
+                (
+                    PathBuf::from(format!("wide-{index}")),
+                    2,
+                    RegionId::UNASSIGNED,
+                    ParentDir::default(),
+                )
+            }),
             &mut timing,
         );
         assert_eq!(narrow.release(1, 20, &mut timing), Some(4));
@@ -10157,7 +10173,14 @@ mod tests {
         claimed.clear();
         let wide = queue.claim(&mut claimed, &mut timing).expect("wide claim");
         queue.extend(
-            (0..9).map(|index| (PathBuf::from(format!("wider-{index}")), 3, RegionId::UNASSIGNED)),
+            (0..9).map(|index| {
+                (
+                    PathBuf::from(format!("wider-{index}")),
+                    3,
+                    RegionId::UNASSIGNED,
+                    ParentDir::default(),
+                )
+            }),
             &mut timing,
         );
         assert_eq!(wide.release(1, 20, &mut timing), Some(8));
@@ -10210,7 +10233,14 @@ mod tests {
         let mut claimed = Vec::new();
         let claim = queue.claim(&mut claimed, &mut timing).expect("root");
         queue.extend(
-            (0..9).map(|index| (PathBuf::from(format!("ready-{index}")), 1, RegionId::UNASSIGNED)),
+            (0..9).map(|index| {
+                (
+                    PathBuf::from(format!("ready-{index}")),
+                    1,
+                    RegionId::UNASSIGNED,
+                    ParentDir::default(),
+                )
+            }),
             &mut timing,
         );
 
@@ -10244,14 +10274,24 @@ mod tests {
 
         let slow = queue.claim(&mut claimed, &mut timing).expect("slow prefix");
         queue.extend(
-            (0..4).map(|index| (PathBuf::from(format!("fast-{index}")), 1, RegionId::UNASSIGNED)),
+            (0..4).map(|index| {
+                (
+                    PathBuf::from(format!("fast-{index}")),
+                    1,
+                    RegionId::UNASSIGNED,
+                    ParentDir::default(),
+                )
+            }),
             &mut timing,
         );
         assert_eq!(slow.release(1, 20, &mut timing), Some(4));
 
         claimed.clear();
         let fast = queue.claim(&mut claimed, &mut timing).expect("fast suffix");
-        queue.extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("tail"), 2, RegionId::UNASSIGNED, ParentDir::default())].into_iter(),
+            &mut timing,
+        );
         assert_eq!(fast.release(1, 1, &mut timing), None);
 
         let diagnostics = recorder.finish();

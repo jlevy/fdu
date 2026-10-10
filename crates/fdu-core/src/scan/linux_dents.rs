@@ -272,8 +272,10 @@ impl Reader {
     /// [`Self::read`], opening the directory relative to its parent's descriptor when the
     /// walker kept one (H197): `parent` is that descriptor and the directory's own name.
     /// The kernel then resolves one component rather than every component of `path`. An
-    /// open that fails there is retried by `path`, so a relative open never decides an
-    /// answer the absolute one would not have given.
+    /// open that fails there is retried by `path`, so a failure is always the one the
+    /// absolute open reports. On a tree renamed during the walk the two can name
+    /// different directories: the relative open lists the child of the directory whose
+    /// listing named it, where `path` may by then name another or none.
     pub(super) fn read_at(
         &mut self,
         path: &Path,
@@ -517,7 +519,7 @@ fn retained_budget() -> usize {
     *BUDGET.get_or_init(|| {
         let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
         // SAFETY: `limit` is a valid, exclusively borrowed `rlimit` for the call to fill.
-        let read = unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) };
+        let read = unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) };
         if read != 0 {
             return 0;
         }
@@ -913,15 +915,19 @@ mod tests {
 
     /// What parsing the loaded chunk yielded.
     fn yielded(reader: &mut Reader) -> Vec<Yield> {
-        Listing { names: &reader.names[..reader.filled], entries: reader.entries.drain(..) }
-            .map(|entry| {
-                let outcome = match entry.outcome {
-                    Outcome::Observed { kind, attrs } => Ok((kind, attrs)),
-                    Outcome::Failed(error) => Err(error.raw_os_error().expect("an OS error")),
-                };
-                (entry.name.to_os_string(), outcome)
-            })
-            .collect()
+        Listing {
+            names: &reader.names[..reader.filled],
+            entries: reader.entries.drain(..),
+            directory: None,
+        }
+        .map(|entry| {
+            let outcome = match entry.outcome {
+                Outcome::Observed { kind, attrs } => Ok((kind, attrs)),
+                Outcome::Failed(error) => Err(error.raw_os_error().expect("an OS error")),
+            };
+            (entry.name.to_os_string(), outcome)
+        })
+        .collect()
     }
 
     #[test]
@@ -929,6 +935,54 @@ mod tests {
         assert_ne!(STATX_FLAGS & libc::AT_NO_AUTOMOUNT, 0);
         assert_ne!(STATX_FLAGS & libc::AT_SYMLINK_NOFOLLOW, 0);
         assert_eq!(STATX_FLAGS & libc::AT_EMPTY_PATH, 0, "an empty name names no child");
+    }
+
+    /// H197: a subdirectory opened through its parent's descriptor answers exactly as the
+    /// same directory read by path, under every policy.
+    #[test]
+    fn a_relative_read_lists_what_a_read_by_path_lists() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        let child = root.join("child");
+        fs::create_dir(&child).expect("child directory");
+        fs::write(child.join("file"), b"contents").expect("file");
+        fs::create_dir(child.join("dir")).expect("nested directory");
+        symlink("file", child.join("link")).expect("symlink");
+        let mut reader = Reader::new();
+        let parent = {
+            let mut listing = reader.read(root, INDEX).expect("the root reads natively");
+            listing.take_directory().expect("a native listing keeps its descriptor")
+        };
+        for policy in POLICIES {
+            let relative = observed(
+                reader
+                    .read_at(&child, Some((parent.as_raw_fd(), OsStr::new("child"))), policy)
+                    .expect("a relative read"),
+            );
+            assert_eq!(relative, native(&child, policy), "{policy:?}");
+        }
+    }
+
+    /// A name the parent's descriptor no longer resolves is opened by path, so the answer,
+    /// or the failure, is the one the absolute open gives.
+    #[test]
+    fn a_relative_open_that_fails_reads_by_path() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        let child = root.join("child");
+        fs::create_dir(&child).expect("child directory");
+        fs::write(child.join("file"), b"contents").expect("file");
+        let mut reader = Reader::new();
+        let parent = {
+            let mut listing = reader.read(root, INDEX).expect("the root reads natively");
+            listing.take_directory().expect("a native listing keeps its descriptor")
+        };
+        let relative = observed(
+            reader
+                .read_at(&child, Some((parent.as_raw_fd(), OsStr::new("absent"))), INDEX)
+                .expect("read by path instead"),
+        );
+        assert_eq!(relative, native(&child, INDEX));
     }
 
     #[test]
@@ -1129,8 +1183,11 @@ mod tests {
                 .is_some()
         );
 
-        let mut listing =
-            Listing { names: &reader.names[..reader.filled], entries: reader.entries.drain(..) };
+        let mut listing = Listing {
+            names: &reader.names[..reader.filled],
+            entries: reader.entries.drain(..),
+            directory: None,
+        };
         let present = listing.next().expect("the present file");
         assert_eq!(present.name, "present");
         assert!(matches!(present.outcome, Outcome::Observed { kind: EntryKind::File, .. }));
