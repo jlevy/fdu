@@ -5,7 +5,7 @@ title: "fdu 0.5.0: several paths in one report, and an age column in the tree"
 kind: epic
 status: open
 priority: 1
-version: 31
+version: 33
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 labels: []
 dependencies: []
@@ -40,7 +40,12 @@ child_order_hints:
   - is-01m4kjcrqhyg5h35x1gkf9d8bm
   - is-01m4kjcscwzcrtw7gymgkxeg2k
   - is-01m4kkw2gzm232vd6qgmyqab5p
+  - is-01m4kwnfb5r464bewb2nc5bgm3
 created_at: 2026-10-09T08:43:37.094Z
-updated_at: 2026-10-10T19:15:39.679Z
+updated_at: 2026-10-10T22:11:43.158Z
 ---
 Implements the plan spec. Part 1: the tree shows each subtree's age (the list-row activity definition, unknown when incomplete) in text and RFC 3339 + exact ns in machine formats; fdu.report/11. Part 2: PATH... over one or more disjoint roots, merged in the engine before bounds, as if each were run and summed. Answers fdu-onoo and fdu-khu8 open question 2.
+
+## Notes
+
+Handoff 2026-10-10. Stack: #191 claude/tree-age-column -> main (f2d304a5, ready), #192 claude/several-roots -> #191 (72a8fa79, ready), #194 claude/linux-0.5.0 -> #192 (1a93434c, draft). GitHub stack #193 holds #191+#192; #194 still needs 'gh stack link' into #193 (no valid gh token in the session that pushed). Review E (on #192) is dispositioned: https://github.com/jlevy/fdu/pull/192#issuecomment-6102700391. Remaining before merge: CI green on all three heads; #194's independent review (started on b0b2bef7; posts as review A on #194), address it, mark #194 ready; link #194 into #193; merge bottom-up with merge commits on the maintainer's go-ahead (github-merge: confirm-session). Before tagging: fdu-6iqp (correctness runbook), fdu-8k4k (peer standing), fdu-4arl.

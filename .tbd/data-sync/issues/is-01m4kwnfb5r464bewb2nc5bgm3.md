@@ -1,0 +1,16 @@
+---
+type: is
+id: is-01m4kwnfb5r464bewb2nc5bgm3
+title: Run the correctness runbook on the 0.5.0 stack and record it
+kind: task
+status: open
+priority: 1
+version: 1
+spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
+labels: []
+dependencies: []
+parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
+created_at: 2026-10-10T21:49:20.613Z
+updated_at: 2026-10-10T21:49:20.613Z
+---
+Review E4 on PR #192 (jlevy/fdu#192). AGENTS.md and docs/project/guides/correctness-runbook.md require the runbook after any change to cache identity, serving, or reconciliation. The 0.5.0 stack changes reconciliation (push_directory_attributes in reconcile_target_inner; the directory upserts verify_with_directory_times adds to every watch intent) and how each route names its snapshot (Delivery::for_root, for_canonical_root), and extends the runbook's own age checks. Last recorded run is 0.4.0's. Run it at the top-of-stack head before tagging 0.5.0 (macOS, and Linux where a host is free) and record it under Last Recorded Run. This is the release-checklist run; it gates tagging, not merging #191/#192.
