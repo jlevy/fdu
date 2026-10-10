@@ -3,15 +3,19 @@ type: is
 id: is-01m4gy0cxh70ysdbye8wtr2zr5
 title: Walk several roots in one walker pool
 kind: task
-status: open
+status: in_progress
 priority: 3
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
+delegate: claude-code@vm
 labels: []
 dependencies: []
 parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
+hold: null
+hold_until: null
 created_at: 2026-10-09T18:15:03.856Z
-updated_at: 2026-10-09T19:58:35.913Z
+updated_at: 2026-10-10T18:48:40.277Z
+started_at: 2026-10-10T18:48:40.276Z
 ---
 A report over several roots runs each root's plan one after another (crates/fdu-core/src/execution.rs, prepare_roots_internal), each with its own walker pool: a thread::scope, pool.initial workers, a calibration window that restarts at every root, and a drain tail, plus per-root planning and index build. PR #192 review C2 (https://github.com/jlevy/fdu/pull/192#issuecomment-6085911373) estimated that for `fdu */` over hundreds of small directories the per-root fixed cost could dominate one walk of their parent. perf_probe now takes a repeated --root (jobs roots-default-tree and roots-summary) so the cost is measurable; the exploratory measurement from #192 is in the notes. If the many-small-roots cell shows per-root overhead above about 10% of the parent walk at k around 100, pre-register a hypothesis for one walker pool across roots: a multi-seed walk with one sink and one .gitignore table per root, keeping every root's retained state and the alias check per root.
 
