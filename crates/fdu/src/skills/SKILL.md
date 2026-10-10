@@ -105,9 +105,10 @@ at the first file. A root inside another, or the same directory twice, is refuse
 virtualenv’s `lib64 -> lib`; name the directories without the link.
 Each root is walked separately and pays a walk’s fixed cost, so many small roots are
 much slower than one walk of their parent: 625 small directories took 1.72 s as roots
-against 0.23 s for their parent, about 7 times as long (exp-216, macOS, uncontrolled
-host). One walk of the parent, `fdu --depth 1 --min-share 0% .`, shows the size of
-everything here one level down.
+against 0.23 s for their parent, about 7 times as long (macOS, uncontrolled host).
+One walk of the parent, `fdu --depth 1 --min-share 0% .`, shows the size of everything
+here one level down; it also counts the hidden entries and files that `*/` leaves out,
+and does not walk the target of a symlink that `*/` names as a root.
 `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
 
 ## Read the Result and Its Notes

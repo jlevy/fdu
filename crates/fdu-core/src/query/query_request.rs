@@ -1812,7 +1812,7 @@ pub enum RequestError {
     RootScopesDiffer {
         /// The first root's canonical path, whose scope the others are compared with.
         first: PathBuf,
-        /// The first root, by canonical path, whose index holds another scope.
+        /// The first other root, by canonical path, whose index holds another scope.
         other: PathBuf,
     },
     /// A delivery names both a snapshot file and a cache directory ([`Delivery::cache_dir`]).

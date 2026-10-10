@@ -5,8 +5,10 @@
 //! is a pure function of an [`Index`](crate::Index) and a request, so the CLI, the Rust
 //! API, and the Python bindings all compose the same types rather than reimplementing
 //! selection three times — and so a report can never quietly become a producer of state.
-//! The one read is [`Roots::resolve`], which validates a request's roots before anything
-//! is scanned, as a scan would on reaching each one, and stores nothing.
+//! Two reads, each storing nothing: [`Roots::resolve`], which validates a request's roots
+//! before anything is scanned, as a scan would on reaching each one, and
+//! [`Delivery::for_root`], which resolves a root to name its snapshot in a cache
+//! directory.
 
 mod query_glob;
 mod query_report;

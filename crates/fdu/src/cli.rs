@@ -196,8 +196,10 @@ START HERE
   Every PATH is a directory; `fdu */` names only the directories here, and is
   refused where one is a symlink to another (lib64 -> lib). Each root is walked
   separately and pays a walk's fixed cost: 625 small roots took 1.72 s, one
-  walk of their parent 0.23 s, about 7x (exp-216, macOS, uncontrolled host).
-  One walk shows every entry one level down: `fdu --depth 1 --min-share 0% .`
+  walk of their parent 0.23 s, about 7x (macOS, uncontrolled host). One walk
+  shows every entry one level down: `fdu --depth 1 --min-share 0% .`, which
+  also counts hidden entries and files, as `*/` does not, and does not walk
+  the target of a symlink, which `*/` names as a root.
   A root inside another, or the same directory twice, is refused (exit 2).
   --cache-status and --cache-clear take one PATH",
             $one_path_watch,

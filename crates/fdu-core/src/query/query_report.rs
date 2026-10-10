@@ -1788,6 +1788,11 @@ pub(crate) fn report_in(
 /// them here; a one-shot caller uses
 /// [`prepare_roots_report`](crate::prepare_roots_report), which walks each root first.
 ///
+/// Over several roots on Unix, the overlap check below visits every entry of every index,
+/// so each call costs time in proportion to the entries the indexes hold, not only to the
+/// rows the report shows; a caller reporting repeatedly over the same indexes pays it on
+/// each call (review E2 on #192, `fdu-hv0l`).
+///
 /// # Errors
 ///
 /// [`Error::InvalidRequest`](crate::Error::InvalidRequest) with
@@ -1796,7 +1801,12 @@ pub(crate) fn report_in(
 /// scopes; with [`RequestError::RootReachedInside`] when, on Unix, one root's index
 /// entered a directory with another root's device and inode, as
 /// [`prepare_roots_report`](crate::prepare_roots_report) refuses it; and whatever
-/// [`report`] refuses of any of them.
+/// [`report`] refuses of any of them. The overlap check compares identities as each index
+/// recorded them and reads nothing, so an index loaded without verification
+/// ([`Delivery::stale_ok`](crate::query::Delivery::stale_ok)) is refused for a directory
+/// whose device and inode another root's directory has taken since the snapshot was
+/// written, where [`prepare_roots_report`](crate::prepare_roots_report) confirms the match
+/// with one read and answers (review E3 on #192, `fdu-eqyx`).
 pub fn report_roots(
     indexes: &[&Index],
     roots: &Roots,

@@ -42,7 +42,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so many small roots are much slower than one walk of their parent: 625 small
   directories took 1.72 s as roots against 0.23 s for their parent, about 7 times as
   long (exp-216, macOS, uncontrolled host); `fdu --depth 1 --min-share 0% .` shows every
-  entry one level down in one walk.
+  entry one level down in one walk, counting the hidden entries and files `*/` leaves
+  out, and not walking the target of a symlink that `*/` names as a root.
   Each root’s snapshot lives where its own would, written once every root has been
   walked, on a bounded number of threads.
   `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
