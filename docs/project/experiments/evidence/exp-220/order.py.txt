@@ -1,0 +1,12 @@
+"""Split a two-arm run's pairs by which arm ran first; estimate arm and order effects."""
+import json, statistics, sys
+d = json.load(open(sys.argv[1])); job = sys.argv[2]
+a, b = d['variant_order']
+by = {}
+for x in d['samples']:
+    if x['job'] == job and not x['warmup'] and x['valid']:
+        by.setdefault(x['ordinal'], {})[x['variant']] = x['metrics']['wall_ns']
+ab = [100 * (v[b] - v[a]) / v[a] for o, v in by.items() if o % 2 == 0 and len(v) == 2]  # a first
+ba = [100 * (v[b] - v[a]) / v[a] for o, v in by.items() if o % 2 == 1 and len(v) == 2]  # b first
+m1, m2 = statistics.median(ab), statistics.median(ba)
+print(f"{sys.argv[1].split('/')[-1]:32s} {job:22s} {b}-vs-{a}: {a}-first {m1:+.2f}%  {b}-first {m2:+.2f}%  arm~{(m1+m2)/2:+.2f}%  order~{(m1-m2)/2:+.2f}%")

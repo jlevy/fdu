@@ -1,0 +1,17 @@
+peak RSS of default-tree in KiB, from a fork-and-exec launcher reading wait4 (rss.c), 7 runs each
+h197 = d7cbfc71
+node-modules-dense v040 median_kib 12284 min 11852 max 12756
+node-modules-dense age median_kib 11948 min 11844 max 12260
+node-modules-dense roots median_kib 12644 min 12248 max 12704
+node-modules-dense noage median_kib 12496 min 11852 max 13376
+node-modules-dense h197 median_kib 12328 min 11808 max 12452
+linux-v6.12 v040 median_kib 10692 min 10492 max 11984
+linux-v6.12 age median_kib 10400 min 10128 max 10888
+linux-v6.12 roots median_kib 11228 min 10748 max 12060
+linux-v6.12 noage median_kib 10828 min 10644 max 11156
+linux-v6.12 h197 median_kib 10696 min 10464 max 11292
+linux-balanced-1m v040 median_kib 58700 min 58460 max 59080
+linux-balanced-1m age median_kib 58532 min 58468 max 58916
+linux-balanced-1m roots median_kib 58928 min 58584 max 59100
+linux-balanced-1m noage median_kib 58696 min 58204 max 60100
+linux-balanced-1m h197 median_kib 58848 min 58640 max 59292

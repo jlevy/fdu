@@ -1,0 +1,11 @@
+Pairs split by which arm ran first (order.py): the arm and order effects each two-arm cell implies
+run-r1-nmd-v040-roots.json       default-tree           roots-vs-v040: v040-first +6.76%  roots-first +3.98%  arm~+5.37%  order~+1.39%
+run-r2-nmd-noage-roots.json      default-tree           roots-vs-noage: noage-first +5.55%  roots-first +6.23%  arm~+5.89%  order~-0.34%
+run-r3-lnx-noage-roots.json      default-tree           roots-vs-noage: noage-first +0.43%  roots-first +0.21%  arm~+0.32%  order~+0.11%
+run-h1-nmd-roots-h197.json       default-tree           h197-vs-roots: roots-first -2.65%  h197-first -3.65%  arm~-3.15%  order~+0.50%
+run-h1-nmd-roots-h197.json       aggregate-summary      h197-vs-roots: roots-first -3.60%  h197-first -5.83%  arm~-4.71%  order~+1.11%
+run-h2-nmd-noage-h197.json       default-tree           h197-vs-noage: noage-first +2.99%  h197-first +5.28%  arm~+4.14%  order~-1.14%
+run-h5-gen-roots-h197.json       default-tree           h197-vs-roots: roots-first -3.39%  h197-first -2.06%  arm~-2.73%  order~-0.66%
+run-g1-nmd-h195.json             aggregate-summary      roots-vs-age: age-first +6.71%  roots-first +2.93%  arm~+4.82%  order~+1.89%
+run-g1-nmd-h195.json             render-yaml            roots-vs-age: age-first -4.42%  roots-first -5.61%  arm~-5.01%  order~+0.59%
+run-g2-lnx-h195.json             aggregate-summary      roots-vs-age: age-first +2.95%  roots-first +0.31%  arm~+1.63%  order~+1.32%
