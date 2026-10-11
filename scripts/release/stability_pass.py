@@ -785,12 +785,15 @@ def prerequisites(config: Config, host: Host) -> tuple[list[str], dict[str, str]
             for label, path in (
                 ("the work directory", config.work),
                 ("this checkout", config.root),
+                (
+                    "the temporary directory",
+                    Path(os.environ.get("TMPDIR") or tempfile.gettempdir()),
+                ),
             ):
                 if not traversable(path):
                     problems.append(
                         f"{label}, {path}, is not reachable by {NOBODY}, who runs the refusal "
-                        "pass: choose a work directory, and run from a checkout, that every "
-                        "user can reach"
+                        "pass: choose directories, including TMPDIR, that every user can reach"
                     )
     return problems, skips
 
@@ -1293,11 +1296,18 @@ def terminal(ctx: Context) -> Outcome:
 
 
 def trees_base(ctx: Context) -> Path:
-    """A short directory every user can reach: a Unix socket path is limited to about 104
-    bytes, and the refusal pass runs as nobody."""
+    """Trees in the configured temporary directory, kept short for Unix sockets and
+    reachable by nobody for the refusal pass."""
     if ctx.trees_base is None:
-        parent = "/tmp" if Path("/tmp").is_dir() else None
-        base = Path(tempfile.mkdtemp(prefix="fdu-trees-", dir=parent))
+        # An explicit TMPDIR must not fall back to another disk when it is unusable.
+        parent = Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
+        try:
+            base = Path(tempfile.mkdtemp(prefix="fdu-trees-", dir=parent))
+        except OSError as error:
+            raise StepError(
+                f"cannot create correctness trees in temporary directory {parent} ({error}): "
+                "set TMPDIR to an existing writable directory"
+            ) from error
         base.chmod(0o755)
         scratch = base / "tmp"
         scratch.mkdir()

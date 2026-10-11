@@ -581,8 +581,11 @@ with a skip exits 3:
   checks after a stop at its memory limit;
 - `make cross-lint` when its log shows a skipped target.
 
-As root the refusal pass runs as `nobody`, so the work directory and this checkout must
-be where every user can reach them.
+Correctness trees use the configured temporary directory.
+Set `TMPDIR` to an existing writable directory on the intended scratch volume.
+Keep it short: `<tmp>/fdu-trees-XXXXXXXX/served/special/a-socket` must be shorter than
+104 bytes for a Unix socket on macOS. As root the refusal pass runs as `nobody`, so
+`TMPDIR`, the work directory, and this checkout must be where every user can reach them.
 A command still running after six hours is stopped and its step fails
 (`--timeout-minutes`).
 
