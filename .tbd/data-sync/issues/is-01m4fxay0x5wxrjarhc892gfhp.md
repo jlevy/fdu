@@ -3,9 +3,9 @@ type: is
 id: is-01m4fxay0x5wxrjarhc892gfhp
 title: Docs, goldens, and parity for 0.5.0
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -14,8 +14,12 @@ parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
 hold: null
 hold_until: null
 created_at: 2026-10-09T08:44:06.044Z
-updated_at: 2026-10-09T17:02:14.032Z
+updated_at: 2026-10-11T23:20:27.164Z
 started_at: 2026-10-09T16:40:52.586Z
+closed_at: 2026-10-11T23:20:27.163Z
+close_reason: "Both documentation/golden phases merged in stack #193. Linux CI run 38181587498 at d0862487 independently regenerated deviations-python.diff and the exact-diff step passed (job 114595215454); no replacement artifact was needed. Integrated f084d9a3 full make check also passed CLI/Python parity and portable goldens."
+resolution: null
+duplicate_of: null
 ---
 Usage, machine output (tree node table, roots, /11), output design (age column, total row, remainder), design principles scope axis, surface architecture schema table, README, CHANGELOG, --docs, skill. Goldens: AGE pattern on default trees; a two-fixture session (text tree, flat list, JSON, overlap refusal). Parity artifact via CI.
 
