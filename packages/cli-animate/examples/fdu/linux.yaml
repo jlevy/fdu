@@ -17,6 +17,10 @@
 #     https://github.com/torvalds/linux linux.git
 #   python3 -I packages/cli-animate/examples/fdu/commit-mtimes.py linux.git v7.3-rc6 \
 #     "$FDU_DEMO_TREES/linux"
+# The destination must be an existing checkout or export of the same revision, with no
+# concurrent modifications. The helper dates leaf symlinks themselves, rejects symlink
+# directory ancestors, and exits nonzero if any paths or directories cannot be dated.
+# Its summary counts actual updates and skips.
 # Keep the tree and the fdu binary on an internal disk: timed on a USB drive, the
 # recording measures the drive. The intro states the tree's size and file count for that
 # tag; update it if you clone another.

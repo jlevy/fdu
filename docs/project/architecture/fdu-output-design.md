@@ -187,7 +187,8 @@ Do not add grouping at individual call sites.
 Human byte quantities use the shared binary size formatter (`B`, `KiB`, `MiB`, `GiB`,
 and larger units), including cache-status rows, stale and leftover cache files, and
 cleanup summaries. Colored sizes use `styled_bytes` so zero and large-size emphasis
-cannot diverge between commands.
+cannot diverge between commands, except the tree size column: `tree_size_cell` applies
+the magnitude tiers in [Row Styling](#row-styling).
 Do not print grouped raw bytes in human output where a scaled size is intended.
 
 Structured formats retain exact numeric byte values, and executable flag values retain
