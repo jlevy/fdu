@@ -16,9 +16,8 @@
 //! such as nonblank/blank counts use the same gray parenthetical role. Human directory
 //! names have a gray slash except `.` and `..`. Directly or ancestrally gitignored
 //! directories use regular, nonbold cyan; merely containing ignored files does not
-//! change a directory name, and file-name styling is unchanged. Sizes and ages are colored
-//! by magnitude ([`byte_style`], [`age_style`]); gray detail sizes stay gray, bold from
-//! 1 GiB. Exact shares below 1% are gray. Pad cells before applying ANSI styles.
+//! change a directory name, and file-name styling is unchanged. Sizes >= 1 GiB are bold even in gray
+//! details; zero sizes and exact shares below 1% are gray. Pad cells before applying ANSI styles.
 //! Colored bars use green solid non-gitignored and shaded gitignored usage, with dim green
 //! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
 //! is caller-selectable, including zero to remove the bar and its gutter; machine
@@ -1455,28 +1454,11 @@ pub fn escaped_human(text: &str) -> String {
         .collect()
 }
 
-/// Below this a size is gray: a few KiB or less, zero included, reads as one tier.
-const SIZE_SMALL: u64 = 16 << 10;
-const SIZE_MIB: u64 = 1 << 20;
-const SIZE_GIB: u64 = 1 << 30;
-const SIZE_HUGE: u64 = 100 << 30;
-
-/// The shared human byte color role, by magnitude, after kash's file listings scaled to
-/// trees whose totals run to terabytes: under 16 KiB gray, zero included; under 1 MiB
-/// blue; under 1 GiB the plain foreground; under 100 GiB bold bright green; larger bold
-/// yellow. A secondary size, a gray parenthetical detail, stays gray and is bold from
-/// 1 GiB. The thresholds use exact bytes, not the rounded display unit.
+/// The shared human byte color role: zero is gray; large values are bold, including gray details.
+/// The threshold uses exact bytes, not the rounded display unit.
 pub fn byte_style(bytes: u64, secondary: bool) -> AnsiStyle {
-    if secondary {
-        return if bytes >= SIZE_GIB { STYLE_DETAIL.bold() } else { STYLE_DETAIL };
-    }
-    match bytes {
-        0..SIZE_SMALL => STYLE_DETAIL,
-        SIZE_SMALL..SIZE_MIB => AnsiColor::Blue.on_default(),
-        SIZE_MIB..SIZE_GIB => AnsiStyle::new(),
-        SIZE_GIB..SIZE_HUGE => AnsiColor::BrightGreen.on_default().bold(),
-        _ => AnsiColor::Yellow.on_default().bold(),
-    }
+    let style = if secondary || bytes == 0 { STYLE_DETAIL } else { AnsiStyle::new() };
+    if bytes >= 1 << 30 { style.bold() } else { style }
 }
 
 /// Render a human byte quantity after padding with the shared size and emphasis rules.
@@ -1484,35 +1466,7 @@ pub fn byte_style(bytes: u64, secondary: bool) -> AnsiStyle {
 pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> String {
     let style = byte_style(bytes, secondary);
     let text = format!("{:>width$}", human_bytes(bytes));
-    if style == AnsiStyle::new() { text } else { paint(&text, style, color) }
-}
-
-/// The human age color role, by recency, after kash's file listings on fdu's own unit
-/// ladder ([`human_age`]): under a minute bold bright red, under an hour bold yellow,
-/// under a day bold bright green, under a display month bold cyan, under a display year
-/// blue, older gray. A time ahead of the reference is newer than now, so it takes the
-/// newest tier.
-fn age_style(age_ns: i128) -> AnsiStyle {
-    const MINUTE: u128 = 60;
-    const HOUR: u128 = 60 * MINUTE;
-    const DAY: u128 = 24 * HOUR;
-    if age_ns < 0 {
-        return AnsiColor::BrightRed.on_default().bold();
-    }
-    let seconds = age_ns.unsigned_abs() / 1_000_000_000;
-    if seconds < MINUTE {
-        AnsiColor::BrightRed.on_default().bold()
-    } else if seconds < HOUR {
-        AnsiColor::Yellow.on_default().bold()
-    } else if seconds < DAY {
-        AnsiColor::BrightGreen.on_default().bold()
-    } else if seconds < u128::from(MONTH_SECONDS) {
-        AnsiColor::Cyan.on_default().bold()
-    } else if seconds < u128::from(YEAR_SECONDS) {
-        AnsiColor::Blue.on_default()
-    } else {
-        STYLE_DETAIL
-    }
+    if bytes > 0 && bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
 }
 
 /// Style a root share using its exact ratio, before display rounding.
@@ -2315,6 +2269,33 @@ fn age_cell(
         (human_age(None), Some(STYLE_DETAIL))
     } else {
         (human_age(age_ns), age_ns.map(age_style))
+    }
+}
+
+/// The age color role, by recency, after kash's file listings on fdu's own unit ladder
+/// ([`human_age`]): under a minute bold bright red, under an hour bold yellow, under a day
+/// bold bright green, under a display month bold cyan, under a display year blue, older
+/// gray. A time ahead of the reference is newer than now, so it takes the newest tier.
+fn age_style(age_ns: i128) -> AnsiStyle {
+    const MINUTE: u128 = 60;
+    const HOUR: u128 = 60 * MINUTE;
+    const DAY: u128 = 24 * HOUR;
+    if age_ns < 0 {
+        return AnsiColor::BrightRed.on_default().bold();
+    }
+    let seconds = age_ns.unsigned_abs() / 1_000_000_000;
+    if seconds < MINUTE {
+        AnsiColor::BrightRed.on_default().bold()
+    } else if seconds < HOUR {
+        AnsiColor::Yellow.on_default().bold()
+    } else if seconds < DAY {
+        AnsiColor::BrightGreen.on_default().bold()
+    } else if seconds < u128::from(MONTH_SECONDS) {
+        AnsiColor::Cyan.on_default().bold()
+    } else if seconds < u128::from(YEAR_SECONDS) {
+        AnsiColor::Blue.on_default()
+    } else {
+        STYLE_DETAIL
     }
 }
 
@@ -3629,17 +3610,13 @@ mod tests {
             strip_ansi(&colored),
             render_cache_status(&[large], CacheScope::Root, Format::Text)
         );
-        assert!(!colored.contains("\x1b["), "MiB sizes take the plain tier: {colored:?}");
-        let small = render_cache_status_with_options(
+        let zero = render_cache_status_with_options(
             std::slice::from_ref(&status),
             CacheScope::Root,
             Format::Text,
             RenderOptions { color: true, ..RenderOptions::default() },
         );
-        assert!(
-            small.contains(&paint("50 B", STYLE_DETAIL, true)),
-            "small sizes are gray: {small:?}"
-        );
+        assert!(!zero.contains("\x1b["), "positive sub-GiB sizes stay unstyled: {zero:?}");
         let mut zero_and_gib = status.clone();
         zero_and_gib.bytes = 0;
         zero_and_gib.content.as_mut().expect("fixture has a content sidecar").bytes = 1 << 30;
@@ -3650,8 +3627,7 @@ mod tests {
             RenderOptions { color: true, ..RenderOptions::default() },
         );
         assert!(colored.contains(&paint("0 B", STYLE_DETAIL, true)), "{colored:?}");
-        let gib = AnsiColor::BrightGreen.on_default().bold();
-        assert!(colored.contains(&paint("1.0 GiB", gib, true)), "{colored:?}");
+        assert!(colored.contains(&paint("1.0 GiB", AnsiStyle::new().bold(), true)), "{colored:?}");
         assert_eq!(strip_ansi(&colored), "e.fdu  3 entries, 0 B metadata, 1.0 GiB content  /tree");
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
             assert_eq!(
@@ -3811,9 +3787,9 @@ mod tests {
             let report = fixture(&[view]);
             let plain = render(&report, Format::Text, false);
             let coloured = render(&report, Format::Text, true);
-            // Files is a bare listing meant for piping. Every other fixture has a styled
-            // label or a size colored by its magnitude.
-            let styles_a_label = !matches!(view, ViewSpec::Files);
+            // Files is a bare listing meant for piping; this summary has no ignored
+            // contribution to annotate. The other fixtures have a styled label.
+            let styles_a_label = !matches!(view, ViewSpec::Files | ViewSpec::Summary);
             assert_eq!(
                 plain != coloured,
                 styles_a_label,
@@ -5637,37 +5613,6 @@ mod tests {
     }
 
     #[test]
-    fn sizes_take_their_color_from_exact_bytes() {
-        let (small, mib, gib, huge) = (16 << 10, 1 << 20, 1 << 30, 100 << 30);
-        let blue = AnsiColor::Blue.on_default();
-        let green = AnsiColor::BrightGreen.on_default().bold();
-        let yellow = AnsiColor::Yellow.on_default().bold();
-        for (bytes, style) in [
-            (0, STYLE_DETAIL),
-            (small - 1, STYLE_DETAIL),
-            (small, blue),
-            (mib - 1, blue),
-            (mib, AnsiStyle::new()),
-            (gib - 1, AnsiStyle::new()),
-            (gib, green),
-            (huge - 1, green),
-            (huge, yellow),
-            (u64::MAX, yellow),
-        ] {
-            assert_eq!(byte_style(bytes, false), style, "{bytes} bytes");
-        }
-        for bytes in [0, small, mib, gib - 1] {
-            assert_eq!(byte_style(bytes, true), STYLE_DETAIL, "{bytes} secondary bytes");
-        }
-        for bytes in [gib, huge] {
-            assert_eq!(byte_style(bytes, true), STYLE_DETAIL.bold(), "{bytes} secondary bytes");
-        }
-        // The plain tier is written without escapes, so a padded cell stays plain text.
-        assert_eq!(styled_bytes(mib, 10, true, false), format!("{:>10}", human_bytes(mib)));
-        assert_eq!(styled_bytes(small, 0, true, false), paint("16 KiB", blue, true));
-    }
-
-    #[test]
     fn ages_take_their_color_from_the_same_ladder_as_their_unit() {
         const SECOND: i128 = 1_000_000_000;
         let (minute, hour, day) = (60 * SECOND, 3_600 * SECOND, 86_400 * SECOND);
@@ -5720,10 +5665,9 @@ mod tests {
         assert_eq!(styled_bytes(gib - 1, 10, true, false), format!("{:>10}", human_bytes(gib - 1)));
         assert_eq!(
             styled_bytes(gib, 10, true, false),
-            paint("   1.0 GiB", AnsiColor::BrightGreen.on_default().bold(), true)
+            paint("   1.0 GiB", AnsiStyle::new().bold(), true)
         );
         assert_eq!(styled_bytes(gib, 0, true, true), paint("1.0 GiB", STYLE_DETAIL.bold(), true));
-        assert_eq!(styled_bytes(gib - 1, 0, true, true), paint("1,023 MiB", STYLE_DETAIL, true));
         assert_eq!(styled_bytes(gib, 0, false, true), "1.0 GiB");
         assert_eq!(percentage_cell(99, 10_000, 0, 5, true), detail("  <1%", true));
         assert_eq!(percentage_cell(100, 10_000, 0, 5, true), "   1%");

@@ -79,13 +79,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in years of 365.25 days (`3y`), in `--long` as in the tree; they previously read in
   days (`4,382d`). Time bounds still take days; `--modified-before 2mo` is refused and
   the refusal names the days, as in `use 60d`.
-- Human sizes and ages are colored by magnitude, after kash’s file listings, so the
-  large and the recent stand out.
-  Sizes: under 16 KiB gray (zero included), under 1 MiB blue, under 1 GiB plain, under
-  100 GiB bold bright green, larger bold yellow; gray details stay gray, bold from 1 GiB.
-  Tree ages: under a minute bold bright red, under an hour bold yellow, under a day bold
-  bright green, under a month bold cyan, under a year blue, older gray.
-  `--long` and the other flat formats stay plain.
+- The tree’s ages are colored by recency, after kash’s file listings: under a minute
+  bold bright red, under an hour bold yellow, under a day bold bright green, under a
+  month bold cyan, under a year blue, older gray.
+  Nothing else changes style; `--long` and the other flat formats stay plain.
 - **Breaking:** `--sort mtime` on a tree orders rows by the age the column shows, their
   newest counted activity of any kind, where it ordered them by their newest regular
   file. `newest_mtime_ns` keeps its files-only meaning.
