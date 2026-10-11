@@ -1095,6 +1095,11 @@ mod tests {
             let name = format!("{index}-{}", "p".repeat(index % 211));
             fs::write(root.join(name), b"x").expect("wide entry");
         }
+        // The listings are compared field by field, allocation included, and ext4 can
+        // report a file under delayed allocation with a different block count before and
+        // during its writeback; settle every write first, so only the buffer can differ.
+        let status = std::process::Command::new("sync").status().expect("sync runs");
+        assert!(status.success(), "sync: {status}");
         for policy in POLICIES {
             let fresh = native(root, policy);
             let mut dirty = Reader::new();

@@ -17,6 +17,8 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
+  AGE_BLANK: ' +'
+  AGE: '\s*-?[0-9]{1,3}(?:,[0-9]{3})*(?:s|m|h|d|mo|y)'
   AGE_NS: '-?\d+'
   ALLOCATED: '\d+'
   MTIME_NS: '-?\d+'
@@ -169,10 +171,11 @@ DOCUMENTS
 ```console
 $ fdu --cache off --analyze lines --view types,families --format json --size apparent content-project
 {
-  "schema": "fdu.report/10",
+  "schema": "fdu.report/11",
   "generator": "fdu 0.4.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
   "request": {
     "scope": {
       "max_depth": null,
@@ -458,7 +461,7 @@ the document view implies, with no `--analyze` named.
 
 ```console
 $ fdu --cache off --view documents --format jsonl --size apparent --limit 1 content-project
-{"schema": "fdu.report/10", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"schema": "fdu.report/11", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}]}}
 ! note: percentages are shares of document words
 ! note: display limits: 1 of 2 rows shown
@@ -470,10 +473,11 @@ $ fdu --cache off --view documents --format jsonl --size apparent --limit 1 cont
 
 ```console
 $ fdu --cache off --analyze words --view documents --format yaml --size apparent --words-per-page 5 content-project
-schema: fdu.report/10
+schema: fdu.report/11
 generator: "fdu 0.4.0"
 root: [SCAN_PATH]
 age_reference_ns: [AGE_NS]
+age_reference_at: "[RFC3339]"
 request:
   scope:
     max_depth: null
@@ -604,7 +608,7 @@ $ fdu --cache off --view documents --size apparent mixed-documents
 
 ```console
 $ fdu --cache off --view documents --format jsonl --size apparent mixed-documents
-{"schema": "fdu.report/10", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"schema": "fdu.report/11", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 2, "bytes": 985, "allocated": [ALLOCATED], "share": {"numerator": 175, "denominator": 175}, "metrics": {"physical_lines": 2, "blank_lines": 0, "nonblank_lines": 2, "raw_words": 135, "logical_words": 142, "paragraphs": 2, "visible_words": 125, "visible_logical_words": 125, "document_words": 142}, "coverage": {"lines": {"analyzed": 2}, "words": {"analyzed": 2}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 142, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 675, "allocated": [ALLOCATED], "share": {"numerator": 125, "denominator": 175}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 125, "logical_words": 125, "paragraphs": 1, "visible_words": 125, "visible_logical_words": 125, "document_words": 125}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 125, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 1, "bytes": 310, "allocated": [ALLOCATED], "share": {"numerator": 50, "denominator": 175}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 10, "logical_words": 50, "paragraphs": 1, "visible_words": 0, "visible_logical_words": 0, "document_words": 50}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 50, "words_per_page": 250}}]}}
 ! note: percentages are shares of document words
 ? 0
@@ -617,7 +621,7 @@ truncate a file or exclude it because of size.
 
 ```console
 $ fdu --cache off --analyze lines --view types --format jsonl --size apparent content-project
-{"schema": "fdu.report/10", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+{"schema": "fdu.report/11", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 256, "allocated": [ALLOCATED], "share": {"numerator": 256, "denominator": 256}, "metrics": {"physical_lines": 18, "blank_lines": 5, "nonblank_lines": 13, "raw_words": 23}, "coverage": {"lines": {"analyzed": 5, "binary": 2}}, "detection": {"sources": {"extension": 7}, "confidence": {"certain": 7}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "image", "family": "binary", "files": 1, "bytes": 80, "allocated": [ALLOCATED], "share": {"numerator": 80, "denominator": 256}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "raw_words": 0}, "coverage": {"lines": {"binary": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}, {"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 42, "denominator": 256}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "python", "family": "code", "files": 1, "bytes": 39, "allocated": [ALLOCATED], "share": {"numerator": 39, "denominator": 256}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 3}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}, {"id": "rust", "family": "code", "files": 1, "bytes": 38, "allocated": [ALLOCATED], "share": {"numerator": 38, "denominator": 256}, "metrics": {"physical_lines": 4, "blank_lines": 1, "nonblank_lines": 3, "raw_words": 5}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 35, "denominator": 256}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "json", "family": "data", "files": 1, "bytes": 22, "allocated": [ALLOCATED], "share": {"numerator": 22, "denominator": 256}, "metrics": {"physical_lines": 3, "blank_lines": 0, "nonblank_lines": 3, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
 ? 0
 ```
@@ -627,7 +631,7 @@ It does not make the operation partial.
 
 ```console
 $ fdu --cache off --analyze code --view languages --format jsonl --size apparent unsupported-project
-{"schema": "fdu.report/10", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "code"], "size": "apparent", "sort_metric": null, "views": ["languages"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "code"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638154215206795666, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "code-sloc-v1", "version": 3}]}}
+{"schema": "fdu.report/11", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "code"], "size": "apparent", "sort_metric": null, "views": ["languages"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "code"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638154215206795666, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "code-sloc-v1", "version": 3}]}}
 {"view": "languages", "metrics": {"group": "type", "share_metric": "code_lines", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 1, "bytes": 15, "allocated": [ALLOCATED], "share": {"numerator": 0, "denominator": 0}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 4, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0}, "coverage": {"lines": {"analyzed": 1}, "code": {"unsupported": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}, "rows": [{"id": "haskell", "family": "code", "files": 1, "bytes": 15, "allocated": [ALLOCATED], "share": {"numerator": 0, "denominator": 0}, "metrics": {"physical_lines": 1, "blank_lines": 0, "nonblank_lines": 1, "raw_words": 4, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0}, "coverage": {"lines": {"analyzed": 1}, "code": {"unsupported": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
 ! note: percentages are shares of code lines
 ? 0
@@ -670,7 +674,7 @@ one wrote.
 
 ```console
 $ fdu --view documents --format jsonl --size apparent content-project
-{"schema": "fdu.report/10", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"schema": "fdu.report/11", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 3, "denominator": 9}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4, "logical_words": 3, "paragraphs": 2, "visible_words": 0, "visible_logical_words": 0, "document_words": 3}, "coverage": {"lines": {"analyzed": 1, "binary": 1}, "words": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 3, "words_per_page": 250}}]}}
 ! note: percentages are shares of document words
 ? 0
@@ -690,7 +694,7 @@ $ fdu --analyze words --view summary --size apparent content-project
 
 ```console
 $ fdu --stale-ok --view documents --format jsonl --size apparent content-project
-{"schema": "fdu.report/10", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
+{"schema": "fdu.report/11", "generator": "fdu 0.4.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines", "words"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines", "words"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638147618137026400, "analyzers": [{"id": "content-basic-v1", "version": 1}, {"id": "text-logical-v1", "version": 1}, {"id": "markdown-prose-v1", "version": 2}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 9, "denominator": 9}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11, "logical_words": 10, "paragraphs": 5, "visible_words": 6, "visible_logical_words": 6, "document_words": 9}, "coverage": {"lines": {"analyzed": 2, "binary": 1}, "words": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 9, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 6, "denominator": 9}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7, "logical_words": 7, "paragraphs": 3, "visible_words": 6, "visible_logical_words": 6, "document_words": 6}, "coverage": {"lines": {"analyzed": 1}, "words": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 6, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 3, "denominator": 9}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4, "logical_words": 3, "paragraphs": 2, "visible_words": 0, "visible_logical_words": 0, "document_words": 3}, "coverage": {"lines": {"analyzed": 1, "binary": 1}, "words": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 3, "words_per_page": 250}}]}}
 ! note: percentages are shares of document words
 ! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
@@ -892,18 +896,18 @@ Each run names no view, so what appears is the view the requested analyzers sele
 
 ```console
 $ fdu --cache off --color never --size apparent content-project
-██████████   100%       256 B  . 7 files
-████░░░░░░    38%        98 B    assets/ 2 files
-███░░░░░░░    31%        80 B      logo.png
-█░░░░░░░░░     7%        18 B      late.bin.txt
-███░░░░░░░    30%        77 B    src/ 2 files
-██░░░░░░░░    15%        39 B      tool.py
-█░░░░░░░░░    15%        38 B      main.rs
-██░░░░░░░░    23%        59 B    docs/ 2 files
-██░░░░░░░░    16%        42 B      guide.md
-█░░░░░░░░░     7%        17 B      notes.txt
-█░░░░░░░░░     9%        22 B    data/ 1 file
-█░░░░░░░░░     9%        22 B      settings.json
+██████████   100%       256 B  [AGE]  . 7 files
+████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
+███░░░░░░░    31%        80 B  [AGE]      logo.png
+█░░░░░░░░░     7%        18 B  [AGE]      late.bin.txt
+███░░░░░░░    30%        77 B  [AGE]    src/ 2 files
+██░░░░░░░░    15%        39 B  [AGE]      tool.py
+█░░░░░░░░░    15%        38 B  [AGE]      main.rs
+██░░░░░░░░    23%        59 B  [AGE]    docs/ 2 files
+██░░░░░░░░    16%        42 B  [AGE]      guide.md
+█░░░░░░░░░     7%        17 B  [AGE]      notes.txt
+█░░░░░░░░░     9%        22 B  [AGE]    data/ 1 file
+█░░░░░░░░░     9%        22 B  [AGE]      settings.json
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -977,18 +981,18 @@ use, so the run still succeeds.
 
 ```console
 $ fdu --cache off --color never --size apparent --analyze all --view tree content-project
-██████████   100%       256 B  . 7 files
-████░░░░░░    38%        98 B    assets/ 2 files
-███░░░░░░░    31%        80 B      logo.png
-█░░░░░░░░░     7%        18 B      late.bin.txt
-███░░░░░░░    30%        77 B    src/ 2 files
-██░░░░░░░░    15%        39 B      tool.py
-█░░░░░░░░░    15%        38 B      main.rs
-██░░░░░░░░    23%        59 B    docs/ 2 files
-██░░░░░░░░    16%        42 B      guide.md
-█░░░░░░░░░     7%        17 B      notes.txt
-█░░░░░░░░░     9%        22 B    data/ 1 file
-█░░░░░░░░░     9%        22 B      settings.json
+██████████   100%       256 B  [AGE]  . 7 files
+████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
+███░░░░░░░    31%        80 B  [AGE]      logo.png
+█░░░░░░░░░     7%        18 B  [AGE]      late.bin.txt
+███░░░░░░░    30%        77 B  [AGE]    src/ 2 files
+██░░░░░░░░    15%        39 B  [AGE]      tool.py
+█░░░░░░░░░    15%        38 B  [AGE]      main.rs
+██░░░░░░░░    23%        59 B  [AGE]    docs/ 2 files
+██░░░░░░░░    16%        42 B  [AGE]      guide.md
+█░░░░░░░░░     7%        17 B  [AGE]      notes.txt
+█░░░░░░░░░     9%        22 B  [AGE]    data/ 1 file
+█░░░░░░░░░     9%        22 B  [AGE]      settings.json
 ! note: code and words analysis not shown by tree
 ! tip: show it: --view code,documents
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
@@ -1104,9 +1108,9 @@ SUMMARY
      256 B  7 files, 4 directories
 
 TREE
-██████████   100%       256 B  . 7 files
-████░░░░░░    38%        98 B    assets/ 2 files
-██████░░░░    62%       158 B    … and 5 more files
+██████████   100%       256 B  [AGE]  . 7 files
+████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
+██████░░░░    62%       158 B  [AGE_BLANK]    … and 5 more files
 
 FAMILIES  (2 of 4)
       80 B   31.2%  binary             1 file
@@ -1150,9 +1154,9 @@ SUMMARY
      256 B  7 files, 4 directories
 
 TREE
-██████████   100%       256 B  . 7 files
-████░░░░░░    38%        98 B    assets/ 2 files
-██████░░░░    62%       158 B    … and 5 more files
+██████████   100%       256 B  [AGE]  . 7 files
+████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
+██████░░░░    62%       158 B  [AGE_BLANK]    … and 5 more files
 
 FAMILIES  (2 of 4)
       80 B   31.2%  binary             1 file
@@ -1202,9 +1206,9 @@ SUMMARY
      256 B  7 files, 4 directories
 
 TREE
-██████████   100%       256 B  . 7 files
-████░░░░░░    38%        98 B    assets/ 2 files
-██████░░░░    62%       158 B    … and 5 more files
+██████████   100%       256 B  [AGE]  . 7 files
+████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
+██████░░░░    62%       158 B  [AGE_BLANK]    … and 5 more files
 
 FAMILIES  (2 of 4)
       80 B   31.2%  binary             1 file

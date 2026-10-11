@@ -50,8 +50,18 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     fs::write(denied.join("hidden.txt"), b"hidden").expect("write hidden file");
     // Match the portable engine golden: an unreadable branch plus an exact 1%
     // sibling, tiny verified entries, and a verified empty file.
+    // The golden reads its tree an hour after every time in it; these are stamped an hour
+    // and half a minute back, so the shown rows read `1h` however long the run takes up
+    // to the half minute.
+    let an_hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 60 + 30);
     for (name, size) in [("large", 9898), ("one-percent", 100), ("tiny", 1), ("zero", 0)] {
-        fs::write(root.path().join(name), vec![b'x'; size]).expect("write sized file");
+        let path = root.path().join(name);
+        fs::write(&path, vec![b'x'; size]).expect("write sized file");
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_modified(an_hour_ago))
+            .expect("stamp sized file");
     }
     fs::create_dir(root.path().join("small")).expect("create healthy directory");
     fs::write(root.path().join("small/tiny"), b"x").expect("write small file");

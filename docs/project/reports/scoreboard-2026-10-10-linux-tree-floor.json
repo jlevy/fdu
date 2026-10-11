@@ -1,0 +1,1593 @@
+{
+  "commit": "843bf2ab",
+  "host": {
+    "kernel": "6.18.44-fc-v114",
+    "logical_cpu_count": 4,
+    "machine": "x86_64",
+    "system": "Linux"
+  },
+  "host_regime": "uncontrolled",
+  "host_regime_requested": "quiet",
+  "invalid_trials": 1,
+  "recorded_at": "2026-10-10T18:08:14Z",
+  "schema": "fdu-floor-scoreboard-v1",
+  "subjects": [
+    {
+      "dirs_and_files": 79849,
+      "dropped_instruments": {},
+      "entries": 79957,
+      "host_pressure_after": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 0.75,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 0.749,
+        "load_1m": 0.035,
+        "load_1m_per_cpu": 0.0088,
+        "load_5m": 0.402,
+        "logical_cpu_count": 4,
+        "power_source": null,
+        "system": "Linux",
+        "thermal_pressure": null,
+        "unavailable_reason": null
+      },
+      "host_pressure_before": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 0.25,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 1.16,
+        "load_1m": 0.881,
+        "load_1m_per_cpu": 0.2202,
+        "load_5m": 1.467,
+        "logical_cpu_count": 4,
+        "power_source": null,
+        "system": "Linux",
+        "thermal_pressure": null,
+        "unavailable_reason": null
+      },
+      "host_regime": "uncontrolled",
+      "instruments": {
+        "aggregate": {
+          "description": "fdu aggregate tier: five exact tallies, no retained index.",
+          "elapsed_ns": {
+            "max": 123462456,
+            "median": 110752280.0,
+            "min": 96918030,
+            "p95": 121772329,
+            "p95_over_median": 1.1
+          },
+          "harness_overhead_ns": 2988809,
+          "max_rss_bytes": 27107328,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 113741089.0
+          },
+          "spread": 1.27,
+          "spread_suspect": false
+        },
+        "arena-spike": {
+          "description": "An index-shaped result in arena records: the H86 ceiling.",
+          "elapsed_ns": {
+            "max": 479800000,
+            "median": 357150000.0,
+            "min": 127800000,
+            "p95": 433800000,
+            "p95_over_median": 1.215
+          },
+          "harness_overhead_ns": 2605974,
+          "max_rss_bytes": 27107328,
+          "role": "ceiling",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 359755973.5
+          },
+          "spread": 3.75,
+          "spread_suspect": true
+        },
+        "index": {
+          "description": "fdu index tier: full walk with metadata into a complete index.",
+          "elapsed_ns": {
+            "max": 185295276,
+            "median": 130969539.0,
+            "min": 111400419,
+            "p95": 162219633,
+            "p95_over_median": 1.239
+          },
+          "harness_overhead_ns": 129737326,
+          "max_rss_bytes": 32796672,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 260706864.5
+          },
+          "spread": 1.66,
+          "spread_suspect": false
+        },
+        "parfloor-enum": {
+          "description": "The same walk with the metadata call removed: a search tool's floor.",
+          "elapsed_ns": {
+            "max": 46190113,
+            "median": 37662551.0,
+            "min": 29248269,
+            "p95": 45233119,
+            "p95_over_median": 1.201
+          },
+          "harness_overhead_ns": 2441960,
+          "max_rss_bytes": 27107328,
+          "role": "reference",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 40104510.5
+          },
+          "spread": 1.58,
+          "spread_suspect": false
+        },
+        "parfloor-stat": {
+          "description": "Raw getdents64 + statx per entry into four accumulators. The floor.",
+          "elapsed_ns": {
+            "max": 117991844,
+            "median": 97264628.5,
+            "min": 86625729,
+            "p95": 113464042,
+            "p95_over_median": 1.167
+          },
+          "harness_overhead_ns": 2497484,
+          "max_rss_bytes": 27107328,
+          "role": "floor",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 99762113.0
+          },
+          "spread": 1.36,
+          "spread_suspect": false
+        },
+        "tree": {
+          "description": "fdu tree tier: the default tree over the folded index, rendered.",
+          "elapsed_ns": {
+            "max": 148043058,
+            "median": 119305218.0,
+            "min": 105030924,
+            "p95": 141539401,
+            "p95_over_median": 1.186
+          },
+          "harness_overhead_ns": 3801390,
+          "max_rss_bytes": 27107328,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 123106608.5
+          },
+          "spread": 1.41,
+          "spread_suspect": false
+        }
+      },
+      "invalid_reasons": [],
+      "invalid_trials": 0,
+      "label": "node-modules-dense",
+      "oracle": {
+        "allocated_bytes": 757870592,
+        "apparent_bytes": 538992241,
+        "dirs": 9438,
+        "files": 70411
+      },
+      "oracle_disagreements": [],
+      "oracle_sources": {
+        "allocated_bytes": "parfloor-stat",
+        "apparent_bytes": "parfloor-stat",
+        "dirs": "parfloor-stat",
+        "files": "parfloor-stat"
+      },
+      "schedule": {
+        "rounds": [
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ]
+        ],
+        "scheme": "carryover-balanced-v1"
+      },
+      "scored": {
+        "dirs_and_files": 79849,
+        "entries": 79957,
+        "floor_ns": 97264628.5,
+        "label": "node-modules-dense",
+        "rows": [
+          {
+            "instrument": "parfloor-enum",
+            "max_rss_bytes": 27107328,
+            "median_ms": 37.66,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 471.7,
+            "p95_over_median": 1.201,
+            "role": "reference",
+            "spread": 1.58,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 0.387
+          },
+          {
+            "instrument": "parfloor-stat",
+            "max_rss_bytes": 27107328,
+            "median_ms": 97.26,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1218.1,
+            "p95_over_median": 1.167,
+            "role": "floor",
+            "spread": 1.36,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 1.0
+          },
+          {
+            "instrument": "aggregate",
+            "max_rss_bytes": 27107328,
+            "median_ms": 110.75,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1387.0,
+            "p95_over_median": 1.1,
+            "role": "tier",
+            "spread": 1.27,
+            "spread_suspect": false,
+            "threshold": 1.25,
+            "x_floor": 1.139
+          },
+          {
+            "instrument": "tree",
+            "max_rss_bytes": 27107328,
+            "median_ms": 119.31,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1494.1,
+            "p95_over_median": 1.186,
+            "role": "tier",
+            "spread": 1.41,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 1.227
+          },
+          {
+            "instrument": "index",
+            "max_rss_bytes": 32796672,
+            "median_ms": 130.97,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1640.2,
+            "p95_over_median": 1.239,
+            "role": "tier",
+            "spread": 1.66,
+            "spread_suspect": false,
+            "threshold": 1.4,
+            "x_floor": 1.347
+          },
+          {
+            "instrument": "arena-spike",
+            "max_rss_bytes": 27107328,
+            "median_ms": 357.15,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 4472.8,
+            "p95_over_median": 1.215,
+            "role": "ceiling",
+            "spread": 3.75,
+            "spread_suspect": true,
+            "threshold": null,
+            "x_floor": 3.672
+          }
+        ]
+      },
+      "trials": 30,
+      "warmups": 3,
+      "workers": 4
+    },
+    {
+      "dirs_and_files": 92411,
+      "dropped_instruments": {},
+      "entries": 92474,
+      "host_pressure_after": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 0.75,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 0.52,
+        "load_1m": 0.047,
+        "load_1m_per_cpu": 0.0117,
+        "load_5m": 0.2,
+        "logical_cpu_count": 4,
+        "power_source": null,
+        "system": "Linux",
+        "thermal_pressure": null,
+        "unavailable_reason": null
+      },
+      "host_pressure_before": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 0.75,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 0.744,
+        "load_1m": 0.032,
+        "load_1m_per_cpu": 0.0081,
+        "load_5m": 0.395,
+        "logical_cpu_count": 4,
+        "power_source": null,
+        "system": "Linux",
+        "thermal_pressure": null,
+        "unavailable_reason": null
+      },
+      "host_regime": "uncontrolled",
+      "instruments": {
+        "aggregate": {
+          "description": "fdu aggregate tier: five exact tallies, no retained index.",
+          "elapsed_ns": {
+            "max": 118458876,
+            "median": 103533824.5,
+            "min": 93847567,
+            "p95": 112557886,
+            "p95_over_median": 1.087
+          },
+          "harness_overhead_ns": 3376097,
+          "max_rss_bytes": 27107328,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 106909921.5
+          },
+          "spread": 1.26,
+          "spread_suspect": false
+        },
+        "arena-spike": {
+          "description": "An index-shaped result in arena records: the H86 ceiling.",
+          "elapsed_ns": {
+            "max": 257500000,
+            "median": 197900000.0,
+            "min": 137500000,
+            "p95": 224100000,
+            "p95_over_median": 1.132
+          },
+          "harness_overhead_ns": 3508834,
+          "max_rss_bytes": 27107328,
+          "role": "ceiling",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 201408833.5
+          },
+          "spread": 1.87,
+          "spread_suspect": false
+        },
+        "index": {
+          "description": "fdu index tier: full walk with metadata into a complete index.",
+          "elapsed_ns": {
+            "max": 151630804,
+            "median": 128206126.5,
+            "min": 108139479,
+            "p95": 150177879,
+            "p95_over_median": 1.171
+          },
+          "harness_overhead_ns": 134497168,
+          "max_rss_bytes": 32804864,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 262703294.5
+          },
+          "spread": 1.4,
+          "spread_suspect": false
+        },
+        "parfloor-enum": {
+          "description": "The same walk with the metadata call removed: a search tool's floor.",
+          "elapsed_ns": {
+            "max": 29080706,
+            "median": 24202508.0,
+            "min": 19662205,
+            "p95": 28241370,
+            "p95_over_median": 1.167
+          },
+          "harness_overhead_ns": 2596090,
+          "max_rss_bytes": 27107328,
+          "role": "reference",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 26798598.5
+          },
+          "spread": 1.48,
+          "spread_suspect": false
+        },
+        "parfloor-stat": {
+          "description": "Raw getdents64 + statx per entry into four accumulators. The floor.",
+          "elapsed_ns": {
+            "max": 107884955,
+            "median": 91577510.0,
+            "min": 81228337,
+            "p95": 106775689,
+            "p95_over_median": 1.166
+          },
+          "harness_overhead_ns": 3248276,
+          "max_rss_bytes": 27107328,
+          "role": "floor",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 94825786.5
+          },
+          "spread": 1.33,
+          "spread_suspect": false
+        },
+        "tree": {
+          "description": "fdu tree tier: the default tree over the folded index, rendered.",
+          "elapsed_ns": {
+            "max": 131276776,
+            "median": 115798033.0,
+            "min": 101163744,
+            "p95": 129385305,
+            "p95_over_median": 1.117
+          },
+          "harness_overhead_ns": 3931611,
+          "max_rss_bytes": 27107328,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 119729644.0
+          },
+          "spread": 1.3,
+          "spread_suspect": false
+        }
+      },
+      "invalid_reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "invalid_trials": 1,
+      "label": "linux-v6.12",
+      "oracle": {
+        "allocated_bytes": 1965424640,
+        "apparent_bytes": 1759236788,
+        "dirs": 5768,
+        "files": 86643
+      },
+      "oracle_disagreements": [],
+      "oracle_sources": {
+        "allocated_bytes": "parfloor-stat",
+        "apparent_bytes": "parfloor-stat",
+        "dirs": "parfloor-stat",
+        "files": "parfloor-stat"
+      },
+      "schedule": {
+        "rounds": [
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ]
+        ],
+        "scheme": "carryover-balanced-v1"
+      },
+      "scored": {
+        "dirs_and_files": 92411,
+        "entries": 92474,
+        "floor_ns": 91577510.0,
+        "label": "linux-v6.12",
+        "rows": [
+          {
+            "instrument": "parfloor-enum",
+            "max_rss_bytes": 27107328,
+            "median_ms": 24.2,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 261.9,
+            "p95_over_median": 1.167,
+            "role": "reference",
+            "spread": 1.48,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 0.264
+          },
+          {
+            "instrument": "parfloor-stat",
+            "max_rss_bytes": 27107328,
+            "median_ms": 91.58,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 991.0,
+            "p95_over_median": 1.166,
+            "role": "floor",
+            "spread": 1.33,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 1.0
+          },
+          {
+            "instrument": "aggregate",
+            "max_rss_bytes": 27107328,
+            "median_ms": 103.53,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1120.4,
+            "p95_over_median": 1.087,
+            "role": "tier",
+            "spread": 1.26,
+            "spread_suspect": false,
+            "threshold": 1.25,
+            "x_floor": 1.131
+          },
+          {
+            "instrument": "tree",
+            "max_rss_bytes": 27107328,
+            "median_ms": 115.8,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1253.1,
+            "p95_over_median": 1.117,
+            "role": "tier",
+            "spread": 1.3,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 1.264
+          },
+          {
+            "instrument": "index",
+            "max_rss_bytes": 32804864,
+            "median_ms": 128.21,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1387.3,
+            "p95_over_median": 1.171,
+            "role": "tier",
+            "spread": 1.4,
+            "spread_suspect": false,
+            "threshold": 1.4,
+            "x_floor": 1.4
+          },
+          {
+            "instrument": "arena-spike",
+            "max_rss_bytes": 27107328,
+            "median_ms": 197.9,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 2141.5,
+            "p95_over_median": 1.132,
+            "role": "ceiling",
+            "spread": 1.87,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 2.161
+          }
+        ]
+      },
+      "trials": 30,
+      "warmups": 3,
+      "workers": 4
+    },
+    {
+      "dirs_and_files": 1000000,
+      "dropped_instruments": {},
+      "entries": 1000001,
+      "host_pressure_after": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 0.25,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 1.069,
+        "load_1m": 1.424,
+        "load_1m_per_cpu": 0.3561,
+        "load_5m": 1.389,
+        "logical_cpu_count": 4,
+        "power_source": null,
+        "system": "Linux",
+        "thermal_pressure": null,
+        "unavailable_reason": null
+      },
+      "host_pressure_before": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 0.25,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 0.517,
+        "load_1m": 0.043,
+        "load_1m_per_cpu": 0.0107,
+        "load_5m": 0.197,
+        "logical_cpu_count": 4,
+        "power_source": null,
+        "system": "Linux",
+        "thermal_pressure": null,
+        "unavailable_reason": null
+      },
+      "host_regime": "uncontrolled",
+      "instruments": {
+        "aggregate": {
+          "description": "fdu aggregate tier: five exact tallies, no retained index.",
+          "elapsed_ns": {
+            "max": 1262252851,
+            "median": 1104348258.5,
+            "min": 967557715,
+            "p95": 1248861735,
+            "p95_over_median": 1.131
+          },
+          "harness_overhead_ns": 3358248,
+          "max_rss_bytes": 27107328,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 1107706507.0
+          },
+          "spread": 1.3,
+          "spread_suspect": false
+        },
+        "arena-spike": {
+          "description": "An index-shaped result in arena records: the H86 ceiling.",
+          "elapsed_ns": {
+            "max": 3877900000,
+            "median": 1136000000.0,
+            "min": 1011700000,
+            "p95": 2550700000,
+            "p95_over_median": 2.245
+          },
+          "harness_overhead_ns": 5240103,
+          "max_rss_bytes": 69337088,
+          "role": "ceiling",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 1141240103.0
+          },
+          "spread": 3.83,
+          "spread_suspect": true
+        },
+        "index": {
+          "description": "fdu index tier: full walk with metadata into a complete index.",
+          "elapsed_ns": {
+            "max": 1726737489,
+            "median": 1416415212.5,
+            "min": 1258130629,
+            "p95": 1697143799,
+            "p95_over_median": 1.198
+          },
+          "harness_overhead_ns": 2358539524,
+          "max_rss_bytes": 320593920,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 3774954737.0
+          },
+          "spread": 1.37,
+          "spread_suspect": false
+        },
+        "parfloor-enum": {
+          "description": "The same walk with the metadata call removed: a search tool's floor.",
+          "elapsed_ns": {
+            "max": 622898950,
+            "median": 528790291.5,
+            "min": 410493705,
+            "p95": 600414838,
+            "p95_over_median": 1.135
+          },
+          "harness_overhead_ns": 3054722,
+          "max_rss_bytes": 27107328,
+          "role": "reference",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 531845014.0
+          },
+          "spread": 1.52,
+          "spread_suspect": false
+        },
+        "parfloor-stat": {
+          "description": "Raw getdents64 + statx per entry into four accumulators. The floor.",
+          "elapsed_ns": {
+            "max": 1303719618,
+            "median": 1133080582.5,
+            "min": 1015694787,
+            "p95": 1217313409,
+            "p95_over_median": 1.074
+          },
+          "harness_overhead_ns": 2312414,
+          "max_rss_bytes": 27107328,
+          "role": "floor",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 1135392996.0
+          },
+          "spread": 1.28,
+          "spread_suspect": false
+        },
+        "tree": {
+          "description": "fdu tree tier: the default tree over the folded index, rendered.",
+          "elapsed_ns": {
+            "max": 1503066847,
+            "median": 1371194205.5,
+            "min": 1167393608,
+            "p95": 1479545358,
+            "p95_over_median": 1.079
+          },
+          "harness_overhead_ns": 9705130,
+          "max_rss_bytes": 71647232,
+          "role": "tier",
+          "samples": 30,
+          "spawn_wall_ns": {
+            "median": 1380899335.5
+          },
+          "spread": 1.29,
+          "spread_suspect": false
+        }
+      },
+      "invalid_reasons": [],
+      "invalid_trials": 0,
+      "label": "linux-balanced-1m",
+      "oracle": {
+        "allocated_bytes": 2986741760,
+        "apparent_bytes": 793658448,
+        "dirs": 125000,
+        "files": 875000
+      },
+      "oracle_disagreements": [],
+      "oracle_sources": {
+        "allocated_bytes": "parfloor-stat",
+        "apparent_bytes": "parfloor-stat",
+        "dirs": "parfloor-stat",
+        "files": "parfloor-stat"
+      },
+      "schedule": {
+        "rounds": [
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ],
+          [
+            "parfloor-enum",
+            "parfloor-stat",
+            "tree",
+            "arena-spike",
+            "index",
+            "aggregate"
+          ],
+          [
+            "parfloor-stat",
+            "index",
+            "parfloor-enum",
+            "tree",
+            "aggregate",
+            "arena-spike"
+          ],
+          [
+            "parfloor-stat",
+            "parfloor-enum",
+            "arena-spike",
+            "aggregate",
+            "index",
+            "tree"
+          ],
+          [
+            "parfloor-stat",
+            "arena-spike",
+            "parfloor-enum",
+            "aggregate",
+            "tree",
+            "index"
+          ],
+          [
+            "parfloor-stat",
+            "aggregate",
+            "parfloor-enum",
+            "index",
+            "arena-spike",
+            "tree"
+          ]
+        ],
+        "scheme": "carryover-balanced-v1"
+      },
+      "scored": {
+        "dirs_and_files": 1000000,
+        "entries": 1000001,
+        "floor_ns": 1133080582.5,
+        "label": "linux-balanced-1m",
+        "rows": [
+          {
+            "instrument": "parfloor-enum",
+            "max_rss_bytes": 27107328,
+            "median_ms": 528.79,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 528.8,
+            "p95_over_median": 1.135,
+            "role": "reference",
+            "spread": 1.52,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 0.467
+          },
+          {
+            "instrument": "aggregate",
+            "max_rss_bytes": 27107328,
+            "median_ms": 1104.35,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1104.3,
+            "p95_over_median": 1.131,
+            "role": "tier",
+            "spread": 1.3,
+            "spread_suspect": false,
+            "threshold": 1.25,
+            "x_floor": 0.975
+          },
+          {
+            "instrument": "parfloor-stat",
+            "max_rss_bytes": 27107328,
+            "median_ms": 1133.08,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1133.1,
+            "p95_over_median": 1.074,
+            "role": "floor",
+            "spread": 1.28,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 1.0
+          },
+          {
+            "instrument": "arena-spike",
+            "max_rss_bytes": 69337088,
+            "median_ms": 1136.0,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1136.0,
+            "p95_over_median": 2.245,
+            "role": "ceiling",
+            "spread": 3.83,
+            "spread_suspect": true,
+            "threshold": null,
+            "x_floor": 1.003
+          },
+          {
+            "instrument": "tree",
+            "max_rss_bytes": 71647232,
+            "median_ms": 1371.19,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1371.2,
+            "p95_over_median": 1.079,
+            "role": "tier",
+            "spread": 1.29,
+            "spread_suspect": false,
+            "threshold": null,
+            "x_floor": 1.21
+          },
+          {
+            "instrument": "index",
+            "max_rss_bytes": 320593920,
+            "median_ms": 1416.42,
+            "meets_threshold": null,
+            "ns_per_dir_or_file": 1416.4,
+            "p95_over_median": 1.198,
+            "role": "tier",
+            "spread": 1.37,
+            "spread_suspect": false,
+            "threshold": 1.4,
+            "x_floor": 1.25
+          }
+        ]
+      },
+      "trials": 30,
+      "warmups": 3,
+      "workers": 4
+    }
+  ],
+  "trials": 30,
+  "warmups": 3,
+  "workers": 4
+}

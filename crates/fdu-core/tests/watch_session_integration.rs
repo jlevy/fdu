@@ -532,12 +532,17 @@ fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
     assert_eq!(session.request().now, started, "the session keeps the instant it was built at");
 
     // Two repaints, separated by a change the session applies.
-    let first = session.report(SystemTime::now()).expect("report");
+    let first_at = SystemTime::now();
+    let first = session.report(first_at).expect("report");
     fs::write(dir.path().join("b.txt"), b"two\n").expect("write");
-    let second = session.report(SystemTime::now()).expect("report");
+    let second_at = SystemTime::now();
+    let second = session.report(second_at).expect("report");
     assert!(!first.sections.is_empty() && !second.sections.is_empty());
 
-    assert_eq!(session.request().now, started, "a repaint does not re-read the clock");
+    // Each repaint measures its ages from its own instant; only that is re-read.
+    assert_eq!(first.age_reference_ns, fdu_core::query::system_time_to_nanos(first_at));
+    assert_eq!(second.age_reference_ns, fdu_core::query::system_time_to_nanos(second_at));
+    assert_eq!(session.request().now, started, "a repaint does not re-read the request");
     assert_eq!(
         session.query().selection.modified.since,
         Some(window),

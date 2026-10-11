@@ -303,11 +303,29 @@ INSTRUMENTS: Dict[str, Instrument] = {
         elapsed_key="component_ns",
         payload_key="summary",
     ),
+    # The default command's tier: the folded one-shot index and the rendered text tree,
+    # through the door `fdu PATH` takes. Since the age column (H193) it describes every
+    # directory and symlink once, as the floor does, where H185 had taken it below that.
+    # `.gitignore` is off for the reason it is off for the aggregate tier: the floor reads
+    # no control files. It has no closure threshold; campaign 2 set none for this tier.
+    "tree": Instrument(
+        id="tree",
+        role="tier",
+        description="fdu tree tier: the default tree over the folded index, rendered.",
+        argv=("{probe}", "roots-default-tree", "--no-controls", "--root", "{root}",
+              "--threads", "{workers}"),
+        tally_map={"dirs": "dirs", "files": "files", "apparent_bytes": "apparent_bytes",
+                   "allocated_bytes": "allocated_bytes"},
+        elapsed_key="component_ns",
+        payload_key="summary",
+    ),
 }
 
 #: The instruments a scoreboard runs, denominator first. This is the order of the first
 #: round only; later rounds follow `schedule`, and the table sorts rows by ratio.
-DEFAULT_INSTRUMENTS = ("parfloor-stat", "parfloor-enum", "arena-spike", "aggregate", "index")
+DEFAULT_INSTRUMENTS = (
+    "parfloor-stat", "parfloor-enum", "arena-spike", "aggregate", "index", "tree",
+)
 
 #: Names the ordering `schedule` produces, recorded with every subject.
 SCHEDULE_SCHEME = "carryover-balanced-v1"
@@ -1099,9 +1117,27 @@ def main(argv: Sequence[str]) -> int:
         help=("under --host-regime quiet, how long to wait for a settling host before "
               "refusing (default: %(default)s)"),
     )
+    parser.add_argument(
+        "--instrument", action="append", default=None, choices=sorted(INSTRUMENTS),
+        metavar="NAME",
+        help=("an instrument to run; repeat. Default: " + ", ".join(DEFAULT_INSTRUMENTS)
+              + ". parfloor-stat, the denominator, is always required. Leave out `tree` "
+              "to score a probe from before the several-roots door, which has no "
+              "roots-default-tree mode"),
+    )
     parser.add_argument("--output", type=Path, help="write the scoreboard JSON here")
     parser.add_argument("--markdown", type=Path, help="write the rendered table here")
     arguments = parser.parse_args(list(argv))
+
+    instruments = tuple(arguments.instrument or DEFAULT_INSTRUMENTS)
+    if "parfloor-stat" not in instruments:
+        print("--instrument must include parfloor-stat: every ratio divides by it",
+              file=sys.stderr)
+        return 2
+    if len(set(instruments)) != len(instruments):
+        print("each --instrument may be named once: a round runs every instrument once",
+              file=sys.stderr)
+        return 2
 
     workers = arguments.workers if arguments.workers is not None else default_workers()
     if not 1 <= workers <= MAX_WORKERS:
@@ -1140,6 +1176,7 @@ def main(argv: Sequence[str]) -> int:
             warmups=arguments.warmups, build_dir=arguments.build_dir,
             probe=arguments.probe.expanduser().resolve(),
             host_regime=arguments.host_regime, quiet_wait_seconds=arguments.quiet_wait,
+            instruments=instruments,
         )
     except FloorError as error:
         # A refused scoreboard is the harness doing its job. It should read as a verdict

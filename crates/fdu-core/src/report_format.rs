@@ -22,9 +22,11 @@
 //! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
 //! is caller-selectable, including zero to remove the bar and its gutter; machine
 //! formats and non-tree views ignore it. Human integer quantities share one grouping
-//! policy through [`human_count`] and [`human_count_u128`]. Every human byte quantity,
-//! including cache rows and lifecycle totals, uses [`styled_bytes`] for its units and
-//! zero/large-value emphasis. Machine fields retain exact integer bytes.
+//! policy through [`human_count`] and [`human_count_u128`]. Human byte quantities,
+//! including cache rows and lifecycle totals, use [`styled_bytes`] for their units and
+//! zero/large-value emphasis. The tree size column alone uses `tree_size_cell` for
+//! magnitude colors; tree ages use `age_style` for recency. Machine fields retain
+//! exact integer bytes.
 //!
 //! A grouped row's first line ends at its file count; each further measure (lines, words,
 //! flags, coverage reasons) is a continuation line of its own, its size, share, and label
@@ -71,9 +73,10 @@ use crate::control::ControlCoverage;
 use crate::emit::{Event, IoFmt, JsonSink, Scalar, Shape, Sink, YamlSink};
 use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source};
 use crate::query::{
-    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow,
-    MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TierState,
-    TreeNode, TypeRow, ViewSpec, format_rfc3339, format_rfc3339_nanos, pages,
+    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MONTH_SECONDS, MetricGroup,
+    MetricRow, MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow,
+    TierState, TreeNode, TypeRow, ViewSpec, YEAR_SECONDS, format_rfc3339, format_rfc3339_nanos,
+    pages, with_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -107,7 +110,10 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/10";
+///
+/// `fdu.report/11` gives tree nodes their age (`mtime_ns`, `complete`, `age_ns`, and
+/// `modified_at`), list rows `modified_at`, and the envelope `age_reference_at`.
+pub const REPORT_SCHEMA: &str = "fdu.report/11";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
@@ -266,16 +272,33 @@ fn flat_path(path: &Path) -> String {
         .collect()
 }
 
-/// A compact signed duration. Exact nanoseconds remain available in machine output.
+/// A compact signed age, the one formatter for the tree's age column and `--long`.
+/// Exact nanoseconds remain available in machine output.
+///
+/// Each unit holds until the next one's length: seconds under a minute, minutes under an
+/// hour, hours under a day, days under a display month of 30.44 days, months under a
+/// display year of 365.25 days, and years beyond. So no cell reads `0mo` or `0y`, and an
+/// old tree reads `12y` rather than `4,382d`. The amount is floored toward zero and the
+/// sign kept, so a time ahead of the reference reads `-5m`, and less than a second ahead
+/// `-0s`. Below a century a cell is at most four characters and a sign. Months and years
+/// are display units only: the age grammar refuses them ([`MONTH_SECONDS`]).
 fn human_age(age: Option<i128>) -> String {
+    const MINUTE: u128 = 60;
+    const HOUR: u128 = 60 * MINUTE;
+    const DAY: u128 = 24 * HOUR;
     let Some(age) = age else { return "unknown".to_string() };
     let seconds = age.unsigned_abs() / 1_000_000_000;
-    let (amount, unit) = if seconds >= 86400 {
-        (seconds / 86400, "d")
-    } else if seconds >= 3600 {
-        (seconds / 3600, "h")
-    } else if seconds >= 60 {
-        (seconds / 60, "m")
+    let (month, year) = (u128::from(MONTH_SECONDS), u128::from(YEAR_SECONDS));
+    let (amount, unit) = if seconds >= year {
+        (seconds / year, "y")
+    } else if seconds >= month {
+        (seconds / month, "mo")
+    } else if seconds >= DAY {
+        (seconds / DAY, "d")
+    } else if seconds >= HOUR {
+        (seconds / HOUR, "h")
+    } else if seconds >= MINUTE {
+        (seconds / MINUTE, "m")
     } else {
         (seconds, "s")
     };
@@ -312,21 +335,27 @@ pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
     DiagnosticLines { notes, tips }
 }
 
+/// A row's path as text prints it ([`crate::query::labelled_path`]).
+fn display_path<'a>(report: &Report, row: &'a FileRow) -> std::borrow::Cow<'a, Path> {
+    crate::query::labelled_path(report.roots.as_deref(), row.root, &row.path)
+}
+
 fn render_flat(report: &Report, format: Format) -> String {
     let mut out = String::new();
     for section in &report.sections {
         if let Section::Files { rows, .. } = section {
             for row in rows {
+                let path = display_path(report, row);
                 if format == Format::Long {
                     let _ = writeln!(
                         out,
                         "{:>10} {:>8} {}",
                         human_bytes(pick(report.size, row.bytes, row.allocated)),
                         human_age(row.age_ns),
-                        flat_path(&row.path)
+                        flat_path(&path)
                     );
                 } else {
-                    let _ = writeln!(out, "{}", flat_path(&row.path));
+                    let _ = writeln!(out, "{}", flat_path(&path));
                 }
             }
         }
@@ -433,7 +462,7 @@ fn render_report_jsonl(report: &Report) -> String {
     out.push('\n');
     for section in &report.sections {
         let mut sink = JsonSink::line();
-        emit_section(&mut sink, section);
+        emit_section(&mut sink, section, report.roots.is_some());
         out.push_str(&sink.finish());
         out.push('\n');
     }
@@ -447,7 +476,7 @@ fn write_report_jsonl(report: &Report, out: &mut dyn io::Write) -> io::Result<()
     out.write_all(b"\n")?;
     for section in &report.sections {
         let mut sink = JsonSink::line_to(out);
-        emit_section(&mut sink, section);
+        emit_section(&mut sink, section, report.roots.is_some());
         sink.finish().finish()?;
         out.write_all(b"\n")?;
     }
@@ -496,20 +525,39 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     emit_field(sink, REPORT_FIELDS.generator, true, |sink| {
         emit_scalar(sink, Scalar::Str(&generator));
     });
-    let root = report.root.to_string_lossy();
-    emit_field(sink, REPORT_FIELDS.root, true, |sink| {
-        emit_scalar(sink, Scalar::Str(&root));
+    // One root is named here; several are listed in `roots`, and this is null.
+    let root = report.root.as_deref().map(Path::to_string_lossy);
+    emit_field(sink, REPORT_FIELDS.root, true, |sink| match &root {
+        Some(root) => emit_scalar(sink, Scalar::Str(root)),
+        None => emit_scalar(sink, Scalar::Null),
     });
-    emit_raw_identity(sink, REPORT_FIELDS.root_raw.name, &report.root);
+    if let Some(root) = &report.root {
+        emit_raw_identity(sink, REPORT_FIELDS.root_raw.name, root);
+    }
+    emit_field(sink, REPORT_FIELDS.roots, report.roots.is_some(), |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for root in report.roots.iter().flatten() {
+            sink.event(Event::BeginMap(Shape::Block));
+            emit_str_field(sink, "label", &root.label.to_string_lossy());
+            emit_raw_identity(sink, "label_raw", &root.label);
+            emit_path_fields(sink, &root.path);
+            sink.event(Event::EndMap);
+        }
+        sink.event(Event::EndSeq);
+    });
     emit_field(sink, REPORT_FIELDS.age_reference_ns, true, |sink| match report.age_reference_ns {
         Some(value) => emit_scalar(sink, Scalar::I64(value)),
         None => emit_scalar(sink, Scalar::Null),
     });
+    emit_field(sink, REPORT_FIELDS.age_reference_at, true, |sink| {
+        emit_instant(sink, report.age_reference_ns);
+    });
     emit_field(sink, REPORT_FIELDS.request, true, |sink| emit_request(sink, report));
     emit_field(sink, REPORT_FIELDS.status, true, |sink| emit_status(sink, report));
     emit_field(sink, REPORT_FIELDS.provenance, true, |sink| emit_provenance(sink, report));
+    let several = report.roots.is_some();
     emit_field(sink, REPORT_FIELDS.ignore_rules, true, |sink| {
-        emit_ignore_rules(sink, &report.ignore_rules);
+        emit_ignore_rules(sink, &report.ignore_rules, several);
     });
     emit_field(sink, REPORT_FIELDS.analysis, true, |sink| {
         emit_analysis(sink, report.analysis.as_ref());
@@ -517,7 +565,7 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     emit_field(sink, REPORT_FIELDS.reports, with_sections, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
         for section in &report.sections {
-            emit_section(sink, section);
+            emit_section(sink, section, several);
         }
         sink.event(Event::EndSeq);
     });
@@ -583,8 +631,10 @@ fn emit_status(sink: &mut impl Sink, report: &Report) {
     });
     emit_field(sink, Field::always("errors"), true, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
-        for error in &report.status.errors {
+        for detail in &report.status.errors {
+            let error = &detail.issue;
             sink.event(Event::BeginMap(Shape::Block));
+            emit_root_field(sink, detail.root, report.roots.is_some());
             emit_field(sink, Field::when_set("path"), error.path.is_some(), |sink| {
                 let path = error.path.as_ref().expect("present error path");
                 let display = path.to_string_lossy();
@@ -648,7 +698,16 @@ fn emit_tier_state(sink: &mut impl Sink, tier: TierState) {
     sink.event(Event::EndMap);
 }
 
-fn emit_ignore_rules(sink: &mut impl Sink, rules: &ControlCoverage) {
+/// The position of a row's, an error's, or a refusal's root in the envelope's `roots`,
+/// written first and only for a report over several roots, so one root's documents keep
+/// their shape.
+fn emit_root_field(sink: &mut impl Sink, root: usize, several: bool) {
+    emit_field(sink, Field::when_set("root"), several, |sink| {
+        emit_scalar(sink, Scalar::U64(root as u64));
+    });
+}
+
+fn emit_ignore_rules(sink: &mut impl Sink, rules: &ControlCoverage, several: bool) {
     let ControlCoverage::Observed(observed) = rules else {
         emit_scalar(sink, Scalar::Null);
         return;
@@ -671,6 +730,7 @@ fn emit_ignore_rules(sink: &mut impl Sink, rules: &ControlCoverage) {
         sink.event(Event::BeginSeq(Shape::Block));
         for refusal in &observed.refusals {
             sink.event(Event::BeginMap(Shape::Block));
+            emit_root_field(sink, refusal.root, several);
             emit_path_fields(sink, &refusal.path);
             emit_str_field(sink, "reason", refusal.reason.label());
             sink.event(Event::EndMap);
@@ -756,7 +816,7 @@ fn emit_path_fields(sink: &mut impl Sink, path: &Path) {
     emit_raw_identity(sink, "path_raw", path);
 }
 
-fn emit_section(sink: &mut impl Sink, section: &Section) {
+fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_str_field(sink, "view", section.view().label());
     match section {
@@ -765,7 +825,7 @@ fn emit_section(sink: &mut impl Sink, section: &Section) {
                 emit_code_overview(sink, overview);
             });
         }
-        Section::Tree { root, omissions, limits, .. } => {
+        Section::Tree { root, omissions, limits, roots, .. } => {
             sink.event(Event::Key("limits"));
             sink.event(Event::BeginMap(Shape::Inline));
             emit_bound_value(sink, "depth", limits.depth);
@@ -777,29 +837,38 @@ fn emit_section(sink: &mut impl Sink, section: &Section) {
                 Some(root) => emit_tree(sink, root),
                 None => emit_scalar(sink, Scalar::Null),
             });
-            emit_tree_omissions(sink, omissions);
-            sink.event(Event::Key("remainder"));
-            match crate::query::TreeRemainder::from_tree(root.as_deref(), omissions) {
-                Some(remainder) => {
-                    sink.event(Event::BeginMap(Shape::Block));
-                    for (key, value) in [
-                        ("files", remainder.files),
-                        ("bytes", remainder.bytes),
-                        ("allocated", remainder.allocated),
-                    ] {
-                        sink.event(Event::Key(key));
-                        emit_scalar(sink, value.map_or(Scalar::Null, Scalar::U64));
-                    }
-                    sink.event(Event::Key("reasons"));
-                    sink.event(Event::BeginSeq(Shape::Inline));
-                    for reason in remainder.reasons {
-                        emit_scalar(sink, Scalar::Str(reason.label()));
+            // Several roots have no single root node: a total row and a tree per root,
+            // each tree carrying its own remainder as one root's section does.
+            if let Some(roots) = roots {
+                emit_field(sink, Field::when_set("total"), true, |sink| match &roots.total {
+                    Some(total) => emit_tree_total(sink, total),
+                    None => emit_scalar(sink, Scalar::Null),
+                });
+                emit_field(sink, Field::when_set("trees"), true, |sink| {
+                    sink.event(Event::BeginSeq(Shape::Block));
+                    for tree in &roots.trees {
+                        sink.event(Event::BeginMap(Shape::Block));
+                        emit_u64_field(sink, "root", tree.root as u64);
+                        emit_field(sink, Field::always("tree"), true, |sink| {
+                            emit_tree(sink, &tree.tree);
+                        });
+                        emit_field(sink, Field::nullable("remainder"), true, |sink| {
+                            emit_tree_remainder(
+                                sink,
+                                crate::query::TreeRemainder::from_tree(Some(&tree.tree), &[]),
+                            );
+                        });
+                        sink.event(Event::EndMap);
                     }
                     sink.event(Event::EndSeq);
-                    sink.event(Event::EndMap);
-                }
-                None => emit_scalar(sink, Scalar::Null),
+                });
             }
+            emit_tree_omissions(sink, omissions);
+            sink.event(Event::Key("remainder"));
+            emit_tree_remainder(
+                sink,
+                crate::query::TreeRemainder::from_tree(root.as_deref(), omissions),
+            );
         }
         Section::Extensions { rows, total, share_omitted } => {
             emit_bound_field(sink, rows.len(), *total);
@@ -830,7 +899,7 @@ fn emit_section(sink: &mut impl Sink, section: &Section) {
             emit_field(sink, Field::always("files"), true, |sink| {
                 sink.event(Event::BeginSeq(Shape::Block));
                 for row in rows {
-                    emit_file_row(sink, row);
+                    emit_file_row(sink, row, several);
                 }
                 sink.event(Event::EndSeq);
             });
@@ -865,8 +934,9 @@ fn emit_bound_field(sink: &mut impl Sink, shown: usize, total: usize) {
     });
 }
 
-fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
+fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool) {
     sink.event(Event::BeginMap(Shape::Block));
+    emit_root_field(sink, row.root, several);
     emit_path_fields(sink, &row.path);
     emit_str_field(sink, "kind", kind_label(row.kind));
     emit_u64_field(sink, "bytes", row.bytes);
@@ -885,6 +955,9 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
     emit_field(sink, Field::nullable("age_ns"), true, |sink| match row.age_ns {
         Some(value) => emit_scalar(sink, Scalar::I128(value)),
         None => emit_scalar(sink, Scalar::Null),
+    });
+    emit_field(sink, Field::nullable("modified_at"), true, |sink| {
+        emit_instant(sink, (row.complete != Some(false)).then_some(row.mtime_ns));
     });
 
     emit_field(sink, Field::nullable("ignored"), true, |sink| match row.ignored {
@@ -914,6 +987,18 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
         None => emit_scalar(sink, Scalar::Null),
     });
     sink.event(Event::EndMap);
+}
+
+/// An instant as RFC 3339 UTC to the nanosecond, or null.
+///
+/// The readable twin of an exact `*_ns` field, never a replacement for it: a row's
+/// `modified_at` is null exactly when its time is a lower bound or absent, because a
+/// lower-bound maximum rendered as an instant would read as the time it was modified.
+fn emit_instant(sink: &mut impl Sink, nanos: Option<i64>) {
+    match nanos {
+        Some(nanos) => with_rfc3339_nanos(nanos, |text| emit_scalar(sink, Scalar::Str(text))),
+        None => emit_scalar(sink, Scalar::Null),
+    }
 }
 
 fn emit_summary_row(sink: &mut impl Sink, row: &SummaryRow) {
@@ -1179,6 +1264,18 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                         None => emit_scalar(sink, Scalar::Null),
                     }
                 });
+                emit_field(sink, Field::nullable("mtime_ns"), true, |sink| {
+                    emit_scalar(sink, node.mtime_ns.map_or(Scalar::Null, Scalar::I64));
+                });
+                emit_field(sink, Field::nullable("complete"), true, |sink| {
+                    emit_scalar(sink, node.complete.map_or(Scalar::Null, Scalar::Bool));
+                });
+                emit_field(sink, Field::nullable("age_ns"), true, |sink| {
+                    emit_scalar(sink, node.age_ns.map_or(Scalar::Null, Scalar::I128));
+                });
+                emit_field(sink, Field::nullable("modified_at"), true, |sink| {
+                    emit_instant(sink, node.mtime_ns.filter(|_| node.complete != Some(false)));
+                });
                 emit_field(sink, Field::always("truncated"), true, |sink| {
                     emit_scalar(sink, Scalar::Bool(node.truncated));
                 });
@@ -1199,6 +1296,55 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
             Step::EndSeq => sink.event(Event::EndSeq),
         }
     }
+}
+
+/// What the displayed rows do not represent, or null when they represent everything.
+fn emit_tree_remainder(sink: &mut impl Sink, remainder: Option<crate::query::TreeRemainder>) {
+    let Some(remainder) = remainder else {
+        emit_scalar(sink, Scalar::Null);
+        return;
+    };
+    sink.event(Event::BeginMap(Shape::Block));
+    for (key, value) in
+        [("files", remainder.files), ("bytes", remainder.bytes), ("allocated", remainder.allocated)]
+    {
+        sink.event(Event::Key(key));
+        emit_scalar(sink, value.map_or(Scalar::Null, Scalar::U64));
+    }
+    sink.event(Event::Key("reasons"));
+    sink.event(Event::BeginSeq(Shape::Inline));
+    for reason in remainder.reasons {
+        emit_scalar(sink, Scalar::Str(reason.label()));
+    }
+    sink.event(Event::EndSeq);
+    sink.event(Event::EndMap);
+}
+
+/// The total row of a tree over several roots: a tree node's values, in a tree node's
+/// order, without the identity of an entry, since no entry is the total.
+fn emit_tree_total(sink: &mut impl Sink, total: &crate::query::TreeTotal) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_u64_field(sink, "bytes", total.bytes);
+    emit_u64_field(sink, "allocated", total.allocated);
+    emit_u64_field(sink, "files", total.files);
+    emit_u64_field(sink, "dirs", total.dirs);
+    emit_field(sink, Field::nullable("ignored"), true, |sink| {
+        emit_ignored(sink, total.ignored, true);
+    });
+    emit_field(sink, Field::nullable("newest_mtime_ns"), true, |sink| {
+        emit_scalar(sink, total.newest_mtime_ns.map_or(Scalar::Null, Scalar::I64));
+    });
+    emit_field(sink, Field::nullable("mtime_ns"), true, |sink| {
+        emit_scalar(sink, total.mtime_ns.map_or(Scalar::Null, Scalar::I64));
+    });
+    emit_bool_field(sink, "complete", total.complete);
+    emit_field(sink, Field::nullable("age_ns"), true, |sink| {
+        emit_scalar(sink, total.age_ns.map_or(Scalar::Null, Scalar::I128));
+    });
+    emit_field(sink, Field::nullable("modified_at"), true, |sink| {
+        emit_instant(sink, total.mtime_ns.filter(|_| total.complete));
+    });
+    sink.event(Event::EndMap);
 }
 
 fn emit_tree_omissions(sink: &mut impl Sink, omissions: &[crate::query::TreeOmission]) {
@@ -1231,6 +1377,7 @@ struct ReportFields {
     generator: Field,
     root: Field,
     root_raw: Field,
+    roots: Field,
     request: Field,
     status: Field,
     provenance: Field,
@@ -1238,13 +1385,16 @@ struct ReportFields {
     analysis: Field,
     reports: Field,
     age_reference_ns: Field,
+    age_reference_at: Field,
 }
 
 const REPORT_FIELDS: ReportFields = ReportFields {
     schema: Field::always("schema"),
     generator: Field::always("generator"),
-    root: Field::always("root"),
+    // Null for a report over several roots, which `roots` names instead.
+    root: Field::nullable("root"),
     root_raw: Field::when_lossy("root_raw"),
+    roots: Field::when_set("roots"),
     request: Field::always("request"),
     status: Field::always("status"),
     provenance: Field::always("provenance"),
@@ -1252,6 +1402,7 @@ const REPORT_FIELDS: ReportFields = ReportFields {
     analysis: Field::nullable("analysis"),
     reports: Field::when_set("reports"),
     age_reference_ns: Field::nullable("age_reference_ns"),
+    age_reference_at: Field::nullable("age_reference_at"),
 };
 
 /// Why a field is present in a wire document.
@@ -1320,6 +1471,34 @@ pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> S
     if bytes > 0 && bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
 }
 
+/// A tree row's size cell, colored by magnitude after kash's file listings, its tiers
+/// moved up to trees whose totals run to terabytes ([`tree_size_style`]). Only the tree's
+/// size column takes these colors; every other size keeps [`styled_bytes`].
+fn tree_size_cell(bytes: u64, width: usize, color: bool) -> String {
+    let text = format!("{:>width$}", human_bytes(bytes));
+    match tree_size_style(bytes) {
+        Some(style) => paint(&text, style, color),
+        None => text,
+    }
+}
+
+/// The tree's size tiers, by exact bytes: under 16 KiB gray, zero included; under 1 MiB
+/// blue; under 1 GiB the plain foreground, as before; under 100 GiB bold bright green;
+/// larger bold yellow.
+fn tree_size_style(bytes: u64) -> Option<AnsiStyle> {
+    const SMALL: u64 = 16 << 10;
+    const MIB: u64 = 1 << 20;
+    const GIB: u64 = 1 << 30;
+    const HUGE: u64 = 100 << 30;
+    match bytes {
+        0..SMALL => Some(STYLE_DETAIL),
+        SMALL..MIB => Some(AnsiColor::Blue.on_default()),
+        MIB..GIB => None,
+        GIB..HUGE => Some(AnsiColor::BrightGreen.on_default().bold()),
+        HUGE.. => Some(AnsiColor::Yellow.on_default().bold()),
+    }
+}
+
 /// Style a root share using its exact ratio, before display rounding.
 fn percentage_cell(part: u64, whole: u64, decimals: usize, width: usize, color: bool) -> String {
     let text = format!("{:>width$}", human_percentage(part, whole, decimals));
@@ -1339,7 +1518,11 @@ fn human_name(name: &str, kind: EntryKind, ignored: Option<bool>, color: bool) -
     } else {
         STYLE_NAME
     };
-    let slash = kind == EntryKind::Dir && !matches!(name, "." | "..") && !name.ends_with('/');
+    // A root's label can already end in a separator: `/`, or a drive root such as `C:\`,
+    // which would otherwise print as `C:\/`. No entry's own name can.
+    let slash = kind == EntryKind::Dir
+        && !matches!(name, "." | "..")
+        && !name.ends_with(['/', std::path::MAIN_SEPARATOR]);
     format!(
         "{}{}",
         paint(&escaped_human(name), style, color),
@@ -1386,16 +1569,13 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
         }
         match section {
             Section::Code(overview) => render_text_code(&mut out, overview, color),
-            Section::Tree { root, omissions, limits, .. } => {
-                render_text_tree(
-                    &mut out,
-                    root.as_deref(),
-                    omissions,
-                    limits,
-                    report.size,
-                    report.ignored_entries,
-                    options,
-                );
+            Section::Tree { root, omissions, roots, .. } => {
+                let tree =
+                    TextTree { size: report.size, selected: report.ignored_entries, options };
+                match roots {
+                    Some(roots) => tree.render_roots(&mut out, roots, omissions),
+                    None => tree.render_root(&mut out, root.as_deref(), omissions),
+                }
             }
             Section::Extensions { rows, .. } => {
                 render_text_types(&mut out, rows, report.size, report.ignored_entries, color);
@@ -1410,20 +1590,24 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
             // ranking unverifiable.
             // The ranking measure is named by an epilogue note.
             Section::Files { rows, .. } if report.sort_metric.is_some() => {
-                render_text_metric_files(&mut out, rows, color);
+                render_text_metric_files(&mut out, report, rows, color);
             }
             Section::Files { view, rows, .. } => match view {
                 ViewSpec::Largest => {
-                    render_text_ranked_files(&mut out, rows, color, Some(report.size), |row| {
+                    let size = Some(report.size);
+                    render_text_ranked_files(&mut out, report, rows, color, size, |row| {
                         human_bytes(pick(report.size, row.bytes, row.allocated))
                     });
                 }
-                ViewSpec::Recent => render_text_ranked_files(&mut out, rows, color, None, |row| {
-                    format_rfc3339_nanos(row.mtime_ns)
-                }),
+                ViewSpec::Recent => {
+                    render_text_ranked_files(&mut out, report, rows, color, None, |row| {
+                        format_rfc3339_nanos(row.mtime_ns)
+                    });
+                }
                 _ => {
                     for row in rows {
-                        let _ = writeln!(out, "{}", escaped_human(&row.path.to_string_lossy()));
+                        let path = display_path(report, row);
+                        let _ = writeln!(out, "{}", escaped_human(&path.to_string_lossy()));
                     }
                 }
             },
@@ -1868,71 +2052,306 @@ fn ignored_suffix(
     })
 }
 
-/// Render a tree section with fixed bar, percentage, and size columns.
+/// How a tree section's rows are laid out: fixed bar, percentage, size, and age columns,
+/// then the name indented by depth.
 ///
 /// Iterative for the same reason the expansion is: a deep tree must render, not panic.
-fn render_text_tree(
-    out: &mut String,
-    root: Option<&TreeNode>,
-    omissions: &[crate::query::TreeOmission],
-    _limits: &crate::query::TreeDisplayLimits,
+struct TextTree {
+    /// The size each row shows and its share is of.
     size: SizeMetric,
+    /// Which entries the rows count, which decides whether an ignored share is shown.
     selected: IgnoredEntries,
+    /// Color and bar width.
     options: RenderOptions,
-) {
-    let RenderOptions { color, bar_size } = options;
-    let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
-    if let Some(root) = root {
-        let grand = pick(size, root.bytes, root.allocated);
-        let mut stack = vec![(root, 0)];
+}
+
+/// Every row's age cell, in the order the rows print, and the column's width.
+///
+/// The age column is as wide as the section's widest cell, so a first pass formats every
+/// row's cell and the rows reuse them rather than formatting each age twice (review C8 on
+/// #191). A section with no rows has no column.
+struct AgeCells {
+    cells: std::vec::IntoIter<(String, Option<AnsiStyle>)>,
+    width: usize,
+}
+
+impl AgeCells {
+    /// The cells of the given rows, in order: each a total row's cell or a whole tree's.
+    fn of<'a>(rows: impl IntoIterator<Item = AgeRows<'a>>) -> Self {
+        let mut cells = Vec::new();
+        for rows in rows {
+            match rows {
+                AgeRows::Cell(cell) => cells.push(cell),
+                AgeRows::Tree(root) => {
+                    let mut stack = vec![root];
+                    while let Some(node) = stack.pop() {
+                        cells.push(tree_age_cell(node));
+                        stack.extend(node.children.iter().rev());
+                    }
+                }
+            }
+        }
+        let width = cells.iter().map(|(age, _)| display_width(age)).max().unwrap_or(0);
+        Self { cells: cells.into_iter(), width }
+    }
+
+    /// The next row's cell.
+    fn next(&mut self) -> (String, Option<AnsiStyle>) {
+        self.cells.next().expect("one age cell per row, in row order")
+    }
+}
+
+/// Rows whose age cells [`AgeCells::of`] formats: one cell, or a tree's rows in pre-order.
+enum AgeRows<'a> {
+    Cell((String, Option<AnsiStyle>)),
+    Tree(&'a TreeNode),
+}
+
+impl TextTree {
+    /// The tree of a report over one root: its rows, then one remainder line at the
+    /// highest displayed level for what the bounds hid, or for the root itself when the
+    /// row limit is zero.
+    fn render_root(
+        &self,
+        out: &mut String,
+        root: Option<&TreeNode>,
+        omissions: &[crate::query::TreeOmission],
+    ) {
+        let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
+        let mut ages = AgeCells::of(root.map(AgeRows::Tree));
+        let age_width = ages.width;
+        let grand = root.map(|root| pick(self.size, root.bytes, root.allocated));
+        if let (Some(root), Some(grand)) = (root, grand) {
+            self.render_rows(out, root, 0, grand, &mut ages);
+        }
+        // One annotation at the highest displayed level, even when several independent
+        // bounds hide descendants at different depths. Reasons belong in the epilogue.
+        if let Some(hidden) = hidden {
+            let depth = usize::from(root.is_some());
+            self.render_remainder(out, &hidden, grand, depth, age_width);
+        }
+    }
+
+    /// The tree of a report over several roots: the total row, then each root's tree one
+    /// level in, each followed by its own remainder, then one line for the root rows the
+    /// row limit cut. Every share is of the total.
+    ///
+    /// With no total, under a zero row limit, the only line is the remainder for every
+    /// root, at the top level and with no denominator, as one root's is.
+    fn render_roots(
+        &self,
+        out: &mut String,
+        roots: &crate::query::RootTrees,
+        omissions: &[crate::query::TreeOmission],
+    ) {
+        // One column over the whole section: the total row and every root's tree.
+        let total_age =
+            roots.total.map(|total| age_cell(Some(total.complete), total.mtime_ns, total.age_ns));
+        let mut ages = AgeCells::of(
+            total_age
+                .into_iter()
+                .map(AgeRows::Cell)
+                .chain(roots.trees.iter().map(|tree| AgeRows::Tree(&tree.tree))),
+        );
+        let age_width = ages.width;
+        let grand = roots.total.map(|total| pick(self.size, total.bytes, total.allocated));
+        if let (Some(total), Some(grand)) = (roots.total, grand) {
+            let name = paint("(total)", STYLE_NAME, self.options.color);
+            let line = TextRow {
+                bytes: grand,
+                ignored: total.ignored,
+                age: ages.next(),
+                name,
+                files: Some(total.files),
+            };
+            self.render_row(out, &line, grand, 0, age_width);
+        }
+        let depth = usize::from(roots.total.is_some());
+        for tree in &roots.trees {
+            let grand = grand.expect("a root tree is shown only below the total row");
+            self.render_rows(out, &tree.tree, depth, grand, &mut ages);
+            if let Some(hidden) = crate::query::TreeRemainder::from_tree(Some(&tree.tree), &[]) {
+                self.render_remainder(out, &hidden, Some(grand), depth + 1, age_width);
+            }
+        }
+        if let Some(hidden) = crate::query::TreeRemainder::from_tree(None, omissions) {
+            self.render_remainder(out, &hidden, grand, depth, age_width);
+        }
+    }
+
+    /// A tree's rows in pre-order, its root at `depth`, each sharing `grand`, each taking
+    /// its age cell from `ages` in turn.
+    fn render_rows(
+        &self,
+        out: &mut String,
+        root: &TreeNode,
+        depth: usize,
+        grand: u64,
+        ages: &mut AgeCells,
+    ) {
+        let color = self.options.color;
+        let mut stack = vec![(root, depth)];
         while let Some((node, depth)) = stack.pop() {
-            let bytes = pick(size, node.bytes, node.allocated);
-            let indent = "  ".repeat(depth);
-            let count = if node.kind == EntryKind::File {
-                String::new()
-            } else {
-                format!(" {} {}", human_count(node.files), plural(node.files, "file", "files"))
+            let line = TextRow {
+                bytes: pick(self.size, node.bytes, node.allocated),
+                ignored: node.ignored,
+                age: ages.next(),
+                name: human_name(&node.name, node.kind, node.entry_ignored, color),
+                files: (node.kind != EntryKind::File).then_some(node.files),
             };
-            let bar_prefix = if bar_size == 0 {
-                String::new()
-            } else {
-                format!(
-                    "{}  ",
-                    usage_bar(
-                        bytes,
-                        grand,
-                        node.ignored.map(|value| pick(size, value.bytes, value.allocated)),
-                        color,
-                        bar_size,
-                    )
-                )
-            };
-            let _ = writeln!(
-                out,
-                "{bar_prefix}{}  {}  {indent}{}{}{}",
-                percentage_cell(bytes, grand, 0, 5, color),
-                styled_bytes(bytes, 10, color, false),
-                human_name(&node.name, node.kind, node.entry_ignored, color),
-                count,
-                ignored_suffix(node.ignored, size, selected, color),
-            );
+            self.render_row(out, &line, grand, depth, ages.width);
             stack.extend(node.children.iter().rev().map(|child| (child, depth + 1)));
         }
     }
-    // One annotation at the highest displayed level, even when several independent
-    // bounds hide descendants at different depths. Reasons belong in the epilogue.
-    if let Some(hidden) = hidden {
-        let grand = root.map(|node| pick(size, node.bytes, node.allocated));
-        render_tree_remainder(out, &hidden, grand, usize::from(root.is_some()), size, options);
+
+    /// One row: bar, share of `grand`, size, age, then the name at `depth`.
+    fn render_row(
+        &self,
+        out: &mut String,
+        row: &TextRow,
+        grand: u64,
+        depth: usize,
+        age_width: usize,
+    ) {
+        let RenderOptions { color, bar_size } = self.options;
+        let size = self.size;
+        let indent = "  ".repeat(depth);
+        let count = row.files.map_or_else(String::new, |files| {
+            format!(" {} {}", human_count(files), plural(files, "file", "files"))
+        });
+        let bar_prefix = if bar_size == 0 {
+            String::new()
+        } else {
+            format!(
+                "{}  ",
+                usage_bar(
+                    row.bytes,
+                    grand,
+                    row.ignored.map(|value| pick(size, value.bytes, value.allocated)),
+                    color,
+                    bar_size,
+                )
+            )
+        };
+        let (age, style) = &row.age;
+        let _ = writeln!(
+            out,
+            "{bar_prefix}{}  {}  {}  {indent}{}{}{}",
+            percentage_cell(row.bytes, grand, 0, 5, color),
+            tree_size_cell(row.bytes, 10, color),
+            right_cell(age, age_width, *style, color),
+            row.name,
+            count,
+            ignored_suffix(row.ignored, size, self.selected, color),
+        );
+    }
+
+    fn render_remainder(
+        &self,
+        out: &mut String,
+        remainder: &crate::query::TreeRemainder,
+        grand: Option<u64>,
+        depth: usize,
+        age_width: usize,
+    ) {
+        render_tree_remainder(out, remainder, grand, depth, age_width, self.size, self.options);
+    }
+}
+
+/// What one tree line shows, whichever row it is: an entry's or the total's.
+struct TextRow {
+    /// The row's size in the section's metric.
+    bytes: u64,
+    /// Its ignored part, for the bar and the suffix.
+    ignored: Option<IgnoredTally>,
+    /// Its age cell and style.
+    age: (String, Option<AnsiStyle>),
+    /// The name, already styled.
+    name: String,
+    /// The file count a directory or total shows; none for a file.
+    files: Option<u64>,
+}
+
+/// A tree row's age cell and its style: the row's age colored by recency ([`age_style`]),
+/// or the gray word `unknown` when
+/// its subtree was not listed in full or the reference cannot be represented, or a gray
+/// dash when the row counts no entry at all, as a missing percentage is.
+///
+/// Completeness comes first. A row whose subtree was not listed in full is `unknown` even
+/// when it has counted nothing yet, such as the root of `--scan-depth 0` or an opened
+/// root before its first listing: the dash says the subtree holds nothing to count, and
+/// nobody has looked.
+fn tree_age_cell(node: &TreeNode) -> (String, Option<AnsiStyle>) {
+    age_cell(node.complete, node.mtime_ns, node.age_ns)
+}
+
+/// [`tree_age_cell`] from its three inputs, which a total row has without being a node.
+fn age_cell(
+    complete: Option<bool>,
+    mtime_ns: Option<i64>,
+    age_ns: Option<i128>,
+) -> (String, Option<AnsiStyle>) {
+    if complete == Some(false) {
+        (human_age(None), Some(STYLE_DETAIL))
+    } else if mtime_ns.is_none() {
+        ("—".to_string(), Some(STYLE_DETAIL))
+    } else if age_ns.is_none() {
+        (human_age(None), Some(STYLE_DETAIL))
+    } else {
+        (human_age(age_ns), age_ns.map(age_style))
+    }
+}
+
+/// The age color role, by recency, after kash's file listings on fdu's own unit ladder
+/// ([`human_age`]): under a minute bold bright red, under an hour bold yellow, under a day
+/// bold bright green, under a display month bold cyan, under a display year blue, older
+/// gray. A time ahead of the reference is newer than now, so it takes the newest tier.
+fn age_style(age_ns: i128) -> AnsiStyle {
+    const MINUTE: u128 = 60;
+    const HOUR: u128 = 60 * MINUTE;
+    const DAY: u128 = 24 * HOUR;
+    if age_ns < 0 {
+        return AnsiColor::BrightRed.on_default().bold();
+    }
+    let seconds = age_ns.unsigned_abs() / 1_000_000_000;
+    if seconds < MINUTE {
+        AnsiColor::BrightRed.on_default().bold()
+    } else if seconds < HOUR {
+        AnsiColor::Yellow.on_default().bold()
+    } else if seconds < DAY {
+        AnsiColor::BrightGreen.on_default().bold()
+    } else if seconds < u128::from(MONTH_SECONDS) {
+        AnsiColor::Cyan.on_default().bold()
+    } else if seconds < u128::from(YEAR_SECONDS) {
+        AnsiColor::Blue.on_default()
+    } else {
+        STYLE_DETAIL
+    }
+}
+
+/// A cell right-aligned to `width`, measured on the visible text and padded outside the
+/// paint, as [`label_cell`] pads a left-aligned one.
+fn right_cell(text: &str, width: usize, style: Option<AnsiStyle>, color: bool) -> String {
+    let padding = " ".repeat(width.saturating_sub(display_width(text)));
+    match style {
+        Some(style) => format!("{padding}{}", paint(text, style, color)),
+        None => format!("{padding}{text}"),
     }
 }
 
 /// Human projection of the same remainder serialized in machine formats.
+///
+/// The age cell is blank: the remainder stands for rows the bounds hid, and the folded
+/// one-shot tier counts most of their files without keeping a time, so an age here would
+/// exist on one route and not another. The parent row's age already covers everything
+/// beneath it. The blank keeps the name column aligned with the rows above, and a section
+/// with no rows has no age column to keep.
 fn render_tree_remainder(
     out: &mut String,
     remainder: &crate::query::TreeRemainder,
     grand: Option<u64>,
     depth: usize,
+    age_width: usize,
     size: SizeMetric,
     options: RenderOptions,
 ) {
@@ -1943,7 +2362,7 @@ fn render_tree_remainder(
     };
     let measure = bytes.map_or_else(
         || detail(&format!("{:>10}", "unknown"), color),
-        |bytes| styled_bytes(bytes, 10, color, false),
+        |bytes| tree_size_cell(bytes, 10, color),
     );
     // With no visible root, a known remainder represents the whole selected root.
     // A missing measurement cannot honestly produce either a bar or a percentage.
@@ -1967,7 +2386,8 @@ fn render_tree_remainder(
     let indent = "  ".repeat(depth);
     let note = format!("{} {files}", detail(&format!("{indent}… and"), color));
     let bar_prefix = if bar_size == 0 { String::new() } else { format!("{usage_bar}  ") };
-    let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {note}");
+    let age = if age_width == 0 { String::new() } else { format!("{}  ", " ".repeat(age_width)) };
+    let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {age}{note}");
 }
 
 /// Render a types section as aligned rows.
@@ -2021,6 +2441,7 @@ fn bound_note(section: &Section) -> String {
 /// grouped views' size-then-label shape rather than inventing a third layout.
 fn render_text_ranked_files(
     out: &mut String,
+    report: &Report,
     rows: &[FileRow],
     color: bool,
     size: Option<SizeMetric>,
@@ -2036,12 +2457,12 @@ fn render_text_ranked_files(
             out,
             "{}  {}",
             value,
-            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color)
+            human_name(&display_path(report, row).to_string_lossy(), row.kind, row.ignored, color)
         );
     }
 }
 
-fn render_text_metric_files(out: &mut String, rows: &[FileRow], color: bool) {
+fn render_text_metric_files(out: &mut String, report: &Report, rows: &[FileRow], color: bool) {
     let width = rows
         .iter()
         .map(|row| row.sort_value.map_or(1, |value| human_count(value).len()))
@@ -2068,7 +2489,7 @@ fn render_text_metric_files(out: &mut String, rows: &[FileRow], color: bool) {
             out,
             "{:>width$}  {}{}",
             value,
-            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color),
+            human_name(&display_path(report, row).to_string_lossy(), row.kind, row.ignored, color),
             classification
         );
     }
@@ -2934,6 +3355,7 @@ mod tests {
             .iter()
             .cloned()
             .map(|message| crate::Issue::provider_failure(None, message))
+            .map(crate::query::StatusIssue::of_one_root)
             .collect();
         Ok(report)
     }
@@ -3448,13 +3870,21 @@ mod tests {
 
     impl<S: Sink> SchemaCheck<S> {
         fn report(inner: S, lossy: bool, sections: bool) -> Self {
+            Self::report_over(inner, lossy, sections, false)
+        }
+
+        /// The envelope's order for a report over one root, or over several (`several`),
+        /// whose `root` is null and whose `roots` follows it.
+        fn report_over(inner: S, lossy: bool, sections: bool, several: bool) -> Self {
             let fields = &REPORT_FIELDS;
             let ordered = [
                 fields.schema,
                 fields.generator,
                 fields.root,
                 fields.root_raw,
+                fields.roots,
                 fields.age_reference_ns,
+                fields.age_reference_at,
                 fields.request,
                 fields.status,
                 fields.provenance,
@@ -3467,7 +3897,9 @@ mod tests {
                 .filter_map(|field| {
                     let present = match field.presence {
                         Presence::Always | Presence::Nullable => true,
-                        Presence::WhenLossy => lossy,
+                        // A lossy root is named in `root_raw` only when there is one root.
+                        Presence::WhenLossy => lossy && !several,
+                        Presence::WhenSet if field.name == fields.roots.name => several,
                         Presence::WhenSet => sections,
                         Presence::WhenAnalyzer(_) => panic!("envelope has no analyzer-owned field"),
                     };
@@ -3810,19 +4242,151 @@ mod tests {
             ..Query::default()
         };
         let text = render(&fixture_for(&apparent), Format::Text, false);
+        // Every time in the fixture is a few nanoseconds after its epoch reference.
         assert_eq!(
             text,
             concat!(
-                "██████████   100%       120 B  . 2 files\n",
-                "████████░░    83%       100 B    src/ 1 file\n",
-                "████████░░    83%       100 B      main.rs\n",
-                "██░░░░░░░░    17%        20 B    notes.md\n",
+                "██████████   100%       120 B  -0s  . 2 files\n",
+                "████████░░    83%       100 B  -0s    src/ 1 file\n",
+                "████████░░    83%       100 B  -0s      main.rs\n",
+                "██░░░░░░░░    17%        20 B  -0s    notes.md\n",
             )
         );
 
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0].find("120 B"), lines[1].find("100 B"));
         assert_eq!(lines[0].find('█'), lines[1].find('█'));
+    }
+
+    /// The age column sits between size and name, right-aligned to the section's widest
+    /// cell: an age, the gray word `unknown` for a subtree not listed in full, a gray dash
+    /// for a row that counts nothing, and a blank on the remainder row, which keeps the
+    /// names aligned. Color changes none of the layout.
+    #[test]
+    fn the_tree_age_column_aligns_every_row_and_leaves_the_remainder_blank() {
+        const SECOND: i64 = 1_000_000_000;
+        let day = 86_400 * SECOND;
+        // `--scan-depth 2`: `env/lib` was retained and never listed.
+        let mut index = Index::new_with_scope(
+            "/root",
+            ScanScope { max_depth: Some(2), ..ScanScope::default() },
+        );
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert { path: "old".into(), kind: EntryKind::Dir, attrs: attrs(0, SECOND) },
+                Op::Upsert {
+                    path: "old/a.bin".into(),
+                    kind: EntryKind::File,
+                    attrs: attrs(1_000, SECOND),
+                },
+                Op::Upsert { path: "env".into(), kind: EntryKind::Dir, attrs: attrs(0, SECOND) },
+                Op::Upsert {
+                    path: "env/lib".into(),
+                    kind: EntryKind::Dir,
+                    attrs: attrs(0, SECOND),
+                },
+                Op::Upsert {
+                    path: "env/x.bin".into(),
+                    kind: EntryKind::File,
+                    attrs: attrs(500, SECOND),
+                },
+                Op::Upsert {
+                    path: "new.txt".into(),
+                    kind: EntryKind::File,
+                    attrs: attrs(300, 40 * day - 30 * SECOND),
+                },
+                Op::Upsert { path: "tiny".into(), kind: EntryKind::File, attrs: attrs(1, 2 * day) },
+            ]))
+            .expect("apply");
+        index.set_initial_freshness(true);
+        let query = Query {
+            views: vec![ViewSpec::Tree],
+            selection: Selection { size: SizeMetric::Apparent, ..Selection::default() },
+            ..Query::default()
+        };
+        let mut request = crate::test_support::read_of(&index, query);
+        request.now = UNIX_EPOCH + Duration::from_secs(40 * 86_400);
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: request.now,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let answer = report(&index, &request, &provenance).expect("report");
+        let text = render(&answer, Format::Text, false);
+        assert_eq!(
+            text,
+            concat!(
+                "██████████   100%     1.7 KiB  unknown  . 4 files\n",
+                "██████░░░░    56%     1,000 B      1mo    old/ 1 file\n",
+                "██████░░░░    56%     1,000 B      1mo      a.bin\n",
+                "███░░░░░░░    28%       500 B  unknown    env/ 1 file\n",
+                "███░░░░░░░    28%       500 B      1mo      x.bin\n",
+                "░░░░░░░░░░     0%         0 B  unknown      lib/ 0 files\n",
+                "██░░░░░░░░    17%       300 B      30s    new.txt\n",
+                "░░░░░░░░░░    <1%         1 B             … and 1 more file\n",
+            ),
+            "{text}"
+        );
+        assert_eq!(strip_ansi(&render(&answer, Format::Text, true)), text);
+
+        // Machine formats carry the exact activity, completeness, and signed age, and an
+        // RFC 3339 instant that is null wherever the time is a lower bound.
+        let json = compact_json(&render(&answer, Format::Json, false));
+        for expected in [
+            "\"age_reference_ns\": 3456000000000000, \
+             \"age_reference_at\": \"1970-02-10T00:00:00.000000000Z\"",
+            "\"name\": \".\", \"path\": \"\", \"kind\": \"dir\"",
+            "\"newest_mtime_ns\": 3455970000000000, \"mtime_ns\": 3455970000000000, \
+             \"complete\": false, \"age_ns\": null, \"modified_at\": null, \"truncated\": true",
+            "\"name\": \"old\", \"path\": \"old\", \"kind\": \"dir\"",
+            "\"newest_mtime_ns\": 1000000000, \"mtime_ns\": 1000000000, \"complete\": true, \
+             \"age_ns\": 3455999000000000, \"modified_at\": \"1970-01-01T00:00:01.000000000Z\"",
+            "\"newest_mtime_ns\": 3455970000000000, \"mtime_ns\": 3455970000000000, \
+             \"complete\": null, \"age_ns\": 30000000000, \
+             \"modified_at\": \"1970-02-09T23:59:30.000000000Z\"",
+        ] {
+            assert!(json.contains(&compact_json(expected)), "missing {expected}\nin {json}");
+        }
+        for format in [Format::Jsonl, Format::Yaml] {
+            let wire = render(&answer, format, false);
+            for field in ["age_reference_at", "mtime_ns", "complete", "age_ns", "modified_at"] {
+                assert!(wire.contains(field), "{format:?} lacks {field}: {wire}");
+            }
+        }
+
+        // An empty root counts nothing, so its cell is a dash, not an age.
+        let mut empty = Index::new_with_scope("/root", ScanScope::default());
+        empty.set_initial_freshness(true);
+        let lone = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let answer = report(&empty, &crate::test_support::read_of(&empty, lone), &provenance)
+            .expect("report");
+        assert_eq!(
+            render(&answer, Format::Text, false),
+            "░░░░░░░░░░      —         0 B  —  . 0 files\n"
+        );
+        let colored = render(&answer, Format::Text, true);
+        assert!(colored.contains(&paint("—", STYLE_DETAIL, true)), "{colored:?}");
+
+        // A root nobody listed (`--scan-depth 0`) has counted nothing either, but its age
+        // is unknown: the dash would claim the subtree holds nothing.
+        let mut unlisted = Index::new_with_scope(
+            "/root",
+            ScanScope { max_depth: Some(0), ..ScanScope::default() },
+        );
+        unlisted.set_initial_freshness(true);
+        let lone = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let answer = report(&unlisted, &crate::test_support::read_of(&unlisted, lone), &provenance)
+            .expect("report");
+        let Section::Tree { root: Some(root), .. } = &answer.sections[0] else {
+            panic!("expected a tree with a root row")
+        };
+        assert_eq!((root.mtime_ns, root.complete), (None, Some(false)), "{root:?}");
+        let text = render(&answer, Format::Text, false);
+        assert!(text.contains("  unknown  . 0 files\n"), "{text}");
+        let colored = render(&answer, Format::Text, true);
+        assert!(colored.contains(&paint("unknown", STYLE_DETAIL, true)), "{colored:?}");
     }
 
     #[test]
@@ -4154,7 +4718,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/10\""));
+        assert!(json.contains("\"schema\": \"fdu.report/11\""));
         assert!(json.contains("\"request\": {"));
         assert!(json.contains("\"status\": {"));
         assert!(json.contains("\"provenance\": {"));
@@ -4169,7 +4733,7 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/10");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/11");
         assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
@@ -4357,11 +4921,11 @@ mod tests {
                 "     164 B  2 files, 2 directories (128 B gitignored)\n",
                 "\n",
                 "TREE\n",
-                "██████████   100%       164 B  . 2 files (128 B gitignored)\n",
-                "████████░░    78%       128 B    dist/ 1 file (128 B gitignored)\n",
-                "████████░░    78%       128 B      a.gz (128 B gitignored)\n",
-                "██░░░░░░░░    22%        36 B    src/ 1 file\n",
-                "██░░░░░░░░    22%        36 B      b.rs\n",
+                "██████████   100%       164 B  -0s  . 2 files (128 B gitignored)\n",
+                "████████░░    78%       128 B  -0s    dist/ 1 file (128 B gitignored)\n",
+                "████████░░    78%       128 B  -0s      a.gz (128 B gitignored)\n",
+                "██░░░░░░░░    22%        36 B  -0s    src/ 1 file\n",
+                "██░░░░░░░░    22%        36 B  -0s      b.rs\n",
                 "\n",
                 "EXTENSIONS\n",
                 "     128 B  .gz          1 file (128 B gitignored)\n",
@@ -4424,7 +4988,8 @@ mod tests {
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
-            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \"ignored\": true, \"sort_value\": null, \"classification\": null}",
+            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \
+             \"modified_at\": \"1970-01-01T00:00:00.000000010Z\", \"ignored\": true, \"sort_value\": null, \"classification\": null}",
         ] {
             assert!(compact.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
@@ -4464,11 +5029,11 @@ mod tests {
     #[test]
     fn every_report_uses_one_schema_and_states_nullable_analysis() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/10\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/11\""));
         assert!(metadata.contains("\"analysis\": null"));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/10\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/11\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -5034,7 +5599,113 @@ mod tests {
             human_count_u128(u128::MAX),
             "340,282,366,920,938,463,463,374,607,431,768,211,455"
         );
-        assert_eq!(human_age(Some(1000 * 86400 * 1_000_000_000)), "1,000d");
+        let year = i128::from(YEAR_SECONDS) * 1_000_000_000;
+        assert_eq!(human_age(Some(1_000 * year)), "1,000y");
+    }
+
+    /// Every unit of the age ladder at both of its edges, the sign, and the floor: a unit
+    /// holds until the next one's length, so no cell reads `0mo` or `0y`.
+    #[test]
+    fn human_ages_climb_one_ladder_and_switch_units_at_their_own_length() {
+        const SECOND: i128 = 1_000_000_000;
+        let month = i128::from(MONTH_SECONDS) * SECOND;
+        let year = i128::from(YEAR_SECONDS) * SECOND;
+        for (age, shown) in [
+            (0, "0s"),
+            (SECOND - 1, "0s"),
+            (59 * SECOND, "59s"),
+            (60 * SECOND - 1, "59s"),
+            (60 * SECOND, "1m"),
+            (3_600 * SECOND - 1, "59m"),
+            (3_600 * SECOND, "1h"),
+            (86_400 * SECOND - 1, "23h"),
+            (86_400 * SECOND, "1d"),
+            (30 * 86_400 * SECOND, "30d"),
+            (month - 1, "30d"),
+            (month, "1mo"),
+            (2 * month, "2mo"),
+            (year - 1, "11mo"),
+            (year, "1y"),
+            (26 * year + month, "26y"),
+            (100 * year - 1, "99y"),
+            (-1, "-0s"),
+            (-SECOND, "-1s"),
+            (-5 * 60 * SECOND - 1, "-5m"),
+            (-2 * month, "-2mo"),
+        ] {
+            assert_eq!(human_age(Some(age)), shown, "{age} ns");
+        }
+        assert_eq!(human_age(None), "unknown");
+        // Below a century, at most four characters and a sign.
+        let widest =
+            [month * 11, year * 99, 59 * SECOND, 3_599 * SECOND].map(|age| human_age(Some(-age)));
+        assert!(widest.iter().all(|cell| cell.len() <= 5), "{widest:?}");
+    }
+
+    #[test]
+    fn tree_sizes_take_their_color_from_exact_bytes() {
+        let (small, mib, gib, huge) = (16 << 10, 1 << 20, 1 << 30, 100 << 30);
+        let blue = AnsiColor::Blue.on_default();
+        let green = AnsiColor::BrightGreen.on_default().bold();
+        let yellow = AnsiColor::Yellow.on_default().bold();
+        for (bytes, style) in [
+            (0, Some(STYLE_DETAIL)),
+            (small - 1, Some(STYLE_DETAIL)),
+            (small, Some(blue)),
+            (mib - 1, Some(blue)),
+            (mib, None),
+            (gib - 1, None),
+            (gib, Some(green)),
+            (huge - 1, Some(green)),
+            (huge, Some(yellow)),
+            (u64::MAX, Some(yellow)),
+        ] {
+            assert_eq!(tree_size_style(bytes), style, "{bytes} bytes");
+        }
+        // The plain tier is written without escapes, as every sub-GiB size was before.
+        assert_eq!(tree_size_cell(mib, 10, true), format!("{:>10}", human_bytes(mib)));
+        assert_eq!(tree_size_cell(gib, 10, true), paint("   1.0 GiB", green, true));
+        assert_eq!(tree_size_cell(gib, 10, false), "   1.0 GiB");
+        // Every other size keeps the shared rule.
+        assert_eq!(
+            styled_bytes(gib, 10, true, false),
+            paint("   1.0 GiB", AnsiStyle::new().bold(), true)
+        );
+    }
+
+    #[test]
+    fn ages_take_their_color_from_the_same_ladder_as_their_unit() {
+        const SECOND: i128 = 1_000_000_000;
+        let (minute, hour, day) = (60 * SECOND, 3_600 * SECOND, 86_400 * SECOND);
+        let month = i128::from(MONTH_SECONDS) * SECOND;
+        let year = i128::from(YEAR_SECONDS) * SECOND;
+        let red = AnsiColor::BrightRed.on_default().bold();
+        let yellow = AnsiColor::Yellow.on_default().bold();
+        let green = AnsiColor::BrightGreen.on_default().bold();
+        let cyan = AnsiColor::Cyan.on_default().bold();
+        let blue = AnsiColor::Blue.on_default();
+        for (age, style) in [
+            (0, red),
+            (minute - 1, red),
+            (minute, yellow),
+            (hour - 1, yellow),
+            (hour, green),
+            (day - 1, green),
+            (day, cyan),
+            (month - 1, cyan),
+            (month, blue),
+            (year - 1, blue),
+            (year, STYLE_DETAIL),
+            (100 * year, STYLE_DETAIL),
+            (-1, red),
+            (-2 * year, red),
+        ] {
+            assert_eq!(age_style(age), style, "{age} ns ({})", human_age(Some(age)));
+        }
+        // A known age is painted; unknown and the empty dash stay gray.
+        assert_eq!(age_cell(Some(true), Some(1), Some(day)), ("1d".to_string(), Some(cyan)));
+        assert_eq!(age_cell(Some(false), Some(1), Some(day)).1, Some(STYLE_DETAIL));
+        assert_eq!(age_cell(Some(true), None, None).1, Some(STYLE_DETAIL));
     }
 
     #[test]
@@ -5073,6 +5744,11 @@ mod tests {
         );
         assert_eq!(human_name("build", EntryKind::File, None, false), "build");
         assert_eq!(human_name("build", EntryKind::Dir, None, false), "build/");
+        // A root's label that ends in a separator gains no second one: `/`, and a drive
+        // root, which ends in the platform's separator (`C:\` on Windows).
+        assert_eq!(human_name("/", EntryKind::Dir, None, false), "/");
+        let drive = format!("C:{}", std::path::MAIN_SEPARATOR);
+        assert_eq!(human_name(&drive, EntryKind::Dir, None, false), drive);
     }
 
     #[test]
@@ -5147,8 +5823,8 @@ mod tests {
                     assert!(line["█".repeat(width).len()..].starts_with("   100%"));
                 }
             }
-            assert!(lines[0].ends_with("120 B  . 2 files"), "{text:?}");
-            assert!(lines[1].ends_with("120 B    … and 2 more files"), "{text:?}");
+            assert!(lines[0].ends_with("120 B  -0s  . 2 files"), "{text:?}");
+            assert!(lines[1].ends_with("120 B         … and 2 more files"), "{text:?}");
             let mut streamed = Vec::new();
             write_with_options(&report, Format::Text, options, &mut streamed).expect("stream");
             assert_eq!(streamed, text.as_bytes());
@@ -5452,7 +6128,8 @@ mod tests {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
-                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \"ignored\": false, \"sort_value\": null, \
+                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \
+                 \"modified_at\": \"1970-01-01T00:00:00.000000000Z\", \"ignored\": false, \"sort_value\": null, \
                  \"classification\": {{\"file_type\": \"unknown\", \"family\": \"unknown\", \"source\": \"unknown\", \"confidence\": \"heuristic\", \
                  \"flags\": {{\"generated\": false, \"vendored\": false, \"documentation\": false}}}}}}"
             );
@@ -5545,5 +6222,196 @@ mod tests {
             "6e0000d8",
             "6e0001d8",
         );
+    }
+
+    /// A report over two roots, `docs` and `src`, read two minutes after the epoch.
+    fn several_roots_fixture(query: &Query) -> Report {
+        let index = |root: &str, files: &[(&str, u64, i64)]| {
+            let mut index = Index::new_with_scope(root, ScanScope::default());
+            let mut ops = vec![Op::Upsert {
+                path: PathBuf::from("sub"),
+                kind: EntryKind::Dir,
+                attrs: Attrs { mtime_ns: 1_000_000_000, ..Attrs::default() },
+            }];
+            ops.extend(files.iter().map(|(path, size, seconds)| Op::Upsert {
+                path: PathBuf::from(path),
+                kind: EntryKind::File,
+                attrs: attrs(*size, seconds * 1_000_000_000),
+            }));
+            index.apply(&Observation::new(ops)).expect("apply");
+            index
+        };
+        let docs = index("/abs/docs", &[("guide.md", 3_000, 30), ("sub/a.md", 1_000, 60)]);
+        let src = index("/abs/src", &[("main.rs", 5_000, 90), ("sub/lib.rs", 1, 100)]);
+        let roots = crate::query::Roots::named(vec![
+            crate::query::NamedRoot { label: "docs".into(), path: "/abs/docs".into() },
+            crate::query::NamedRoot { label: "src".into(), path: "/abs/src".into() },
+        ]);
+        let mut request = crate::test_support::read_of(&docs, query.clone());
+        request.now = UNIX_EPOCH + Duration::from_secs(120);
+        crate::query::report_roots(&[&docs, &src], &roots, &request, UNIX_EPOCH)
+            .expect("several roots")
+    }
+
+    /// The tree over several roots: a total row, then each root's tree one level in under
+    /// its label, its own remainder below it, every share of the total, and one age column
+    /// wide enough for every row.
+    #[test]
+    fn a_tree_over_several_roots_renders_a_total_row_and_labelled_roots() {
+        let query = Query {
+            views: vec![ViewSpec::Tree],
+            selection: Selection {
+                size: SizeMetric::Apparent,
+                min_share: Some(ShareThreshold::parse("10%").expect("share")),
+                ..Selection::default()
+            },
+            ..Query::default()
+        };
+        let report = several_roots_fixture(&query);
+        let text =
+            render_with_options(&report, Format::Text, RenderOptions { color: false, bar_size: 0 })
+                .expect("text");
+        let expected = [
+            " 100%     8.7 KiB  20s  (total) 4 files",
+            "  56%     4.8 KiB  20s    src/ 2 files",
+            "  56%     4.8 KiB  30s      main.rs",
+            "  <1%         1 B           … and 1 more file",
+            "  44%     3.9 KiB   1m    docs/ 2 files",
+            "  33%     2.9 KiB   1m      guide.md",
+            "  11%     1,000 B   1m      sub/ 1 file",
+            "  11%     1,000 B   1m        a.md",
+        ];
+        assert_eq!(text.lines().collect::<Vec<_>>(), expected, "{text}");
+    }
+
+    /// The row limit applies once over several roots, with the total as the first row: a
+    /// limit that cuts root rows leaves the cut roots to the section's omission, which
+    /// names what they hold, and a zero limit keeps no row at all, as one root's tree does
+    /// (review A7 on #192). Text and JSON say the same.
+    #[test]
+    fn a_row_limit_over_several_roots_cuts_root_rows_and_says_so() {
+        let bounded = |limit| {
+            several_roots_fixture(&Query {
+                views: vec![ViewSpec::Tree],
+                selection: Selection {
+                    size: SizeMetric::Apparent,
+                    min_share: Some(ShareThreshold::parse("10%").expect("share")),
+                    limit: Some(crate::query::Bound::Limit(limit)),
+                    ..Selection::default()
+                },
+                ..Query::default()
+            })
+        };
+        let text = |report: &Report| {
+            render_with_options(report, Format::Text, RenderOptions { color: false, bar_size: 0 })
+                .expect("text")
+        };
+        let json = |report: &Report| {
+            let json = super::render(report, Format::Json, false).expect("json");
+            json.split_whitespace().collect::<String>()
+        };
+
+        let two = bounded(2);
+        assert_eq!(
+            text(&two).lines().collect::<Vec<_>>(),
+            [
+                " 100%     8.7 KiB  20s  (total) 4 files",
+                "  56%     4.8 KiB  20s    src/ 2 files",
+                // `src` keeps its own remainder, one level in, as one root's tree does ...
+                "  56%     4.8 KiB           … and 2 more files",
+                // ... and the root row the cap cut is the section's omission, at the level
+                // root rows are shown at.
+                "  44%     3.9 KiB         … and 2 more files",
+            ],
+            "{}",
+            text(&two)
+        );
+        let compact = json(&two);
+        assert!(compact.contains(r#""tree":null,"total":{"bytes":9001,"#), "{compact}");
+        assert!(compact.contains(r#""trees":[{"root":1,"tree":{"name":"src","#), "{compact}");
+        assert!(!compact.contains(r#""name":"docs""#), "docs is past the cap: {compact}");
+        assert!(compact.contains(r#""reason":"rows""#), "{compact}");
+
+        let none = bounded(0);
+        assert_eq!(
+            text(&none).lines().collect::<Vec<_>>(),
+            // No row shows an age, so there is no age column, as for one root.
+            [" 100%     8.7 KiB  … and 4 more files"],
+            "{}",
+            text(&none)
+        );
+        let compact = json(&none);
+        assert!(compact.contains(r#""tree":null,"total":null,"trees":[]"#), "{compact}");
+        assert!(compact.contains(r#""reason":"rows""#), "{compact}");
+    }
+
+    /// Machine output over several roots: `root` is null and `roots` names each, the tree
+    /// is a total and one tree per root, and every row, error, and refusal carries its root.
+    #[test]
+    fn machine_output_over_several_roots_names_each_root() {
+        let tree =
+            several_roots_fixture(&Query { views: vec![ViewSpec::Tree], ..Query::default() });
+        for sections in [false, true] {
+            let mut checked = SchemaCheck::report_over(JsonSink::pretty(), false, sections, true);
+            emit_report(&mut checked, &tree, sections);
+            checked.finish();
+        }
+        let json = super::render(&tree, Format::Json, false).expect("json");
+        let compact: String = json.split_whitespace().collect();
+        for expected in [
+            r#""root":null,"roots":[{"label":"docs","path":"/abs/docs"},{"label":"src","path":"/abs/src"}]"#,
+            r#""tree":null,"total":{"bytes":9001,"allocated":9728,"files":4,"dirs":2,"#,
+            r#""mtime_ns":100000000000,"complete":true,"age_ns":20000000000,"#,
+            r#""modified_at":"1970-01-01T00:01:40"#,
+            r#""trees":[{"root":1,"tree":{"name":"src","path":"","kind":"dir","#,
+        ] {
+            assert!(compact.contains(expected), "{expected} in {json}");
+        }
+
+        let files = several_roots_fixture(&Query {
+            views: vec![ViewSpec::Files],
+            selection: Selection {
+                sort: Some(crate::query::SortKey::Name),
+                ..Selection::default()
+            },
+            ..Query::default()
+        });
+        let json = super::render(&files, Format::Jsonl, false).expect("json lines");
+        let compact: String = json.split_whitespace().collect();
+        assert!(compact.contains(r#""files":[{"root":0,"path":"guide.md","#), "{json}");
+        assert!(compact.contains(r#"{"root":1,"path":"main.rs","#), "{json}");
+        let paths = super::render(&files, Format::Paths, false).expect("paths");
+        // Joined by component, as every text path is, so with `\` on Windows.
+        let mut expected = String::new();
+        for parts in [
+            &["docs", "guide.md"][..],
+            &["docs", "sub"],
+            &["docs", "sub", "a.md"],
+            &["src", "main.rs"],
+            &["src", "sub"],
+            &["src", "sub", "lib.rs"],
+        ] {
+            let _ = writeln!(expected, "{}", parts.iter().collect::<PathBuf>().display());
+        }
+        assert_eq!(paths, expected);
+        let one = fixture(&[ViewSpec::Files]);
+        let json = super::render(&one, Format::Json, false).expect("json");
+        assert!(!json.contains("\"roots\"") && !json.contains("\"root\": 0"), "{json}");
+    }
+
+    /// The display-limit note says what a share is of: the total, over several roots.
+    #[test]
+    fn display_limits_over_several_roots_are_of_the_total() {
+        let report = several_roots_fixture(&Query {
+            views: vec![ViewSpec::Tree],
+            selection: Selection {
+                min_share: Some(ShareThreshold::parse("50%").expect("share")),
+                ..Selection::default()
+            },
+            ..Query::default()
+        });
+        let notes = report_notes(&report);
+        assert!(notes.iter().any(|note| note.contains("below 50% of total")), "{notes:?}");
+        assert!(!notes.iter().any(|note| note.contains("of root")), "{notes:?}");
     }
 }

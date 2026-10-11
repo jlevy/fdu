@@ -39,6 +39,11 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 /// warm one goes `Loading`, `Revalidating`, then the same without `Indexing`;
 /// a cache-only one walks nothing and goes `Loading`, then `Summarizing`.
 ///
+/// A report over several roots runs one root's route after another on one handle, so the
+/// phase starts over at each root (`Loading` or `Scanning` again) while the counters keep
+/// adding, and the snapshot's `root` says which root is being walked; the run ends at
+/// `Summarizing` once, after the last root.
+///
 /// A watch start builds no answer through these phases and ends at its save, if it
 /// writes one. It then
 /// runs a second pass: it verifies the tree once more while it binds observation, and
@@ -139,8 +144,16 @@ pub struct ProgressSnapshot {
     /// The one counter with an exact denominator: the candidate set is fixed before the
     /// first file is read, and every candidate produces one result, so the pair reaches
     /// `(n, n)` when analysis ends. A result the index discards as stale still counts as
-    /// analyzed, because the file was read.
+    /// analyzed, because the file was read. Over several roots both add up root by root,
+    /// so the denominator grows when each root's analysis begins.
     pub analysis: Option<(u64, u64)>,
+    /// The root being worked on and how many the run has, as a zero-based position and a
+    /// count, or `None` for a run over one root.
+    ///
+    /// A report over several roots walks them one after another on one handle, so the
+    /// counters above are cumulative across roots and this is what says how far through
+    /// them the run is.
+    pub root: Option<(u64, u64)>,
 }
 
 /// One cache line, wide enough for the 128-byte lines of the two shipped architectures
@@ -177,11 +190,18 @@ struct AnalysisCells {
 #[derive(Default)]
 struct PhaseCell(AtomicU8);
 
+/// Written once per root of a report over several roots: the position plus one in the
+/// high half and the count in the low half, so zero means no root was entered and one
+/// load reads a consistent pair.
+#[derive(Default)]
+struct RootCell(AtomicU64);
+
 #[derive(Default)]
 struct Cells {
     walk: WalkCells,
     analysis: AnalysisCells,
     phase: PhaseCell,
+    root: RootCell,
 }
 
 /// A handle a route reports its progress through.
@@ -229,12 +249,24 @@ impl Progress {
             bytes: cells.walk.bytes.load(Ordering::Relaxed),
             allocated: cells.walk.allocated.load(Ordering::Relaxed),
             analysis,
+            root: match cells.root.0.load(Ordering::Relaxed) {
+                0 => None,
+                packed => Some(((packed >> 32) - 1, packed & u64::from(u32::MAX))),
+            },
         }
     }
 
     /// Record that the route has begun `phase`.
     pub(crate) fn enter(&self, phase: ProgressPhase) {
         self.cells.phase.0.store(phase.code(), Ordering::Relaxed);
+    }
+
+    /// Record that a report over `count` roots has begun the root at zero-based
+    /// `position`.
+    pub(crate) fn enter_root(&self, position: usize, count: usize) {
+        let half = |value: usize| u64::try_from(value).unwrap_or(u64::MAX).min(u64::from(u32::MAX));
+        let packed = (half(position.saturating_add(1)) << 32) | half(count);
+        self.cells.root.0.store(packed, Ordering::Relaxed);
     }
 
     /// Begin a second pass at `phase`, with the walk counters back at zero.
@@ -263,9 +295,13 @@ impl Progress {
     }
 
     /// Record the candidate total content analysis will work through.
+    ///
+    /// Added rather than stored, so a run over several roots, which analyzes each in turn
+    /// on one handle, counts every root's candidates; a run over one root begins analysis
+    /// once and the sum is its total.
     pub(crate) fn begin_analysis(&self, total: u64) {
         let analysis = &self.cells.analysis;
-        analysis.total.store(total, Ordering::Relaxed);
+        analysis.total.fetch_add(total, Ordering::Relaxed);
         analysis.known.store(true, Ordering::Release);
     }
 
@@ -277,16 +313,21 @@ impl Progress {
 
 impl fmt::Debug for Progress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ProgressSnapshot { phase, directories, files, bytes, allocated, analysis } =
+        let ProgressSnapshot { phase, directories, files, bytes, allocated, analysis, root } =
             self.snapshot();
-        f.debug_struct("Progress")
+        let mut debug = f.debug_struct("Progress");
+        debug
             .field("phase", &phase)
             .field("directories", &directories)
             .field("files", &files)
             .field("bytes", &bytes)
             .field("allocated", &allocated)
-            .field("analysis", &analysis)
-            .finish()
+            .field("analysis", &analysis);
+        // Only a run over several roots has one, and one root's handle reads as it did.
+        if let Some(root) = root {
+            debug.field("root", &root);
+        }
+        debug.finish()
     }
 }
 
@@ -305,6 +346,7 @@ mod tests {
                 bytes: 0,
                 allocated: 0,
                 analysis: None,
+                root: None,
             }
         );
     }
@@ -325,6 +367,7 @@ mod tests {
                 bytes: 700,
                 allocated: 8_192,
                 analysis: None,
+                root: None,
             }
         );
     }
@@ -338,6 +381,23 @@ mod tests {
         assert_eq!(progress.snapshot().analysis, Some((1, 4)));
         progress.add_analyzed(3);
         assert_eq!(progress.snapshot().analysis, Some((4, 4)));
+    }
+
+    /// Over several roots the handle says which root is being walked, and analysis counts
+    /// every root's candidates.
+    #[test]
+    fn several_roots_name_their_position_and_add_their_analysis() {
+        let progress = Progress::new();
+        assert_eq!(progress.snapshot().root, None, "one root names none");
+        progress.enter_root(0, 3);
+        assert_eq!(progress.snapshot().root, Some((0, 3)));
+        progress.begin_analysis(2);
+        progress.add_analyzed(2);
+        progress.enter_root(2, 3);
+        progress.begin_analysis(5);
+        let snapshot = progress.snapshot();
+        assert_eq!((snapshot.root, snapshot.analysis), (Some((2, 3)), Some((2, 7))));
+        assert!(format!("{progress:?}").ends_with("analysis: Some((2, 7)), root: (2, 3) }"));
     }
 
     #[test]

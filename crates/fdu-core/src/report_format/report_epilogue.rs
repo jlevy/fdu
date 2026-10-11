@@ -136,6 +136,8 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
         }
     };
     let single = report.sections.len() == 1;
+    // What a tree's shares are of: one root's own total, or the total of several roots.
+    let whole = if report.roots.is_some() { "total" } else { "root" };
     for section in &report.sections {
         if let Some((shown, total)) = super::bounded_rows(section) {
             reason(TreeOmissionReason::Rows);
@@ -152,14 +154,29 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
             }
         }
         match section {
-            Section::Tree { root, omissions, limits, .. } => {
+            Section::Tree { root, omissions, limits, roots, .. } => {
                 tree_remainder_shown |=
                     crate::query::TreeRemainder::from_tree(root.as_deref(), omissions).is_some();
                 let mut stack = root.iter().map(AsRef::as_ref).collect::<Vec<_>>();
-                if let Some(root) = root {
+                // The share denominator: one root's own total, or the total of several.
+                let denominator = match roots {
+                    Some(roots) => roots.total.map(|total| (total.bytes, total.allocated)),
+                    None => root.as_ref().map(|root| (root.bytes, root.allocated)),
+                };
+                if let Some(roots) = roots {
+                    for tree in &roots.trees {
+                        tree_remainder_shown |=
+                            crate::query::TreeRemainder::from_tree(Some(&tree.tree), &[]).is_some();
+                        stack.push(&tree.tree);
+                    }
+                    ignored_subset_shown |= roots
+                        .total
+                        .is_some_and(|total| total.ignored.is_some_and(|share| share.files > 0));
+                }
+                if let Some((bytes, allocated)) = denominator {
                     let size = match report.size {
-                        SizeMetric::Apparent => root.bytes,
-                        SizeMetric::Allocated => root.allocated,
+                        SizeMetric::Apparent => bytes,
+                        SizeMetric::Allocated => allocated,
                     };
                     if size == 0 && !limits.min_share.admits(0, 1) {
                         zero = true;
@@ -175,7 +192,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                 for (why, description) in [
                     (
                         TreeOmissionReason::Share,
-                        format!("below {} of root", limits.min_share.label()),
+                        format!("below {} of {whole}", limits.min_share.label()),
                     ),
                     (TreeOmissionReason::Depth, format!("depth {}", bound_label(limits.depth))),
                     (
@@ -264,7 +281,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
         notes.push(format!("note: display limits: {}", limits_hit.join(", ")));
     }
     if zero {
-        notes.push("note: root size is zero, so shares are undefined".to_owned());
+        notes.push(format!("note: {whole} size is zero, so shares are undefined"));
     }
     for note in &report.notes {
         unique(&mut notes, note.clone());

@@ -19,12 +19,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import registry
 from fixture import build_fixture, copy_fixture
-from runner import Invocation, _read_jsonl_report, case_key, compare, normalize
+from runner import (
+    Invocation,
+    _read_jsonl_report,
+    case_key,
+    compare,
+    merged_facts,
+    normalize,
+    several_facts,
+)
 
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/10",
+        "schema": "fdu.report/11",
         "request": {
             "scope": {"read_controls": True},
             "analyze": [],
@@ -192,6 +200,31 @@ class CompareTests(unittest.TestCase):
             compare(cli(earlier), cli(wrong), policy="auto").paths, ("reports[].files[].age_ns",)
         )
 
+    def test_tree_node_ages_are_compared_as_residuals_at_every_depth(self) -> None:
+        def timed(reference: int, root_age: int | None, leaf_age: int) -> dict[str, Any]:
+            leaf = {"name": "f", "mtime_ns": 30, "age_ns": leaf_age, "children": []}
+            tree = {"name": ".", "mtime_ns": 40, "age_ns": root_age, "children": [leaf]}
+            return answer(
+                age_reference_ns=reference,
+                age_reference_at=f"read at {reference}",
+                reports=[{"tree": tree}],
+            )
+
+        earlier = timed(100, 60, 70)
+        self.assertEqual(
+            compare(cli(earlier), cli(timed(500, 460, 470)), policy="auto").kind, "same"
+        )
+        self.assertEqual(earlier["reports"][0]["tree"]["children"][0]["age_ns"], 70)
+        self.assertEqual(
+            compare(cli(earlier), cli(timed(500, 460, 469)), policy="auto").paths,
+            ("reports[].tree.children[].age_ns",),
+        )
+        self.assertEqual(
+            compare(cli(earlier), cli(timed(500, None, 470)), policy="auto").paths,
+            ("reports[].tree.age_ns",),
+            "a known age and an unknown one are different answers",
+        )
+
     def test_list_indices_are_generalized(self) -> None:
         swapped = answer(reports=[{"rows": [{"name": "a", "bytes": 1}, {"name": "b", "bytes": 3}]}])
         verdict = compare(cli(answer()), cli(swapped), policy="auto")
@@ -228,6 +261,27 @@ class CompareTests(unittest.TestCase):
             compare(cli(here), cli(elsewhere), policy="auto").paths,
             ("status.errors[]",),
         )
+
+    def test_several_roots_are_compared_by_their_placeholders(self) -> None:
+        def several(first: str, second: str) -> dict[str, Any]:
+            return answer(
+                root=None,
+                roots=[
+                    {"label": first, "path": "/private" + first},
+                    {"label": second, "path": "/private" + second},
+                ],
+                reports=[{"files": [{"root": 1, "path": "a.md", "note": f"{second}/a.md"}]}],
+            )
+
+        here = several("/tmp/one/src", "/tmp/one/docs")
+        there = several("/var/two/src", "/var/two/docs")
+        self.assertEqual(compare(cli(here), cli(there), policy="auto").kind, "same")
+        content, _ = normalize(here)
+        self.assertEqual(
+            content["roots"],
+            [{"label": "<root:0>", "path": "<root:0>"}, {"label": "<root:1>", "path": "<root:1>"}],
+        )
+        self.assertEqual(content["reports"][0]["files"][0]["note"], "<root:1>/a.md")
 
     def test_a_cache_only_failure_is_a_named_refusal(self) -> None:
         miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
@@ -433,6 +487,92 @@ keys = ["{A}", "{B}"]
 def entry(known: registry.Registry, key: str, platform: str) -> tuple[Any, ...] | None:
     found = known.entry_for(key, platform)
     return None if found is None else (found.klass, found.paths, found.platforms)
+
+
+def node(name: str, **fields: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "name": name,
+        "path": "",
+        "bytes": 10,
+        "allocated": 512,
+        "files": 1,
+        "dirs": 0,
+        "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+        "newest_mtime_ns": 5,
+        "mtime_ns": 7,
+        "complete": True,
+        "age_ns": 0,
+        "children": [],
+    }
+    base.update(fields)
+    return base
+
+
+class MergeOracleTests(unittest.TestCase):
+    """The merge a report over several roots is held to, from single-root answers."""
+
+    def test_a_summary_sums_and_an_unknown_ignored_share_stays_unknown(self) -> None:
+        row = {"files": 2, "dirs": 1, "bytes": 30, "allocated": 1024, "newest_mtime_ns": 4}
+        known = {**row, "ignored": {"files": 1, "dirs": 0, "bytes": 5, "allocated": 512}}
+        single = lambda summary: {"reports": [{"summary": summary}]}  # noqa: E731
+        merged = merged_facts("r_summary", [single(known), single({**known, "newest_mtime_ns": 9})])
+        self.assertEqual((merged["files"], merged["bytes"], merged["newest_mtime_ns"]), (4, 60, 9))
+        self.assertEqual(merged["ignored"], {"files": 2, "dirs": 0, "bytes": 10, "allocated": 1024})
+        unknown = merged_facts("r_summary", [single(known), single({**row, "ignored": None})])
+        self.assertIsNone(unknown["ignored"])
+
+    def test_rows_keep_their_root_and_trees_their_own_shape(self) -> None:
+        singles = [
+            {"reports": [{"files": [{"path": "b"}, {"path": "a"}]}]},
+            {"reports": [{"files": [{"path": "a"}]}]},
+        ]
+        self.assertEqual(
+            merged_facts("r_files", singles),
+            [{"root": 0, "path": "a"}, {"root": 0, "path": "b"}, {"root": 1, "path": "a"}],
+        )
+        trees = [
+            {"reports": [{"tree": node(".", mtime_ns=3)}]},
+            {"reports": [{"tree": node(".", complete=False)}]},
+        ]
+        merged = merged_facts("r_full_tree", trees)
+        self.assertIsNone(merged["tree"])
+        self.assertEqual(merged["total"]["bytes"], 20)
+        self.assertEqual(merged["total"]["mtime_ns"], 7, "the newest under any root")
+        self.assertFalse(merged["total"]["complete"], "complete only when every root is")
+        self.assertEqual(merged["trees"]["1"]["name"], "<root:1>")
+        several = {
+            "reports": [
+                {
+                    "tree": None,
+                    "total": {**merged["total"], "age_ns": 4, "modified_at": "x"},
+                    "trees": [
+                        {"root": 1, "tree": node("<root:1>", complete=False)},
+                        {"root": 0, "tree": node("<root:0>", mtime_ns=3)},
+                    ],
+                }
+            ]
+        }
+        self.assertEqual(several_facts("r_full_tree", several), merged)
+
+    def test_extension_buckets_sum_across_roots(self) -> None:
+        row = lambda ext, files, ignored: {  # noqa: E731
+            "extension": ext,
+            "files": files,
+            "bytes": files * 10,
+            "allocated": files * 512,
+            "ignored": ignored,
+        }
+        share = {"files": 0, "bytes": 0}
+        singles = [
+            {"reports": [{"extensions": [row(".md", 1, share), row(".rs", 2, share)]}]},
+            {"reports": [{"extensions": [row(".md", 3, share)]}]},
+        ]
+        merged = merged_facts("r_extensions", singles)
+        self.assertEqual(merged[".md"]["files"], 4)
+        self.assertEqual(merged[".rs"]["bytes"], 20)
+        self.assertEqual(merged[".md"]["ignored"], share)
+        singles[1]["reports"][0]["extensions"][0]["ignored"] = None
+        self.assertIsNone(merged_facts("r_extensions", singles)[".rs"]["ignored"])
 
 
 class RegistryTests(unittest.TestCase):

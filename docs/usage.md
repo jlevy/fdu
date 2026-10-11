@@ -53,6 +53,78 @@ fdu . --analyze=code --view=languages
 fdu . --analyze=lines --view=languages
 ```
 
+## Report on Several Paths
+
+```shell
+fdu docs src
+```
+
+Several paths are one report: what `fdu docs` and `fdu src` would answer, added.
+Sizes, counts, rows, shares, and display bounds are taken over every root together,
+once, so `--limit 20` is twenty rows of the union and a 1% share is 1% of the total.
+
+```console
+$ fdu docs src
+██████████   100%      40 MiB     2m  (total) 1,212 files
+██████░░░░    62%      25 MiB     2m    docs/ 496 files
+███░░░░░░░    28%      11 MiB     4d      experiments/ 312 files
+████░░░░░░    38%      15 MiB     2m    src/ 716 files
+```
+
+- The tree starts with a `(total)` row, then each root as a row named by how it was
+  given, whatever its share; `--depth` counts below each root, and `--breadth` never
+  hides one. Roots are ordered as rows are, by size unless `--sort` says otherwise.
+- A root row’s age never counts the root’s own time, as one root’s never does, so the
+  `docs` row reads what `fdu docs` shows at its root; `fdu .` can show a younger
+  `docs/`, whose own time it counts.
+  The total’s age is the newest of the roots’.
+- Flat listings print each path after its root’s label, as `find docs src` does:
+  `docs/guide.md`.
+- Each root reads its own `.gitignore` files, as it would alone; a rule in a shared
+  parent applies to neither.
+- Globs containing `/`, and the documentation and vendored classification, read each
+  root’s own relative paths, not the labelled text: over `fdu docs src`,
+  `--exclude 'project/**'` excludes `docs/project`, while `--exclude 'docs/**'` excludes
+  nothing, since neither root holds a `docs` directory.
+  A file at the top of `docs` is not classified as documentation, as it is not when
+  `docs` is scanned alone.
+- Every PATH is a directory: `fdu *` stops at the first file it meets, and `fdu */`
+  names only the directories here.
+  `fdu */` is refused in its turn where one directory here is a symlink to another, as a
+  Linux virtualenv’s `lib64 -> lib` is (`lib64 is the same directory as lib`): name the
+  directories without the link, `fdu bin include lib`, or walk their parent once, as
+  below.
+- A root equal to or inside another is refused, naming both, since its paths would count
+  twice: `fdu src src/core` exits 2. Before any walk the check compares canonical paths,
+  which sees through a symlink, and on Unix device and inode numbers, which sees a root
+  whose own path runs through an alias of another (`/Users/me` beside
+  `/System/Volumes/Data/Users` on macOS). A root that is itself an alias into another
+  root’s tree, such as a bind mount, or `/usr/local` beside `/System/Volumes/Data` on
+  macOS, is found on Unix when the walk of the other root enters it, and the report is
+  refused then, also with exit status 2; a walk that stops above it, at `--scan-depth`
+  or at a filesystem boundary under `--one-filesystem`, counted nothing twice and is not
+  refused. Windows compares canonical paths only, so an alias such as a `subst` drive
+  goes unnoticed there.
+  The check before the walk is conservative: `fdu / /mnt/usb --one-filesystem` is
+  refused although the walk would not have entered the second.
+- Each root is walked separately, one after another, and every walk pays a fixed cost
+  however little it holds, so many small roots are much slower than one walk of their
+  parent. Over 625 small directories as roots, `fdu */` took 1.72 s where one walk of
+  their parent took 0.23 s, about 7 times as long
+  ([exp-216](project/experiments/exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md),
+  measured on macOS on a busy, uncontrolled host).
+  To see every entry here one level down in one walk, use
+  `fdu --depth 1 --min-share 0% .`, which also counts hidden entries and the files here,
+  both of which `*/` leaves out, and does not walk the target of a symlink here, which
+  `*/` names as a root.
+- Each root’s snapshot lives where that root’s own would, under one cache directory, and
+  none is written until every root has been walked.
+- `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+
+Machine formats keep every path relative to its root and say which root it is under
+([machine output](machine-output.md#several-roots)). Python takes a sequence:
+`fdu.report(["docs", "src"])`.
+
 ## Choose a View
 
 `--view` is a comma-separated list.
@@ -111,15 +183,30 @@ add up to 100%, within display rounding.
 The default output is the directory tree: `fdu .`, `fdu . --view list`, and
 `fdu . --format tree` print the same bounded directory roll-ups.
 Significant files appear as leaves alongside directory totals.
-Each tree row shows a share bar, percentage of the selected root, size, then its
+Each tree row shows a share bar, percentage of the selected root, size, age, then its
 indented name. The single remainder row, when present, uses those same columns for
-unlisted root branches and ends `… and N more files`. A listed directory already
-represents its entire subtree, even when descendants are not expanded.
+unlisted root branches, with a blank age, and ends `… and N more files`. A listed
+directory already represents its entire subtree, even when descendants are not expanded.
 Listed root branches plus the remainder account for the root total.
 Unknown quantities are labeled unknown rather than estimated.
 `--bar-size=20` widens the bar; `--bar-size=0` or a negative value hides it.
 The default is 10 characters.
 This affects human trees only.
+
+A row’s age is how long ago anything it counts last changed: the newest modification
+among its own entry and every entry beneath it that it counts, files, directories, and
+symlinks alike, so deleting or renaming a file makes its directory young and a freshly
+installed tree reads as new even when its files keep archive times.
+The scan root’s own time does not count.
+With no filter, a directory’s age in the tree is its age in `--long`; under a filter,
+each row ages only what it counts, so `--kind file --modified-before 1y` never shows a
+row aged `3d`. An age is `unknown` where part of the subtree was not listed, and `—` on
+a row that counts nothing.
+`--sort mtime` orders tree rows by this age.
+Ages read in seconds, minutes, hours, days, months of 30.44 days (`mo`), and years of
+365.25 days (`y`), floored, so `11mo` is under a year.
+Time bounds take days, since a month has no fixed length: `--modified-before 60d`, not
+`2mo`.
 
 | Format | List output |
 | --- | --- |
@@ -208,8 +295,10 @@ directory, but its name alone does not prove ownership.
 Directory size sums eligible regular-file contents, excluding directory-inode and
 symlink bytes. Its modification time is the newest timestamp on the root or an eligible
 descendant, including directories and symlinks; an empty directory uses its own time.
-Long displays age relative to one request instant (`30d`, `2h`, or a negative age for a
-future timestamp). This measures modification activity, not access time or last use.
+Long displays age relative to one request instant (`30d`, `2h`, `3y`, or a negative age
+for a future timestamp), on the same ladder as the tree.
+A watch measures each repaint from its own instant.
+This measures modification activity, not access time or last use.
 `--size apparent` switches to logical file lengths without changing matching semantics.
 
 Exclusions apply throughout a matching directory’s subtree before size/age predicates.
@@ -507,11 +596,16 @@ Exit status 0 is complete success.
 Status 1 is a fatal filesystem or cache failure.
 Status 2 is invalid usage or a partial result; useful partial output remains on stdout.
 Every request fdu refuses is invalid usage, whatever the reason: a value no grammar
-accepts, a rule between two flags, and a scan scope this build cannot honour, such as
-`--one-filesystem` where the platform has no device identity.
+accepts, a rule between two flags, a scan scope this build cannot honour, such as
+`--one-filesystem` where the platform has no device identity, and roots that overlap,
+whether the paths show it before any walk or a walk finds it.
 `--allow-partial` accepts an operationally partial result and returns 0.
 
 `--watch` streams changes from a retained index.
+Creating, removing, or renaming an entry also changes its directory’s own modification
+time, so under `--view files` the record for that change is followed by an `upsert` for
+the directory, unless it is the scan root or the selection leaves directories out, and a
+watched tree ages the directory as a one-shot report does.
 `--interval` throttles rendering, not change detection; an idle tree performs no polling
 scan. On macOS, the kernel reports writes to a file only when it is closed, so watch
 shows a file held open for writing as of its last close; a one-shot report reads its

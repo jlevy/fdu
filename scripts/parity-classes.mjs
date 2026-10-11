@@ -35,6 +35,8 @@ export function normalisePortableValues(text) {
           let value = added[i].value;
           for (const [field, named, marker] of [
             ['age_reference_ns', 'AGE_NS', 'AGE_NS_VALUE'],
+            // A row's age is measured from each run's own instant, as the reference is.
+            ['age_ns', 'AGE_NS', 'AGE_NS_VALUE'],
             ['observed_at_ns', 'MTIME_NS', 'MTIME_NS_VALUE'],
             ['allocated', 'ALLOCATED', 'ALLOCATED_VALUE'],
           ]) {
@@ -70,6 +72,79 @@ export function normalisePortableValues(text) {
     return lines.join('\n');
 }
 
+// A tree row's age cell is right-aligned to the widest cell in its section, so an
+// observed row carries two readings of the clock: its own age, and padding sized by every
+// other row's. A section whose widest age reaches 10s, or a session that runs past a
+// minute, changes rows whose own text did not change, the remainder's blank cell
+// included, and the artifact, compared literally, failed by timing (review E1 on #192).
+// So where a golden row names the cell [AGE] or [AGE_BLANK] and the observed row matches
+// the rest of it exactly, the cell and its padding are recorded as one marker,
+// [AGE_VALUE] or [AGE_BLANK_VALUE]. A blank cell is masked only at the width of the age
+// cell above it, so the remainder's indentation, and with it its depth, is still checked.
+// run-parity calls this before it masks durations as [TIME], which would hide that width.
+const AGE_TOKEN = '-?[0-9]{1,3}(?:,[0-9]{3})*(?:mo|[smhdy])';
+const ageCellPattern = (golden) => {
+  const parts = sameSeparator(golden).split(/(\[AGE\]|\[AGE_BLANK\])/);
+  if (parts.length === 1) return null;
+  const source = parts
+    .map((part, i) => {
+      if (i % 2 === 0) return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return part === '[AGE]' ? `( *${AGE_TOKEN})` : '( +)';
+    })
+    .join('');
+  return { regex: new RegExp(`^${source}$`, 'd'), cells: parts.filter((_, i) => i % 2 === 1) };
+};
+export function maskAgeCells(text) {
+  const lines = text.split('\n');
+  let removed = [];
+  let added = [];
+  const flush = () => {
+    // Golden rows are taken in order, each by the first observed row that matches it.
+    let next = 0;
+    let width = null;
+    for (const { index, value } of added) {
+      for (let k = next; k < removed.length; k += 1) {
+        const pattern = ageCellPattern(removed[k]);
+        const match = pattern?.regex.exec(value);
+        if (!match) continue;
+        const spans = pattern.cells.map((cell, c) => ({ cell, span: match.indices[c + 1] }));
+        let rowWidth = width;
+        const aligned = spans.every(({ cell, span: [start, end] }) => {
+          if (cell === '[AGE]') {
+            rowWidth = end - start;
+            return true;
+          }
+          return end - start === rowWidth;
+        });
+        if (!aligned) continue;
+        width = rowWidth;
+        let masked = value;
+        for (const { cell, span: [start, end] } of spans.reverse()) {
+          const marker = cell === '[AGE]' ? '[AGE_VALUE]' : '[AGE_BLANK_VALUE]';
+          masked = masked.slice(0, start) + marker + masked.slice(end);
+        }
+        lines[index] = `+${masked}`;
+        next = k + 1;
+        break;
+      }
+    }
+    removed = [];
+    added = [];
+  };
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^(?:FAIL |PASS |  ✗ |  ✓ )/.test(line)) {
+      flush();
+    } else if (line.startsWith('-')) {
+      removed.push(line.slice(1));
+    } else if (line.startsWith('+')) {
+      added.push({ index: i, value: line.slice(1) });
+    }
+  }
+  flush();
+  return lines.join('\n');
+}
+
 // The golden stores a portable scan-root pattern, while the Python replay prints its
 // concrete sandbox root. Match only the fixture root for that session: accepting any
 // [SANDBOX] path would conceal a Python request that scanned a different directory.
@@ -92,6 +167,17 @@ const portablePatternMatches = (line, actual, file) => {
   // shapes; every other field must still compare byte-for-byte.
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = escaped
+    // A tree row's age cell is the golden pattern [AGE], measured from each run's own
+    // instant and right-aligned to the section's widest cell, and the remainder row's
+    // blank cell is [AGE_BLANK], as wide as that cell. maskAgeCells() has already
+    // recorded a cell whose row matches its golden as [AGE_VALUE] or [AGE_BLANK_VALUE];
+    // a cell it left, in a row that differs elsewhere, is still checked as an age, with
+    // normalise() having masked one in seconds as [TIME].
+    .replaceAll(
+      '\\[AGE\\]',
+      '(?:\\[AGE_VALUE\\]|\\s*-?(?:\\[TIME\\]|[0-9]{1,3}(?:,[0-9]{3})*(?:mo|[smhdy])))',
+    )
+    .replaceAll('\\[AGE_BLANK\\]', '(?:\\[AGE_BLANK_VALUE\\]| +)')
     .replaceAll('\\[AGE_NS\\]', '(?:\\[AGE_NS_VALUE\\]|-?\\d+)')
     // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
     // numeric. The same named golden pattern appears in both fields.
@@ -175,6 +261,20 @@ const sameWatchedViewRefusal = (removed, added) => {
     `${marker}fdu: view ${view} needs ${analyzer} analysis; this index was opened with analyze none`
   );
 };
+// A PATH that names a file: the command line refuses it by the name it was given with a
+// shell remedy, `fdu */`, and Python raises the engine's own refusal at the canonical
+// path. Pinned whole, one line each side, the Python path ending in the given name.
+const FILE_ROOT_REMEDY =
+  /^(! )?fdu: (.+) is a file; fdu reports on directories \(to name only the directories here: fdu \*\/\)$/;
+const FILE_ROOT_REFUSAL = /^(! )?fdu: I\/O error at (.+): scan root is not a directory$/;
+const sameFileRootRefusal = (removed, added) => {
+  const remedy = FILE_ROOT_REMEDY.exec(removed);
+  const refusal = FILE_ROOT_REFUSAL.exec(added);
+  if (!remedy || !refusal || (remedy[1] ?? '') !== (refusal[1] ?? '')) return false;
+  const given = sameSeparator(remedy[2]);
+  const path = sameSeparator(refusal[2]);
+  return path === given || path.endsWith(`/${given}`);
+};
 const usesBoundTip = (line) =>
   /^(! )?tip: /.test(line) &&
   /(?:--min-share|min_share|--depth|depth|--breadth|breadth|--limit|limit)=/.test(line);
@@ -188,9 +288,11 @@ export const CLASSES = [
     id: 'portable-golden-pattern',
     title: 'Portable golden spelling of the same fixture path',
     why: [
-      'The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a',
-      'platform separator. The Python replay prints the sandbox root and a literal',
-      'separator. Only the exact fixture root and otherwise identical lines match;',
+      'The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a',
+      'platform separator, and [AGE] for an age measured from the run\'s own instant.',
+      'The Python replay prints the sandbox root, a literal separator, and the age, whose',
+      'cell is recorded as [AGE_VALUE] where the rest of its row matches the golden.',
+      'Only the exact fixture root, a well-formed age, and otherwise identical lines match;',
       'exact bound and omitted-view tip translations, and the stale-answer warning',
       'naming each surface\'s option, can accompany those lines.',
     ],
@@ -233,12 +335,23 @@ export const CLASSES = [
     ],
     // Strip the flag dashes and normalise -/_ ; if the lines then match exactly, the
     // label is the whole of the difference. Anything else and this class does not apply.
-    matches: ({ removed, added }) =>
+    // A line that differs only in the golden's portable spelling of a value, such as a
+    // tree row's [AGE] in a report whose tip names the parameter, is notation rather than
+    // a second difference, as a [SEP] already is; at least one line must be the label.
+    matches: ({ file, removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
       !removed.some(usesBoundTip) &&
-      removed.every((line, i) => sameName(line) === sameName(added[i])) &&
-      removed.some((line, i) => line !== added[i]),
+      removed.every(
+        (line, i) =>
+          sameName(line) === sameName(added[i]) || portablePatternMatches(line, added[i], file),
+      ) &&
+      removed.some(
+        (line, i) =>
+          line !== added[i] &&
+          sameName(line) === sameName(added[i]) &&
+          !portablePatternMatches(line, added[i], file),
+      ),
   },
   {
     id: 'surface-vocabulary',
@@ -297,6 +410,22 @@ export const CLASSES = [
       removed.length === 1 &&
       added.length === 1 &&
       sameWatchedViewRefusal(removed[0], added[0]),
+  },
+  {
+    id: 'file-root-remedy',
+    title: 'A file PATH is refused on both surfaces; the command line adds a shell remedy',
+    why: [
+      'fdu reports on directories, so a PATH naming a file is refused on both surfaces, with',
+      'the same exit status. The command line words the refusal for `fdu *`, the way',
+      '`du -sh *` is typed: it names the file as given and suggests `fdu */`, which only a',
+      'shell can expand (review A5 on #192). Python raises the engine\'s refusal, OSError at',
+      'the canonical path, since a caller passing a list has no glob to change. Pinned',
+      'whole: one line each side, the Python path ending in the name the command line gave.',
+    ],
+    matches: ({ removed, added }) =>
+      removed.length === 1 &&
+      added.length === 1 &&
+      sameFileRootRefusal(removed[0], added[0]),
   },
 ];
 

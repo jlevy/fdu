@@ -1,0 +1,158 @@
+"""fdu-fy0l: what a 100k-row Python list report pays for eager `modified_at` datetimes.
+
+Two measurements, both on one subject:
+
+- `component`: inside the 0.5.0 wheel, the JSON-to-model conversion of one 100k-row
+  list report (`json.loads` + `report_from_dict`), real against a copy whose
+  `_modified_at` returns None, alternating which runs first, N pairs. The difference is
+  the derivation's own cost; nothing else differs between the arms.
+- `e2e`: one `fdu.report(...)` per fresh process, the 0.4.0 wheel against the 0.5.0
+  wheel, interleaved, N pairs: the whole call a user makes, engine included.
+
+Usage:
+  python fy0l.py component ROOT N           (run with the 0.5.0 venv)
+  python fy0l.py e2e-one ROOT               (one timed call; prints JSON)
+  python fy0l.py e2e ROOT N CONTROL_PY CANDIDATE_PY
+"""
+
+from __future__ import annotations
+
+import json
+import statistics
+import subprocess
+import sys
+import time
+
+LIMIT = 100_000
+
+
+def _query():
+    import fdu
+
+    return fdu.Query(views=(fdu.View.LIST,), format=fdu.Format.JSON, selection=fdu.Selection(limit=LIMIT))
+
+
+def component(root: str, pairs: int) -> None:
+    import fdu
+    from fdu import _api, _models
+
+    # Capture the wire form `fdu.report` itself parses, so this measures exactly its input.
+    captured = {}
+    original = _api.report_from_dict
+
+    def capture(wire, notes=()):
+        captured["text"] = json.dumps(wire)
+        captured["notes"] = notes
+        return original(wire, notes)
+
+    _api.report_from_dict = capture
+    fdu.report(root, _query())
+    _api.report_from_dict = original
+    text = captured["text"]
+    notes = captured["notes"]
+    rows = sum(len(section.get("files") or []) for section in json.loads(text)["reports"])
+    real = _models._modified_at
+
+    def eager() -> int:
+        _models._modified_at = real
+        start = time.perf_counter_ns()
+        _models.report_from_dict(json.loads(text), notes)
+        return time.perf_counter_ns() - start
+
+    def skipped() -> int:
+        _models._modified_at = lambda mtime_ns, complete: None
+        start = time.perf_counter_ns()
+        _models.report_from_dict(json.loads(text), notes)
+        elapsed = time.perf_counter_ns() - start
+        _models._modified_at = real
+        return elapsed
+
+    loads = []
+    for _ in range(3):  # warmups
+        eager(), skipped()
+    eager_ns, skipped_ns, diffs = [], [], []
+    for ordinal in range(pairs):
+        if ordinal % 2:
+            b = skipped(); a = eager()
+        else:
+            a = eager(); b = skipped()
+        eager_ns.append(a); skipped_ns.append(b); diffs.append(a - b)
+        start = time.perf_counter_ns(); json.loads(text); loads.append(time.perf_counter_ns() - start)
+    print(json.dumps({
+        "fdu_version": getattr(fdu, "__version__", None),
+        "rows": rows,
+        "pairs": pairs,
+        "eager_median_ms": statistics.median(eager_ns) / 1e6,
+        "skipped_median_ms": statistics.median(skipped_ns) / 1e6,
+        "json_loads_median_ms": statistics.median(loads) / 1e6,
+        "paired_diff_median_ms": statistics.median(diffs) / 1e6,
+        "paired_diff_min_ms": min(diffs) / 1e6,
+        "paired_diff_max_ms": max(diffs) / 1e6,
+        "per_row_ns": statistics.median(diffs) / max(rows, 1),
+        "eager_ms": [v / 1e6 for v in eager_ns],
+        "skipped_ms": [v / 1e6 for v in skipped_ns],
+    }, indent=1))
+
+
+def e2e_one(root: str) -> None:
+    start = time.perf_counter_ns()
+    import fdu
+
+    imported = time.perf_counter_ns()
+    report = fdu.report(root, _query())
+    done = time.perf_counter_ns()
+    rows = sum(len(getattr(section, "files", ()) or ()) for section in report.sections)
+    print(json.dumps({
+        "version": getattr(fdu, "__version__", None),
+        "report_ns": done - imported,
+        "import_ns": imported - start,
+        "rows": rows,
+    }))
+
+
+def e2e(root: str, pairs: int, control_py: str, candidate_py: str) -> None:
+    def one(python: str) -> dict:
+        start = time.perf_counter_ns()
+        out = subprocess.run([python, "-I", __file__, "e2e-one", root], check=True,
+                             capture_output=True, text=True).stdout
+        wall = time.perf_counter_ns() - start
+        value = json.loads(out)
+        value["wall_ns"] = wall
+        return value
+
+    for _ in range(3):
+        one(control_py), one(candidate_py)
+    control, candidate = [], []
+    for ordinal in range(pairs):
+        if ordinal % 2:
+            b = one(candidate_py); a = one(control_py)
+        else:
+            a = one(control_py); b = one(candidate_py)
+        control.append(a); candidate.append(b)
+    diffs = [b["report_ns"] - a["report_ns"] for a, b in zip(control, candidate)]
+    pct = [100.0 * (b["report_ns"] - a["report_ns"]) / a["report_ns"] for a, b in zip(control, candidate)]
+    print(json.dumps({
+        "pairs": pairs,
+        "control_version": control[0]["version"],
+        "candidate_version": candidate[0]["version"],
+        "rows": [control[0]["rows"], candidate[0]["rows"]],
+        "control_report_median_ms": statistics.median(a["report_ns"] for a in control) / 1e6,
+        "candidate_report_median_ms": statistics.median(b["report_ns"] for b in candidate) / 1e6,
+        "paired_diff_median_ms": statistics.median(diffs) / 1e6,
+        "paired_pct_median": statistics.median(pct),
+        "paired_pct_sorted": sorted(round(p, 2) for p in pct),
+        "control_report_ms": [a["report_ns"] / 1e6 for a in control],
+        "candidate_report_ms": [b["report_ns"] / 1e6 for b in candidate],
+    }, indent=1))
+
+
+if __name__ == "__main__":
+    command = sys.argv[1]
+    if command == "component":
+        component(sys.argv[2], int(sys.argv[3]))
+    elif command == "e2e-one":
+        e2e_one(sys.argv[2])
+    elif command == "e2e":
+        e2e(sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5])
+    else:
+        raise SystemExit(__doc__)

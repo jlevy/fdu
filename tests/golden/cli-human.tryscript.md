@@ -11,6 +11,7 @@ env:
   NO_COLOR: "1"
   TZ: UTC
 patterns:
+  AGE_BLANK: ' +'
   SCAN_PATH: '[^\r\n]+'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
   PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
@@ -24,17 +25,17 @@ patterns:
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    … and 1 more file
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE_BLANK]    … and 1 more file
 ! note: totals include gitignored sizes and descendants
 ! note: display limits: row limit 10
 ! tip: show more: --limit=all
@@ -50,17 +51,17 @@ display-limit diagnostic.
 
 ```console
 $ fdu --cache off --color never --size apparent --view tree --full project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -68,17 +69,17 @@ $ fdu --cache off --color never --size apparent --view tree --full project
 
 ```console
 $ fdu --cache off --color never --size apparent --view tree --depth=all --breadth=all --limit=all --min-share=0% project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░     7%        18 B      alpha.rs
-█░░░░░░░░░     7%        18 B      omega.rs
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-█░░░░░░░░░     9%        23 B      FAQ.MD
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░     7%        18 B  [AGE]      alpha.rs
+█░░░░░░░░░     7%        18 B  [AGE]      omega.rs
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+█░░░░░░░░░     9%        23 B  [AGE]      FAQ.MD
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 ! note: totals include gitignored sizes
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
@@ -125,9 +126,9 @@ $ fdu --cache off --color never --size apparent --view tree --limit=0 project
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-█████░░░░░    52%       141 B    … and 6 more files
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+█████░░░░░    52%       141 B  [AGE_BLANK]    … and 6 more files
 ! note: totals include gitignored sizes and descendants
 ! note: display limits: depth 1, row limit 2
 ! tip: show more: --depth=all --limit=all
@@ -165,13 +166,13 @@ An all-caps header above each block, one blank line between blocks, is enough to
 ```console
 $ fdu --cache off --color never --view tree,types,families,summary --size apparent --depth 1 --limit 10 project
 TREE
-██████████   100%       269 B  . 7 files (128 B gitignored)
-█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
-██░░░░░░░░    18%        48 B    README.md
-█░░░░░░░░░    13%        36 B    src/ 2 files
-█░░░░░░░░░    10%        28 B    Makefile
-█░░░░░░░░░     9%        23 B    docs/ 1 file
-░░░░░░░░░░     2%         6 B    .gitignore
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B  [AGE]    dist/ 1 file (128 B gitignored)
+██░░░░░░░░    18%        48 B  [AGE]    README.md
+█░░░░░░░░░    13%        36 B  [AGE]    src/ 2 files
+█░░░░░░░░░    10%        28 B  [AGE]    Makefile
+█░░░░░░░░░     9%        23 B  [AGE]    docs/ 1 file
+░░░░░░░░░░     2%         6 B  [AGE]    .gitignore
 
 TYPES
      128 B   47.6%  archive            1 file
@@ -253,22 +254,22 @@ remainder stay visible.
 
 ```console
 $ fdu --cache off --quiet --color never --size apparent --view tree --depth 0 --bar-size 20 project
-████████████████████   100%       269 B  . 7 files (128 B gitignored)
-████████████████████   100%       269 B    … and 7 more files
+████████████████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+████████████████████   100%       269 B  [AGE_BLANK]    … and 7 more files
 ? 0
 ```
 
 ```console
 $ fdu --cache off --quiet --color never --size apparent --view tree --depth 0 --bar-size 0 project
- 100%       269 B  . 7 files (128 B gitignored)
- 100%       269 B    … and 7 more files
+ 100%       269 B  [AGE]  . 7 files (128 B gitignored)
+ 100%       269 B  [AGE_BLANK]    … and 7 more files
 ? 0
 ```
 
 ```console
 $ fdu --cache off --quiet --color never --size apparent --view tree --depth 0 --bar-size -1 project
- 100%       269 B  . 7 files (128 B gitignored)
- 100%       269 B    … and 7 more files
+ 100%       269 B  [AGE]  . 7 files (128 B gitignored)
+ 100%       269 B  [AGE_BLANK]    … and 7 more files
 ? 0
 ```
 

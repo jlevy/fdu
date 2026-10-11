@@ -1429,9 +1429,19 @@ class OracleSelectionTests(unittest.TestCase):
         # convenience for a job whose digest is inconvenient. The aggregate tier retains
         # no index; the default-command jobs consume theirs inside `prepare_report`, which
         # never returns it -- and measuring a different entry point to get a digest would
-        # stop measuring the command.
+        # stop measuring the command. The several-root door consumes them inside
+        # `prepare_roots_report` the same way.
         weaker = {job_id for job_id, job in measure.PROBE_JOBS.items() if job.oracle == "tallies"}
-        self.assertEqual(weaker, {"aggregate-summary", "default-tree-first", "default-tree"})
+        self.assertEqual(
+            weaker,
+            {
+                "aggregate-summary",
+                "default-tree-first",
+                "default-tree",
+                "roots-default-tree",
+                "roots-summary",
+            },
+        )
 
     def test_the_default_command_is_measured_first_run_and_repeated(self) -> None:
         # The two defects found in the PR #38 review are properties of the repeated run:

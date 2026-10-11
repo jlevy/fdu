@@ -321,7 +321,8 @@ claims.
 ## The Loops in Order
 
 Each row is one line of inquiry, and together they hold every artifact from exp-000 to
-exp-202; [Every Round in Full](#every-round-in-full) expands each row.
+exp-221 (exp-203 to exp-208 are reserved and unused);
+[Every Round in Full](#every-round-in-full) expands each row.
 The ledger has every verdict and
 [the loop history](report-2026-08-14-performance-campaign-status.md) how the method
 changed from phase to phase.
@@ -349,6 +350,8 @@ changed from phase to phase.
 | pdu track | exp-197–201 | Linux | H185 −3.55% and H186 −4.91% on the dense tree’s default tree, H188 with H189 −6.15% on the kernel tree’s summary; H187 rejected, the tree route’s consumer having slack; the default tree −3.05% and −8.94% end to end, ahead of both pdu modes and diskus on both real trees (exp-201) |
 | Review rounds and the automount change | exp-196 | Linux | #161’s review put every route on the native reader (H184), a correctness change screened for non-regression: `warm-revalidate` −2.74%, the serial walk −5.14%; #163’s review made H185 prove a directory searchable before trusting its listing, keeping 83% and 89% of its `statx` saving |
 | 0.3.0 release standing | exp-202 | Linux | The release engine against 0.2.1: the default tree −48.00%, −14.09% and −14.57% on the kernel, dense and generated trees; ahead of both pdu modes and diskus on all three, the narrowest lead +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree |
+| The 0.5.0 stack on macOS | exp-209–216 | macOS | The tree age column’s per-report pass rejected (exp-209) and a maintained per-directory maximum recorded at a few to 23 µs a retained report; machine-format instants into a fixed buffer (H194); one root through the several-roots reader non-inferior on five jobs; several roots about 2.4 ms a root (exp-216); all on a loaded host |
+| The 0.5.0 stack on Linux | exp-217–221 | Linux | The age column costs the dense tree’s default command 5.72% [+3.53%, +10.46%], one `statx` per directory and symlink; H197’s parent-relative opens win back 3.35% there and 5.06% of the summary, not shipped; one root’s summary 5.28% slower at #192’s head by the paired median, which leaves H195 inconclusive there, unattributed; several roots about 0.5 ms a root |
 
 ## Every Round in Full
 
@@ -1155,6 +1158,55 @@ points of the release’s 18.8% lead there are the session’s, by an estimate a
 sessions. The release’s involuntary context switches rose from 56 to 273 on the kernel
 tree’s default tree, which fails the qualification block’s switch gate, as exp-198
 recorded for the summary.
+
+### The 0.5.0 Stack on Linux (2026-10-10)
+
+exp-217 to exp-221. Linux, a 4-vCPU Firecracker guest on 6.18.44-fc-v114, ext4, warm
+cache, quiet; every decision on a two-arm cell of 100 pairs (40 for H195), fixed before
+it ran, after the session’s first four-arm cells resolved only about ±8%.
+
+**Question:** What does the 0.5.0 stack (`0d6011da`: the tree age column, #191, under
+several roots, #192) cost on Linux before release (`fdu-088k`), and can the default tree
+tally sizes with ages at the price of sizes alone?
+
+**The age column:** One `statx` per directory and per symlink, exactly the counts H193
+predicted, and kernel time: the default tree on `node-modules-dense` is 5.72%
+[+3.53%, +10.46%] slower than 0.4.0 (exp-217), and 5.63% [+4.07%, +9.27%] slower than
+the same code with the directory stats removed, a measurement-only arm (exp-218); on
+`linux-v6.12` the price is +0.42% [−1.28%, +2.97%]. Every placebo and instruction bound
+holds, and peak RSS moves 0.2 MiB on the million-entry tree.
+pdu and diskus make the same call per directory, plus an `fstat` fdu skips, so the
+column brings fdu’s call count up to theirs rather than past it; 0.4.0 had been below.
+
+**H197:** Opening each directory relative to its parent’s descriptor, H169’s third
+phase, takes 3.35% [−6.18%, −0.93%] off the dense tree’s default tree and 5.06% off its
+summary (exp-219), accepted there and kept on `claude/h197-relative-opens`; on the
+kernel tree it does not resolve and on the generated tree it is −2.34%. Ages still cost
++4.01% [+1.19%, +6.66%] over the no-ages arm on the dense tree with it: the remaining
+price is the call itself.
+
+**Several roots:** H195 holds on `render-yaml`, which is faster at #192’s head, and is
+inconclusive on `opened-second-report` (exp-220). On `aggregate-summary` on the dense
+tree the summary is slower at #192’s head, with the paired interval above zero (+5.28%
+[+2.27%, +7.62%]), but non-inferiority at +3% is neither shown nor refuted, so the job
+is inconclusive under the registered rule.
+Instructions and system calls are unchanged, and the figure depends on the estimator
+(about +3.5% to +5.3%). exp-217’s outer-arm cell corroborates a slower summary at the
+shipped head: +5.45% [+1.99%, +7.20%] against v0.4.0. A root costs about 0.5 ms on the
+default tree and 0.4 ms on the summary on Linux (exp-221).
+
+**Against the peers and the floor:** After a container restart the tool cells show no
+lead over `pdu --max-depth 2` or diskus whose interval excludes zero on the real trees,
+for 0.4.0 as for 0.5.0, and every lead holding on the generated tree; read across
+sessions, exp-202’s standing on the real trees is not reproduced on this guest build.
+The tree tier sits at 1.21× to 1.26× the floor (screening-grade).
+
+**Method:** An A/A cell of one binary under three names put the middle slot of a
+three-arm ordinal about 3% to 5% above the outer slots, unresolved, so a middle arm’s
+figure is read only beside a two-arm replicate.
+In the 17 two-arm cells of two builds, the run-order effect is within about ±2.5% by
+median split and within ±2.2% by mean split, except exp-220’s dense-tree summary at
++3.84% by means; the deciding cells’ are 1.4% or less (exp-220’s `order-split.txt`).
 
 ## Qualifications on Current Results
 

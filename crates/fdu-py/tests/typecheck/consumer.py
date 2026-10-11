@@ -1,5 +1,6 @@
 """Strict downstream-consumer fixture; this file is type-checked, not executed."""
 
+from datetime import datetime
 from pathlib import Path
 
 import fdu
@@ -26,6 +27,30 @@ for section in report.sections:
 rollup: fdu.RollUp = index.total()
 file_count: int = rollup.files
 print(file_count)
+
+tree_report: fdu.Report = index.report(fdu.Query(views=(fdu.View.TREE,)))
+reference_at: datetime | None = tree_report.age_reference_at
+for tree_section in tree_report.sections:
+    if isinstance(tree_section, fdu.TreeSection) and tree_section.tree is not None:
+        node: fdu.TreeNode = tree_section.tree
+        activity: int | None = node.mtime_ns
+        listed: bool | None = node.complete
+        age: int | None = node.age_ns
+        changed: datetime | None = node.modified_at
+        print(reference_at, activity, listed, age, changed)
+
+several: fdu.Report = fdu.report([Path("docs"), "src"], cache=fdu.CachePolicy.OFF)
+one_root: Path | None = several.root
+labelled: tuple[fdu.ReportRoot, ...] | None = several.roots
+for several_section in several.sections:
+    if isinstance(several_section, fdu.TreeSection):
+        total: fdu.TreeTotal | None = several_section.total
+        trees: tuple[fdu.RootTree, ...] = several_section.trees
+        print(one_root, labelled, total, trees)
+    elif isinstance(several_section, fdu.FilesSection) and labelled is not None:
+        for row in several_section.files:
+            if row.root is not None:
+                print(labelled[row.root].path / row.path)
 
 registry: str = '[[kind]]\nid = "notes"\nfamily = "prose"\nextensions = ["md"]\n'
 live: opened.OpenedIndex = opened.OpenedIndex.open(

@@ -299,6 +299,17 @@ while reported loss or ambiguity invalidates and reconciles the affected scope.
 The logical-clock check prevents an older sample from overwriting a newer commit; it is
 not a filesystem transaction.
 
+Verification reads one thing besides the paths the events name.
+Creating, removing, or renaming an entry moves its directory’s own modification time,
+and no backend names the directory in that event, so each batch also re-reads the
+attributes of the directory each verified path lives in, once per directory and without
+listing it. A refresh or a reconciliation of one path re-reads its directory the same
+way. Without that, a watch kept a directory aged as it was before its newest file was
+deleted or an old file was moved in, where a one-shot report read it as just changed.
+Every maintenance test had compared the index with itself or with a model fed the same
+operations, which cannot see a fact no operation carried, so a property test now holds a
+watched tree to a cold walk of the same tree after every generated step.
+
 ### Concurrency Guards
 
 Conditional observations carry generation and revision guards.
@@ -478,7 +489,7 @@ Every option belongs to exactly one axis:
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
+| Scope | What is scanned and cached? | `PATH...`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read beyond what the views imply, and which metrics are measured? | `--analyze` |
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
@@ -499,6 +510,14 @@ observed and cached, so stored state for one scope serves every selection and vi
 that scope; selection filters the retained index at view time and is never part of the
 cache key. That is why narrowing a filter never costs a rescan, and it is the same
 reasoning as tagging ignored entries rather than pruning them.
+
+Several paths are one scope with several disjoint roots, not a new axis: `fdu docs src`
+answers what `fdu docs` and `fdu src` would, added, with every display bound applied
+once to the sum.
+Each root keeps its own identity, snapshot, and `.gitignore` reading, so
+a root answers the same alone and beside others; a root equal to or inside another is
+refused rather than collapsed, because accepting overlap later is additive and changing
+what a total means after release is not.
 
 ### Intuitive by Default, Everything by Composition
 
@@ -544,6 +563,12 @@ Within metadata report evaluation, two query-cost tiers follow from this, and bo
 milliseconds warm: an unfiltered request reads pre-computed roll-up state directly,
 while any selection filter triggers one traversal that re-aggregates what it admits.
 One traversal serves every filtered view in a request.
+The one addition to the unfiltered tier is a tree’s age column: each row’s newest
+activity counts directories and symlinks, which the roll-up’s files-only recency leaves
+out, so the index maintains that maximum per directory beside its roll-ups and an
+unfiltered tree over a complete index reads it per row.
+Over an index that may hold an unlisted subtree the tree takes one pass by entry id,
+without paths, which also proves completeness.
 A test pins that the two tiers answer identically when the filter admits everything.
 An additional golden and semantic-hash gate pins that a derived summary serializes
 identically to the indexed summary.
@@ -633,6 +658,13 @@ can present state nobody asked for.
 The reader therefore receives the whole request, content axis included, and state the
 index retains beyond that request is projected away by the stored-state model before
 anything is rendered.
+
+A report over several roots reads several indexes, one per root, and is still one pure
+reader: `report_roots(indexes, roots, request, generated_at)`. Each section accumulates
+over every index and finalizes once, so shares and bounds are taken over the union, and
+a report over one root is the same reader with one input.
+Pooled statistics such as logical words merge as sufficient statistics inside the
+reader, which is why two rendered reports cannot simply be added afterwards.
 
 ### Fastest Answer the Data Allows, Never Silently Stale
 
@@ -747,6 +779,8 @@ a listing of paths and nothing else.
 
 A watch run evaluates the same selection and views as a one-shot run, re-applied as
 changes arrive. There is no separate watch grammar to learn.
+A watch keeps one root current: several would need a watcher each and one merged stream,
+so `--watch` refuses a second PATH (`fdu-ijpo` records the design it would need).
 
 A watch session serves only the tiers it keeps current: a tier it cannot maintain, such
 as content analysis without live re-analysis, is refused when the session starts rather
@@ -757,15 +791,21 @@ read does; a repaint over a partial index is never labelled complete.
 Detection is event-driven — the OS notification backend, never polling — so an idle tree
 costs no filesystem work, a property asserted by test rather than described.
 `--interval` throttles only how often aggregate views repaint; it plays no part in
-detection. A repaint that would show a reader nothing new is skipped: the session
-compares what the format renders of the answer, with its generation instant held fixed,
-plus its tree status, source, and freshness, and the notes, tips, and warnings written
-beside it, so a touch that moves no size repaints no size-only tree, while machine
-output that carries the modification time repaints, and a change of status or freshness,
-or a new note, repaints on every format.
-Overflow and subtree invalidation appear explicitly in the stream and are never dropped,
-because they say the consumer’s own view may have gaps; change records are never
-deduplicated, only repaints.
+detection. Each repaint measures its ages from its own instant, so a file written during
+the session is not dated in the future; the windows the query selects by do not slide,
+because they were resolved to absolute bounds when the request was built.
+A repaint that would show a reader nothing new is skipped: the session compares what the
+format renders of the answer, with its generation instant held fixed and its ages
+measured from one fixed reference, plus its tree status, source, and freshness, the
+notes, tips, and warnings written beside it, and the exact activity of every row whose
+age the format shows.
+So an idle tree repaints nothing while its ages roll over; a touch repaints a tree,
+whose rows show activity, even when the age it shows stays in the same unit, and
+repaints no text summary, which shows only sizes, while machine output that carries the
+modification time repaints; and a change of status or freshness, or a new note, repaints
+on every format. Overflow and subtree invalidation appear explicitly in the stream and
+are never dropped, because they say the consumer’s own view may have gaps; change
+records are never deduplicated, only repaints.
 
 Two deliberate asymmetries in filtering: a removal is filtered only by path, since
 filtering a deletion on a size bound would hide the disappearance of something the

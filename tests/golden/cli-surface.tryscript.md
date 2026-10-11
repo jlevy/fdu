@@ -31,7 +31,7 @@ $ fdu
 Fastest du replacement, with .gitignore-aware sizes and code and document counts, for the command
 line, Python, and Rust
 
-Usage: fdu [OPTIONS] <PATH>
+Usage: fdu [OPTIONS] <PATH>...
        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
        fdu [PATH] --cache-clear[=<SCOPE>]
        fdu --docs
@@ -39,7 +39,7 @@ Usage: fdu [OPTIONS] <PATH>
        fdu --install-skill [--agent-base <DIR>]
 
 ARGUMENTS
-  [PATH]  Report root; optional only for the discovery and cache-lifecycle flags
+  [PATH]...  Report roots, disjoint; optional only for the discovery and cache-lifecycle flags
 
 SCOPE
       --scan-depth <N>               Limit scanning and retention to N entry levels
@@ -237,6 +237,31 @@ Without code analysis, language percentages are byte shares; with it, the rows a
 comment, and blank-line metrics and use code-line shares.
 Use `--size apparent` when logical file lengths are wanted instead of allocated bytes.
 
+Several disjoint paths are one report, what each would report added:
+
+```bash
+fdu docs src                               # a (total) row, then each root as a row
+fdu docs src --view=largest --limit=10     # the ten largest files across both
+```
+
+Every size, row, share, and bound is taken over the union, once.
+Text prints each path after its root’s label (`docs/guide.md`); JSON keeps paths
+relative to their root, sets `root` to null, names the roots in `roots`, and gives rows,
+errors, and refusals a `root` index into it.
+A tree section over several roots has `tree: null`, a `total` row, and `trees`, one tree
+per root, each with its own `remainder` and a `root` index.
+Every PATH is a directory: `fdu */` names only the directories here, where `fdu *` stops
+at the first file. A root inside another, or the same directory twice, is refused (exit
+2), so `fdu */` is too where one directory here is a symlink to another, such as a
+virtualenv’s `lib64 -> lib`; name the directories without the link.
+Each root is walked separately and pays a walk’s fixed cost, so many small roots are
+much slower than one walk of their parent: 625 small directories took 1.72 s as roots
+against 0.23 s for their parent, about 7 times as long (macOS, uncontrolled host).
+One walk of the parent, `fdu --depth 1 --min-share 0% .`, shows the size of everything
+here one level down; it also counts the hidden entries and files that `*/` leaves out,
+and does not walk the target of a symlink that `*/` names as a root.
+`--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+
 ## Read the Result and Its Notes
 
 Stdout holds only the result: rows, column headings, and, when several views are shown,
@@ -279,6 +304,16 @@ Hidden and ignored entries are included.
 A parenthetical amount such as `(73 MiB gitignored)` is included in the row total.
 Directories get a `/` suffix, except `.` and `..`; file names and structured paths do
 not change.
+Between size and name each row shows its age: how long ago anything it counts
+last changed, files, directories, and symlinks alike, never the scanned root’s own time.
+Ages read `42s`, `59m`, `23h`, `30d`, `11mo` (months of 30.44 days), and `3y` (years of
+365.25 days), floored.
+An age is `unknown` where part of the subtree was not listed, and `—` on a row that
+counts nothing.
+With no filter a directory’s age matches its `--long` age; under a filter
+each row ages only what it counts.
+`--sort mtime` orders tree rows by this age.
+Time bounds take days: `--modified-before 60d`, not `2mo`.
 
 Color is on only when the output is a terminal or `--color=always` is given, so piped
 tree bars are plain: `█` for usage and `░` for unused width.
@@ -317,13 +352,15 @@ native filenames. Directory rows include descendants and overlap; add
 
 A tree’s `remainder` contains recursive `files`, `bytes`, `allocated`, and applicable
 `reasons` outside its displayed root-level rows; `null` means nothing is hidden there.
+Over several roots the section’s `tree` is null: read `total` and each tree in `trees`,
+whose `remainder` is that root’s own.
 A displayed directory already represents its whole subtree, including descendants whose
 rows were bounded away.
 Per-boundary `entries` counts hidden roots, while `files` counts regular files
 recursively. Unknown amounts are null.
 The text equivalent is one root-level line with the same bar, percentage, and size
-columns as the tree rows, followed by `… and N more files`. These columns represent the
-remaining share of the selected root.
+columns as the tree rows, a blank age, and `… and N more files`. These columns represent
+the remaining share of the selected root.
 Unknown size or count stays unknown; an unknown hidden size has no numeric share.
 Fully expanded, fully observed trees have no remainder line and no display-limit notes.
 Check completeness separately: unreadable directories and scan-depth restrictions still
@@ -337,7 +374,7 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
+| Scope | What is scanned and cached? | `PATH...`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
 | Content | Which file bodies are read beyond what the views imply? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
@@ -544,6 +581,11 @@ Paths escapes control characters only and keeps stdout to paths; bound and rule 
 go to stderr. Long adds size and signed age.
 Machine rows retain exact `mtime_ns`, `age_ns`, directory `files`/`dirs`, and the
 report’s `age_reference_ns`; unknown ages are null.
+Tree nodes carry the same `mtime_ns`, `complete`, and `age_ns` as the text column,
+beside `newest_mtime_ns`, the newest regular file alone.
+`modified_at` and the envelope’s `age_reference_at` are the same instants in RFC 3339
+UTC; `modified_at` is null wherever the time is only a lower bound.
+A `--watch` repaint measures its ages from its own instant.
 
 Tree/Paths/Long require one compatible list view.
 Use automatic Text or machine output for grouped/mixed views and Full.
@@ -620,7 +662,7 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/10`, a `--watch`
+- `schema` before parsing anything else: a report carries `fdu.report/11`, a `--watch`
   stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. Treat an
   unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
@@ -771,10 +813,25 @@ START HERE
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
+    fdu docs src                               several paths as one report, with a total
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
-  to depth 5, showing contents with at least 1% of the selected root size. Hidden
+  to depth 5, showing contents with at least 1% of the selected root size, each
+  with its age: how long ago anything it counts last changed. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
+
+  Several paths are what each would report, added: every size, row, share, and
+  bound is over the union, once. The tree starts with a (total) row, each root
+  is a row named as given, and flat paths are printed after their root's label.
+  Every PATH is a directory; `fdu */` names only the directories here, and is
+  refused where one is a symlink to another (lib64 -> lib). Each root is walked
+  separately and pays a walk's fixed cost: 625 small roots took 1.72 s, one
+  walk of their parent 0.23 s, about 7x (macOS, uncontrolled host). One walk
+  shows every entry one level down: `fdu --depth 1 --min-share 0% .`, which
+  also counts hidden entries and files, as `*/` does not, and does not walk
+  the target of a symlink, which `*/` names as a root.
+  A root inside another, or the same directory twice, is refused (exit 2).
+  --cache-status and --cache-clear take one PATH, as does --watch.
 
   code and documents read file contents; --analyze is the extra control for
   analysis a view does not imply:
@@ -838,6 +895,9 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   --breadth caps children per directory; --limit caps data rows per section.
   Both default to all. --depth all expands levels. Omission notes name each bound.
   Display bounds never change totals or limit the filesystem scan.
+  A tree row's age is its newest counted change, of files, directories, and symlinks;
+  unknown where a subtree was not listed. Ages read s, m, h, d, mo (30.44 days), and
+  y (365.25 days); time bounds take days. --sort mtime orders rows by that age.
 
   --format paths gives matching paths only; --long adds size, age, and path.
   Flat lists are complete and size-ranked by default; --sort name lists by name.
@@ -863,7 +923,7 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
+  Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
                                                         beyond what the views imply
@@ -935,7 +995,7 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -982,7 +1042,7 @@ fdu 0.4.0[DEV_REVISION]
 
 ```console
 $ fdu --cache off --color never --size apparent .
-░░░░░░░░░░      —         0 B  . 0 files
+░░░░░░░░░░      —         0 B  —  . 0 files
 ! note: root size is zero, so shares are undefined
 ! tip: show more: --min-share=0%
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
@@ -997,7 +1057,7 @@ $ fdu --definitely-not-an-option
 !
 !   tip: to pass '--definitely-not-an-option' as a value, use '-- --definitely-not-an-option'
 !
-! Usage: fdu [OPTIONS] <PATH>
+! Usage: fdu [OPTIONS] <PATH>...
 !        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
 !        fdu [PATH] --cache-clear[=<SCOPE>]
 !        fdu --docs
@@ -1036,6 +1096,21 @@ $ fdu --watch --scan-depth 2 .
 ? 2
 ```
 
+## Watching Keeps One Root
+
+A watch keeps one tree current, so a second PATH is refused before anything is read.
+
+```console
+$ node -e "for (const d of ['one', 'two']) require('node:fs').mkdirSync(d)"
+? 0
+```
+
+```console
+$ fdu --watch one two
+! fdu: --watch takes one PATH; 2 were given
+? 2
+```
+
 ## A Missing Root Is a Fatal Filesystem Error
 
 ```console
@@ -1057,7 +1132,7 @@ $ node -e "require('node:fs').writeFileSync('plain-file', 'x')"
 
 ```console
 $ fdu --cache off plain-file
-! fdu: I/O error at [SCAN_PATH]: scan root is not a directory
+! fdu: plain-file is a file; fdu reports on directories (to name only the directories here: fdu */)
 ? 1
 ```
 

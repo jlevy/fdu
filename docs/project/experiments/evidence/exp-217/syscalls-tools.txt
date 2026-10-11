@@ -1,0 +1,16 @@
+strace -f -c of each tool's command line, one run each, warm cache; calls per syscall
+fdu-0.5.0 = 0d6011da, fdu-0.4.0 = 148ef78e, fdu-h197 = d7cbfc71; pdu 0.24.0, diskus 0.9.0
+node-modules-dense   fdu-0.5.0                statx=79963 newfstatat=0 lstat=0 fstat=4 openat=9447 getdents64=18878 close=9447 read=13 total=175
+node-modules-dense   fdu-0.5.0-no-gitignore   statx=79963 newfstatat=0 lstat=0 fstat=4 openat=9448 getdents64=18878 close=9448 read=14 total=164
+node-modules-dense   fdu-0.4.0                statx=72075 newfstatat=0 lstat=0 fstat=4 openat=9447 getdents64=18878 close=9447 read=13 total=167
+node-modules-dense   fdu-h197                 statx=79963 newfstatat=0 lstat=0 fstat=4 openat=9447 getdents64=18878 close=9447 read=13 total=168
+node-modules-dense   pdu-max-depth-2          statx=79967 newfstatat=0 lstat=0 fstat=9443 openat=9452 getdents64=18879 close=9451 read=28 total=123
+node-modules-dense   pdu-default              statx=79967 newfstatat=0 lstat=0 fstat=9443 openat=9452 getdents64=18879 close=9451 read=28 total=125
+node-modules-dense   diskus                   statx=79961 newfstatat=0 lstat=0 fstat=9443 openat=9448 getdents64=18879 close=9448 read=15 total=280
+linux-v6.12          fdu-0.5.0                statx=92838 newfstatat=0 lstat=0 fstat=4 openat=6136 getdents64=11538 close=6136 read=730 total=165
+linux-v6.12          fdu-0.5.0-no-gitignore   statx=92480 newfstatat=0 lstat=0 fstat=4 openat=5777 getdents64=11538 close=5777 read=13 total=162
+linux-v6.12          fdu-0.4.0                statx=87656 newfstatat=0 lstat=0 fstat=4 openat=6135 getdents64=11538 close=6135 read=729 total=145
+linux-v6.12          fdu-h197                 statx=92838 newfstatat=0 lstat=0 fstat=4 openat=6136 getdents64=11538 close=6136 read=730 total=170
+linux-v6.12          pdu-max-depth-2          statx=92484 newfstatat=0 lstat=0 fstat=5773 openat=5782 getdents64=11540 close=5781 read=28 total=123
+linux-v6.12          pdu-default              statx=92484 newfstatat=0 lstat=0 fstat=5773 openat=5782 getdents64=11540 close=5781 read=28 total=124
+linux-v6.12          diskus                   statx=92478 newfstatat=0 lstat=0 fstat=5773 openat=5778 getdents64=11540 close=5778 read=15 total=272

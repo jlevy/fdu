@@ -70,7 +70,8 @@ def test_retained_directory_metrics_and_formats_need_no_filesystem(builds: Path)
     paths = report.render(fdu.Format.PATHS).splitlines()
     assert len(paths) == 3
     long = report.render()
-    assert "31 B" in long and "60d" in long
+    # Sixty days is one display month of 30.44 days, floored.
+    assert "31 B" in long and " 1mo a/.venv" in long
     wire = json.loads(report.render(fdu.Format.JSON))
     assert wire == report.as_dict()
     assert wire["reports"][0]["files"][0]["bytes"] == 31

@@ -1,0 +1,5 @@
+answers.py, 0.4.0 CLI (148ef78e) and 0.5.0 CLI (0d6011da), run 2026-10-10 before any timed cell
+{"subject": "node-modules-dense", "rows": 79850, "rows_with_activity": 79850, "folded_equals_full_index": true, "sizes_equal_0_4_0": true}
+{"subject": "linux-v6.12", "rows": 92412, "rows_with_activity": 92412, "folded_equals_full_index": true, "sizes_equal_0_4_0": true}
+{"subject": "linux-balanced-1m", "rows": 8675, "rows_with_activity": 8675, "folded_equals_full_index": true, "sizes_equal_0_4_0": true}
+h197 (fdu d7cbfc71) against 0.4.0, the same check: node-modules-dense 79850 rows and linux-v6.12 92412 rows, folded_equals_full_index true, sizes_equal_0_4_0 true

@@ -638,7 +638,7 @@ def phase_analyze_extra(runner: Runner, tree: Path, cache_home: Path) -> None:
 def check_json_analysis(path: Path, row: Row) -> None:
     """JSON `--analyze` must carry a filled `physical_lines` total, not a schema shell.
 
-    In `fdu.report/10` a grouped view's total is `reports[0].metrics.total`, with its
+    In `fdu.report/11` a grouped view's total is `reports[0].metrics.total`, with its
     content metrics in that total's own `metrics`; the top-level `analysis` names only
     the analyzers. A missing field fails, so a shape change cannot make the check vacuous.
     """

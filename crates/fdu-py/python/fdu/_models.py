@@ -12,7 +12,7 @@ import math
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -342,6 +342,9 @@ class RefusedControl:
 
     path: Path
     reason: ControlRefusalReason
+    #: Position of the file's root in :attr:`Report.roots` over several roots, which
+    #: ``path`` is relative to; ``None`` over one root.
+    root: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -404,7 +407,11 @@ def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservatio
         rules=int(value["rules"]),
         refused=int(value["refused"]),
         refusals=tuple(
-            RefusedControl(path=_wire_path(item), reason=ControlRefusalReason(item["reason"]))
+            RefusedControl(
+                path=_wire_path(item),
+                reason=ControlRefusalReason(item["reason"]),
+                root=_root_position(item),
+            )
             for item in value["refusals"]
         ),
     )
@@ -569,6 +576,9 @@ class OperationError:
     kind: str
     message: str
     os_error: int | None = None
+    #: Position of the error's root in :attr:`Report.roots` over several roots, which
+    #: ``path`` is relative to; ``None`` over one root.
+    root: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -729,6 +739,13 @@ class FileRow:
     #: Signed modification age relative to Report.age_reference_ns; future is negative,
     #: and ``None`` when the reference is unrepresentable or the subtree is incomplete.
     age_ns: int | None = None
+    #: ``mtime_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
+    #: ``None`` when the subtree is incomplete and ``mtime_ns`` only a lower bound.
+    modified_at: datetime | None = None
+    #: Position of the row's root in :attr:`Report.roots` over several roots, so
+    #: ``report.roots[row.root].path / row.path`` names the entry; ``None`` over one root,
+    #: where ``path`` is relative to :attr:`Report.root`.
+    root: int | None = None
 
 
 class TreeOmissionReason(StrEnum):
@@ -767,6 +784,7 @@ class TreeNode:
     allocated: int
     files: int
     dirs: int
+    #: The newest regular file's modification time in this subtree, or ``None`` with none.
     newest_mtime_ns: int | None
     truncated: bool
     children: tuple[TreeNode, ...]
@@ -775,6 +793,20 @@ class TreeNode:
     ignored: IgnoredTally | None = None
     #: Whether this entry itself is gitignored, or ``None`` when classification is unknown.
     entry_ignored: bool | None = None
+    #: The newest modification time among the entries this row counts, of any kind: its
+    #: own entry when the selection admits it and every counted entry beneath it, never
+    #: the report root's own time. ``None`` when the row counts nothing; a lower bound
+    #: when ``complete`` is false. The age the text tree shows.
+    mtime_ns: int | None = None
+    #: Whether the directory's subtree was listed in full; ``None`` for a file.
+    complete: bool | None = None
+    #: Signed age relative to Report.age_reference_ns; future is negative, and ``None``
+    #: when the row counts nothing, the subtree is incomplete, or the reference is
+    #: unrepresentable.
+    age_ns: int | None = None
+    #: ``mtime_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
+    #: ``None`` when the row counts nothing or its subtree is incomplete.
+    modified_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -917,14 +949,67 @@ class TreeDisplayLimits:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportRoot:
+    """One root of a report over several: the path as the caller named it, normalized by
+    its components, and the directory it is."""
+
+    #: What text prints before each path under this root.
+    label: Path
+    #: The canonical directory every path under this root is relative to.
+    path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class TreeTotal:
+    """The total row of a tree over several roots: every root's totals together.
+
+    A tree node's values without the identity of an entry, since no entry is the total.
+    """
+
+    bytes: int
+    allocated: int
+    files: int
+    dirs: int
+    #: The ignored share, or ``None`` when any root's is unknown.
+    ignored: IgnoredTally | None
+    #: The newest regular file under any root.
+    newest_mtime_ns: int | None
+    #: The newest activity any root's row counts.
+    mtime_ns: int | None
+    #: Whether every root was listed in full.
+    complete: bool
+    age_ns: int | None = None
+    modified_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RootTree:
+    """One root's tree in a report over several roots, named by the root's label."""
+
+    #: Position of the tree's root in :attr:`Report.roots`.
+    root: int
+    tree: TreeNode
+    #: What this tree's bounds hid, as one root's section carries it.
+    remainder: TreeRemainder | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class TreeSection:
     view: View
+    #: The tree of a report over one root; ``None`` over several, or when the row limit
+    #: is zero.
     tree: TreeNode | None
     limits: TreeDisplayLimits
     omissions: tuple[TreeOmission, ...] = ()
     #: Hidden contents across this tree, or ``None`` when nothing is omitted.
-    #: Parent totals already include these values; do not add them again.
+    #: Parent totals already include these values; do not add them again. Over several
+    #: roots, what the row limit cut at the top: root rows, or every root under a zero
+    #: limit.
     remainder: TreeRemainder | None = None
+    #: The total row over several roots, ``None`` over one root or under a zero row limit.
+    total: TreeTotal | None = None
+    #: One tree per root over several roots, in display order; empty over one root.
+    trees: tuple[RootTree, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -991,7 +1076,9 @@ class Report:
 
     schema: str
     generator: str
-    root: Path
+    #: The root of a report over one root; ``None`` over several, which :attr:`roots`
+    #: names. Exactly one of the two is set.
+    root: Path | None
     request: ReportRequest
     status: Status
     provenance: ReportProvenance
@@ -1006,7 +1093,12 @@ class Report:
     #: present and the refusals from ``status.ignore_rules``.
     notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
+    #: The instant every age in the report is measured from, in epoch nanoseconds, or
+    #: ``None`` when it cannot be represented.
     age_reference_ns: int | None = None
+    #: ``age_reference_ns`` as a timezone-aware UTC ``datetime``, floored to the
+    #: microsecond.
+    age_reference_at: datetime | None = None
     #: Actionable suggestions, separate from facts and formatted data.
     tips: tuple[str, ...] = ()
     #: What a reader must not miss about the answer itself, in the order a renderer
@@ -1021,6 +1113,9 @@ class Report:
     _renderer: Callable[[str, bool, int], str] | None = field(
         default=None, repr=False, compare=False
     )
+    #: The roots of a report over several, in the caller's order, each with its label and
+    #: canonical path; ``None`` over one root.
+    roots: tuple[ReportRoot, ...] | None = None
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
@@ -1240,6 +1335,23 @@ def _datetime(value: object) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _instant(nanos: int | None) -> datetime | None:
+    """A timezone-aware UTC `datetime` for epoch nanoseconds, floored to the microsecond.
+
+    Derived from the exact integer rather than parsed from the wire's RFC 3339 string, so
+    nothing depends on how a string rounds. Floor division floors toward the past, so an
+    instant before the epoch lands on the microsecond at or before it, as one after the
+    epoch does; truncating toward zero would move it later.
+    """
+
+    if nanos is None:
+        return None
+    return _EPOCH + timedelta(microseconds=nanos // 1_000)
+
+
 def _entry_tier_identity(value: Mapping[str, Any]) -> EntryTierIdentity:
     return EntryTierIdentity(
         engine=int(value["engine"]),
@@ -1334,7 +1446,16 @@ def _operation_error(value: object) -> OperationError:
         str(error.get("kind", "operation")),
         str(error.get("message", "")),
         int(error["os_error"]) if error.get("os_error") is not None else None,
+        _root_position(error),
     )
+
+
+def _root_position(value: Mapping[str, Any]) -> int | None:
+    """The position of a row's, an error's, or a refusal's root in ``Report.roots``,
+    present only over several roots."""
+
+    root = value.get("root")
+    return None if root is None else int(root)
 
 
 def _ignore_rules(value: object) -> ControlObservation | None:
@@ -1623,8 +1744,83 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             children=tuple(built[id(child)] for child in children),
             omissions=_tree_omissions(raw["omissions"]),
             ignored=_ignored_tally(raw["ignored"]),
+            mtime_ns=_optional_int(raw["mtime_ns"]),
+            complete=_optional_bool(raw["complete"]),
+            age_ns=_optional_int(raw["age_ns"]),
+            modified_at=_modified_at(raw["mtime_ns"], raw["complete"]),
         )
     return built[id(value)]
+
+
+def _tree_total(value: object) -> TreeTotal | None:
+    """The total row of a tree over several roots, or ``None``."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("tree total must be an object or null")
+    raw = cast(dict[str, Any], value)
+    complete = _optional_bool(raw["complete"])
+    return TreeTotal(
+        bytes=int(raw["bytes"]),
+        allocated=int(raw["allocated"]),
+        files=int(raw["files"]),
+        dirs=int(raw["dirs"]),
+        ignored=_ignored_tally(raw["ignored"]),
+        newest_mtime_ns=_optional_int(raw["newest_mtime_ns"]),
+        mtime_ns=_optional_int(raw["mtime_ns"]),
+        complete=bool(complete),
+        age_ns=_optional_int(raw["age_ns"]),
+        modified_at=_modified_at(raw["mtime_ns"], complete),
+    )
+
+
+def _root_trees(value: object) -> tuple[RootTree, ...]:
+    """One tree per root over several roots; none over one root."""
+
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise TypeError("root trees must be a list")
+    trees: list[RootTree] = []
+    for item in cast(list[Any], value):
+        if not isinstance(item, dict):
+            raise TypeError("a root tree must be an object")
+        raw = cast(dict[str, Any], item)
+        if not isinstance(raw.get("tree"), dict):
+            raise TypeError("a root tree must carry a tree")
+        trees.append(
+            RootTree(
+                root=int(raw["root"]),
+                tree=_tree(cast(dict[str, Any], raw["tree"])),
+                remainder=_tree_remainder(raw.get("remainder")),
+            )
+        )
+    return tuple(trees)
+
+
+def _report_roots(value: object) -> tuple[ReportRoot, ...] | None:
+    """The envelope's roots over several roots, or ``None`` over one."""
+
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise TypeError("report roots must be a list")
+    roots: list[ReportRoot] = []
+    for item in cast(list[Any], value):
+        if not isinstance(item, dict):
+            raise TypeError("a report root must be an object")
+        raw = cast(dict[str, Any], item)
+        roots.append(ReportRoot(label=_wire_path(raw, "label"), path=_wire_path(raw, "path")))
+    return tuple(roots)
+
+
+def _modified_at(mtime_ns: object, complete: object) -> datetime | None:
+    """A row's ``modified_at``: its time, unless the subtree's time is only a lower bound."""
+
+    if mtime_ns is None or complete is False:
+        return None
+    return _instant(int(cast(int, mtime_ns)))
 
 
 def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Report:
@@ -1723,9 +1919,14 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             dirs=_optional_int(row["dirs"]) if "dirs" in row else None,
                             complete=_optional_bool(row["complete"]) if "complete" in row else None,
                             age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
+                            modified_at=_modified_at(
+                                row["mtime_ns"],
+                                _optional_bool(row["complete"]) if "complete" in row else None,
+                            ),
                             ignored=_ignored_flag(row["ignored"]),
                             sort_value=_optional_int(row["sort_value"]),
                             classification=_file_classification(row["classification"]),
+                            root=_root_position(row),
                         )
                         for row in rows
                     ),
@@ -1749,6 +1950,8 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     ),
                     _tree_omissions(raw["omissions"]),
                     _tree_remainder(cast(dict[str, Any], raw).get("remainder")),
+                    total=_tree_total(cast(dict[str, Any], raw).get("total")),
+                    trees=_root_trees(cast(dict[str, Any], raw).get("trees")),
                 )
             )
         else:
@@ -1823,9 +2026,11 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         notes=notes,
         schema=str(wire["schema"]),
         generator=str(wire["generator"]),
-        root=_wire_path(wire, "root"),
+        root=_wire_path(wire, "root") if wire.get("root") is not None else None,
+        roots=_report_roots(wire.get("roots")),
         request=request,
         age_reference_ns=_optional_int(wire.get("age_reference_ns")),
+        age_reference_at=_instant(_optional_int(wire.get("age_reference_ns"))),
         status=status,
         provenance=provenance,
         analysis=analysis,

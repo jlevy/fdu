@@ -25,7 +25,10 @@ is the full record of every experiment the project has run.
   instead that each tool give one answer across all its samples.
 - **Different work.** The tools do not return the same thing, so each table names what
   each one returns. fdu’s default tree reads every `.gitignore` in the tree to label
-  ignored shares, which no other tool here does.
+  ignored shares, which no other tool here does; `fdu --no-gitignore PATH` is the
+  like-for-like command when that work should be left out.
+  [What fdu does that its peers do not](#what-fdu-does-that-its-peers-do-not) counts the
+  rest.
 
 ## Throughput
 
@@ -140,6 +143,48 @@ The README’s Linux column takes pdu and diskus from the 0.3.0 run above and th
 tools from this run.
 The [Linux comparison](project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 has versions, CPU time, and the protocol.
+
+### What fdu Does That Its Peers Do Not
+
+Counted, not timed: `strace -f -c` of each tool’s command, one warm run each, on
+2026-10-10
+([exp-217](project/experiments/exp-217-linux-h193-the-age-column-costs-the-dense-tree-s-default-com.md)
+has the files). Every tool asks the kernel for one metadata call per entry and one open
+and listing per directory; what differs is small.
+
+| Calls on `node_modules` (80k entries, 9,439 directories) | `statx` | `fstat` | `openat` | `getdents64` |
+| --- | ---: | ---: | ---: | ---: |
+| fdu 0.5.0, `fdu PATH` | 79,963 | 4 | 9,447 | 18,878 |
+| fdu 0.4.0 | 72,075 | 4 | 9,447 | 18,878 |
+| pdu, either mode | 79,967 | 9,443 | 9,452 | 18,879 |
+| diskus | 79,961 | 9,443 | 9,448 | 18,879 |
+
+| Calls on the Linux v6.12 source (92k entries, 358 `.gitignore`) | `statx` | `fstat` | `openat` | `read` |
+| --- | ---: | ---: | ---: | ---: |
+| fdu 0.5.0, `fdu PATH` | 92,838 | 4 | 6,136 | 730 |
+| fdu 0.5.0, `fdu --no-gitignore PATH` | 92,480 | 4 | 5,777 | 13 |
+| pdu, either mode | 92,484 | 5,773 | 5,782 | 28 |
+| diskus | 92,478 | 5,773 | 5,778 | 15 |
+
+- **Metadata.** Like pdu and diskus, fdu states every entry, directories and symlinks
+  included. 0.4.0 stated about 7,900 fewer here, because its tree took a directory’s kind
+  from the listing; 0.5.0’s age column needs each directory’s own time, so it states
+  them as the peers do.
+  fdu skips the `fstat` the C library’s directory reader makes on every directory it
+  opens.
+- **`.gitignore`.** The one extra I/O: each rules file is stated, opened, and read, 358
+  of them in the kernel tree and none in `node_modules`. `--no-gitignore` removes it,
+  leaving fdu’s calls the peers’ minus their `fstat` per directory.
+- **In memory.** fdu classifies every entry against the rules it read; keeps, for each
+  directory, files, directories, apparent and allocated bytes, the newest file, the
+  newest activity, and the ignored share; and renders a tree with bars, shares, and
+  ages. pdu keeps a size per node and renders a tree; diskus keeps one total.
+  This work is user-space time and shows in wall time only where it is on the critical
+  path.
+
+There is no switch for the rest: the age column has none, by the
+[six-axes rule](project/architecture/fdu-design-principles.md#six-axes-no-one-off-flags),
+and its cost is that of the directory `statx` the peers also make.
 
 ## macOS
 

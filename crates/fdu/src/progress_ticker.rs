@@ -216,6 +216,7 @@ pub(crate) fn frame_facts(snapshot: &ProgressSnapshot, size: SizeMetric) -> Opti
             SizeMetric::Allocated => snapshot.allocated,
         },
         analysis: snapshot.analysis,
+        root: snapshot.root,
     })
 }
 
@@ -312,8 +313,14 @@ fn redraw_until_stopped(
         let Some(facts) = frame_facts(&progress.snapshot(), plan.size) else {
             continue;
         };
-        let frame =
-            render_frame(&plan.root, &facts, started.elapsed(), spinner_step, width(), plan.color);
+        let frame = render_frame(
+            facts.root_of(&plan.roots),
+            &facts,
+            started.elapsed(),
+            spinner_step,
+            width(),
+            plan.color,
+        );
         let mut state = line.lock();
         if state.stopped {
             return;
@@ -396,7 +403,7 @@ mod tests {
     fn plan() -> ProgressPlan {
         ProgressPlan {
             draw: true,
-            root: ROOT.to_string(),
+            roots: vec![ROOT.to_string()],
             color: false,
             size: SizeMetric::Allocated,
         }
@@ -429,6 +436,7 @@ mod tests {
             bytes: 4_096,
             allocated: 8_192,
             analysis: Some((2, 5)),
+            root: None,
         };
         assert_eq!(
             frame_facts(&snapshot, SizeMetric::Allocated),
@@ -438,6 +446,7 @@ mod tests {
                 files: 40,
                 bytes: 8_192,
                 analysis: Some((2, 5)),
+                root: None,
             })
         );
         for (engine, frame) in [
@@ -469,6 +478,7 @@ mod tests {
             bytes: 8_796_093_022_208,
             allocated: 41_107_456,
             analysis: None,
+            root: None,
         };
         let bytes = |size| frame_facts(&snapshot, size).map(|facts| facts.bytes);
         assert_eq!(bytes(SizeMetric::Allocated), Some(41_107_456));

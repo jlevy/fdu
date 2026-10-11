@@ -101,7 +101,7 @@ fn warm_partial_report_retains_reconciliation_error() {
     let answer = report(&index, &request, SystemTime::now()).expect("report");
     assert!(!answer.status.complete);
     assert_eq!(answer.status.errors.len(), 1);
-    assert_eq!(answer.status.errors[0].path.as_deref(), Some(Path::new("blocked")));
+    assert_eq!(answer.status.errors[0].issue.path.as_deref(), Some(Path::new("blocked")));
 }
 
 #[test]

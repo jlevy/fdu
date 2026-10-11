@@ -1,0 +1,46 @@
+Every job of every committed run artifact of exp-217 to exp-221, from docs/project/experiments/evidence:
+python3 exp-220/order.py.txt . exp-21[7-9]/run*.json.gz exp-22[01]/run*.json.gz
+
+Order split (pairs control-first + candidate-first): medians, then means, of the pairs by which arm ran first
+exp-217/run.json.gz                     default-tree          roots-vs-v040       50+50  v040-first +6.76%      roots-first +3.98%       arm +5.37%    order +1.39%   | means +7.64% +6.84%      order +0.40%
+exp-218/run-r3-lnx-noage-roots.json.gz  default-tree          roots-vs-noage      50+50  noage-first +0.43%     roots-first +0.21%       arm +0.32%    order +0.11%   | means +0.40% +1.35%      order -0.47%
+exp-218/run.json.gz                     default-tree          roots-vs-noage      50+50  noage-first +5.55%     roots-first +6.23%       arm +5.89%    order -0.34%   | means +7.19% +7.01%      order +0.09%
+exp-219/run-h2-nmd-noage-h197.json.gz   default-tree          h197-vs-noage       50+50  noage-first +2.99%     h197-first +5.28%        arm +4.14%    order -1.14%   | means +4.21% +6.33%      order -1.06%
+exp-219/run-h3-lnx-roots-h197.json.gz   aggregate-summary     h197-vs-roots       50+50  roots-first -1.13%     h197-first -0.85%        arm -0.99%    order -0.14%   | means +1.73% -0.18%      order +0.95%
+exp-219/run-h3-lnx-roots-h197.json.gz   default-tree          h197-vs-roots       50+50  roots-first -4.75%     h197-first -0.01%        arm -2.38%    order -2.37%   | means -2.87% +1.39%      order -2.13%
+exp-219/run-h4-lnx-noage-h197.json.gz   default-tree          h197-vs-noage       50+50  noage-first +3.74%     h197-first +0.50%        arm +2.12%    order +1.62%   | means +2.48% +2.45%      order +0.01%
+exp-219/run-h5-gen-roots-h197.json.gz   default-tree          h197-vs-roots       50+50  roots-first -3.39%     h197-first -2.06%        arm -2.73%    order -0.66%   | means -2.62% -2.22%      order -0.20%
+exp-219/run-h6-gen-noage-h197.json.gz   default-tree          h197-vs-noage       50+50  noage-first +1.67%     h197-first +1.60%        arm +1.63%    order +0.04%   | means +0.17% +0.87%      order -0.35%
+exp-219/run.json.gz                     aggregate-summary     h197-vs-roots       50+50  roots-first -3.60%     h197-first -5.83%        arm -4.71%    order +1.11%   | means -3.31% -5.28%      order +0.99%
+exp-219/run.json.gz                     default-tree          h197-vs-roots       50+50  roots-first -2.65%     h197-first -3.65%        arm -3.15%    order +0.50%   | means -3.03% -4.66%      order +0.82%
+exp-220/run-g2-lnx-h195.json.gz         aggregate-summary     roots-vs-age        20+20  age-first +2.95%       roots-first +0.31%       arm +1.63%    order +1.32%   | means +2.61% +1.66%      order +0.47%
+exp-220/run-g2-lnx-h195.json.gz         opened-second-report  roots-vs-age        20+20  age-first +3.55%       roots-first -1.37%       arm +1.09%    order +2.46%   | means +1.62% +1.36%      order +0.13%
+exp-220/run-g2-lnx-h195.json.gz         render-yaml           roots-vs-age        20+20  age-first -7.07%       roots-first -5.88%       arm -6.47%    order -0.59%   | means -6.70% -3.55%      order -1.57%
+exp-220/run.json.gz                     aggregate-summary     roots-vs-age        20+20  age-first +6.71%       roots-first +2.93%       arm +4.82%    order +1.89%   | means +7.36% -0.31%      order +3.84%
+exp-220/run.json.gz                     opened-second-report  roots-vs-age        20+20  age-first -0.81%       roots-first +1.43%       arm +0.31%    order -1.12%   | means -0.61% +1.90%      order -1.25%
+exp-220/run.json.gz                     render-yaml           roots-vs-age        20+20  age-first -4.42%       roots-first -5.61%       arm -5.01%    order +0.59%   | means -6.20% -5.02%      order -0.59%
+exp-221/run.json.gz                     roots-default-tree    children-vs-parent  10+10  parent-first +444.40%  children-first +402.69%  arm +423.55%  order +20.85%  | means +430.92% +428.51%  order +1.20%
+exp-221/run.json.gz                     roots-summary         children-vs-parent  10+10  parent-first +439.68%  children-first +408.34%  arm +424.01%  order +15.67%  | means +416.33% +413.72%  order +1.30%
+
+Estimators: the harness's paired median beside the mean (bootstrap 95%), Hodges-Lehmann, and marginal medians
+exp-217/run.json.gz                     default-tree          roots-vs-v040       paired +5.72%    mean +7.24% [+5.09%, +9.55%]        HL +7.75%    marginal +8.01%    positive 81/100  range [-32.17%, +35.42%]
+exp-218/run-r3-lnx-noage-roots.json.gz  default-tree          roots-vs-noage      paired +0.42%    mean +0.88% [-0.96%, +2.66%]        HL +0.83%    marginal -0.08%    positive 53/100  range [-26.71%, +25.66%]
+exp-218/run.json.gz                     default-tree          roots-vs-noage      paired +5.63%    mean +7.10% [+4.89%, +9.44%]        HL +6.87%    marginal +6.22%    positive 77/100  range [-24.15%, +36.64%]
+exp-219/run-h2-nmd-noage-h197.json.gz   default-tree          h197-vs-noage       paired +4.01%    mean +5.27% [+3.41%, +7.20%]        HL +4.93%    marginal +5.15%    positive 69/100  range [-22.15%, +40.14%]
+exp-219/run-h3-lnx-roots-h197.json.gz   aggregate-summary     h197-vs-roots       paired -1.11%    mean +0.78% [-1.65%, +3.44%]        HL -0.47%    marginal +0.73%    positive 44/100  range [-18.42%, +46.09%]
+exp-219/run-h3-lnx-roots-h197.json.gz   default-tree          h197-vs-roots       paired -1.22%    mean -0.74% [-3.00%, +1.51%]        HL -1.02%    marginal -1.98%    positive 45/100  range [-34.88%, +46.31%]
+exp-219/run-h4-lnx-noage-h197.json.gz   default-tree          h197-vs-noage       paired +2.52%    mean +2.47% [-0.01%, +5.01%]        HL +2.31%    marginal +2.10%    positive 54/100  range [-27.22%, +31.56%]
+exp-219/run-h5-gen-roots-h197.json.gz   default-tree          h197-vs-roots       paired -2.34%    mean -2.42% [-3.57%, -1.29%]        HL -2.36%    marginal -1.93%    positive 34/100  range [-20.48%, +12.35%]
+exp-219/run-h6-gen-noage-h197.json.gz   default-tree          h197-vs-noage       paired +1.60%    mean +0.52% [-0.94%, +1.83%]        HL +0.99%    marginal +0.55%    positive 61/100  range [-22.53%, +15.09%]
+exp-219/run.json.gz                     aggregate-summary     h197-vs-roots       paired -5.06%    mean -4.29% [-6.07%, -2.53%]        HL -4.29%    marginal -4.96%    positive 31/100  range [-34.88%, +17.59%]
+exp-219/run.json.gz                     default-tree          h197-vs-roots       paired -3.35%    mean -3.84% [-6.03%, -1.81%]        HL -3.36%    marginal -2.70%    positive 36/100  range [-57.93%, +18.22%]
+exp-220/run-g2-lnx-h195.json.gz         aggregate-summary     roots-vs-age        paired +0.92%    mean +2.14% [-1.57%, +6.17%]        HL +1.41%    marginal +1.23%    positive 22/40   range [-26.68%, +49.10%]
+exp-220/run-g2-lnx-h195.json.gz         opened-second-report  roots-vs-age        paired +0.72%    mean +1.49% [-1.23%, +4.19%]        HL +1.20%    marginal +1.39%    positive 22/40   range [-25.94%, +22.59%]
+exp-220/run-g2-lnx-h195.json.gz         render-yaml           roots-vs-age        paired -6.35%    mean -5.12% [-7.41%, -2.52%]        HL -5.98%    marginal -5.08%    positive 6/40    range [-18.20%, +26.34%]
+exp-220/run.json.gz                     aggregate-summary     roots-vs-age        paired +5.28%    mean +3.53% [+0.31%, +6.90%]        HL +3.97%    marginal -0.68%    positive 27/40   range [-18.87%, +31.94%]
+exp-220/run.json.gz                     opened-second-report  roots-vs-age        paired +0.16%    mean +0.65% [-1.67%, +2.87%]        HL +0.30%    marginal -0.15%    positive 20/40   range [-18.64%, +17.54%]
+exp-220/run.json.gz                     render-yaml           roots-vs-age        paired -5.48%    mean -5.61% [-7.99%, -3.28%]        HL -5.19%    marginal -5.29%    positive 8/40    range [-34.84%, +6.95%]
+exp-221/run.json.gz                     roots-default-tree    children-vs-parent  paired +425.55%  mean +429.71% [+401.03%, +458.63%]  HL +430.76%  marginal +409.74%  positive 20/20   range [+308.70%, +537.47%]
+exp-221/run.json.gz                     roots-summary         children-vs-parent  paired +417.88%  mean +415.02% [+372.58%, +452.24%]  HL +418.44%  marginal +404.48%  positive 20/20   range [+210.37%, +576.06%]
+
+Skipped, not two arms: exp-217/run-a1-nmd-default-tree.json.gz (4 arms), exp-217/run-a2-lnx-default-tree.json.gz (4 arms), exp-217/run-a3-gen-default-tree.json.gz (4 arms), exp-217/run-aa-nmd-slots.json.gz (3 arms), exp-217/run-b1-nmd-retained.json.gz (3 arms), exp-217/run-b2-lnx-retained.json.gz (3 arms), exp-217/run-c-nmd-no-controls.json.gz (3 arms), exp-217/run-tools-linux-balanced-1m.json.gz (0 arms), exp-217/run-tools-linux-v6.12.json.gz (0 arms), exp-217/run-tools-node-modules-dense.json.gz (0 arms)

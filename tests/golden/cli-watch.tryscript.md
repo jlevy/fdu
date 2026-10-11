@@ -12,6 +12,7 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
+  AGE: '\s*-?[0-9]{1,3}(?:,[0-9]{3})*(?:s|m|h|d|mo|y)'
   CLOCK: '\d+'
   DIR_BYTES: '\d+'
   ALLOCATED: '\d+'
@@ -139,17 +140,17 @@ $ node -e "require('node:fs').mkdirSync('repaint'); require('node:fs').writeFile
 ```console
 $ node bin/watch-repaint-capture.mjs repaint
 TREE
-██████████   100%         4 B  . 1 file
-██████████   100%         4 B    seed.txt
+██████████   100%         4 B  [AGE]  . 1 file
+██████████   100%         4 B  [AGE]    seed.txt
 
 SUMMARY
        4 B  1 file, 0 directories
 
 ──── [STAMP] ────
 TREE
-██████████   100%        16 B  . 2 files
-████████░░    75%        12 B    added.txt
-███░░░░░░░    25%         4 B    seed.txt
+██████████   100%        16 B  [AGE]  . 2 files
+████████░░    75%        12 B  [AGE]    added.txt
+███░░░░░░░    25%         4 B  [AGE]    seed.txt
 
 SUMMARY
       16 B  2 files, 0 directories

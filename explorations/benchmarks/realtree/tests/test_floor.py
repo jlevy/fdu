@@ -57,6 +57,7 @@ CONSISTENT = {
     "arena-spike": arena_line(10, 50),
     "aggregate": probe_line(10, 50),
     "index": probe_line(11, 50),
+    "tree": probe_line(10, 50),
 }
 
 
@@ -66,7 +67,8 @@ def instrument_key(argv):
         return f"parfloor-{argv[1]}"
     if name == "arena_spike":
         return "arena-spike"
-    return {"summary": "aggregate", "scan-index": "index"}.get(argv[1], argv[1])
+    return {"summary": "aggregate", "scan-index": "index",
+            "roots-default-tree": "tree"}.get(argv[1], argv[1])
 
 
 def pressure(cpu_busy_pct):
@@ -659,6 +661,55 @@ class RefusesRatherThanSubstituting(unittest.TestCase):
         self.assertIn("fdu-33ri", message)
 
 
+class ScoresAChosenSetOfInstruments(unittest.TestCase):
+    """`--instrument` keeps an older probe scorable.
+
+    Review A13 on PR #194: the `tree` tier needs `roots-default-tree`, which no probe from
+    before #192 has, and with no way to leave it out such a probe could not be scored.
+    """
+
+    def _instruments_run_receives(self, *extra):
+        received = {}
+
+        def capture(**arguments):
+            received.update(arguments)
+            raise floor.FloorError("stop after recording the arguments")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), \
+                mock.patch.object(floor, "run", side_effect=capture):
+            status = floor.main(["--subject", "t=/", "--probe", "/b/perf_probe", *extra])
+        return status, received.get("instruments"), stderr.getvalue()
+
+    def test_the_default_runs_every_default_instrument(self):
+        status, instruments, _ = self._instruments_run_receives()
+        self.assertEqual(status, 1)
+        self.assertEqual(instruments, floor.DEFAULT_INSTRUMENTS)
+
+    def test_a_chosen_subset_reaches_the_run_in_order(self):
+        status, instruments, _ = self._instruments_run_receives(
+            "--instrument", "parfloor-stat", "--instrument", "aggregate",
+            "--instrument", "index",
+        )
+        self.assertEqual(status, 1)
+        self.assertEqual(instruments, ("parfloor-stat", "aggregate", "index"))
+
+    def test_a_subset_without_the_floor_is_refused_before_anything_runs(self):
+        status, instruments, message = self._instruments_run_receives(
+            "--instrument", "aggregate", "--instrument", "tree",
+        )
+        self.assertEqual(status, 2)
+        self.assertIsNone(instruments)
+        self.assertIn("parfloor-stat", message)
+
+    def test_an_instrument_named_twice_is_refused(self):
+        status, instruments, _ = self._instruments_run_receives(
+            "--instrument", "parfloor-stat", "--instrument", "parfloor-stat",
+        )
+        self.assertEqual(status, 2)
+        self.assertIsNone(instruments)
+
+
 class ScoresTheProbeMakeBuilt(unittest.TestCase):
     """The scoreboard and a verdict run must score the same probe.
 
@@ -973,6 +1024,16 @@ class ScoresAgainstTheFloor(unittest.TestCase):
             {"parfloor-stat": 100_000_000, "aggregate": 125_040_000}))["rows"]}
         self.assertEqual(rows["aggregate"]["x_floor"], 1.25)
         self.assertFalse(rows["aggregate"]["meets_threshold"])
+
+    def test_the_tree_tier_is_scored_but_has_no_threshold_to_close(self):
+        # Campaign 2 set closure thresholds for the aggregate and index tiers only, so the
+        # tree tier's ratio is a reading, never a closed or an open tier.
+        rows = {row["instrument"]: row for row in floor.score(self._subject(
+            {"parfloor-stat": 40_000_000, "tree": 46_000_000}))["rows"]}
+        self.assertEqual(rows["tree"]["role"], "tier")
+        self.assertEqual(rows["tree"]["x_floor"], 1.15)
+        self.assertIsNone(rows["tree"]["threshold"])
+        self.assertIsNone(rows["tree"]["meets_threshold"])
 
 
 class LeavesASpreadTierUndecided(unittest.TestCase):

@@ -95,9 +95,14 @@ with nothing on stdout, any answer it does print is compared with cold, and a ca
 comes back complete fails, which is what a run whose refusals were not effective looks
 like. The same kinds without their refusal bits are complete, so the second run must
 serve every case and fails any case that comes back partial.
-Every report’s `age_ns` is checked against its own `age_reference_ns` and `mtime_ns`,
-because ages move with the reference instant and are not comparable across runs, and the
-reference instant must fall within the invocation that produced the report.
+Every report’s `age_ns` is checked against its own `age_reference_ns` and `mtime_ns`, on
+list rows and on tree nodes at every depth, because ages move with the reference instant
+and are not comparable across runs, and the reference instant must fall within the
+invocation that produced the report.
+A tree node that counts no entry, or whose subtree was not listed in full, must have a
+null age.
+`age_reference_at`, the same instant rendered, is set aside with it; each row’s
+`modified_at` is compared like any other field.
 
 Keep the socket path short.
 A Unix socket path is limited to about 104 bytes on macOS, so a tree under a long

@@ -152,8 +152,9 @@ pub(crate) fn should_draw(
 pub(crate) struct ProgressPlan {
     /// Whether the ticker draws at all.
     pub draw: bool,
-    /// The root as the frame shows it.
-    pub root: String,
+    /// Each root as the frame shows it, in the order the run walks them; one for a run
+    /// over one root.
+    pub roots: Vec<String>,
     /// Whether the frame is colored, under the rule that colors fdu's warnings.
     pub color: bool,
     /// The size metric the answer is measured in, which the frame's bytes follow: a
@@ -241,6 +242,20 @@ pub(crate) struct FrameFacts {
     pub bytes: u64,
     /// Content files analyzed, and the candidates known when analysis began.
     pub analysis: Option<(u64, u64)>,
+    /// The root being walked, as a zero-based position and the count, when the run has
+    /// several; the frame names it with its position, `src (2/3)`.
+    pub root: Option<(u64, u64)>,
+}
+
+impl FrameFacts {
+    /// Which of `roots` the frame names: the one being walked.
+    pub(crate) fn root_of<'a>(&self, roots: &'a [String]) -> &'a str {
+        let position = self.root.and_then(|(position, _)| usize::try_from(position).ok());
+        position
+            .and_then(|position| roots.get(position))
+            .or_else(|| roots.first())
+            .map_or("", String::as_str)
+    }
 }
 
 /// The braille dots spinner, one cell per redraw.
@@ -298,17 +313,36 @@ struct RootSlot {
     columns: usize,
 }
 
+/// The position a frame puts after the root of a run over several, ` (2/3)`, or nothing.
+fn root_position(facts: &FrameFacts) -> String {
+    facts.root.map_or_else(String::new, |(position, count)| {
+        format!(" ({}/{count})", position.saturating_add(1))
+    })
+}
+
 impl RootSlot {
-    fn new(root: &str) -> Self {
-        Self { text: root.to_string(), columns: path_columns(root) }
+    fn new(root: &str, position: &str) -> Self {
+        Self {
+            text: format!("{root}{position}"),
+            columns: path_columns(root) + path_columns(position),
+        }
     }
 
-    /// The root elided in the middle with `…` to at most `target` columns, which must
-    /// be fewer than it occupies.
+    /// The root elided in the middle with `…` so that it and its `position` take at most
+    /// `target` columns, which must be fewer than they occupy. The position stays whole:
+    /// it is what tells one root of several from another when the labels are long.
     ///
     /// Whole characters only, so a wide character that would straddle the budget is
     /// left out and the result may come up a column short on either side rather than over.
-    fn elided(root: &str, target: usize) -> Self {
+    fn elided(root: &str, position: &str, target: usize) -> Self {
+        let elided = Self::elided_root(root, target.saturating_sub(path_columns(position)));
+        Self {
+            text: format!("{}{position}", elided.text),
+            columns: elided.columns + path_columns(position),
+        }
+    }
+
+    fn elided_root(root: &str, target: usize) -> Self {
         let budget = target.saturating_sub(1);
         let tail_budget = budget / 2;
         let head_budget = budget - tail_budget;
@@ -409,7 +443,7 @@ impl Slots {
         };
         Self {
             spinner: SPINNER[step % SPINNER.len()],
-            root: Some(RootSlot::new(root)),
+            root: Some(RootSlot::new(root, &root_position(facts))),
             phase: facts.phase.word(),
             phase_padded: true,
             aligned: true,
@@ -586,7 +620,7 @@ pub(crate) fn render_frame(
         let occupied = slots.root.as_ref().map_or(0, |root| root.columns);
         let target = occupied.saturating_sub(excess).max(MIN_ROOT_COLUMNS);
         if target < occupied {
-            slots.root = Some(RootSlot::elided(root, target));
+            slots.root = Some(RootSlot::elided(root, &root_position(facts), target));
         }
     }
     if slots.columns() > limit {
@@ -759,6 +793,7 @@ mod tests {
             files: 412_309,
             bytes: BYTES_38_GIB,
             analysis: None,
+            root: None,
         }
     }
 
@@ -772,6 +807,26 @@ mod tests {
 
     fn ms(millis: u64) -> Duration {
         Duration::from_millis(millis)
+    }
+
+    /// Over several roots the frame names the root being walked and its position, and a
+    /// root too long for the line is elided while its position stays whole.
+    #[test]
+    fn the_frame_names_the_root_and_its_position() {
+        let roots = ["docs".to_string(), "src".to_string(), "tests".to_string()];
+        let second = FrameFacts { root: Some((1, 3)), ..walk(Phase::Loading) };
+        assert_eq!(second.root_of(&roots), "src");
+        assert_eq!(walk(Phase::Loading).root_of(&roots), "docs", "one root names the first");
+        assert_eq!(
+            render_frame(second.root_of(&roots), &second, ms(600), 2, 100, false),
+            "⠹ src (2/3)  Loading       0.6 s"
+        );
+        let long = "a/very/long/root/path/that/cannot/fit/in/a/narrow/terminal/line";
+        let scanning = FrameFacts { root: Some((1, 3)), ..walk(Phase::Scanning) };
+        let narrow = render_frame(long, &scanning, ms(3_100), 4, 60, false);
+        assert!(narrow.contains("… (2/3)") || narrow.contains("(2/3)  "), "{narrow}");
+        assert!(narrow.contains('…'), "{narrow}");
+        assert!(narrow.chars().count() < 60, "{narrow}");
     }
 
     #[test]

@@ -1,0 +1,17 @@
+strace -f -c of the probe's default-tree (and summary), one run per arm; calls per syscall
+arms: v040 = 148ef78e, age = 23d11b19, roots = 0d6011da (shipped head), noage = 61968412 (no-ages arm)
+linux-balanced-1m-noage-default-tree           statx=883619 openat=125009 getdents64=250002 close=125009 futex=100245
+linux-balanced-1m-roots-default-tree           statx=1000010 openat=125009 getdents64=250002 close=125009 futex=99378
+linux-balanced-1m-v040-default-tree            statx=883619 openat=125009 getdents64=250002 close=125009 futex=100837
+linux-v6.12-age-default-tree                   statx=92841 openat=6135 getdents64=11538 close=6135 futex=5340
+linux-v6.12-noage-default-tree                 statx=87660 openat=6135 getdents64=11538 close=6135 futex=5238
+linux-v6.12-roots-default-tree                 statx=92841 openat=6135 getdents64=11538 close=6135 futex=5004
+linux-v6.12-v040-default-tree                  statx=87660 openat=6135 getdents64=11538 close=6135 futex=5028
+node-modules-dense-age-default-tree            statx=79966 openat=9447 getdents64=18878 close=9447 futex=8751
+node-modules-dense-noage-default-tree          statx=72079 openat=9447 getdents64=18878 close=9447 futex=8993
+node-modules-dense-roots-default-tree          statx=79966 openat=9447 getdents64=18878 close=9447 futex=8837
+node-modules-dense-v040-default-tree           statx=72079 openat=9448 getdents64=18878 close=9448 futex=8808
+linux-v6.12-roots-aggregate-summary            statx=87659 openat=6136 getdents64=11538 close=6136 futex=3079
+linux-v6.12-v040-aggregate-summary             statx=87658 openat=6136 getdents64=11538 close=6136 futex=3091
+node-modules-dense-roots-aggregate-summary     statx=72076 openat=9448 getdents64=18878 close=9448 futex=6340
+node-modules-dense-v040-aggregate-summary      statx=72076 openat=9448 getdents64=18878 close=9448 futex=6162

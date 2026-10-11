@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CLASSES, classify, normalisePortableValues, parseSessions } from "./parity-classes.mjs";
+import {
+  CLASSES,
+  classify,
+  maskAgeCells,
+  normalisePortableValues,
+  parseSessions,
+} from "./parity-classes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CORPUS = path.join(ROOT, "tests", "parity", "deviations-python.diff");
@@ -49,6 +55,35 @@ test("portable golden paths require the exact fixture root and unchanged other f
   assert.equal(
     classify(session(["80 B  assets[SEP]logo.png"], ["80 B  assets/logo.png"]))?.id,
     "portable-golden-pattern",
+  );
+  // A tree row's age is measured from each run's own instant; normalise() has masked
+  // one in seconds as [TIME] by the time a hunk is classified.
+  const row = (age, name = "src/ 2 files") => `█░░░░░░░░░    13%        36 B  ${age}    ${name}`;
+  for (const age of ["[TIME]", "     [TIME]", "-[TIME]", "3m", "1mo", "26y", "1,000y"]) {
+    assert.equal(
+      classify(session([row("[AGE]")], [row(age)]))?.id,
+      "portable-golden-pattern",
+      `an age of ${age} is the golden's [AGE]`,
+    );
+  }
+  for (const age of ["unknown", "—", "3w", "0mo5", ""]) {
+    assert.equal(classify(session([row("[AGE]")], [row(age)])), null, `${age} is not an age`);
+  }
+  assert.equal(
+    classify(session([row("[AGE]")], [row("3m", "src/ 3 files")])),
+    null,
+    "the rest of an aged row must still match exactly",
+  );
+  const remainder = (blank) => `░░░░░░░░░░     2%         6 B  ${blank}    … and 1 more file`;
+  assert.equal(
+    classify(session([remainder("[AGE_BLANK]")], [remainder("       ")]))?.id,
+    "portable-golden-pattern",
+    "the remainder's blank age cell is as wide as the widest age",
+  );
+  assert.equal(
+    classify(session([remainder("[AGE_BLANK]")], [remainder("  x")])),
+    null,
+    "a blank cell holds nothing but spaces",
   );
   assert.equal(
     classify(session(['{"path": "dist[JSON_SEP]a.tar.gz"}'], ['{"path": "dist/a.tar.gz"}']))?.id,
@@ -99,6 +134,12 @@ test("portable numeric masking touches observed values only and rejects literal 
     normalisePortableValues(golden + '+"age_reference_ns": 9, "observed_at_ns": 8, "allocated": 8192\n'),
     'two observations of the same typed fields serialize to one stable artifact line',
   );
+  const tree = '-{"age_ns": [AGE_NS], "children": [{"age_ns": null}, {"age_ns": [AGE_NS]}]}\n';
+  assert.equal(
+    normalisePortableValues(tree + '+{"age_ns": 12, "children": [{"age_ns": null}, {"age_ns": 34}]}\n'),
+    tree + '+{"age_ns": [AGE_NS_VALUE], "children": [{"age_ns": null}, {"age_ns": [AGE_NS_VALUE]}]}\n',
+    'every row age the golden names is masked, and a null age stays null',
+  );
   assert.equal(
     classify(session(['"allocated": 123'], ['"allocated": [ALLOCATED_VALUE]'])),
     null,
@@ -108,6 +149,60 @@ test("portable numeric masking touches observed values only and rejects literal 
     classify(session(['"allocated": [ALLOCATED]'], ['"allocated": NaN'])),
     null,
     'malformed numeric output remains visible',
+  );
+});
+
+test("a tree's age cells record no clock reading, and its remainder keeps its depth", () => {
+  // Review E1 on #192: the observed age and the padding the widest age sets reached the
+  // artifact, which then failed whenever a section's widest age gained a digit or a unit.
+  const golden = [
+    "  ✗ Depth Bounds the Rendered Tree, Not the Scan",
+    "@@ -1,4 +1,4 @@",
+    "-██████████   100%       269 B  [AGE]  . 7 files",
+    "-█████░░░░░    48%       128 B  [AGE]    dist/ 1 file",
+    "-█████░░░░░    48%       128 B  [AGE]      acorn.tar.gz",
+    "-██████████   100%       141 B  [AGE_BLANK]    … and 6 more files",
+  ];
+  const observed = (root, dist, file, width, indent = "  ") =>
+    [
+      ...golden,
+      `+██████████   100%       269 B  ${root.padStart(width)}  . 7 files`,
+      `+█████░░░░░    48%       128 B  ${dist.padStart(width)}    dist/ 1 file`,
+      `+█████░░░░░    48%       128 B  ${file.padStart(width)}      acorn.tar.gz`,
+      `+██████████   100%       141 B  ${" ".repeat(width)}  ${indent}… and 6 more files`,
+    ].join("\n");
+  const recorded = [
+    ...golden,
+    "+██████████   100%       269 B  [AGE_VALUE]  . 7 files",
+    "+█████░░░░░    48%       128 B  [AGE_VALUE]    dist/ 1 file",
+    "+█████░░░░░    48%       128 B  [AGE_VALUE]      acorn.tar.gz",
+    "+██████████   100%       141 B  [AGE_BLANK_VALUE]    … and 6 more files",
+  ].join("\n");
+  for (const [rendering, text] of [
+    ["every row at 9s", observed("9s", "9s", "9s", 2)],
+    ["9s beside 10s, an indented child, and a remainder", observed("10s", "10s", "9s", 3)],
+    ["a row at 1m", observed("1m", "59s", "59s", 3)],
+  ]) {
+    assert.equal(maskAgeCells(text), recorded, rendering);
+  }
+  const lines = (text) => text.split("\n").filter((line) => /^[-+]█/.test(line));
+  const removed = lines(recorded).filter((line) => line.startsWith("-")).map((line) => line.slice(1));
+  const added = lines(recorded).filter((line) => line.startsWith("+")).map((line) => line.slice(1));
+  assert.equal(classify(session(removed, added))?.id, "portable-golden-pattern");
+
+  const deeper = maskAgeCells(observed("9s", "9s", "9s", 2, "    "));
+  assert.ok(
+    deeper.endsWith("+██████████   100%       141 B          … and 6 more files"),
+    "a remainder one level deeper is not the golden's, so its blank cell is left as observed",
+  );
+  const renamed = maskAgeCells(observed("9s", "9s", "9s", 2).replace("9s    dist/", "9s    dust/"));
+  assert.ok(
+    renamed.includes("+█████░░░░░    48%       128 B  9s    dust/ 1 file"),
+    "a row that differs elsewhere keeps its age",
+  );
+  assert.ok(
+    renamed.includes("+█████░░░░░    48%       128 B  [AGE_VALUE]      acorn.tar.gz"),
+    "and the rows after it are still masked",
   );
 });
 
@@ -220,6 +315,26 @@ test("the stale-answer warning accepts only its exact option translation", () =>
   );
 });
 
+test("a renamed parameter beside a portable age is still the one label difference", () => {
+  const row = (age) => `██████████   100%       256 B  ${age}  . 7 files`;
+  const tip = (view) => `tip: show it: ${view} code,documents`;
+  assert.equal(
+    classify(session([row("[AGE]"), tip("--view")], [row("[TIME]"), tip("view")]))?.id,
+    "surface-label",
+    "the age is notation; the label is the difference",
+  );
+  assert.equal(
+    classify(session([row("[AGE]"), tip("--view")], [row("[TIME]  x"), tip("view")])),
+    null,
+    "a row that differs beyond its age is not absorbed",
+  );
+  assert.equal(
+    classify(session([row("[AGE]")], [row("3m")]))?.id,
+    "portable-golden-pattern",
+    "an age alone is the portable class, never a label",
+  );
+});
+
 test("a watched content view accepts only the held-index refusal of the same view", () => {
   const cli = (view, analyzer) =>
     `! fdu: --view ${view} needs ${analyzer} analysis, which --watch cannot keep current; use a one-shot report`;
@@ -245,6 +360,30 @@ test("a watched content view accepts only the held-index refusal of the same vie
   assert.equal(classify(session([both], [api("code", "code", "words")])), null);
   assert.equal(
     classify(session([cli("code", "code"), "total 100"], [api("code", "code"), "total 999"])),
+    null,
+    "an extra changed line is never absorbed",
+  );
+});
+
+test("a file root accepts only the engine's refusal of the same file", () => {
+  const cli = (given) =>
+    `! fdu: ${given} is a file; fdu reports on directories (to name only the directories here: fdu */)`;
+  const api = (path) => `! fdu: I/O error at ${path}: scan root is not a directory`;
+  assert.equal(
+    classify(session([cli("project[SEP]README.md")], [api("[SANDBOX]/project/README.md")]))?.id,
+    "file-root-remedy",
+  );
+  assert.equal(classify(session([cli("plain-file")], [api("[SANDBOX]/plain-file")]))?.id, "file-root-remedy");
+  for (const added of [
+    api("[SANDBOX]/other-file"),
+    api("[SANDBOX]/notplain-file"),
+    "! fdu: I/O error at [SANDBOX]/plain-file: [OS_ERROR]",
+    "fdu: I/O error at [SANDBOX]/plain-file: scan root is not a directory",
+  ]) {
+    assert.equal(classify(session([cli("plain-file")], [added])), null, added);
+  }
+  assert.equal(
+    classify(session([cli("plain-file"), "total 100"], [api("[SANDBOX]/plain-file"), "total 999"])),
     null,
     "an extra changed line is never absorbed",
   );

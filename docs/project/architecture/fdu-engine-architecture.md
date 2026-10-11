@@ -252,8 +252,8 @@ The target models are in
 
 | Concept | Covers | Defined today | One explicit model? |
 | --- | --- | --- | --- |
-| Request | Scope, content axis, selection, views, defaults, validation | `Request { basis: Basis { root, scope, content }, query, now }`, plus a private record of which analyzers the caller named and which views implied the rest, which only refusals read; `RequestSpec`, `RequestError`, `BasisHolder`, and one defaults table (`query/query_request.rs`); `ReportRequest` carries the read half at an opened root | Yes. Both surfaces build through `RequestSpec`, `report` and `prepare_report*` take a validated `Request`, every route validates before it reads stored state, and a refusal for missing analysis names the remedy its holder accepts |
-| Delivery | Cache policy, workers, traversal, batching, partial acceptance, watch | `Delivery`, `Workers`, and `WatchDelivery::DEFAULT_INTERVAL` (`query/query_request.rs`) | Yes. Every route consumes operational choices from delivery; low-level scanner and analyzer configurations are derived executor inputs, outside semantic identity |
+| Request | Scope, content axis, selection, views, defaults, validation | `Request { basis: Basis { root, scope, content }, query, now }`, plus a private record of which analyzers the caller named and which views implied the rest, which only refusals read; `RequestSpec`, `RequestError`, `BasisHolder`, and one defaults table (`query/query_request.rs`); `ReportRequest` carries the read half at an opened root; `Roots` and `NamedRoot` name the disjoint roots of one report, validated before any scan, and `RootsRequest` shares one request, `now` included, across them, each root’s a copy rooted at it | Yes. Both surfaces build through `RequestSpec`, `report` and `prepare_report*` take a validated `Request`, every route validates before it reads stored state, and a refusal for missing analysis names the remedy its holder accepts; `prepare_roots_report*` and `report_roots` take one shared request for every root, and `report_roots` one index per root, all of one scope |
+| Delivery | Cache policy and location, workers, traversal, batching, partial acceptance, watch | `Delivery`, `Workers`, and `WatchDelivery::DEFAULT_INTERVAL` (`query/query_request.rs`) | Yes. Every route consumes operational choices from delivery; low-level scanner and analyzer configurations are derived executor inputs, outside semantic identity. The cache location is one snapshot file (`cache_path`) or one directory (`cache_dir`), never both, and with neither nothing is cached: every route resolves a directory to its root’s file with `Delivery::for_root`, which names it `default_cache_path_in` that directory. Over several roots only a directory can hold every root’s snapshot, so one file or a watch is refused |
 | Execution plan | Which route answers, stored-state admission, verification, writes, and partial acceptance | `Plan`, `Route`, `Load`, `Verify`, `plan`, `Plan::admit`, `Plan::persists`, `Plan::writes`, and `Plan::outcome` (`execution.rs`); `Session::persist_due` owns live throttling | Yes. Executors consume the plan, and the command line and Python share the engine’s persistence policy: `Plan::persists`, derived from cache policy, route, and analysis, authorizes any write, and `Plan::writes` picks the tiers a run owes |
 | Stored-state identity | Entry, control, and content tiers and the requests they may serve | `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity`, `ContentAdmission`, and `ContentProjection` (`stored_state.rs`); `snapshot::load_serving` applies snapshot projection | Yes. Snapshot loading applies the serving relation before returning an index; content reads and restores require admitted identities and records |
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
@@ -397,8 +397,17 @@ every matching root, including overlapping ones.
 Opened report budgets charge the subtree-measurement pass as well as selection and
 shaping.
 The default unfiltered tree still reads maintained roll-ups without constructing
-a flat inventory. See [machine output](../../machine-output.md) for age/reference fields
-and conversion rules.
+a flat inventory. Its age column reads each row’s newest activity from a maximum the
+index maintains per directory beside the roll-up, so a retained index’s repeated reports
+cost their rows, not a pass: it counts directories and symlinks, which the roll-up’s
+files-only recency leaves out, and in a folded index, which kept only the largest files
+as entries, the times of the files it folded.
+That read serves a complete index with no scan depth, where every subtree is complete.
+An index that may hold an unlisted subtree takes one pass over the index by entry id
+instead, without paths, which also proves which subtrees are complete.
+A filtered tree folds the same maximum in its selection walk.
+See [machine output](../../machine-output.md) for age/reference fields and conversion
+rules.
 
 A derived report plan is transient execution state for a provably one-shot request.
 It produces the same `Report` shape and values as indexed execution.

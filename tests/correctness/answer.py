@@ -1,10 +1,11 @@
-"""Read `fdu.report/10` JSON for the correctness runbook scripts.
+"""Read `fdu.report/11` JSON for the correctness runbook scripts.
 
 Both comparison scripts compare an answer with a cold oracle and check separately how the
-answer was produced. The answer is the report without the two root fields that describe a
-single delivery: `provenance` (source, freshness, and timings) and `age_reference_ns`, the
-instant ages are measured from. Row ages move with that instant, so instead of comparing
-them across runs, each report's ages are checked against its own reference instant.
+answer was produced. The answer is the report without the root fields that describe a
+single delivery: `provenance` (source, freshness, and timings) and the instant ages are
+measured from, `age_reference_ns` and its RFC 3339 rendering `age_reference_at`. Ages
+move with that instant, so instead of comparing them across runs, each report's ages,
+list rows and tree nodes alike, are checked against its own reference instant.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 import json
 
 # Root fields that legitimately differ between two runs of one request.
-DELIVERY_FIELDS = frozenset({"provenance", "age_reference_ns"})
+DELIVERY_FIELDS = frozenset({"provenance", "age_reference_ns", "age_reference_at"})
 
 
 def parse(out: str) -> dict | None:
@@ -42,8 +43,10 @@ def answer(out: str) -> object:
 def age_problems(out: str) -> list[str]:
     """Rows whose `age_ns` is not their reference instant minus their `mtime_ns`.
 
+    Every object carrying an `age_ns` is checked, a flat row or a tree node at any depth.
     An age is unknown (null) when the report has no reference instant, when the row's
-    subtree was not listed in full (`complete: false`), or when the row has no mtime.
+    subtree was not listed in full (`complete: false`), or when the row has no mtime, as
+    a tree node that counts no entry has none.
     """
     doc = parse(out)
     if doc is None:

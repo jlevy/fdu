@@ -44,6 +44,11 @@ every trial:
 | `arena_spike` | ceiling | An index-shaped result in arena records. What H86 (`fdu-xde5`) is trying to reach. |
 | `aggregate` | tier | `perf_probe summary` — five exact tallies, no retained index. |
 | `index` | tier | `perf_probe scan-index` — full walk with metadata into a complete index. |
+| `tree` | tier | `perf_probe roots-default-tree --no-controls` — the default tree over the folded index, rendered, through the door `fdu PATH` takes. Added 2026-10-10 with H193; no closure threshold. |
+
+`--instrument NAME`, repeated, runs a subset that includes `parfloor-stat`. Leave out
+`tree` to score a probe from before the several-roots door, which has no
+`roots-default-tree` mode.
 
 `peerwalk` is deliberately absent: it takes third-party dependencies the shipped crate
 does not have, and its README says it is never built by `make`. The ecosystem anchor is

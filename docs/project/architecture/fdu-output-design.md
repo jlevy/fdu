@@ -32,10 +32,45 @@ details. The threshold uses exact bytes, before rounding.
 Zero sizes such as `0 B` are gray.
 Other smaller sizes and file counts use the ordinary foreground color.
 Percentages below 1% are gray, using the exact ratio before rounding.
-These styles apply wherever human output presents those values.
-Tree rows put the share bar first, then the percentage of the selected root, size, and
-indented filename.
+These styles apply wherever human output presents those values, with one addition: the
+tree’s size column, and only it, is colored by magnitude, after kash’s file listings
+with the tiers moved up to trees whose totals run to terabytes.
+
+| Tree size | Style |
+| --- | --- |
+| Under 16 KiB, zero included | Gray |
+| 16 KiB to under 1 MiB | Blue |
+| 1 MiB to under 1 GiB | Ordinary foreground, as before |
+| 1 GiB to under 100 GiB | Bold bright green |
+| 100 GiB and up | Bold yellow |
+
+Every other size, including list rows, grouped views, parenthetical details, the
+progress line, and cache status, keeps the rule above.
+Size and age colors, like every style here, appear only when color is on; plain output
+is unchanged. Tree rows put the share bar first, then the percentage of the selected
+root, size, age, and indented filename.
 Keep these columns aligned across directory, file, and remainder rows.
+
+The age column sits between size and name, as `--long` puts age between size and path.
+It is right-aligned to the widest age cell in its section, with two-space gutters on
+either side, and its width is measured on visible text, so a gray cell pads like a plain
+one. A row’s age is the newest modification among the entries it counts, of any kind,
+never the report root’s own time; [machine output](../../machine-output.md#tree-nodes)
+states the definition.
+A known age is colored by recency, after kash’s file listings, on the same ladder that
+picks its unit: under a minute bold bright red, under an hour bold yellow, under a day
+bold bright green, under a display month bold cyan, under a display year blue, and older
+gray. A time ahead of the reference takes the newest tier.
+The age and size colors are the only styles the tree adds; every other cell keeps its
+style, and `--long` and the other flat formats stay plain.
+An age whose subtree was not listed in full is the gray word `unknown`, as `--long`
+prints it, because a lower-bound maximum is not an age.
+A row that counts no entry, such as an empty root, shows a gray `—`, as a missing
+percentage does. The remainder row’s age cell is blank: it stands for rows the bounds
+hid, most of which the folded one-shot tier counted without keeping a time, and its
+parent row’s age already covers them.
+A section with no rows has no age column.
+There is no flag to hide it; `--bar-size 0` remains the only column control.
 Write `attic/ 3,508 files (43 MiB gitignored)`: file counts are outside parentheses,
 while embedded gitignored amounts are parenthesized and gray.
 The gitignored amount is a subset already included in the row total, not additional
@@ -152,12 +187,31 @@ Do not add grouping at individual call sites.
 Human byte quantities use the shared binary size formatter (`B`, `KiB`, `MiB`, `GiB`,
 and larger units), including cache-status rows, stale and leftover cache files, and
 cleanup summaries. Colored sizes use `styled_bytes` so zero and large-size emphasis
-cannot diverge between commands.
+cannot diverge between commands, except the tree size column: `tree_size_cell` applies
+the magnitude tiers in [Row Styling](#row-styling).
 Do not print grouped raw bytes in human output where a scaled size is intended.
 
 Structured formats retain exact numeric byte values, and executable flag values retain
 their parser syntax.
 Durations, percentages, and scaled byte units keep their own precision rules.
+
+Human ages use the one shared `human_age` formatter, in the tree’s age column and in
+`--long`. It climbs one ladder, and each unit holds until the next one’s length:
+
+| Age | Shown as |
+| --- | --- |
+| under 60 s | seconds, `42s` |
+| under 60 min | minutes, `59m` |
+| under 24 h | hours, `23h` |
+| under 30.44 d | days, `30d` |
+| under 365.25 d | months of 30.44 days, `11mo` |
+| otherwise | years of 365.25 days, `3y` |
+
+No cell reads `0mo` or `0y`, and an old tree reads `12y` rather than `4,382d`. The
+amount is floored toward zero and signed: a future time reads `-5m`, and one less than a
+second ahead reads `-0s`. Below a century a cell is at most four characters and a sign.
+Months and years are display units only; the age grammar refuses them, because a window
+needs a fixed length, and its refusal names the days the unit stands for.
 
 ## Streams and Categories
 
@@ -249,11 +303,11 @@ Each tree has at most one remainder line below its selected root.
 Only its `… and` prefix is gray; the file count uses normal foreground, and percentages
 and sizes use the same styling as ordinary rows, including gray shares below 1%, gray
 zero sizes, and bold sizes of at least 1 GiB. It uses the same bar, percentage, and size
-columns as tree rows; its name column reads `… and N more files`. The bar and percentage
-show the combined hidden share of the selected root.
+columns as tree rows, with a blank age cell; its name column reads `… and N more files`.
+The bar and percentage show the combined hidden share of the selected root.
 
 ```text
-█░░░░░░░░░    12%     1.2 MiB  … and 12,345 more files
+█░░░░░░░░░    12%     1.2 MiB         … and 12,345 more files
 ```
 
 The size and recursive file count cover unlisted immediate branches of the selected
@@ -280,7 +334,8 @@ JSON, JSONL, and YAML tree sections expose `remainder` with `files`, `bytes`,
 collapsed under listed directories.
 The existing `limits` fields provide the corresponding bound values; per-node
 `omissions` retain detailed boundaries for debugging.
-Report schema `fdu.report/10` uses this root-branch accounting for the remainder.
+The report schema has used this root-branch accounting for the remainder since
+`fdu.report/10`.
 
 Explain accounting and applicable bounds once at the end, then offer one remedy:
 
@@ -298,6 +353,34 @@ Grouped views list what a bound hid in the same note (`8 rows below min share`,
 across views, and never sum remainders across views whose contents may overlap.
 The tip names each lifted bound once, in a fixed order, as one command line (or one
 call’s keyword arguments on the Python surface).
+
+### Several Roots
+
+A tree over several roots has no single root row.
+Its first row is `(total)`, the merged root rows, at depth zero with no trailing slash
+and a full bar; each root follows one level in, named by its label (`docs/`, `/`, `.`),
+then its own rows. Every share is of the total.
+Each root’s remainder line sits below that root’s rows at its children’s depth, and the
+root rows the row limit cut get one remainder line at the roots’ depth.
+Under `--limit 0` there is no total row, and the one remainder line covers every root,
+as it covers one root.
+The age column is as wide as the widest cell of the whole section: the total row and
+every root’s tree.
+
+```text
+██████████   100%      40 MiB     2m  (total) 1,212 files
+██████░░░░    62%      25 MiB     2m    docs/ 496 files
+█░░░░░░░░░    14%     5.4 MiB             … and 108 more files
+████░░░░░░    38%      15 MiB     2m    src/ 716 files
+```
+
+Flat text, `paths`, and `long` print each path after its root’s label, `docs/guide.md`,
+and a status warning names a path the same way.
+The display-limit note says `below 1% of total`, and a zero total
+`total size is zero, so shares are undefined`. The `perf:` line sums every root’s walk
+and names each root’s tier when they differ: `cold scan (docs), cache only (src)`. The
+progress line names the root being walked and its position, `src (2/3)`, eliding a long
+label and keeping the position whole.
 
 A complete recursive export is a normal use case:
 

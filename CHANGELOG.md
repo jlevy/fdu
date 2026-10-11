@@ -7,6 +7,133 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The text tree shows each row’s age, between size and name: how long ago anything the
+  row counts last changed, the newest modification among its own entry and every entry
+  beneath it that it counts, files, directories, and symlinks alike.
+  The scan root’s own time never counts.
+  With no filter a directory’s tree age equals its `--long` age; under a filter each row
+  ages what it counts.
+  An age is gray `unknown` where part of the subtree was not listed, a gray `—` on a row
+  that counts nothing, and blank on the `… and N more files` row.
+- Machine output: tree nodes carry `mtime_ns`, `complete`, `age_ns`, and `modified_at`;
+  list rows carry `modified_at`; the envelope carries `age_reference_at` beside
+  `age_reference_ns`. Each `*_at` field is the RFC 3339 UTC rendering of its exact
+  nanoseconds, and `modified_at` is null wherever the time is only a lower bound.
+- Python: `TreeNode` gains `mtime_ns`, `complete`, `age_ns`, and `modified_at`,
+  `FileRow` gains `modified_at`, and `Report` gains `age_reference_at`; each `datetime`
+  is timezone-aware UTC, derived from the nanoseconds and floored to the microsecond.
+- Rust: `TreeNode` gains `mtime_ns`, `complete`, and `age_ns`.
+- Several paths in one report: `fdu docs src` answers what `fdu docs` and `fdu src`
+  would, added. Sizes, counts, rows, shares, and display bounds are taken over every root
+  together, once. The tree shows a `(total)` row and each root as a row named by how it
+  was given, every share of the total; flat listings print each path after its root’s
+  label, as `find docs src` does.
+  A root equal to or inside another is refused, naming both: by canonical path, which
+  sees through a symlink, and on Unix by device and inode, which sees a root whose path
+  runs through an alias of another.
+  A root that is itself an alias into another’s tree, a bind mount or a macOS firmlink
+  such as `/usr/local` beside `/System/Volumes/Data`, is refused on Unix when the other
+  root’s walk enters it, with exit status 2 as before the walk; Windows compares paths
+  only. Every PATH is a directory; a file is refused naming the command that lists only
+  the directories, `fdu */`, which is itself refused where one directory is a symlink to
+  another (`lib64 -> lib`). Each root is walked separately and pays a walk’s fixed cost,
+  so many small roots are much slower than one walk of their parent: 625 small
+  directories took 1.72 s as roots against 0.23 s for their parent, about 7 times as
+  long
+  ([exp-216](docs/project/experiments/exp-216-macos-h196-several-roots-pay-about-2-4-ms-a-root-625-small-r.md),
+  macOS, uncontrolled host); `fdu --depth 1 --min-share 0% .` shows every entry one
+  level down in one walk, counting the hidden entries and files `*/` leaves out, and not
+  walking the target of a symlink that `*/` names as a root.
+  Each root’s snapshot lives where its own would, written once every root has been
+  walked, on a bounded number of threads.
+  `--watch`, `--cache-status`, and `--cache-clear` take one PATH.
+- Machine output over several roots: the envelope’s `root` is null and `roots` lists
+  each root’s `label` and canonical `path`; a tree section has `tree: null`, a `total`
+  row, and `trees`, one tree per root, each with its own `remainder`; list rows, status
+  errors, and `.gitignore` refusals carry `root`, the position of their root in `roots`,
+  and keep their paths relative to it.
+  A report over one root is unchanged.
+- Python: `fdu.report` takes one path or a sequence of them.
+  Over several roots `Report.root` is `None` and `Report.roots` is a tuple of
+  `ReportRoot`; `TreeSection` gains `total` (`TreeTotal`) and `trees` (`RootTree`);
+  `FileRow`, `OperationError`, and `RefusedControl` gain `root`.
+- Rust: `Roots` and `NamedRoot` name a report’s roots and validate them before any scan;
+  `RootsRequest` shares one request across them, and `RootsRequest::resolve` validates
+  paths, request, and delivery in the order one root always failed in; `report_roots`
+  reads one report from one index per root, refusing indexes of different scopes and, on
+  Unix, an index that entered another root through an alias; and `prepare_roots_report`,
+  with its progress and scan-diagnostics variants, runs each root’s plan and returns the
+  roots’ pending saves in one handle, with each root’s telemetry (`RootsPrepared`).
+  `PerformanceSummary::sum` totals them, `PendingSave::join_all` names each failed
+  write, `labelled_path` is the one rule text uses for a path under one of several
+  roots, and `ReportSource::weaker` ranks sources.
+  `Delivery::cache_dir` names a directory in which each root’s snapshot is named, and
+  `Delivery::for_root` resolves it for one root; every route honors it.
+  `RequestError` gains `NoRoots`, `RootsOverlap`, `RootsRepeated`, `RootReachedInside`,
+  `RootScopesDiffer`, and `CacheLocationTwice`.
+
+### Changed
+
+- **Breaking:** the report schema is `fdu.report/11`, for the fields above.
+- **Breaking:** ages past a month read in months of 30.44 days (`11mo`) and past a year
+  in years of 365.25 days (`3y`), in `--long` as in the tree; they previously read in
+  days (`4,382d`). Time bounds still take days; `--modified-before 2mo` is refused and
+  the refusal names the days, as in `use 60d`.
+- In a color terminal, the tree’s ages and sizes are colored, after kash’s file
+  listings. Ages by recency: under a minute bold bright red, under an hour bold yellow,
+  under a day bold bright green, under a month bold cyan, under a year blue, older gray.
+  Sizes by magnitude, with kash’s tiers moved up for larger trees: under 16 KiB gray,
+  under 1 MiB blue, under 1 GiB plain, under 100 GiB bold bright green, larger bold
+  yellow. Nothing else changes style; every other size keeps its style, and `--long`, the
+  other flat formats, and output without color are unchanged.
+- **Breaking:** `--sort mtime` on a tree orders rows by the age the column shows, their
+  newest counted activity of any kind, where it ordered them by their newest regular
+  file. `newest_mtime_ns` keeps its files-only meaning.
+- A watch measures each repaint’s ages, and `Session::report` and Python’s
+  `Watch.report()` theirs, from the instant of that repaint, so a file written during
+  the session no longer shows a negative age.
+  The windows the query selects by stay the absolute bounds its request resolved when it
+  was built. A repaint is still skipped when nothing a reader sees changed: ages rolling
+  over repaint nothing, and any change in a row’s activity repaints.
+- A watch, an opened root’s observation, and a refresh re-read the directory a created,
+  removed, or renamed entry lives in, so that directory’s own time, and with it its age,
+  matches a one-shot report: deleting a directory’s newest file, or moving an old file
+  in, makes it young there too.
+  Under `--view files` the record for such a change is now followed by an `upsert`
+  record for its directory, unless it is the scan root or the selection leaves
+  directories out; the record shape and `fdu.stream/2` are unchanged.
+- Rust: `TreeNode` struct literals need the three new fields.
+- **Breaking (Rust):** `Report::root` is `Option<PathBuf>`, `None` over several roots,
+  beside the new `Report::roots`; `TreeStatus::errors` holds
+  `StatusIssue { root, issue }` rather than `Issue`; `FileRow` and `RefusedControl` gain
+  `root`; `Section::Tree` gains `roots`; `ProgressSnapshot` gains `root`, and over
+  several roots a run’s phase starts over at each root while its counters keep adding.
+- **Breaking (Rust):** `Delivery` gains `cache_dir`, so its struct literals name it.
+- **Breaking (Python):** `Report.root` is `Path | None`.
+- A PATH that is a file is refused before anything reads its snapshot, naming it as
+  given: `fdu README.md --stale-ok` and Python’s
+  `fdu.report("README.md", stale_ok=True)` now fail because it is not a directory (exit
+  1, `OSError`) rather than because it has no snapshot.
+  A delivery no route can carry is still refused first, as before:
+  `fdu README.md --cache off --stale-ok` exits 2 for its delivery.
+- The `PATH` argument is `PATH...`; help reads `Usage: fdu [OPTIONS] <PATH>...`. The
+  progress line names the root being walked and its position, `src (2/3)`, and the
+  `perf:` line sums every root’s walk and names each root’s tier when they differ.
+- On Linux the default one-shot tree stats each directory and symlink again, as every
+  other route does, so a directory’s age there counts its own time and equals its age
+  under `--long` or a cached run.
+  0.3.0 had stopped those stats because the tree read none of their attributes; the age
+  column reads their times.
+  This is expected to give back most of that change’s gain, about 3% of the default tree
+  on a directory-dense `node_modules` tree and little on the Linux v6.12 source tree:
+  [exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)
+  measured the gain at 3.6%, and the version that shipped kept 83% of the stats it
+  saved. The give-back itself is measured on Linux before this release.
+  macOS lists every child’s attributes in bulk and is unaffected, except in a directory
+  that falls back to the portable reader, which now stats them too.
+
 ## [0.4.0] - 2026-10-09
 
 fdu 0.4.0 is a breaking release about what a report asks for and what it says.

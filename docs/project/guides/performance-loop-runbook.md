@@ -998,6 +998,22 @@ command writes none; compare `default-tree` runs across this change with that in
 
 ## Current Pickup (2026-09-30)
 
+**Since then (2026-10-10).** The 0.5.0 stack’s Linux release measurement (`fdu-088k`,
+exp-217 to exp-221) ran on a 4-vCPU guest at Linux 6.18.44-fc-v114. The age column costs
+the default tree one `statx` per directory and per symlink: +5.72% [+3.53%, +10.46%] on
+`node-modules-dense` against v0.4.0 and +5.63% against the same code without it, inside
+noise on `linux-v6.12`. H197, parent-relative directory opens, wins back 3.35% there and
+5.06% of the summary and is accepted but not shipped (`claude/h197-relative-opens`);
+with it, ages still cost +1.6% to +4% over a walk that skips directory stats.
+One root’s summary on the dense tree is slower at #192’s head, +5.28% [+2.27%, +7.62%],
+which leaves H195 inconclusive there under its registered rule.
+That figure depends on the estimator (about +3.5% to +5.3%) and is unattributed
+(`fdu-4arl`). Several roots cost about 0.5 ms a root on Linux (`fdu-ich9`), and this
+session’s tool cells show no resolved lead over `pdu --max-depth 2` or diskus on the
+real trees, for 0.4.0 as for 0.5.0. Twenty pairs resolve about ±8% on this guest, and an
+unresolved A/A cell put the middle slot about 3% to 5% above the outer slots, so
+decisions here rest on two-arm cells of 100 pairs (40 for H195).
+
 **Since then (2026-10-08).** The
 [performance index](../specs/active/plan-2026-10-05-fdu-performance-index.md) landed
 with [#176](https://github.com/jlevy/fdu/pull/176): thirteen macOS history cells timing
@@ -1138,7 +1154,25 @@ rebuild them from this list and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-203** and **H191**; exp-202 is the 0.3.0 release standing.
+**Ids.** Next free are **exp-222** and **H198**; exp-202 is the 0.3.0 release standing.
+exp-217–221 and H197 are the 0.5.0 stack’s Linux release measurement (`fdu-088k`, branch
+`claude/linux-0.5.0`): H193’s give-back at 100 pairs (exp-217), the age column’s price
+on one codebase against a measurement-only no-ages arm (exp-218), H197’s parent-relative
+directory opens (exp-219, accepted on `node-modules-dense` and not shipped; branch
+`claude/h197-relative-opens`), H195’s two-arm Linux rerun (exp-220), and several roots’
+per-root cost on Linux (exp-221). H195 and exp-214–215 are the several-roots single-root
+guard on [#192](https://github.com/jlevy/fdu/pull/192): exp-214 the registered paired
+run at the final head, exp-215 an earlier exploratory run that preceded the
+registration. H196 and exp-216 are several roots’ per-root fixed cost on the same pull
+request. exp-203–208 are reserved for the platform review’s macOS cells (M1–M6 in
+[its protocol](../research/research-2026-09-29-platform-review-of-the-linux-round.md)),
+which assigned them before any ran.
+exp-209–213 and H191–H194 record the tree age column on
+[#191](https://github.com/jlevy/fdu/pull/191): the per-report activity pass rejected
+(exp-209), the maintained per-directory maximum’s price on macOS recorded as not a speed
+decision (exp-210 to exp-212, exp-212 the re-measure tied to commits), the
+machine-output instant written into a fixed buffer (H194, exp-213, `fdu-oiuc`), and H193
+the Linux give-back, pre-registered for `fdu-088k` and not yet run.
 exp-196 and H184 record `fdu-d2fn`, the automount fix; the pdu track (`fdu-faqa`, branch
 `claude/pdu-uniform-lead`) used exp-197–201 and H185–H190. exp-173–202 and H162–H190 are
 Linux work.

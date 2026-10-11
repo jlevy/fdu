@@ -9,8 +9,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
+use fdu_core::query::{
+    Basis, Bound, Query, Request, Section, Selection, ShareThreshold, TreeNode, ViewSpec,
+};
 use fdu_core::{
-    ApplyOutcome, ApplyStats, Attrs, Clock, Commit, EffectiveChange, EntryKind, ExtTally,
+    ApplyOutcome, ApplyStats, Attrs, Clock, Commit, Coverage, EffectiveChange, EntryKind, ExtTally,
     Freshness, Impact, ImpactDomain, Index, IndexState, InvalidateReason, Observation,
     ObservationOp, Op, PathExpectation, PathState, RollUp, StateTransition,
 };
@@ -501,6 +504,19 @@ impl Model {
         })
     }
 
+    /// A tree row's activity for directory `path`, from facts: the newest modification time
+    /// among every node beneath it, of any kind, and its own unless it is the root, whose
+    /// own time is never activity.
+    fn activity(&self, path: &Path) -> Option<i64> {
+        let own = (!path.as_os_str().is_empty()).then(|| self.nodes[path].attrs.mtime_ns);
+        self.nodes
+            .iter()
+            .filter(|(candidate, _)| candidate.as_path() != path && candidate.starts_with(path))
+            .map(|(_, node)| node.attrs.mtime_ns)
+            .chain(own)
+            .max()
+    }
+
     fn children(&self, path: &Path) -> Option<Vec<OsString>> {
         self.nodes.get(path)?.kind.is_dir().then(|| {
             self.nodes
@@ -711,6 +727,36 @@ fn attrs(value: u64) -> Attrs {
     }
 }
 
+/// Every directory row of an unbounded, unfiltered tree over `index`, with its activity.
+///
+/// Over a complete index the tree reads each row's activity from the roll-up the index
+/// maintains, so this holds that maintenance to the model's from-scratch definition.
+fn tree_activity(index: &Index) -> BTreeMap<PathBuf, Option<i64>> {
+    let selection = Selection {
+        depth: Some(Bound::All),
+        breadth: Some(Bound::All),
+        limit: Some(Bound::All),
+        min_share: Some(ShareThreshold::parse("0%").expect("share")),
+        ..Selection::default()
+    };
+    let query = Query { views: vec![ViewSpec::Tree], selection, ..Query::default() };
+    let instant = std::time::SystemTime::UNIX_EPOCH;
+    let request = Request::new(Basis::held_by(index), query, instant);
+    let report = fdu_core::query::report(index, &request, instant).expect("tree report");
+    let Some(Section::Tree { root: Some(root), .. }) = report.sections.first() else {
+        panic!("an unbounded tree report has a root");
+    };
+    let mut rows = BTreeMap::new();
+    let mut stack: Vec<&TreeNode> = vec![root];
+    while let Some(node) = stack.pop() {
+        if node.kind == EntryKind::Dir {
+            rows.insert(node.path.clone(), node.mtime_ns);
+        }
+        stack.extend(node.children.iter());
+    }
+    rows
+}
+
 fn assert_equivalent(index: &mut Index, model: &mut Model, seed: u64, trace: &[String]) {
     let context = || format!("seed={seed:#018x}\n{}", trace.join("\n"));
     assert_eq!(index.clock(), model.clock, "clock mismatch\n{}", context());
@@ -778,6 +824,13 @@ fn assert_equivalent(index: &mut Index, model: &mut Model, seed: u64, trace: &[S
         "path set mismatch\n{}",
         context()
     );
+    let expected_activity = model
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.kind.is_dir())
+        .map(|(path, _)| (path.clone(), model.activity(path)))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(tree_activity(index), expected_activity, "tree row activity\n{}", context());
 
     let actual_since = index.since(Clock::ZERO);
     let (model_commits, model_truncated) = model.since(Clock::ZERO);
@@ -1036,6 +1089,9 @@ fn fixed_seed_operation_sequences_match_the_independent_model_after_every_step()
                 trace.join("\n")
             );
             assert_equivalent(&mut index, &mut model, seed, &trace);
+            // A complete index with no scan depth is the one whose tree reads each row's
+            // activity from the maintained roll-up, so every tree compared here read it.
+            assert_eq!(model.state.coverage, Coverage::Complete, "seed={seed:#018x}");
         }
     }
 }

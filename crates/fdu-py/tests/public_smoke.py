@@ -27,11 +27,13 @@ def _stable(text: str) -> str:
     """Blank the fields that differ between any two runs, and only those."""
 
     text = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
-    # Long's age column uses each read's own instant too. Keep size and path exact;
-    # signed age arithmetic is checked on typed rows and the path-independence oracle.
+    # Long's and the tree's age columns use each read's own instant too, and the tree's
+    # is as wide as its widest cell, so the cell and the spaces around it are masked
+    # together, the remainder row's blank cell included. Keep size and name exact; signed
+    # age arithmetic is checked on typed rows and the path-independence oracle.
     text = re.sub(
-        r"^(\s*[\d.]+ (?:B|KiB|MiB|GiB|TiB|PiB) +)-?\d+[smhd](?= )",
-        r"\1[AGE]",
+        r"^(.*?[\d.] (?:B|KiB|MiB|GiB|TiB|PiB)) +(?:(?:-?[\d,]+(?:mo|[smhdy])|unknown|—) +)?",
+        r"\1 [AGE] ",
         text,
         flags=re.MULTILINE,
     )
@@ -796,6 +798,47 @@ def check_population_code_and_cache(entrypoint: Path) -> None:
         assert not fdu.list_caches(cache_dir=cache)
 
 
+def check_several_roots_report_as_one() -> None:
+    """A path, a path-like, or a sequence of them; overlap and emptiness are refused."""
+
+    base = Path(tempfile.mkdtemp(prefix="fdu-public-roots-"))
+    for name, text in (("a", "alpha"), ("b", "beta beta")):
+        (base / name).mkdir()
+        (base / name / "file.txt").write_text(text, encoding="utf-8")
+    a, b = str(base / "a"), base / "b"
+    files = fdu.Query(views=(fdu.View.FILES,))
+    both = fdu.report([a, b], files, cache=fdu.CachePolicy.OFF)
+    assert both.root is None and both.roots is not None, both
+    assert [root.label for root in both.roots] == [Path(a), b]
+    listing = both.sections[0]
+    assert isinstance(listing, fdu.FilesSection), listing
+    rows = listing.files
+    assert sorted(row.root for row in rows) == [0, 1], rows
+    for row in rows:
+        assert (both.roots[row.root].path / row.path).exists(), row
+    keyword = fdu.report(root=[a, b], query=files, cache=fdu.CachePolicy.OFF)
+    assert keyword.roots == both.roots
+    one = fdu.report([a], files, cache=fdu.CachePolicy.OFF)
+    alone = fdu.report(Path(a), files, cache=fdu.CachePolicy.OFF)
+    assert one.roots is None and one.root is not None and one.root == alone.root
+    tree = fdu.report((a, b), cache=fdu.CachePolicy.OFF).sections[0]
+    assert isinstance(tree, fdu.TreeSection) and tree.tree is None, tree
+    assert tree.total is not None and len(tree.trees) == 2, tree
+    for refused in ([], [a, str(base / "a" / ".")], [str(base), a]):
+        try:
+            fdu.report(refused, cache=fdu.CachePolicy.OFF)
+        except fdu.InvalidArgumentError:
+            pass
+        else:
+            raise AssertionError(f"{refused} should be refused")
+    try:
+        fdu.report(b"a", cache=fdu.CachePolicy.OFF)  # type: ignore[arg-type]
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("bytes is neither a path nor a sequence of them")
+
+
 def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="fdu-public-api-"))
     (root / "src").mkdir()
@@ -803,6 +846,7 @@ def main() -> None:
     (root / "notes.md").write_text("release notes", encoding="utf-8")
 
     check_refresh_and_watch_persist()
+    check_several_roots_report_as_one()
     check_every_view(root)
     check_content_axes_agree_on_overlaps()
     check_a_report_is_a_snapshot(root)
@@ -858,7 +902,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/10"
+    assert wire["schema"] == "fdu.report/11"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 

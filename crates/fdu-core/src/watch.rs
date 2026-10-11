@@ -12,6 +12,11 @@
 //!   remove of that name (see `RenameReporting` for what each backend promises).
 //! - When a directory is created, backends that watch per directory register the new
 //!   watch *after* the fact — anything created inside that window produces no event.
+//! - Creating, removing, or renaming an entry changes its directory's own modification
+//!   time, and no backend names the directory in that event: inotify's `IN_CREATE`,
+//!   `IN_DELETE`, and `IN_MOVED_*` name the child, and no `IN_ATTRIB` follows for the
+//!   directory. So verification also re-reads, once per intent and without listing it,
+//!   the directory each verified path lives in (see `verify_with_directory_times`).
 //! - Kernel queues overflow. inotify's `Q_OVERFLOW` and `FSEvents`' `MustScanSubDirs`
 //!   mean "your view is now incomplete" and surface here as `Flag::Rescan`. A Windows
 //!   buffer overrun does not: notify 8.2.0 logs `ERROR_NOTIFY_ENUM_DIR` and drops that
@@ -44,7 +49,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatc
 mod scripted_events;
 
 use crate::engine_contract::{
-    Commit, Error, InvalidateReason, Observation, ObservationOp, Op, Result,
+    Commit, EntryKind, Error, InvalidateReason, Observation, ObservationOp, Op, PathState, Result,
 };
 use crate::scan;
 use crate::{ApplyOutcome, IndexHandle, ScanConfig};
@@ -136,7 +141,7 @@ enum Pending {
         /// backend reports, so it is always relisted; and a rename is how a name changes
         /// only in case or Unicode normalization, which a lookup on an insensitive
         /// filesystem cannot tell apart, so the name is checked against its parent's
-        /// listing before it is trusted (see [`verify_intent`]).
+        /// listing before it is trusted (see [`verify_paths`]).
         renamed: bool,
     },
     /// The producer already knows it cannot describe this precisely.
@@ -371,7 +376,8 @@ impl Watcher {
         let Some(intent) = self.next_intent(timeout)? else {
             return Ok(None);
         };
-        Ok(Some(verify_intent(&self.root, self.config, &intent, &ScanConfig::default())))
+        verify_with_directory_times(&self.root, self.config, &intent, &ScanConfig::default(), None)
+            .map(Some)
     }
 
     fn next_intent(&self, timeout: Duration) -> Result<Option<CoalescedIntent>> {
@@ -467,8 +473,9 @@ fn apply_intent(
     scan_config: &ScanConfig,
     sink: &mut dyn FnMut(&Commit),
 ) -> Result<WatchApplyReport> {
-    let mut verifier =
-        |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent, scan_config));
+    let mut verifier = |_: &Path, _: &Observation| {
+        verify_with_directory_times(root, watch_config, intent, scan_config, Some(index))
+    };
     let apply = apply_reverified_with(index, &Observation::default(), scan_config, &mut verifier)?;
     if let Some(commit) = apply.commit.as_ref() {
         sink(commit);
@@ -519,8 +526,9 @@ fn apply_intent_controlled(
     control: &dyn scan::ReconcileControl,
     sink: &mut dyn FnMut(&Commit),
 ) -> Result<WatchApplyReport> {
-    let mut verifier =
-        |_: &Path, _: &Observation| Ok(verify_intent(root, watch_config, intent, scan_config));
+    let mut verifier = |_: &Path, _: &Observation| {
+        verify_with_directory_times(root, watch_config, intent, scan_config, Some(index))
+    };
     let apply = apply_reverified_with_control(
         index,
         &Observation::default(),
@@ -882,7 +890,7 @@ fn record(
     //
     // - an old name that is gone verifies as a removal of it and its subtree;
     // - a new name verifies as an upsert, and a directory there is relisted because its
-    //   contents arrived without events (see `verify_intent`);
+    //   contents arrived without events (see `verify_paths`);
     // - a counterpart inside the root is named by its own event on every backend that
     //   promises `RenameReporting::EachSide`, and is verified the same way;
     // - a counterpart outside the root changes nothing inside it.
@@ -1003,14 +1011,107 @@ fn try_deliver_overflow(out: &SyncSender<CoalescedIntent>) -> std::result::Resul
     }
 }
 
-/// Verify one bounded intent: stat once per path, never once per backend event.
+/// What verifying one intent's paths found.
+struct Verified {
+    /// The operations for the paths the intent names.
+    ops: Vec<Op>,
+    /// The directory each verified path below the root lives in, once each.
+    directories: std::collections::BTreeSet<PathBuf>,
+}
+
+/// Verify one intent's paths, as [`verify_paths`] does, and nothing else.
+#[cfg(test)]
 fn verify_intent(
     root: &Path,
     config: WatchConfig,
     intent: &CoalescedIntent,
     scan_config: &ScanConfig,
 ) -> Observation {
+    Observation::new(verify_paths(root, config, intent, scan_config).ops)
+}
+
+/// Verify one bounded intent as a driver applies it: its paths ([`verify_paths`]), and
+/// then the own attributes of each directory those paths live in.
+///
+/// Creating, removing, or renaming an entry moves its directory's own modification time,
+/// and no backend reports that as an event for the directory, so verifying the named
+/// paths alone left a directory aged by the time it had before the change: a watch kept a
+/// directory old after its newest file was deleted, or after an old file was moved in,
+/// where a cold walk of the same tree reads it as just changed (B1 on #191).
+///
+/// Each directory is read once per intent however many of its entries changed, with one
+/// stat and no listing, since its entries are exactly the paths verified beside it. The
+/// directories are derived here, after coalescing, so they never count toward
+/// [`WatchConfig::batch_path_capacity`]: a burst overflows no sooner than before. A
+/// directory the intent names itself is verified, or reconciled, as that path, and the
+/// root is not read, since its own time counts toward no row and a cold walk does not
+/// record it.
+///
+/// Against `held`, the index the observation will be applied to, only a directory the
+/// index already holds is refreshed, and only when its attributes moved: the operation is
+/// conditional on the entry read, so it never inserts a directory a narrower population or
+/// an unfinished discovery left out, and an unchanged directory costs the stat alone.
+/// Without an index ([`Watcher::next_observation`]) each admitted directory is upserted.
+fn verify_with_directory_times(
+    root: &Path,
+    config: WatchConfig,
+    intent: &CoalescedIntent,
+    scan_config: &ScanConfig,
+    held: Option<&IndexHandle>,
+) -> Result<Observation> {
+    let Verified { ops, directories } = verify_paths(root, config, intent, scan_config);
+    let mut observed: Vec<ObservationOp> =
+        ops.into_iter().map(ObservationOp::unconditional).collect();
+    let read: Vec<_> = directories
+        .into_iter()
+        .filter(|directory| {
+            !intent.pending.contains_key(directory)
+                && crate::admission::decide_path(
+                    directory,
+                    EntryKind::Dir,
+                    scan_config.hidden(),
+                    scan_config.exclude_special,
+                ) == crate::admission::Disposition::Retain
+        })
+        .filter_map(|directory| match scan::observe_path(&root.join(&directory)) {
+            // A directory that is gone, or no longer one, is reported by its own event or
+            // by the failed verification of the path beneath it.
+            Ok((EntryKind::Dir, attrs)) => Some((directory, attrs)),
+            Ok(_) | Err(_) => None,
+        })
+        .collect();
+    match held {
+        None => observed.extend(read.into_iter().map(|(path, attrs)| {
+            ObservationOp::unconditional(Op::Upsert { path, kind: EntryKind::Dir, attrs })
+        })),
+        Some(index) => index.read_with(|index| {
+            for (path, attrs) in read {
+                let expected = index.expectation(&path);
+                if matches!(
+                    expected.state,
+                    PathState::Present { kind: EntryKind::Dir, attrs: current } if current != attrs
+                ) {
+                    observed.push(ObservationOp::if_state(
+                        Op::Upsert { path, kind: EntryKind::Dir, attrs },
+                        expected,
+                    ));
+                }
+            }
+        })?,
+    }
+    Ok(Observation::from_ops(observed))
+}
+
+/// Verify the paths one bounded intent names: stat once per path, never once per backend
+/// event.
+fn verify_paths(
+    root: &Path,
+    config: WatchConfig,
+    intent: &CoalescedIntent,
+    scan_config: &ScanConfig,
+) -> Verified {
     let mut ops = Vec::with_capacity(intent.pending.len());
+    let mut directories = std::collections::BTreeSet::new();
     let mut listings = ParentListings::default();
     // Renamed names whose exact spelling their parent does not list. Nothing exists at
     // any path below such a name either, and its parent's reconciliation covers the
@@ -1026,6 +1127,11 @@ fn verify_intent(
             Pending::Verify { relist_if_dir, renamed } => {
                 if unlisted.iter().any(|name| rel.starts_with(name)) {
                     continue;
+                }
+                if let Some(directory) =
+                    rel.parent().filter(|parent| !parent.as_os_str().is_empty())
+                {
+                    directories.insert(directory.to_path_buf());
                 }
                 let absolute = root.join(rel);
                 let mut stat = scan::observe_path(&absolute);
@@ -1162,7 +1268,7 @@ fn verify_intent(
             }
         }
     }
-    Observation::new(ops)
+    Verified { ops, directories }
 }
 
 /// The relative parent of a non-root path; the root for a top-level name.
