@@ -3,15 +3,19 @@ type: is
 id: is-01m4kkw2gzm232vd6qgmyqab5p
 title: Settle delayed allocation before the stale-bytes reader test compares listings
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 labels: []
 dependencies: []
 parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
 created_at: 2026-10-10T19:15:39.679Z
-updated_at: 2026-10-10T22:11:42.667Z
+updated_at: 2026-10-11T04:41:57.557Z
+closed_at: 2026-10-11T04:41:57.553Z
+close_reason: "CI green on all three heads with the sync fix: #191 f2d304a5, #192 72a8fa79, #194 1a93434c (20 pass, 2 push-only skipped each)."
+resolution: null
+duplicate_of: null
 ---
 scan::linux_dents::tests::stale_bytes_in_the_buffer_never_reach_a_listing failed once in CI on #194 (Test library build-feature boundaries, job 114287447167) at an engine identical to 0d6011da, where it passed; it passes locally in isolation (40 runs) and in make check. Probable cause: it writes 3,000 one-byte files and compares two consecutive listings field by field, allocated (st_blocks) included, and ext4 writeback of freshly written files under delayed allocation can move st_blocks between two stats. Fix: run sync (through the coreutils command, as the module's mkfifo helper does) after writing the fixture and before the first listing. Proposed patch in https://github.com/jlevy/fdu/pull/194#issuecomment-6101211939.
 
