@@ -200,8 +200,9 @@ invalid sample; the shipped head `0d6011da`, sha256 `d93d5a43`, against the no-a
 
 On `linux-balanced-1m` the four-arm cell of exp-217 (20 pairs) put the no-ages arm at
 −7.95% [−8.90%, −4.30%] against the shipped head, but there the shipped head ran in a
-middle slot of every ordinal, which an A/A cell of this session (exp-217) puts at about
-+3% on its own; H197’s two-arm cells bound it differently (exp-219).
+middle slot of every ordinal, where an unresolved A/A cell of this session (exp-217) put
+one binary about 3% to 5% above the outer slots; H197’s two-arm cells bound it
+differently (exp-219).
 
 **System calls** (`strace -f -c` of the probe’s `default-tree`, load-independent): the
 only difference between the arms is `statx`, +7,887 on `node-modules-dense` (79,966

@@ -220,12 +220,19 @@ alternates each ordinal’s order, so the two middle arms never run first or las
 | `linux-balanced-1m` (screen) | **+10.40% [+4.20%, +11.86%]** | +2.40% [−0.09%, +4.82%] |
 
 Twenty pairs resolve about ±8% here, too wide for the prediction on the real trees.
-An A/A cell of one binary under three names (`node-modules-dense`, 20 pairs) put the
-middle slot at +3.48% [−2.17%, +11.95%] on `default-tree` and +2.66% [−2.58%, +5.98%] on
-`render-yaml` against the first, unresolved but the same size as the effects being read,
-so a middle arm’s figure in these cells is read only beside its two-arm replicate.
-On the screen the shipped head ran in a middle slot; its +10.40% is an upper reading,
-and H197’s two-arm cells bound the column’s price there at +1.6% to +4% (exp-219).
+An A/A cell of one binary under three names, `a`, `b`, and `c` (`node-modules-dense`, 20
+pairs), compared the middle slot with the outer ones.
+Arm `a` ran first in 10 ordinals and last in the other 10, as `c` did, because the
+harness reverses each ordinal’s order; `b` was always in the middle.
+The middle slot was +3.48% [−2.17%, +11.95%] against `a` on `default-tree` and +2.66%
+[−2.58%, +5.98%] on `render-yaml`, and `c` was −4.60% [−10.56%, +2.78%] and −2.49%
+[−4.78%, +3.49%] against the middle, while the two outer arms differ by −1.63%
+[−4.71%, +3.81%] and −0.22% [−2.68%, +2.51%]. That is unresolved, but it is the size of
+the effects being read, so a middle arm’s figure in these cells is read only beside its
+two-arm replicate.
+On the screen the shipped head ran in a middle slot; its +10.40% is an
+upper reading, and H197’s two-arm cells bound the column’s price there at +1.6% to +4%
+(exp-219).
 
 **Placebo** (`--no-controls`, three arms, 20 pairs, the shipped head in the middle
 slot): `aggregate-summary` +2.35% [−0.61%, +5.20%] against v0.4.0, including zero.
@@ -235,7 +242,10 @@ slot): `aggregate-summary` +2.35% [−0.61%, +5.20%] against v0.4.0, including z
 87,660), and +116,391 on `linux-balanced-1m` (1,000,010 against 883,619), against
 +7,886, +5,180, and about +125k predicted; the generated tree’s shortfall is the H185
 policy’s own stats, one per listing until a child proves it searchable.
-Every other call count is equal, the no-ages arm’s equal to v0.4.0’s.
+`openat`, `getdents64`, and `close` are equal to within one in every arm: v0.4.0 makes
+one more `openat` and `close` on `node-modules-dense` (9,448 against 9,447), and the
+no-ages arm’s `statx` equals v0.4.0’s. `futex`, the walker threads’ waits, differs by a
+few percent between arms.
 `aggregate-summary` makes 72,076 `statx` on both builds on `node-modules-dense` and
 87,658 against 87,659 on `linux-v6.12`.
 
@@ -271,6 +281,14 @@ compared arms outer): over a retained `Index` on `node-modules-dense` +5.75%
 macOS; on `linux-v6.12` +2.45% [−7.30%, +8.96%]. Over an opened root +8.56%
 [−8.23%, +16.48%] and +6.20% [−19.41%, +35.73%], unresolved.
 Wall, dominated by the walk, is flat.
+
+**The summary** (`aggregate-summary` wall, the same three-arm cells
+`run-b1-nmd-retained` and `run-b2-lnx-retained`, both compared arms outer): the shipped
+head against v0.4.0 is +5.45% [+1.99%, +7.20%] on `node-modules-dense` and −1.47%
+[−5.61%, +6.98%] on `linux-v6.12`. The age head, from the middle slot, is +1.53%
+[−0.64%, +5.01%] and +2.58% [−5.98%, +7.63%] against v0.4.0, unresolved.
+The summary makes the same calls at v0.4.0 and at the shipped head (the counts above),
+so the dense tree’s slower summary is read with H195’s two-arm rerun, exp-220.
 
 **Answers.** On all three subjects the 0.5.0 command line’s folded default tree equals
 the full index (`--cache on` into an empty cache directory) on every row’s name, kind,
@@ -325,9 +343,19 @@ and installed into its own Python 3.12 environment; a 100,000-row list report,
 out, a paired median of 145 ms, about 1.45 µs a row (the pairs range from −176 to +318
 ms). The whole `fdu.report` call takes 10.6 s at 0.5.0 against 11.7 s at 0.4.0 (−7.1%
 paired median), so the derivation is about 1.4% of the call.
-The call is the engine’s: the command line takes 10.0 s for the same list, and the
-native call 11.4 s of the Python one, against 1.2 s for the default tree over the same
-tree.
+Most of the call is native: the conversion to models is about 1.3 s of the 10.6 s, which
+leaves about 9.3 s in the native call, against 1.2 s for the 0.5.0 command line’s
+default tree over the same tree (the tool cells above).
+The command-line and native-call timings of the list that an earlier version of this
+record quoted have no committed evidence, so they are withdrawn; `fdu-yp6l` rests on the
+figures above.
+
+`python-modified-at.json` cannot tell the two wheels apart by itself.
+It reports version 0.4.0 for both, because the version is bumped only by the release
+commit: `148ef78e` and `0d6011da` both declare 0.4.0. No commit or wheel hash was
+recorded when it ran, so which wheel each end-to-end arm ran rests on this record’s
+account. The component cell needs the 0.5.0 build: it stubs `fdu._models._modified_at`,
+which 0.4.0 does not have.
 
 ## Decision
 
