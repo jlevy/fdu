@@ -60,3 +60,7 @@ where the cause can be separated.
 mode or an outlier; the spread cannot say which.
 Read that row as a range, and a tier marked ? as neither closed nor open, or re-run
 where the cause can be separated.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

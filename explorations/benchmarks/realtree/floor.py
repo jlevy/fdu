@@ -1117,9 +1117,27 @@ def main(argv: Sequence[str]) -> int:
         help=("under --host-regime quiet, how long to wait for a settling host before "
               "refusing (default: %(default)s)"),
     )
+    parser.add_argument(
+        "--instrument", action="append", default=None, choices=sorted(INSTRUMENTS),
+        metavar="NAME",
+        help=("an instrument to run; repeat. Default: " + ", ".join(DEFAULT_INSTRUMENTS)
+              + ". parfloor-stat, the denominator, is always required. Leave out `tree` "
+              "to score a probe from before the several-roots door, which has no "
+              "roots-default-tree mode"),
+    )
     parser.add_argument("--output", type=Path, help="write the scoreboard JSON here")
     parser.add_argument("--markdown", type=Path, help="write the rendered table here")
     arguments = parser.parse_args(list(argv))
+
+    instruments = tuple(arguments.instrument or DEFAULT_INSTRUMENTS)
+    if "parfloor-stat" not in instruments:
+        print("--instrument must include parfloor-stat: every ratio divides by it",
+              file=sys.stderr)
+        return 2
+    if len(set(instruments)) != len(instruments):
+        print("each --instrument may be named once: a round runs every instrument once",
+              file=sys.stderr)
+        return 2
 
     workers = arguments.workers if arguments.workers is not None else default_workers()
     if not 1 <= workers <= MAX_WORKERS:
@@ -1158,6 +1176,7 @@ def main(argv: Sequence[str]) -> int:
             warmups=arguments.warmups, build_dir=arguments.build_dir,
             probe=arguments.probe.expanduser().resolve(),
             host_regime=arguments.host_regime, quiet_wait_seconds=arguments.quiet_wait,
+            instruments=instruments,
         )
     except FloorError as error:
         # A refused scoreboard is the harness doing its job. It should read as a verdict
