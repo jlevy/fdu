@@ -7089,7 +7089,9 @@ falls back to the path on any failure; glibc Linux only.
 linux-v6.12 -1.22% and -1.11%, unresolved; linux-balanced-1m -2.34% [-4.47%, -0.94%],
 under the bar; against the no-ages arm still +4.01% [+1.19%, +6.66%] dense and +1.60%
 [+0.45%, +2.58%] generated, so ages do not reach the price of sizes alone; answers
-identical; kept arm is the control until a reviewed pull request lands it.
+identical; accepted on the arithmetic, with the complexity judgment, rename semantics
+included, owed to fdu-tzv3’s review; kept arm is the control until a reviewed pull
+request lands it.
 
 Full record:
 [`exp-219-linux-h197-parent-relative-directory-opens-cut-the-dense-tre.md`](../experiments/exp-219-linux-h197-parent-relative-directory-opens-cut-the-dense-tre.md)
@@ -7117,10 +7119,14 @@ Other jobs, wall time: `opened-second-report` +0.2% (n.s.), `render-yaml` -5.5%.
 Cost to carry: 0 lines; no new dependencies.
 
 **Rejected:** not a speed decision: several roots ship regardless; two-arm, 40 pairs,
-quiet: aggregate-summary +5.28% [+2.27%, +7.62%] on node-modules-dense and +0.92%
-[-2.75%, +5.38%] on linux-v6.12, so H195 does not hold on the dense tree’s summary, with
-instructions +0.3% and system calls equal, unattributed; opened-second-report +0.16% and
-+0.72% with upper bounds past +3%, inconclusive; render-yaml -5.48% and -6.35%, faster.
+quiet: aggregate-summary on node-modules-dense +5.28% [+2.27%, +7.62%], slower with the
+interval above zero, but non-inferiority at +3% is neither shown nor refuted, so
+inconclusive under H195’s registered rule, and the figure depends on the estimator (mean
++3.53%, Hodges-Lehmann +3.97%, marginal medians -0.68%); exp-217’s three-arm b1 cell,
+both arms outer, puts the shipped head’s summary +5.45% [+1.99%, +7.20%] above v0.4.0’s;
+linux-v6.12 +0.92% [-2.75%, +5.38%]; instructions +0.3% and system calls equal,
+unattributed; opened-second-report +0.16% and +0.72% with upper bounds past +3%,
+inconclusive; render-yaml -5.48% and -6.35%, faster.
 
 Full record:
 [`exp-220-linux-h195-quiet-rerun-one-root-s-summary-5-3-slower-on-the-.md`](../experiments/exp-220-linux-h195-quiet-rerun-one-root-s-summary-5-3-slower-on-the-.md)
@@ -7148,10 +7154,10 @@ Other jobs, wall time: `roots-summary` +417.9% (regression).
 
 Cost to carry: 0 lines; no new dependencies.
 
-**Rejected:** not a speed decision: roots-default-tree 31.8 to 162.3 ms, +425.6%
+**Rejected:** not a speed decision: roots-default-tree 31.8 to 162.3 ms, +425.5%
 [+383.1%, +479.0%], about 0.48 ms a root, and roots-summary 27.7 to 139.5 ms, +417.9%,
-about 0.41 ms a root, a fifth and a half of macOS’s exp-216 figures; far past fdu-ich9’s
-10% bar on Linux too.
+about 0.41 ms a root, about a fifth of macOS’s exp-216 figure on the tree and half on
+the summary; far past fdu-ich9’s 10% bar on Linux too.
 
 Full record:
 [`exp-221-linux-several-roots-pay-about-0-5-ms-a-root-272-small-roots-.md`](../experiments/exp-221-linux-several-roots-pay-about-0-5-ms-a-root-272-small-roots-.md)

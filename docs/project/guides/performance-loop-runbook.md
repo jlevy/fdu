@@ -1005,12 +1005,14 @@ the default tree one `statx` per directory and per symlink: +5.72% [+3.53%, +10.
 noise on `linux-v6.12`. H197, parent-relative directory opens, wins back 3.35% there and
 5.06% of the summary and is accepted but not shipped (`claude/h197-relative-opens`);
 with it, ages still cost +1.6% to +4% over a walk that skips directory stats.
-H195 fails on one root’s summary on the dense tree (+5.28%, unattributed), several roots
-cost about 0.5 ms a root on Linux (`fdu-ich9`), and this session’s tool cells show no
-resolved lead over `pdu --max-depth 2` or diskus on the real trees, for 0.4.0 as for
-0.5.0. Twenty pairs resolve about ±8% on this guest, and a cell of three or more arms
-biases its middle arms by about 3%, so decisions there rest on two-arm cells of 100
-pairs.
+One root’s summary on the dense tree is slower at #192’s head, +5.28% [+2.27%, +7.62%],
+which leaves H195 inconclusive there under its registered rule.
+That figure depends on the estimator (about +3.5% to +5.3%) and is unattributed
+(`fdu-4arl`). Several roots cost about 0.5 ms a root on Linux (`fdu-ich9`), and this
+session’s tool cells show no resolved lead over `pdu --max-depth 2` or diskus on the
+real trees, for 0.4.0 as for 0.5.0. Twenty pairs resolve about ±8% on this guest, and an
+unresolved A/A cell put the middle slot about 3% to 5% above the outer slots, so
+decisions here rest on two-arm cells of 100 pairs (40 for H195).
 
 **Since then (2026-10-08).** The
 [performance index](../specs/active/plan-2026-10-05-fdu-performance-index.md) landed

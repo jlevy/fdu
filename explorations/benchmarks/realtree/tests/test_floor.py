@@ -661,6 +661,55 @@ class RefusesRatherThanSubstituting(unittest.TestCase):
         self.assertIn("fdu-33ri", message)
 
 
+class ScoresAChosenSetOfInstruments(unittest.TestCase):
+    """`--instrument` keeps an older probe scorable.
+
+    Review A13 on PR #194: the `tree` tier needs `roots-default-tree`, which no probe from
+    before #192 has, and with no way to leave it out such a probe could not be scored.
+    """
+
+    def _instruments_run_receives(self, *extra):
+        received = {}
+
+        def capture(**arguments):
+            received.update(arguments)
+            raise floor.FloorError("stop after recording the arguments")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), \
+                mock.patch.object(floor, "run", side_effect=capture):
+            status = floor.main(["--subject", "t=/", "--probe", "/b/perf_probe", *extra])
+        return status, received.get("instruments"), stderr.getvalue()
+
+    def test_the_default_runs_every_default_instrument(self):
+        status, instruments, _ = self._instruments_run_receives()
+        self.assertEqual(status, 1)
+        self.assertEqual(instruments, floor.DEFAULT_INSTRUMENTS)
+
+    def test_a_chosen_subset_reaches_the_run_in_order(self):
+        status, instruments, _ = self._instruments_run_receives(
+            "--instrument", "parfloor-stat", "--instrument", "aggregate",
+            "--instrument", "index",
+        )
+        self.assertEqual(status, 1)
+        self.assertEqual(instruments, ("parfloor-stat", "aggregate", "index"))
+
+    def test_a_subset_without_the_floor_is_refused_before_anything_runs(self):
+        status, instruments, message = self._instruments_run_receives(
+            "--instrument", "aggregate", "--instrument", "tree",
+        )
+        self.assertEqual(status, 2)
+        self.assertIsNone(instruments)
+        self.assertIn("parfloor-stat", message)
+
+    def test_an_instrument_named_twice_is_refused(self):
+        status, instruments, _ = self._instruments_run_receives(
+            "--instrument", "parfloor-stat", "--instrument", "parfloor-stat",
+        )
+        self.assertEqual(status, 2)
+        self.assertIsNone(instruments)
+
+
 class ScoresTheProbeMakeBuilt(unittest.TestCase):
     """The scoreboard and a verdict run must score the same probe.
 

@@ -278,7 +278,7 @@ experiment:
     primary_job: roots-default-tree
     primary_metric: wall_ns
     change_pct: 425.546
-    reason: "not a speed decision: roots-default-tree 31.8 to 162.3 ms, +425.6% [+383.1%, +479.0%], about 0.48 ms a root, and roots-summary 27.7 to 139.5 ms, +417.9%, about 0.41 ms a root, a fifth and a half of macOS's exp-216 figures; far past fdu-ich9's 10% bar on Linux too"
+    reason: "not a speed decision: roots-default-tree 31.8 to 162.3 ms, +425.5% [+383.1%, +479.0%], about 0.48 ms a root, and roots-summary 27.7 to 139.5 ms, +417.9%, about 0.41 ms a root, about a fifth of macOS's exp-216 figure on the tree and half on the summary; far past fdu-ich9's 10% bar on Linux too"
     commit: 0d6011da
     kept: neither
 ---
@@ -309,7 +309,7 @@ directories as a root (`--child-roots`, candidate), both through the several-roo
 
 | Job | One root | 272 roots | Change [95% interval] | Per root |
 | --- | ---: | ---: | --- | ---: |
-| `roots-default-tree` | 31.8 ms | 162.3 ms | +425.6% [+383.1%, +479.0%] | about 0.48 ms |
+| `roots-default-tree` | 31.8 ms | 162.3 ms | +425.5% [+383.1%, +479.0%] | about 0.48 ms |
 | `roots-summary` | 27.7 ms | 139.5 ms | +417.9% [+377.4%, +464.5%] | about 0.41 ms |
 
 CPU grows less than wall: total CPU +208% and +200%, system CPU +200% and +188%, user
@@ -322,8 +322,8 @@ predicts.
 
 Not a speed decision: several roots ship regardless.
 On this Linux host a root costs about 0.5 ms on the default tree and 0.4 ms on the
-summary, a fifth and a half of the macOS figures, and 272 small roots still take about
-five times one walk of their parent.
+summary, about a fifth of the macOS figure on the tree and half on the summary, and 272
+small roots still take about five times one walk of their parent.
 That is far past `fdu-ich9`’s 10% bar, so one walker pool across roots keeps its claim
 to a hypothesis on both platforms.
 Recorded `rejected` as a speed claim, keeping neither configuration, as exp-216 is.

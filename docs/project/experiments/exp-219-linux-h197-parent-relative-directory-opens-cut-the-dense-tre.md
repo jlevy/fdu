@@ -270,7 +270,7 @@ experiment:
     primary_job: default-tree
     primary_metric: wall_ns
     change_pct: -3.35
-    reason: "default-tree -3.35% [-6.18%, -0.93%] and aggregate-summary -5.06% [-6.10%, -1.76%] on node-modules-dense at 100 pairs, against -0.5% to -1.5% predicted; linux-v6.12 -1.22% and -1.11%, unresolved; linux-balanced-1m -2.34% [-4.47%, -0.94%], under the bar; against the no-ages arm still +4.01% [+1.19%, +6.66%] dense and +1.60% [+0.45%, +2.58%] generated, so ages do not reach the price of sizes alone; answers identical; kept arm is the control until a reviewed pull request lands it"
+    reason: "default-tree -3.35% [-6.18%, -0.93%] and aggregate-summary -5.06% [-6.10%, -1.76%] on node-modules-dense at 100 pairs, against -0.5% to -1.5% predicted; linux-v6.12 -1.22% and -1.11%, unresolved; linux-balanced-1m -2.34% [-4.47%, -0.94%], under the bar; against the no-ages arm still +4.01% [+1.19%, +6.66%] dense and +1.60% [+0.45%, +2.58%] generated, so ages do not reach the price of sizes alone; answers identical; accepted on the arithmetic, with the complexity judgment, rename semantics included, owed to fdu-tzv3's review; kept arm is the control until a reviewed pull request lands it"
     commit: d7cbfc71
     kept: control
 ---
@@ -342,6 +342,15 @@ Ages cost the same as sizes alone only if something else removes a call
 per directory, or if the age counts files alone, which the folded tree already maintains
 for nothing; the second is a definition the maintainer owns.
 
-Accepted on `node-modules-dense`. The kept arm is recorded as the control, because the
-change is not in the product: it is on `claude/h197-relative-opens`, outside the 0.5.0
-stack, and ships only if a reviewed pull request lands it.
+Accepted on `node-modules-dense`, on the accept rule’s arithmetic: the median is at
+least 3% faster, the interval lies below zero, and no sample was invalid.
+The rule’s fourth criterion, that the complexity is worth it, is a judgment this record
+does not make. It is owed to the review that lands the change (`fdu-tzv3`), over the
+complexity block above: 403 lines, three new `unsafe` blocks, descriptors held for
+queued subdirectories, and the rename case.
+On a tree renamed during the walk a relative open lists the child of the directory whose
+listing named it, where the absolute path may by then name another directory or none, so
+the registration’s “never decides an answer” holds only for a tree that is not renamed
+mid-walk. The kept arm is recorded as the control, because the change is not in the
+product: it is on `claude/h197-relative-opens`, outside the 0.5.0 stack, and ships only
+if a reviewed pull request lands it.

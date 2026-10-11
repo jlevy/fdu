@@ -394,7 +394,7 @@ experiment:
     primary_job: aggregate-summary
     primary_metric: wall_ns
     change_pct: 5.276
-    reason: "not a speed decision: several roots ship regardless; two-arm, 40 pairs, quiet: aggregate-summary +5.28% [+2.27%, +7.62%] on node-modules-dense and +0.92% [-2.75%, +5.38%] on linux-v6.12, so H195 does not hold on the dense tree's summary, with instructions +0.3% and system calls equal, unattributed; opened-second-report +0.16% and +0.72% with upper bounds past +3%, inconclusive; render-yaml -5.48% and -6.35%, faster"
+    reason: "not a speed decision: several roots ship regardless; two-arm, 40 pairs, quiet: aggregate-summary on node-modules-dense +5.28% [+2.27%, +7.62%], slower with the interval above zero, but non-inferiority at +3% is neither shown nor refuted, so inconclusive under H195's registered rule, and the figure depends on the estimator (mean +3.53%, Hodges-Lehmann +3.97%, marginal medians -0.68%); exp-217's three-arm b1 cell, both arms outer, puts the shipped head's summary +5.45% [+1.99%, +7.20%] above v0.4.0's; linux-v6.12 +0.92% [-2.75%, +5.38%]; instructions +0.3% and system calls equal, unattributed; opened-second-report +0.16% and +0.72% with upper bounds past +3%, inconclusive; render-yaml -5.48% and -6.35%, faster"
     commit: 0d6011da
     kept: candidate
 ---
@@ -422,17 +422,50 @@ candidate the probe built from `0d6011da`, #192’s head (`d93d5a43`).
 | `opened-second-report` | +0.16% [−1.63%, +3.71%] | +0.72% [−2.70%, +4.27%] |
 | `render-yaml` | **−5.48% [−7.78%, −2.34%]** | **−6.35% [−7.94%, −4.62%]** |
 
-The second run of each pair was about 5% slower on `aggregate-summary` (92.4 against
-87.8 ms by median), but the order alternates, and splitting the pairs by which arm ran
-first gives +6.71% and +2.93%, an arm effect of about +4.8% and an order effect of about
-+1.9%: the result does not come from the schedule.
-Across the session’s two-arm cells the order effect stays within ±2% and the arm
-estimates match the paired medians.
+The dense tree’s `aggregate-summary` figure is the one in the session that depends on
+how it is read.
+
+- **Run order.** The second run of each pair was about 5% slower (92.4 against 87.8 ms
+  by median), and the order alternates.
+  Split by which arm ran first, the pairs give +6.71% and +2.93% by median, an arm
+  effect of about +4.8% and an order effect of about +1.9%. By mean they give +7.36% and
+  −0.31%, an arm effect of about +3.5% and an order effect of about +3.8%: by means the
+  run order moves each half as much as the build does.
+- **Estimator.** The mean of the 40 per-pair changes is +3.53% [+0.31%, +6.90%] (a
+  percentile bootstrap made as the harness makes its median’s), the Hodges–Lehmann
+  estimate +3.97%, and the difference of the two arms’ own medians −0.68% (90.84 against
+  90.22 ms). 27 of the 40 pairs are positive, and they range from −18.87% to +31.94%. No
+  other two-arm cell of two builds in the session spreads its estimators across more
+  than the +3% margin; this one spreads across six points.
+- **Corroboration.** exp-217’s three-arm cell `run-b1-nmd-retained` (20 pairs) ran the
+  same job on this tree with both compared arms in the outer slots: the shipped head’s
+  summary is +5.45% [+1.99%, +7.20%] above v0.4.0’s. In that cell `23d11b19`, from the
+  middle slot, is +1.53% [−0.64%, +5.01%] against v0.4.0, and `0d6011da` is +3.31%
+  [−4.08%, +8.97%] against `23d11b19`, both unresolved.
+  On `linux-v6.12` (`run-b2-lnx-retained`) the shipped head against v0.4.0 is −1.47%
+  [−5.61%, +6.98%].
+
+Across the session’s two-arm cells of two builds, the order effect is within about ±2.5%
+by median split and reaches +3.84% by mean split, on this record’s summary.
+`order-split.txt` covers every job of every committed two-arm run of exp-217 to exp-221,
+made by `order.py.txt` from the committed artifacts:
+
+- **By median split,** 2 of the 17 cells of two builds pass ±2%: −2.37% on exp-219’s
+  `default-tree` on `linux-v6.12` (`run-h3-lnx-roots-h197`) and +2.46% on
+  `opened-second-report` on `linux-v6.12` here (`run-g2-lnx-h195`).
+- **By mean split,** every cell but this record’s summary is within ±2.2%.
+- **The deciding cells** are small: +1.39% (exp-217), −0.34% (exp-218), and +0.50% and
+  +1.11% (exp-219).
+- **exp-221’s two cells** compare one build in two configurations, about +420% apart.
+  They split by 16 and 21 points by median and by about 1.3 by mean, at most a twentieth
+  of the effect.
 
 The summary’s extra time has no counted cause: on `node-modules-dense` the candidate
 runs 282.9M and 283.4M instructions against the control’s 282.4M and 282.1M (callgrind,
-two runs each, +0.3%), and makes the same `statx`, `openat`, and `getdents64` calls
-(72,076, 9,448, 18,878). This guest exposes no hardware counters to look further.
+two runs each, +0.3%), and makes the same `statx`, `openat`, and `getdents64` calls as
+v0.4.0 (72,076, 9,448, 18,878; exp-217’s `syscalls-probe.txt`, which traced the summary
+at v0.4.0 and the shipped head, not at `23d11b19`). This guest exposes no hardware
+counters to look further.
 
 `render-yaml` is faster at #192’s head on both trees, render component −9.65% and
 −12.07%, with instruction counts equal across the two heads (9.772G against 9.777G over
@@ -443,9 +476,16 @@ the whole process); it too is unattributed.
 Not a speed decision: several roots ship regardless.
 H195 holds on `render-yaml`, which is faster, and on `opened-second-report` only to
 within its interval, which reaches +3.71% and +4.27%, so that job is inconclusive rather
-than non-inferior. It does not hold on `aggregate-summary` on the directory-dense tree,
-where one root through the several-roots door is 5.28% slower, by an interval wholly
-above zero that reaches past the +3% margin, while the kernel tree is inconclusive;
-instruction and system-call counts do not explain it.
+than non-inferior. On `aggregate-summary` on the directory-dense tree, one root through
+the several-roots door is slower at #192’s head, with the paired interval above zero
+(+5.28% [+2.27%, +7.62%]). Non-inferiority at +3% is neither shown nor refuted, so the
+job is inconclusive under the registered rule, which reads an interval that crosses +3%
+on this host as inconclusive rather than a regression.
+How much slower depends on the estimator: about +3.5% to +5.3% over the pairs, +3.5% to
++4.8% balanced for run order, and −0.7% between the arms’ own medians.
+exp-217’s outer-arm comparison of the shipped head with v0.4.0, +5.45% [+1.99%, +7.20%],
+corroborates a slower summary at the shipped head.
+The kernel tree is inconclusive, and instruction and system-call counts do not explain
+the dense tree’s difference.
 Recorded `rejected` as a speed claim with the candidate kept, and the summary’s cost
-opened as its own bead for a host with hardware counters.
+opened as its own bead (`fdu-4arl`) for a host with hardware counters.

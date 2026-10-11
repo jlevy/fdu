@@ -351,7 +351,7 @@ changed from phase to phase.
 | Review rounds and the automount change | exp-196 | Linux | #161’s review put every route on the native reader (H184), a correctness change screened for non-regression: `warm-revalidate` −2.74%, the serial walk −5.14%; #163’s review made H185 prove a directory searchable before trusting its listing, keeping 83% and 89% of its `statx` saving |
 | 0.3.0 release standing | exp-202 | Linux | The release engine against 0.2.1: the default tree −48.00%, −14.09% and −14.57% on the kernel, dense and generated trees; ahead of both pdu modes and diskus on all three, the narrowest lead +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree |
 | The 0.5.0 stack on macOS | exp-209–216 | macOS | The tree age column’s per-report pass rejected (exp-209) and a maintained per-directory maximum recorded at a few to 23 µs a retained report; machine-format instants into a fixed buffer (H194); one root through the several-roots reader non-inferior on five jobs; several roots about 2.4 ms a root (exp-216); all on a loaded host |
-| The 0.5.0 stack on Linux | exp-217–221 | Linux | The age column costs the dense tree’s default command 5.72% [+3.53%, +10.46%], one `statx` per directory and symlink; H197’s parent-relative opens win back 3.35% there and 5.06% of the summary, not shipped; one root’s summary 5.28% slower at #192’s head, unattributed; several roots about 0.5 ms a root |
+| The 0.5.0 stack on Linux | exp-217–221 | Linux | The age column costs the dense tree’s default command 5.72% [+3.53%, +10.46%], one `statx` per directory and symlink; H197’s parent-relative opens win back 3.35% there and 5.06% of the summary, not shipped; one root’s summary 5.28% slower at #192’s head by the paired median, which leaves H195 inconclusive there, unattributed; several roots about 0.5 ms a root |
 
 ## Every Round in Full
 
@@ -1185,11 +1185,15 @@ kernel tree it does not resolve and on the generated tree it is −2.34%. Ages s
 +4.01% [+1.19%, +6.66%] over the no-ages arm on the dense tree with it: the remaining
 price is the call itself.
 
-**Several roots:** H195 holds on `render-yaml`, which is faster at #192’s head, is
-inconclusive on `opened-second-report`, and fails on `aggregate-summary` on the dense
-tree, +5.28% [+2.27%, +7.62%] with instructions and system calls unchanged (exp-220). A
-root costs about 0.5 ms on the default tree and 0.4 ms on the summary on Linux
-(exp-221).
+**Several roots:** H195 holds on `render-yaml`, which is faster at #192’s head, and is
+inconclusive on `opened-second-report` (exp-220). On `aggregate-summary` on the dense
+tree the summary is slower at #192’s head, with the paired interval above zero (+5.28%
+[+2.27%, +7.62%]), but non-inferiority at +3% is neither shown nor refuted, so the job
+is inconclusive under the registered rule.
+Instructions and system calls are unchanged, and the figure depends on the estimator
+(about +3.5% to +5.3%). exp-217’s outer-arm cell corroborates a slower summary at the
+shipped head: +5.45% [+1.99%, +7.20%] against v0.4.0. A root costs about 0.5 ms on the
+default tree and 0.4 ms on the summary on Linux (exp-221).
 
 **Against the peers and the floor:** After a container restart the tool cells show no
 lead over `pdu --max-depth 2` or diskus whose interval excludes zero on the real trees,
@@ -1198,8 +1202,11 @@ sessions, exp-202’s standing on the real trees is not reproduced on this guest
 The tree tier sits at 1.21× to 1.26× the floor (screening-grade).
 
 **Method:** An A/A cell of one binary under three names put the middle slot of a
-three-arm ordinal about 3% above the first, unresolved, so a middle arm’s figure is read
-only beside a two-arm replicate; in two-arm cells the order effect stays within ±2%.
+three-arm ordinal about 3% to 5% above the outer slots, unresolved, so a middle arm’s
+figure is read only beside a two-arm replicate.
+In the 17 two-arm cells of two builds, the run-order effect is within about ±2.5% by
+median split and within ±2.2% by mean split, except exp-220’s dense-tree summary at
++3.84% by means; the deciding cells’ are 1.4% or less (exp-220’s `order-split.txt`).
 
 ## Qualifications on Current Results
 

@@ -662,10 +662,15 @@ parent; usage says roots are walked one after another, and one walker pool acros
 is `fdu-ich9`. On Linux (2026-10-10, quiet, two-arm cells of 40 pairs;
 [exp-220](../../experiments/exp-220-linux-h195-quiet-rerun-one-root-s-summary-5-3-slower-on-the-.md)),
 the three jobs exp-214 left open came out three ways: `render-yaml` is faster at #192’s
-head on both real trees, `opened-second-report` is level but inconclusive at +3%, and
-`aggregate-summary` is 5.28% [+2.27%, +7.62%] slower on `node-modules-dense` with
-instruction and system-call counts that do not explain it, so H195 does not hold there.
-Several roots cost about 0.5 ms a root on Linux, a fifth of macOS’s
+head on both real trees, and `opened-second-report` is level but inconclusive at +3%.
+`aggregate-summary` on `node-modules-dense` is slower at #192’s head, with the paired
+interval above zero (+5.28% [+2.27%, +7.62%]); non-inferiority at +3% is neither shown
+nor refuted, so it is inconclusive under H195’s registered rule.
+The figure depends on the estimator, about +3.5% to +5.3%, and instruction and
+system-call counts do not explain it.
+exp-217’s outer-arm cell puts the shipped head’s summary +5.45% [+1.99%, +7.20%] above
+v0.4.0’s on the same tree; attributing it is `fdu-4arl`. Several roots cost about 0.5 ms
+a root on Linux, about a fifth of macOS’s on the tree and half on the summary
 ([exp-221](../../experiments/exp-221-linux-several-roots-pay-about-0-5-ms-a-root-272-small-roots-.md)).
 
 Decided during implementation:
