@@ -24,8 +24,8 @@
 //! formats and non-tree views ignore it. Human integer quantities share one grouping
 //! policy through [`human_count`] and [`human_count_u128`]. Human byte quantities,
 //! including cache rows and lifecycle totals, use [`styled_bytes`] for their units and
-//! zero/large-value emphasis. The tree size column alone uses [`tree_size_cell`] for
-//! magnitude colors; tree ages use [`age_style`] for recency. Machine fields retain
+//! zero/large-value emphasis. The tree size column alone uses `tree_size_cell` for
+//! magnitude colors; tree ages use `age_style` for recency. Machine fields retain
 //! exact integer bytes.
 //!
 //! A grouped row's first line ends at its file count; each further measure (lines, words,
