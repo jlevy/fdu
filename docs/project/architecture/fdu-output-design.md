@@ -27,10 +27,21 @@ colors are unchanged.
 Names shown in white or gray retain those colors.
 Directory names have a gray trailing `/`, except `.` and `..`; regular file names do
 not. Path and structured formats keep their original path values.
-Sizes of at least 1 GiB are bold, including gray parenthetical sizes and performance
-details. The threshold uses exact bytes, before rounding.
-Zero sizes such as `0 B` are gray.
-Other smaller sizes and file counts use the ordinary foreground color.
+Sizes and ages are colored by magnitude, after kash’s file listings, so the large and
+the recent stand out and the small and the old recede.
+Sizes, scaled to trees whose totals run to terabytes:
+
+| Size | Style |
+| --- | --- |
+| Under 16 KiB, zero included | Gray |
+| 16 KiB to under 1 MiB | Blue |
+| 1 MiB to under 1 GiB | Ordinary foreground |
+| 1 GiB to under 100 GiB | Bold bright green |
+| 100 GiB and up | Bold yellow |
+
+Gray parenthetical sizes and performance details stay gray, and are bold from 1 GiB.
+The thresholds use exact bytes, before rounding.
+File counts use the ordinary foreground color.
 Percentages below 1% are gray, using the exact ratio before rounding.
 These styles apply wherever human output presents those values.
 Tree rows put the share bar first, then the percentage of the selected root, size, age,
@@ -43,6 +54,11 @@ either side, and its width is measured on visible text, so a gray cell pads like
 one. A row’s age is the newest modification among the entries it counts, of any kind,
 never the report root’s own time; [machine output](../../machine-output.md#tree-nodes)
 states the definition.
+A known age is colored by recency, on the same ladder that picks its unit: under a
+minute bold bright red, under an hour bold yellow, under a day bold bright green, under
+a display month bold cyan, under a display year blue, and older gray.
+A time ahead of the reference takes the newest tier.
+`--long` and the other flat formats stay plain.
 An age whose subtree was not listed in full is the gray word `unknown`, as `--long`
 prints it, because a lower-bound maximum is not an age.
 A row that counts no entry, such as an empty root, shows a gray `—`, as a missing
@@ -280,8 +296,8 @@ Uncolored bars retain their plain block glyphs.
 
 Each tree has at most one remainder line below its selected root.
 Only its `… and` prefix is gray; the file count uses normal foreground, and percentages
-and sizes use the same styling as ordinary rows, including gray shares below 1%, gray
-zero sizes, and bold sizes of at least 1 GiB. It uses the same bar, percentage, and size
+and sizes use the same styling as ordinary rows, including gray shares below 1% and sizes
+colored by magnitude. It uses the same bar, percentage, and size
 columns as tree rows, with a blank age cell; its name column reads `… and N more files`.
 The bar and percentage show the combined hidden share of the selected root.
 
