@@ -9,6 +9,14 @@
 # (the pack file is not part of the source), under $FDU_DEMO_TREES:
 #   git clone --depth 1 --branch v7.3-rc6 https://github.com/torvalds/linux "$FDU_DEMO_TREES/linux"
 #   rm -rf "$FDU_DEMO_TREES/linux/.git"
+# A clone stamps every file with the moment of the clone, so the tree's age column would
+# read the same on every row. Give each entry its last commit's time from a blobless
+# clone of the history (about 2 GB, on any disk), then record soon after: ages are
+# measured from now.
+#   git clone --bare --filter=blob:none --single-branch --branch v7.3-rc6 \
+#     https://github.com/torvalds/linux linux.git
+#   python3 -I packages/cli-animate/examples/fdu/commit-mtimes.py linux.git v7.3-rc6 \
+#     "$FDU_DEMO_TREES/linux"
 # Keep the tree and the fdu binary on an internal disk: timed on a USB drive, the
 # recording measures the drive. The intro states the tree's size and file count for that
 # tag; update it if you clone another.
