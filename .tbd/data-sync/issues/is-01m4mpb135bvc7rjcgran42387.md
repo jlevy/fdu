@@ -5,9 +5,9 @@ title: "Address PR #194 review A: Linux 0.5.0 measurement records (H195 verdict,
 kind: task
 status: in_progress
 priority: 1
-version: 16
+version: 18
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
-delegate: claude-code@spud10
+delegate: codex-pr194-finish
 labels: []
 dependencies: []
 parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
@@ -29,7 +29,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-11T05:18:01.316Z
-updated_at: 2026-10-11T05:18:34.616Z
+updated_at: 2026-10-11T21:53:45.515Z
 started_at: 2026-10-11T05:18:34.615Z
 ---
 Address review A (senior, round 1, head 1a93434c) on PR #194: https://github.com/jlevy/fdu/pull/194#issuecomment-6105735578. A1-A2 Medium, A3-A9 Low, A10-A14 suggestions. One child bead per finding.
