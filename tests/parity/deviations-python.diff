@@ -1815,8 +1815,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 +fdu: --docs is a discovery surface the Python package does not carry
   ✗ Version Is Exact
 @@ -1,1 +1,1 @@
--fdu 0.4.0[DEV_REVISION]
-+fdu 0.4.0 (python parity surface)
+-fdu 0.5.0[DEV_REVISION]
++fdu 0.5.0 (python parity surface)
   ✗ An Explicit Current Root Works for an Empty Sandbox
     stderr:
 @@ -1,2 +1,2 @@
