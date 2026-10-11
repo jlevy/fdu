@@ -3,9 +3,9 @@ type: is
 id: is-01m4mpb135bvc7rjcgran42387
 title: "Address PR #194 review A: Linux 0.5.0 measurement records (H195 verdict, order effect, nits)"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 18
+version: 19
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: codex-pr194-finish
 labels: []
@@ -29,7 +29,11 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-11T05:18:01.316Z
-updated_at: 2026-10-11T21:53:45.515Z
+updated_at: 2026-10-11T22:47:46.051Z
 started_at: 2026-10-11T05:18:34.615Z
+closed_at: 2026-10-11T22:47:46.050Z
+close_reason: "All A1-A14 dispositions published at https://github.com/jlevy/fdu/pull/194#issuecomment-6114742688 for pushed head f98e52ddb813c5d4f557a715fd5295061e692330. Ten fixed children closed; A6/A10/A11/A12 remain open as fdu-m3z1/fdu-wm5q/fdu-ee2u/fdu-tmu7 with prerequisites. Earlier CI diagnosis disposition: https://github.com/jlevy/fdu/pull/194#issuecomment-6114749284. Coordinator owns CI completion and final post-CI discovery."
+resolution: null
+duplicate_of: null
 ---
 Address review A (senior, round 1, head 1a93434c) on PR #194: https://github.com/jlevy/fdu/pull/194#issuecomment-6105735578. A1-A2 Medium, A3-A9 Low, A10-A14 suggestions. One child bead per finding.
