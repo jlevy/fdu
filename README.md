@@ -18,17 +18,13 @@ tool fits better: see [when to use each](#comparison-to-alternatives).
 [![fdu on the Linux kernel source: the usage tree, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/releases/latest/download/fdu-demo.mp4)
 
 *fdu 0.5.0 on the Linux kernel source (1.7 GiB, 95,938 files), recorded in real time on
-an M1 Pro: one run of each command, not a benchmark.
-Click to download the full-resolution video (MP4, 3.8 MB).*
+an M1 Pro: one run of each command, not a benchmark.*
 
 <!-- The speed claim above is repeated, without numbers, in crates/fdu/README.md,
 crates/fdu-py/README.md, crates/fdu/src/skills/SKILL.md, and the --docs guide in
 crates/fdu/src/cli.rs, whose output tests/golden/cli-surface.tryscript.md and
 tests/parity/deviations-python.diff record. The tagline is also the description in
 crates/fdu/Cargo.toml and crates/fdu-py/pyproject.toml. Update them together. -->
-
-**Status:** 0.x. A minor release may change the command line or either API; see the
-[release process](docs/project/guides/release-process.md).
 
 ## Key Features
 
