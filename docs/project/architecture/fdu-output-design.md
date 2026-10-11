@@ -32,9 +32,23 @@ details. The threshold uses exact bytes, before rounding.
 Zero sizes such as `0 B` are gray.
 Other smaller sizes and file counts use the ordinary foreground color.
 Percentages below 1% are gray, using the exact ratio before rounding.
-These styles apply wherever human output presents those values.
-Tree rows put the share bar first, then the percentage of the selected root, size, age,
-and indented filename.
+These styles apply wherever human output presents those values, with one addition: the
+tree’s size column, and only it, is colored by magnitude, after kash’s file listings
+with the tiers moved up to trees whose totals run to terabytes.
+
+| Tree size | Style |
+| --- | --- |
+| Under 16 KiB, zero included | Gray |
+| 16 KiB to under 1 MiB | Blue |
+| 1 MiB to under 1 GiB | Ordinary foreground, as before |
+| 1 GiB to under 100 GiB | Bold bright green |
+| 100 GiB and up | Bold yellow |
+
+Every other size, including list rows, grouped views, parenthetical details, the
+progress line, and cache status, keeps the rule above.
+Size and age colors, like every style here, appear only when color is on; plain output
+is unchanged. Tree rows put the share bar first, then the percentage of the selected
+root, size, age, and indented filename.
 Keep these columns aligned across directory, file, and remainder rows.
 
 The age column sits between size and name, as `--long` puts age between size and path.
@@ -47,8 +61,8 @@ A known age is colored by recency, after kash’s file listings, on the same lad
 picks its unit: under a minute bold bright red, under an hour bold yellow, under a day
 bold bright green, under a display month bold cyan, under a display year blue, and older
 gray. A time ahead of the reference takes the newest tier.
-The age’s color is the only style it adds; every other cell keeps its style, and
-`--long` and the other flat formats stay plain.
+The age and size colors are the only styles the tree adds; every other cell keeps its
+style, and `--long` and the other flat formats stay plain.
 An age whose subtree was not listed in full is the gray word `unknown`, as `--long`
 prints it, because a lower-bound maximum is not an age.
 A row that counts no entry, such as an empty root, shows a gray `—`, as a missing

@@ -22,9 +22,11 @@
 //! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
 //! is caller-selectable, including zero to remove the bar and its gutter; machine
 //! formats and non-tree views ignore it. Human integer quantities share one grouping
-//! policy through [`human_count`] and [`human_count_u128`]. Every human byte quantity,
-//! including cache rows and lifecycle totals, uses [`styled_bytes`] for its units and
-//! zero/large-value emphasis. Machine fields retain exact integer bytes.
+//! policy through [`human_count`] and [`human_count_u128`]. Human byte quantities,
+//! including cache rows and lifecycle totals, use [`styled_bytes`] for their units and
+//! zero/large-value emphasis. The tree size column alone uses [`tree_size_cell`] for
+//! magnitude colors; tree ages use [`age_style`] for recency. Machine fields retain
+//! exact integer bytes.
 //!
 //! A grouped row's first line ends at its file count; each further measure (lines, words,
 //! flags, coverage reasons) is a continuation line of its own, its size, share, and label
@@ -1469,6 +1471,34 @@ pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> S
     if bytes > 0 && bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
 }
 
+/// A tree row's size cell, colored by magnitude after kash's file listings, its tiers
+/// moved up to trees whose totals run to terabytes ([`tree_size_style`]). Only the tree's
+/// size column takes these colors; every other size keeps [`styled_bytes`].
+fn tree_size_cell(bytes: u64, width: usize, color: bool) -> String {
+    let text = format!("{:>width$}", human_bytes(bytes));
+    match tree_size_style(bytes) {
+        Some(style) => paint(&text, style, color),
+        None => text,
+    }
+}
+
+/// The tree's size tiers, by exact bytes: under 16 KiB gray, zero included; under 1 MiB
+/// blue; under 1 GiB the plain foreground, as before; under 100 GiB bold bright green;
+/// larger bold yellow.
+fn tree_size_style(bytes: u64) -> Option<AnsiStyle> {
+    const SMALL: u64 = 16 << 10;
+    const MIB: u64 = 1 << 20;
+    const GIB: u64 = 1 << 30;
+    const HUGE: u64 = 100 << 30;
+    match bytes {
+        0..SMALL => Some(STYLE_DETAIL),
+        SMALL..MIB => Some(AnsiColor::Blue.on_default()),
+        MIB..GIB => None,
+        GIB..HUGE => Some(AnsiColor::BrightGreen.on_default().bold()),
+        HUGE.. => Some(AnsiColor::Yellow.on_default().bold()),
+    }
+}
+
 /// Style a root share using its exact ratio, before display rounding.
 fn percentage_cell(part: u64, whole: u64, decimals: usize, width: usize, color: bool) -> String {
     let text = format!("{:>width$}", human_percentage(part, whole, decimals));
@@ -2208,7 +2238,7 @@ impl TextTree {
             out,
             "{bar_prefix}{}  {}  {}  {indent}{}{}{}",
             percentage_cell(row.bytes, grand, 0, 5, color),
-            styled_bytes(row.bytes, 10, color, false),
+            tree_size_cell(row.bytes, 10, color),
             right_cell(age, age_width, *style, color),
             row.name,
             count,
@@ -2332,7 +2362,7 @@ fn render_tree_remainder(
     };
     let measure = bytes.map_or_else(
         || detail(&format!("{:>10}", "unknown"), color),
-        |bytes| styled_bytes(bytes, 10, color, false),
+        |bytes| tree_size_cell(bytes, 10, color),
     );
     // With no visible root, a known remainder represents the whole selected root.
     // A missing measurement cannot honestly produce either a bar or a percentage.
@@ -5610,6 +5640,37 @@ mod tests {
         let widest =
             [month * 11, year * 99, 59 * SECOND, 3_599 * SECOND].map(|age| human_age(Some(-age)));
         assert!(widest.iter().all(|cell| cell.len() <= 5), "{widest:?}");
+    }
+
+    #[test]
+    fn tree_sizes_take_their_color_from_exact_bytes() {
+        let (small, mib, gib, huge) = (16 << 10, 1 << 20, 1 << 30, 100 << 30);
+        let blue = AnsiColor::Blue.on_default();
+        let green = AnsiColor::BrightGreen.on_default().bold();
+        let yellow = AnsiColor::Yellow.on_default().bold();
+        for (bytes, style) in [
+            (0, Some(STYLE_DETAIL)),
+            (small - 1, Some(STYLE_DETAIL)),
+            (small, Some(blue)),
+            (mib - 1, Some(blue)),
+            (mib, None),
+            (gib - 1, None),
+            (gib, Some(green)),
+            (huge - 1, Some(green)),
+            (huge, Some(yellow)),
+            (u64::MAX, Some(yellow)),
+        ] {
+            assert_eq!(tree_size_style(bytes), style, "{bytes} bytes");
+        }
+        // The plain tier is written without escapes, as every sub-GiB size was before.
+        assert_eq!(tree_size_cell(mib, 10, true), format!("{:>10}", human_bytes(mib)));
+        assert_eq!(tree_size_cell(gib, 10, true), paint("   1.0 GiB", green, true));
+        assert_eq!(tree_size_cell(gib, 10, false), "   1.0 GiB");
+        // Every other size keeps the shared rule.
+        assert_eq!(
+            styled_bytes(gib, 10, true, false),
+            paint("   1.0 GiB", AnsiStyle::new().bold(), true)
+        );
     }
 
     #[test]

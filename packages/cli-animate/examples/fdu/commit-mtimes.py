@@ -29,7 +29,7 @@ def last_commit_times(git_dir: str, rev: str, paths: set[str]) -> dict[str, int]
     times: dict[str, int] = {}
     log = subprocess.Popen(
         ["git", "--git-dir", git_dir, "log", "--format=%x01%ct", "--name-only"]
-        + ["--no-renames", "-z", rev],
+        + ["--first-parent", "-m", "--no-renames", "-z", rev],
         stdout=subprocess.PIPE,
     )
     assert log.stdout is not None
