@@ -88,6 +88,28 @@ and
 The host is a 4-vCPU virtual machine (Firecracker, kernel 6.18) on ext4, otherwise
 quiet.
 
+### The 0.5.0 Development Build
+
+The historical tables below describe the named releases and hosts; they do not establish
+the peer standing of 0.5.0. In
+[exp-217](project/experiments/exp-217-linux-h193-the-age-column-costs-the-dense-tree-s-default-com.md),
+20 pairs per tool on 2026-10-10 after a container restart (guest kernel
+`6.18.44-fc-v114`) found no resolved lead over `pdu --max-depth 2` or diskus on either
+`node-modules-dense` or the Linux v6.12 source, for the 0.5.0 development build or
+0.4.0. The generated million-entry tree retained its leads.
+The earlier real-tree lead intervals from exp-202 were not reproduced on that guest
+build, so they should not be used as current release claims.
+
+One-root summary performance also remains unresolved on the dense tree.
+The quiet two-arm
+[exp-220](project/experiments/exp-220-linux-h195-quiet-rerun-one-root-s-summary-5-3-slower-on-the-.md)
+measured a paired median change of +5.28% [+2.27%, +7.62%] between the several-roots
+head and its base. That interval crosses the registered +3% non-inferiority margin: it
+establishes neither non-inferiority nor inferiority at that margin.
+The estimated change ranges from about +3.5% to +5.3% across estimators; attribution
+remains open. These measurements describe the development commits named in the
+experiments, not a timed run of the final 0.5.0 candidate.
+
 ### The 0.3.0 Engine, Three Trees
 
 On 2026-09-30, 20 pairs per tool per tree
