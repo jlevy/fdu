@@ -219,6 +219,8 @@ findings.
   builds and task caches on that volume too.
 - **Privilege.** Both trees and every pass ran as an unprivileged user, so refusal bits
   bound the process and no device nodes could be created.
+- **Source fixture.** The local QA kernel Makefile reports Linux 7.3.0-rc6; the archived
+  `linux-v6.12` role was an alias, not version provenance.
 - **Cache state.** A fresh cache directory for every case.
 
 This run supplies no Linux or Windows runtime validation.

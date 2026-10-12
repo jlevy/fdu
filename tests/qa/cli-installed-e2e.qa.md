@@ -56,7 +56,7 @@ observations on this loaded host.
 | Phase 1: Setup | ✅ Passed | Candidate wheel from `d08624879` installed as an isolated uv tool; `--help`, `--version`, `--docs`, and `--skill` passed |
 | Phase 2: Small-tree views | ✅ Passed | All 18 view checks passed, including ignored population, depth and scan bounds, and JSON/YAML totals |
 | Phase 3: Cache × analyze | ✅ Passed | `off` left no snapshot; warm code and lines revalidated all 1,361 records; extra analyzers and formats passed; watch exited on SIGINT |
-| Phase 4: Medium tree | ✅ Passed | Linux v6.12 metadata checks passed; `FDU_QA_MEDIUM_ANALYZE` explicitly selected `Documentation/`, and both subtree analyze and warm reuse ran and passed |
+| Phase 4: Medium tree | ✅ Passed | Linux source 7.3-rc6 metadata checks passed; `FDU_QA_MEDIUM_ANALYZE` explicitly selected `Documentation/`, and both subtree analyze and warm reuse ran and passed |
 | Phase 5: Bounded large tree | ✅ Passed | Application Support depth 1 exited 0; depth 2 exited 2 with expected permission partials; no SIGKILL, peak RSS 19.6 MiB |
 | Phase 6: Terminal Progress | ⏳ Pending | All 38 pty checks and 3 terminal tests passed against the candidate. A person has not watched a real window; Windows progress QA has not run |
 | Phase 7: Peer agreement | ❌ Failed | Self-test: 13 exact readings. Each wider run: all 52 readings on checkout, Rust toolchains, Applications, and Linux source agreed exactly. Library failed both: first GNU/BSD allocated differences and `Interrupted`; repeat a corrected pdu apparent total 29,232 bytes above the following fdu reading and recurring `Interrupted`. No thresholds changed; `fdu-wo7c` remains open |

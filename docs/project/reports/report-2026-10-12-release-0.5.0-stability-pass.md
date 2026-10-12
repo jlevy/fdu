@@ -45,8 +45,9 @@ The table below and full peer tables record the repeat.
 ## Peer Failure and Release Decisions
 
 Both five-subject runs covered the checkout, Rust toolchains, Applications, home
-Library, and Linux v6.12. On the four quieter trees, all 52 readings agreed exactly in
-each run. Library remained failed under the unchanged comparison rules.
+Library, and Linux source 7.3-rc6. On the four quieter trees, all 52 readings agreed
+exactly in each run.
+Library remained failed under the unchanged comparison rules.
 An exit-2 partial result is expected under macOS permissions; an unexplained peer
 difference or non-permission error still fails the peer check.
 
@@ -124,11 +125,14 @@ finding.
   commit, installed with `uv tool install` into an isolated tool directory;
   `fdu --version` printed `fdu 0.5.0-dev+gd08624879`.
 - **Peers.** du (GNU coreutils) 9.9, Dust 1.2.4, pdu 0.24.0, dua 2.41.1, diskus 0.9.0.
-- **Trees.** small: `fdu-checkout`; medium: `linux-v6.12`; medium analyze:
+- **Trees.** small: `fdu-checkout`; medium: `linux-source`; medium analyze:
   `linux-documentation`; large: `hostile-application-support`; progress:
-  `github-workspaces`; progress analyze: `linux-v6.12`; peer 1: `fdu-checkout`; peer 2:
+  `github-workspaces`; progress analyze: `linux-source`; peer 1: `fdu-checkout`; peer 2:
   `rust-toolchains`; peer 3: `applications`; peer 4: `home-library`; peer 5:
-  `linux-v6.12`.
+  `linux-source`.
+- **Fixture provenance.** The local kernel Makefile reports Linux 7.3.0-rc6. The raw
+  archive’s `linux-v6.12` role was a historical alias, not its kernel version; this
+  report uses `linux-source`. No fixture source commit was established.
 - **Correctness trees.** tree: 14 kinds present, 3 absent (chardev, blockdev,
   non-utf8-name); served: 13 kinds present, 3 absent (chardev, blockdev, non-utf8-name).
 - **Tooling.** The runs used more than one revision of the scripts: `d08624879` for
@@ -148,12 +152,12 @@ export TMPDIR="/path/to/short-scratch"
 export CARGO_TARGET_DIR="$RELEASE/target"
 export UV_CACHE_DIR="$RELEASE/uv-cache"
 export FDU_QA_SMALL=/path/to/fdu-checkout
-export FDU_QA_MEDIUM=/path/to/linux-v6.12
+export FDU_QA_MEDIUM=/path/to/linux-source
 export FDU_QA_MEDIUM_ANALYZE=/path/to/linux-documentation
 export FDU_QA_LARGE=/path/to/hostile-application-support
 export FDU_QA_PROGRESS_TREE=/path/to/github-workspaces
-export FDU_QA_PROGRESS_ANALYZE=/path/to/linux-v6.12
-export FDU_QA_PEER_TREES=/path/to/fdu-checkout:/path/to/rust-toolchains:/path/to/applications:/path/to/home-library:/path/to/linux-v6.12
+export FDU_QA_PROGRESS_ANALYZE=/path/to/linux-source
+export FDU_QA_PEER_TREES=/path/to/fdu-checkout:/path/to/rust-toolchains:/path/to/applications:/path/to/home-library:/path/to/linux-source
 make release-stability
 ```
 
@@ -375,7 +379,7 @@ Directories a tool reported it could not read and the walk could list:
 Top-level directories whose allocated size does not agree with GNU du -l within fdu’s
 readings around it, ± 324.0 KiB: 0 of 149.
 
-#### `linux-v6.12`
+#### `linux-source`
 
 fdu read 1.7 GiB allocated and 1.5 GiB apparent, exiting 0; across its 14 readings, one
 before each tool and one at the end, the tree moved 0 B allocated and 0 B apparent.
@@ -412,7 +416,7 @@ Top-level directories whose allocated size does not agree with GNU du -l exactly
 fdu: <work>/bin/fdu
 slow tree: github-workspaces
 small tree: fdu-checkout
-analyze tree: linux-v6.12
+analyze tree: linux-source
 
 ok   slow scan exits 0 (2.9 s)
 ok   slow scan draws frames (23 frames)
