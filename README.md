@@ -17,7 +17,7 @@ tool fits better: see [when to use each](#comparison-to-alternatives).
 
 [![fdu on the Linux kernel source: the usage tree, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/releases/latest/download/fdu-demo.mp4)
 
-*fdu 0.4.0 on the Linux kernel source (1.7 GiB, 95,938 files), recorded in real time on
+*fdu 0.5.0 on the Linux kernel source (1.7 GiB, 95,938 files), recorded in real time on
 an M1 Pro: one run of each command, not a benchmark.*
 
 <!-- The speed claim above is repeated, without numbers, in crates/fdu/README.md,
@@ -438,6 +438,14 @@ Changes the loop kept include these, with their measured effects:
 [The evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
 records every experiment, rejected ones included.
 
+The figures below are historical measurements of the builds named beside them.
+They are not measurements of the 0.5.0 release candidate.
+In the 2026-10-10 Linux rerun, neither the 0.5.0 development build nor 0.4.0 showed a
+resolved lead over `pdu --max-depth 2` or diskus on the two real trees; the generated
+million-entry tree retained its leads.
+See
+[the current Linux evidence](docs/performance-measurements.md#the-050-development-build).
+
 Time to report on the generated million-entry tree, 875,000 files and 2.99 GB of
 allocated space, with warm filesystem caches, as a multiple of fdu’s time (lower is
 faster):
@@ -568,7 +576,7 @@ If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`
 does not publish free-threaded wheels yet.
 
 **Pinned versions:** For a repeatable run, replace `latest` with a release number, such
-as `uvx --no-build fdu@0.4.0 .`.
+as `uvx --no-build fdu@0.5.0 .`.
 
 **uv cool-off policies:** If uv is configured with an `exclude-newer` cool-off, a new
 fdu release may be filtered.

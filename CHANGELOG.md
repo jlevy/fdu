@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-11
+
+fdu 0.5.0 adds ages and size colors to the tree and combines several disjoint roots in
+one report. It changes the report schema to `fdu.report/11` and includes Rust and Python
+API changes. See the [release notes](docs/project/release-notes/0.5.0.md) for upgrade
+details.
+
 ### Added
 
 - The text tree shows each row’s age, between size and name: how long ago anything the

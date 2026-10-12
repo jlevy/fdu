@@ -467,8 +467,12 @@ class PrerequisiteTests(Scratch):
         private = self.base / "private"
         private.mkdir(mode=0o700)
         config = self.config(work=private / "work")
-        problems, skips = sp.prerequisites(config, FakeHost(euid=0))
+        with mock.patch.dict(os.environ, {"TMPDIR": str(private)}):
+            problems, skips = sp.prerequisites(config, FakeHost(euid=0))
         self.assertEqual(skips, {})
+        self.assertTrue(
+            any(f"the temporary directory, {private}" in problem for problem in problems)
+        )
         # The checkout's own reachability depends on where the test runs; the work
         # directory's does not.
         self.assertTrue(all("is not reachable by nobody" in problem for problem in problems))
@@ -756,6 +760,42 @@ class RunTests(Scratch):
             status = sp.main(argv, host)
         self.said = stdout.getvalue()
         return status, json.loads((work / "state.json").read_text(encoding="utf-8"))
+
+    def test_correctness_trees_use_the_configured_tmpdir(self) -> None:
+        parent = self.base / "external-scratch"
+        parent.mkdir()
+        self.install(self.base / "work", self.all_but("served"))
+        allocate = tempfile.mkdtemp
+
+        def in_scratch(*, prefix: str, dir: str | Path | None = None) -> str:
+            # Reject an internal-disk allocation even while reproducing the old bug.
+            self.assertEqual(Path(dir) if dir is not None else None, parent)
+            return allocate(prefix=prefix, dir=dir)
+
+        with (
+            mock.patch.dict(os.environ, {"TMPDIR": str(parent)}),
+            mock.patch.object(sp.tempfile, "mkdtemp", side_effect=in_scratch),
+        ):
+            status, state = self.run_pass(FakeHost(script=correctness_script()), "served")
+        self.assertEqual(status, 0, state["steps"]["served"])
+        base = Path(state["trees_base"])
+        self.assertEqual(base.parent, parent)
+        self.assertFalse(base.exists())
+
+    def test_an_unusable_configured_tmpdir_fails_without_falling_back(self) -> None:
+        parent = self.base / "missing-scratch"
+        self.install(self.base / "work", self.all_but("served"))
+        host = FakeHost(script=correctness_script())
+        with (
+            mock.patch.dict(os.environ, {"TMPDIR": str(parent)}),
+            mock.patch.object(sp.tempfile, "mkdtemp", side_effect=FileNotFoundError(str(parent))),
+        ):
+            status, state = self.run_pass(host, "served")
+        self.assertEqual(status, sp.EXIT_FAILED)
+        self.assertIn(f"temporary directory {parent}", state["steps"]["served"]["detail"])
+        self.assertIn("TMPDIR", state["steps"]["served"]["detail"])
+        self.assertNotIn("trees_base", state)
+        self.assertEqual(host.executed, [])
 
     def test_the_correctness_stage_and_both_breaks_pass(self) -> None:
         self.install(self.base / "work", self.all_but("correctness"))
