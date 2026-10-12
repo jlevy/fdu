@@ -91,7 +91,7 @@ class GitHub(Host):
 
 class AnnouncementTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(prefix="fdu-demo-")
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
         self.release = Release(VERSION, "a" * 40, root, root)
@@ -151,7 +151,7 @@ class AnnouncementTests(unittest.TestCase):
         self.assertEqual([argv[2] for argv in self.host.writes], ["upload", "edit"])
         (upload,) = [argv for argv in self.host.writes if argv[2] == "upload"]
         self.assertEqual(len(upload[4 : upload.index("--repo")]), 11)
-        self.assertFalse(any("fdu-demo" in arg for arg in upload))
+        self.assertNotIn(maintainer.DEMO_ASSET, [Path(arg).name for arg in upload])
         writes = copy.deepcopy(self.host.writes)
         announce.announce(self.host, self.release)
         self.assertEqual(self.host.writes, writes)
