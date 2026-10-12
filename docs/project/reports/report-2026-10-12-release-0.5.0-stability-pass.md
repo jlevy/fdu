@@ -50,8 +50,9 @@ each run. Library remained failed under the unchanged comparison rules.
 An exit-2 partial result is expected under macOS permissions; an unexplained peer
 difference or non-permission error still fails the peer check.
 
-- **First wider run.** GNU du -l’s allocated total and top-level Application Support
-  comparison left 6,205,440 bytes unexplained.
+- **First wider run.** GNU du -l’s root allocated comparison failed.
+  The top-level Application Support comparison left 6,205,440 bytes unexplained relative
+  to the preceding fdu reading.
   BSD du had a smaller allocated discrepancy, and one fdu observation reported
   `Interrupted`. The driver recorded three `UNEXPLAINED` notes and four failing checks,
   exiting 1.
