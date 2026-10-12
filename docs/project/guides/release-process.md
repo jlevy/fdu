@@ -270,10 +270,11 @@ A release whose commit declares the demo video also attaches it, as a twelfth fi
 ### The Demo Video
 
 The README shows `docs/media/fdu-demo.gif`, fdu on the Linux kernel source, and links it
-to the full-resolution video, `fdu-demo.mp4`, attached to the release.
-The GIF is the only demo file in the repository, because GitHub serves a release asset
-as a download (`application/octet-stream` with `Content-Disposition: attachment`), so an
-image shown inline cannot come from one.
+to the matching full-resolution video.
+Before publication, a public GitHub attachment can host that recording; the release
+carries it as `fdu-demo.mp4`. The GIF is the only demo file in the repository, because
+GitHub serves a release asset as a download (`application/octet-stream` with
+`Content-Disposition: attachment`), so an image shown inline cannot come from one.
 The video is never committed.
 Git keeps every committed version for good, and a recording is about 4 MiB (the 0.4.0
 one is 3,784,222 bytes, 3.6 MiB) against a repository of about 30 MiB, so each
@@ -339,9 +340,15 @@ steps print but never take:
   or delete it, keeping the tag, with `gh release delete "v$VERSION" --repo jlevy/fdu`
   (and run step 7 again), and rerun the job.
 
-A README link to the video uses `releases/latest/download/fdu-demo.mp4`, and a notes
-link uses the copy under the notes’ own tag, `releases/download/v$VERSION/fdu-demo.mp4`,
-so the video a reader sees is the one declared with the release they install.
+A README link must open the same recording as its GIF. When main previews an unreleased
+version, link to a public GitHub attachment of the declared video and label the caption
+as a preview. Verify the public attachment’s size and SHA-256 against the declaration.
+Link the GIF to the comment containing that preview; a direct attachment link makes
+GitHub replace the linked image with an inline video player.
+After publication, the README may use the matching tagged release asset; use
+`releases/latest/download/fdu-demo.mp4` only while it matches the GIF. A release-notes
+link always uses its own tag, `releases/download/v$VERSION/fdu-demo.mp4`, so it opens
+the video declared with that release.
 Since every release carries its own copy from its draft onward,
 `releases/latest/download` keeps working after a release that did not re-record:
 `make release-demo` copies the previous release’s video into the new draft.
