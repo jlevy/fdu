@@ -15,10 +15,11 @@ JSON output and a live change feed.
 For interactive browsing and deletion, or line counts in hundreds of languages, another
 tool fits better: see [when to use each](#comparison-to-alternatives).
 
-[![fdu on the Linux kernel source: the usage tree with size and age colors, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/pull/196#issuecomment-6118359745)
+[![fdu on the Linux kernel source: the usage tree with size and age colors, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/pull/196#issuecomment-6129700944)
 
 *fdu 0.5.0 preview on the Linux 7.3-rc6 source (1.7 GiB, 95,938 files), recorded in real
-time on an M1 Pro: one run of each command, not a benchmark.
+time on an M1 Pro using internal storage and a warm filesystem cache.
+This is one run of each command, not a benchmark.
 Click the animation for the matching full-resolution video.*
 
 <!-- The speed claim above is repeated, without numbers, in crates/fdu/README.md,

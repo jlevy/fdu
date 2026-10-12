@@ -30,6 +30,8 @@ title: "fdu: the Linux kernel, real time"
 # 140 columns fit every result row, since grouped rows stack their measures; only the perf lines wrap.
 terminal: { cols: 140, rows: 48, font_size: 14 }
 typing: { seed: 9 }
+lead_in: 0
+tail: 0
 path: [../../../../target/release]
 cwd: $FDU_DEMO_TREES/linux
 setup:
@@ -38,20 +40,20 @@ setup:
 steps:
   - label: intro
     comment: "# The entire Linux kernel source: 1.7 GiB in 95,938 files"
-    hold: 0.4
+    hold: 0
   - comment: "# Full tally of usage"
-    hold: 0.2
+    hold: 0
   - label: tree
     run: fdu .
-    hold: 2.5
+    hold: 0
   - comment: "# Full code and document analysis (first run, no cache, slowest)"
-    hold: 0.2
+    hold: 0
   - label: analysis, first run
     before: [fdu . --cache-clear]
     run: fdu . --view code,documents
-    hold: 2.5
+    hold: 0
   - comment: "# Full code and document analysis (subsequent runs, fast)"
-    hold: 0.2
+    hold: 0
   - label: analysis, cached
     run: fdu . --view code,documents
-    hold: 4
+    hold: 0
