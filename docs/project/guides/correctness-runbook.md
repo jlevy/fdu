@@ -201,60 +201,67 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-This run was on 2026-10-09, for the 0.4.0 release.
-`make release-stability` ran it on `f405067db`, the head of #189’s branch, whose tree is
-`2c728b23c`; the release commit, `c041ed1c8`, the merge of #189 into `main`, has the
-same tree and inherits the result by tree identity.
-It used the `fdu` of the candidate wheel, built from `f405067db` and installed with
-`uv tool install` into an isolated tool directory (`fdu 0.4.0-dev+gf405067db`). The
-gates on the same commit, `make check`, `make cross-lint`, `make semver-check`, and
-`make release-rehearse`, all exited 0, as the Current Status of the
-[QA playbook](../../../tests/qa/cli-installed-e2e.qa.md) records.
+The 0.5.0 candidate pass recorded on 2026-10-12 used the isolated wheel built from
+`d0862487939ea653351808d6143b4fe8e1f92351`, reporting `fdu 0.5.0-dev+gd08624879`. Its
+tree, `67e3ca0f6475d371cec13465569dadc9bdbe3216`, matches merged preparation commit
+`33a3a890cefb4848d3b609925e9682e483246b46` and commit checked again after merging main
+`6117ae41108311f3650dc165abd7424ca2cf7277`. Correctness checks passed; the wider release
+pass remains blocked by Library peer QA (`fdu-wo7c`) and the separate Linux summary
+pre-tag decision (`fdu-4arl`). Passing warm/cold checks do not disposition those
+findings.
 
 **Regime.**
 
-- **Host.** Bare metal: an Apple M1 Pro with 10 CPUs and 32 GiB of memory, macOS 26.5.2
-  (Darwin 25.5.0). It was not quiet: other agents’ jobs ran throughout, with a load
-  average of roughly 10 to 18, swap nearly full, and 1 to 4 GiB of disk free.
-- **Filesystem.** The internal APFS SSD, which is case-insensitive.
-  The trees were under a short `/tmp` path.
-- **Privilege.** Both trees were built, and every pass ran, as an unprivileged user, so
-  the refusal tree’s unreadable file and unlistable directory refused without `setpriv`,
-  and no device nodes could be made.
+- **Host.** Bare metal: MacBookPro18,1, 10 CPUs and 32 GiB, macOS 26.5.2 (Darwin arm64,
+  kernel 25.5.0). Other tasks and application activity continued; recorded load averages
+  were 11.60, 9.30, and 8.60.
+- **Filesystem.** APFS; correctness fixtures used short external scratch paths, with
+  builds and task caches on that volume too.
+- **Privilege.** Both trees and every pass ran as an unprivileged user, so refusal bits
+  bound the process and no device nodes could be created.
+- **Source fixture.** The local QA kernel Makefile reports Linux 7.3.0-rc6; the archived
+  `linux-v6.12` role was an alias, not version provenance.
 - **Cache state.** A fresh cache directory for every case.
 
-This run says nothing about the Linux or Windows walk.
+This run supplies no Linux or Windows runtime validation.
+The original local gates passed, and `make check` passed again at `6117ae411`. The later
+GitHub
+[release rehearsal, run 38187708393](https://github.com/jlevy/fdu/actions/runs/38187708393)
+passed on merged preparation commit `33a3a890`, with all eight artifact files verified
+by SHA-256 and inspected; publishing and announcement were skipped.
+The complete
+[0.5.0 stability-pass report](../reports/report-2026-10-12-release-0.5.0-stability-pass.md)
+records the wider peer failures and release decisions.
 
-**Kinds.** The refusal tree held 14 of the 17 kinds the builder makes, and the served
-tree 13, since it omits the refusals by design.
-Neither held `chardev` or `blockdev`, which need root, or `non-utf8-name`, which APFS
-refuses, and the two case-colliding names became one file.
-Every case of the refusal pass came back partial, so the refusals were effective.
-`fdu-579b` has not yet decided how hard links are attributed, so their result shows only
-that warm and cold agree, not that either is right.
+**Kinds.** The refusal tree held 14 kinds and the served tree 13, omitting refusals by
+design. Each lacked `chardev`, `blockdev`, and `non-utf8-name`: the first two need root,
+and APFS refuses the last.
+The case-colliding names became one file.
+Every refusal case came back partial, so the induced refusals took effect.
+`fdu-579b` has not decided hard-link attribution; these checks establish warm/cold
+agreement, not that counting policy’s correctness.
 
-There are 26 cases now, three more than 0.3.0’s 23: the content views `view-code`,
-`view-documents`, and `view-code-documents`, which 0.4.0 makes imply their analysis.
-The cross-warm matrix is 8 warmers by 9 asks.
+There were 26 cases and a cross-warm matrix of 8 warmers by 9 asks.
 
 | Pass | Result |
 | --- | --- |
 | `--refusals-only`, refusal tree, as an unprivileged user | 26 of 26 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
-| `warm_cold.py`, complete tree | 26 of 26 served `cache_only` and labelled `stale`; each of the 9 analysis cases’ warm runs revalidated; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
+| `warm_cold.py`, complete tree | 26 of 26 served `cache_only` and labelled `stale`; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
 | `cross_warm.py`, complete tree | 72 of 72 pairs matched the cold answer; 0 violations; exit status 0 |
 
-Each pass was checked by breaking it:
+The deliberate breaks confirmed the checks reject incorrect serving:
 
 - **No snapshot stored.** A wrapper turned `--cache on` into `--cache off`.
-  `warm_cold.py` exited 1 and caught all 26 cases: the 17 metadata cases reported
-  `NO-SNAPSHOT`, the 9 analysis cases `NOT-WARM(scanned)`. `cross_warm.py` exited 1,
-  failing all 17 same-analyzer pairs as `NOT-WARM(scanned)`.
-- **Partial answer stored.** A wrapper answered `--stale-ok` with the cold output
-  relabeled `cache_only`. All 26 cases reported `PARTIAL-STORED`, and `--refusals-only`
-  exited 1.
+  `warm_cold.py` exited 1 and caught all 26 cases: 17 `NO-SNAPSHOT` and 9
+  `NOT-WARM(scanned)`. `cross_warm.py` exited 1 and caught all 17 same-analyzer pairs as
+  `NOT-WARM(scanned)`.
+- **Partial answer stored.** A wrapper relabeled cold output as `cache_only` for
+  `--stale-ok`. All 26 cases reported `PARTIAL-STORED`, and `--refusals-only` exited 1.
 
-Every case of every pass, and the commands that ran them, are in the
-[0.4.0 stability-pass report](../reports/report-2026-10-09-release-0.4.0-stability-pass.md).
+Every case is retained in the
+[0.5.0 stability-pass report](../reports/report-2026-10-12-release-0.5.0-stability-pass.md).
+The previous macOS run, for 0.4.0 on 2026-10-09, remains in its
+[stability-pass report](../reports/report-2026-10-09-release-0.4.0-stability-pass.md).
 
 ### Previous Run: 0.3.0 on Linux
 

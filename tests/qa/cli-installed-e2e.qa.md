@@ -33,65 +33,66 @@ Library steps are time-boxed and must stay bounded.
 
 * * *
 
-## Current Status (Last Update 2026-10-09)
+## Current Status (Last Update 2026-10-12)
 
-This table records the 0.4.0 release, from the stability pass `make release-stability`
-ran on `f405067db`, the head of #189’s branch, whose tree is `2c728b23c`. The release
-commit, `c041ed1c8`, is the merge of #189 into `main` and has the same tree, so it
-inherits every result by tree identity; 0.4.0 was published from it on 2026-10-09. The
-installed command was the `cp312-abi3` `macosx_11_0_arm64` wheel built from `f405067db`
-as [Install the Candidate](#11-install-the-candidate) describes, installed with
-`uv tool install` into an isolated tool directory, and `fdu --version` printed
-`fdu 0.4.0-dev+gf405067db`. The host was bare metal, an Apple M1 Pro with 10 CPUs and 32
-GiB of memory, macOS 26.5.2 on its internal APFS SSD, running as an unprivileged user
-with no declared preconditions.
-It was not quiet: other agents’ jobs ran throughout, with a load average of roughly 10
-to 18, swap nearly full, and 1 to 4 GiB of disk free.
-The gates on `f405067db` all exited 0: `make check`; `make cross-lint`, which linted the
-macOS x86_64, Windows, i686, musl, and aarch64 Linux targets; `make semver-check`, which
-printed that `fdu-core` 0.4.0 and `fdu` 0.4.0 each start a new compatibility series, so
-there is nothing to check; and `make release-rehearse`. Each timing is a single run on
-that loaded host, not a claim.
+**0.5.0 is blocked before tagging.** The five-subject peer pass failed on home Library
+in both runs. `fdu-wo7c` needs diagnosis and maintainer disposition; the separate Linux
+summary attribution in `fdu-4arl` also needs a pre-tag decision.
+The original 15 automated stages passed with only two peer subjects, so that narrower
+result did not establish required Phase 7 coverage.
+
+The installed candidate was the isolated uv-tool wheel built from
+`d0862487939ea653351808d6143b4fe8e1f92351`, reporting `fdu 0.5.0-dev+gd08624879`. Its
+tree, `67e3ca0f6475d371cec13465569dadc9bdbe3216`, matches merged preparation commit
+`33a3a890cefb4848d3b609925e9682e483246b46` and commit checked again after merging main
+`6117ae41108311f3650dc165abd7424ca2cf7277`. The host was bare metal, MacBookPro18,1, 10
+CPUs and 32 GiB, macOS 26.5.2 on APFS, unprivileged with no declared preconditions.
+Other tasks and applications continued; recorded load averages were 11.60, 9.30, and
+8.60. Scratch, builds, and task caches used external APFS. Timings are single
+observations on this loaded host.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Setup | ✅ Passed | Wheel from `f405067db`, installed as a uv tool; the four sanity checks, `--help`, `--version`, `--docs`, and `--skill`, exit 0 |
-| Phase 2: Small-tree views | ✅ Passed | This repository’s working checkout (39,853 files, 741 MiB, 504 MiB of it gitignored); all 18 views exit 0; `--ignored=exclude` gives 237 MiB and `--scan-depth=1` 328 KiB; JSON and YAML totals agree. `--view=documents` without `--analyze` now runs its analysis and exits 0, where 0.3.0 exited 2 with the usage line: 0.4.0’s content views imply their analysis |
-| Phase 3: Cache × analyze | ✅ Passed | `off` stayed `0 cached` and left no snapshot; `auto` reused all 39,853 records (1.59 s to 0.38 s for `code`, 1.62 s to 0.36 s for `lines`), and the second `lines` run re-read none. `words` and `all` exit 0; JSON `physical_lines` is 3,908,779; watch exited on SIGINT |
-| Phase 4: Medium tree | ✅ Passed | A Linux v7.3-rc6 source tree (95,938 files, 405 `.gitignore` files), 0.43 s and 0.25 s for the two metadata runs, both `cold scan` as documented; the 7 metadata checks exit 0. The bounded subdirectory analyze and its reuse did not run, because `FDU_QA_MEDIUM_ANALYZE` was unset and the tree has `Documentation/`, not the default `docs/`; the harness does not count that as a skip (`fdu-15gr`) |
-| Phase 5: Bounded large tree | ✅ Passed | `~/Library/Application Support`: depth 1 exits 0, and depth 2 exits 2, a TCC partial: 11 protected directories refused with `Operation not permitted`, the rest read (1,544 files, 3.9 GiB); no SIGKILL; peak 20 MiB |
-| Phase 6: Terminal Progress | ⏳ Pending | `make test-terminal` passed against the installed command (3 tests). A pty probe passed all 38 of its checks: 29 frames on a 3.4 s scan of `~/wrk/github`, the first at 0.52 s, with file counts that climb from 74,260 to 701,105 in a fixed column, erased before the report; nothing for a small tree, a redirected stderr (only `note:`, `warn:`, `tip:`, and `perf:` lines), `--format json`, `--progress never` in text, JSON, or YAML, `CI=1`, or `TERM=dumb`; `--progress always --format json` draws; Ctrl-C erases, prints `fdu: interrupted`, and dies by SIGINT; `NO_COLOR` keeps the animation without color; frames fit at 60 to 12 columns and after narrowing mid-run, spinner and phase word only at 19 and 12 columns; `--analyze all` on the Linux tree shows `Analyzing` with a climbing percentage. A person has not watched a window, and Windows has not run |
-| Phase 7: Peer agreement | ✅ Passed | GNU du 9.9, dust 1.2.4, pdu 0.24.0, dua 2.41.1, diskus 0.9.0, and BSD du. Self-test: all 13 readings agree exactly. On `~/.rustup` and the Linux tree, all 26 readings agree exactly, each tree quiet, and every top-level directory agrees with GNU du -l exactly (0 of 4 and 0 of 24 differ), so the script exits 0. `~/Library` was not among the peer trees |
-| Phase 8: Results | ✅ Passed | 47 harness checks, all ok; 0.3.0 ran 49, and the two missing are Phase 4’s subtree analyze and its reuse (`fdu-15gr`). Full tables are in the [0.4.0 stability-pass report](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md), with the record of the release; the correctness record is in the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) |
+| Phase 1: Setup | ✅ Passed | Candidate wheel from `d08624879` installed as an isolated uv tool; `--help`, `--version`, `--docs`, and `--skill` passed |
+| Phase 2: Small-tree views | ✅ Passed | All 18 view checks passed, including ignored population, depth and scan bounds, and JSON/YAML totals |
+| Phase 3: Cache × analyze | ✅ Passed | `off` left no snapshot; warm code and lines revalidated all 1,361 records; extra analyzers and formats passed; watch exited on SIGINT |
+| Phase 4: Medium tree | ✅ Passed | Linux source 7.3-rc6 metadata checks passed; `FDU_QA_MEDIUM_ANALYZE` explicitly selected `Documentation/`, and both subtree analyze and warm reuse ran and passed |
+| Phase 5: Bounded large tree | ✅ Passed | Application Support depth 1 exited 0; depth 2 exited 2 with expected permission partials; no SIGKILL, peak RSS 19.6 MiB |
+| Phase 6: Terminal Progress | ⏳ Pending | All 38 pty checks and 3 terminal tests passed against the candidate. A person has not watched a real window; Windows progress QA has not run |
+| Phase 7: Peer agreement | ❌ Failed | Self-test: 13 exact readings. Each wider run: all 52 readings on checkout, Rust toolchains, Applications, and Linux source agreed exactly. Library failed both: first GNU/BSD allocated differences and `Interrupted`; repeat a corrected pdu apparent total 29,232 bytes above the following fdu reading and recurring `Interrupted`. No thresholds changed; `fdu-wo7c` remains open |
+| Phase 8: Results | ⏸️ Blocked | All 49 harness checks passed, including medium subtree analysis. The [0.5.0 stability-pass report](../../docs/project/reports/report-2026-10-12-release-0.5.0-stability-pass.md) records full tables, repeated peer failures, and triage; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records passing cache checks and negative controls |
 
-This pass says nothing about the Linux or Windows walk.
-The last Linux pass, for 0.3.0 at `e808f9604` (release commit `17b23c198`) on an x86_64
-virtual machine and ext4, passed every phase but Phase 6’s watched window; its table is
-in this file’s history and in the
-[0.3.0 stability-pass report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md).
-The 0.2.0 pass, the last on macOS before this one, and the 0.2.1 pass, on Linux, also
-passed every phase but Phase 6’s watched window; their tables are in this file’s history
-as well.
+In both interrupted Library observations, the detailed set stayed at the same 64 refused
+paths before and after the observation, with 511 total refusals.
+A later alternating-version probe reproduced `Interrupted` on published 0.4.0 at a path
+that reported a permission error in the other seven reads, including all four candidate
+reads. That symptom is not exclusive to 0.5.0; it does not explain the pdu size residual
+or clear Phase 7.
+
+The original four local gates passed; `make check` passed again at `6117ae411`. All 20
+jobs in
+[merged-main CI run 38187381778](https://github.com/jlevy/fdu/actions/runs/38187381778)
+passed. The later GitHub
+[release rehearsal, run 38187708393](https://github.com/jlevy/fdu/actions/runs/38187708393)
+passed at `33a3a890`: five platform wheels, one sdist, and two crates passed SHA-256
+verification and artifact inspection.
+Publishing and announcement were skipped.
+The approved demo is visual evidence and supplies no quiet-host performance result.
+
+This macOS pass supplies no Linux or Windows runtime validation.
+Earlier release records remain in the
+[0.4.0 report](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
+and
+[0.3.0 Linux report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md).
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
 
-**Test Results:** the 0.1.0 numbers are in
-[report-2026-09-25-release-candidate-qa.md](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md).
-The 0.2.0 and 0.2.1 tables are in the pull requests that record those runs.
-The 0.3.0 and 0.4.0 tables are in their stability-pass reports,
-[0.3.0](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md)
-and
-[0.4.0](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md).
-
 **Next Steps:**
 
-1. Run `make release-stability` with the fixture env vars for this machine, as
-   [How to Run](#how-to-run) describes.
-2. Replace the dated report table when revising numbers.
-   Set `FDU_QA_MEDIUM_ANALYZE` when the medium tree has no `docs/`, so Phase 4’s bounded
-   analyze runs, until `fdu-15gr` makes the pass catch its absence.
-3. File beads for product failures; do not treat a Library TCC partial (exit 2) as a
-   crash.
+1. Diagnose the remaining Library discrepancy and record the maintainer disposition
+   under `fdu-wo7c`; resolve the separate pre-tag decision under `fdu-4arl`.
+2. Complete human observation of Phase 6 and Windows progress QA.
+3. Record release authorization only after the pre-tag decisions are resolved.
 
 * * *
 
