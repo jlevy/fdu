@@ -3,9 +3,9 @@ type: is
 id: is-01m4p4a90e3qdm7vyv7any3tj3
 title: Re-record the 0.5.0 demo on a quiet host with real ages and the new colors
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -14,8 +14,12 @@ parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
 hold: null
 hold_until: null
 created_at: 2026-10-11T18:41:31.145Z
-updated_at: 2026-10-12T18:34:17.437Z
+updated_at: 2026-10-12T19:09:10.986Z
 started_at: 2026-10-12T06:54:32.258Z
+closed_at: 2026-10-12T19:09:10.985Z
+close_reason: "Completed in PR #200, merged as 924007e477eab2ffc2ee9daaaa73fc0645751e92. Quiet internal-storage capture, 26.4s matching MP4/GIF, immediate typing and no scheduled holds, original palette preserved. Fresh/cached commands 5.534s/0.733s; all 343 cast payloads and later intervals preserved; 313/313 frame changes verified. Two independent reviews, including strong senior Review B, found no issues. All make check components passed across the disk-interrupted run and exact terminal continuation; all 20 PR CI checks passed. Public README verified against the corrected preview. Release preparation and unresolved gates remain in the parent."
+resolution: null
+duplicate_of: null
 ---
 The kernel tree at ~/fdu-demo-trees/linux now carries each entry's last commit time (packages/cli-animate/examples/fdu/commit-mtimes.py, history in a blobless clone on the external drive). A color preview recorded 2026-10-11 11:13 at load average ~91 ran 4-10x slow (tree 1.43 s, first analysis 36.9 s, cached 7.7 s, against 0.39/8.1/0.75 s the night before) and must not ship. Re-record from the release commit's build when the host is quiet (check uptime first; stop other sessions' builds), compare receipt timings with the v0.4.0 binary in fdu-v0.4.0-diag, then put the GIF and the MP4's size and sha256 in docs/media in the release PR. Ages are measured from now, so record soon after any re-dating.
 

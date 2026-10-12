@@ -3,9 +3,9 @@ type: is
 id: is-01m4qd8phf7xrm86zsnymre3ft
 title: Remove blank startup delay from README demo
 kind: bug
-status: in_progress
+status: closed
 priority: 2
-version: 4
+version: 5
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -13,8 +13,12 @@ parent_id: is-01m4pfhrrvbd19h3wwrqte3zan
 hold: null
 hold_until: null
 created_at: 2026-10-12T06:37:11.078Z
-updated_at: 2026-10-12T18:34:17.723Z
+updated_at: 2026-10-12T19:09:10.995Z
 started_at: 2026-10-12T06:37:40.693Z
+closed_at: 2026-10-12T19:09:10.995Z
+close_reason: "Completed in PR #200, merged as 924007e477eab2ffc2ee9daaaa73fc0645751e92. Quiet internal-storage capture, 26.4s matching MP4/GIF, immediate typing and no scheduled holds, original palette preserved. Fresh/cached commands 5.534s/0.733s; all 343 cast payloads and later intervals preserved; 313/313 frame changes verified. Two independent reviews, including strong senior Review B, found no issues. All make check components passed across the disk-interrupted run and exact terminal continuation; all 20 PR CI checks passed. Public README verified against the corrected preview. Release preparation and unresolved gates remain in the parent."
+resolution: null
+duplicate_of: null
 ---
 
 ## Notes
