@@ -343,6 +343,8 @@ steps print but never take:
 A README link must open the same recording as its GIF. When main previews an unreleased
 version, link to a public GitHub attachment of the declared video and label the caption
 as a preview. Verify the public attachment’s size and SHA-256 against the declaration.
+Link the GIF to the comment containing that preview; a direct attachment link makes
+GitHub replace the linked image with an inline video player.
 After publication, the README may use the matching tagged release asset; use
 `releases/latest/download/fdu-demo.mp4` only while it matches the GIF. A release-notes
 link always uses its own tag, `releases/download/v$VERSION/fdu-demo.mp4`, so it opens
