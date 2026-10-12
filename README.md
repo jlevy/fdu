@@ -3,17 +3,27 @@
 **Fastest du replacement, with `.gitignore`-aware sizes and code and document counts,
 for the command line, Python, and Rust**
 
-For every directory in a tree at once, fdu reports its size, file count, most recent
+For every directory in a file tree, fdu reports its size, file count, most recent
 change, file kinds, and how much of it `.gitignore` covers.
-On request it also counts lines of code by language and words in documents.
-One parallel walk through each platform’s native directory interface gathers the
-metadata, and on a generated million-entry tree (875,000 files) fdu finished ahead of
-`du` and the seven other disk-usage tools measured ([Speed](#speed)). Content counts
-also read the files and are cached between runs.
-The same engine is the `fdu` command, a Python package, and a Rust crate, with versioned
-JSON output and a live change feed.
-For interactive browsing and deletion, or line counts in hundreds of languages, another
-tool fits better: see [when to use each](#comparison-to-alternatives).
+Optionally, it also analyizes lines of code by programming language or words, paragraphs,
+and pages in documents for Markdown or text.
+
+I’ve found I was in need of a tool like this more than ever now I routinely have
+agent worktrees with half a million files. I wanted a tool for myself and for agents
+to have visibility and manage disk usage.
+
+It is optimized native code, heavily parallel with OS-specific techniques for macOS and Linux.
+On a sample million-entry tree fdu is 9x faster than
+`du` and at least 1.2 to 3x faster than all other disk-usage tools measured for
+plain disk usage, while also offering a cross-platform CLI and more functionality.
+See the [speed measurements](#speed).
+
+The same engine powers the `fdu` command, a Python package, and a Rust crate.
+It offers APIs and agent-friendly use as a skill.
+It is packaged for convenience as a CLI installable via PyPI and uv, so you can run it
+on most platforms instantly via `uvx fdu@latest`.
+
+See also the [comparison to alternatives](#comparison-to-alternatives).
 
 [![fdu on the Linux kernel source: the usage tree with size and age colors, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/pull/196#issuecomment-6129700944)
 
