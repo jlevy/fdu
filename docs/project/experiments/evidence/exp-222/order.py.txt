@@ -1,0 +1,151 @@
+"""Split every two-arm run's pairs by which arm ran first, and set other estimators
+beside the harness's paired median.
+
+Usage: python3 order.py EVIDENCE_DIR RUN [RUN ...]
+
+Each RUN is a committed run artifact (`.json` or `.json.gz`), named relative to
+EVIDENCE_DIR so the output names only committed files. Runs of other than two arms are
+skipped with a note. For every job of every two-arm run, over the valid, non-warmup
+samples at equal ordinals:
+
+- `paired` is the harness's figure, the median of per-pair (candidate - control) /
+  control, checked against the run's own statistics block.
+- Which arm ran first is read from the order of the samples within the ordinal, not
+  assumed from its parity.
+- The order split takes the median, and then the mean, of the pairs where the control
+  ran first and of those where the candidate did; the arm effect is the average of the
+  two and the order effect half their difference.
+- `mean` carries a percentile bootstrap interval made as the harness makes its median's
+  (2,000 resamples, seed 0x5EED); `HL` is the Hodges-Lehmann estimate (the median of the
+  Walsh averages); `marginal` is the difference of the two arms' own medians.
+"""
+
+import gzip
+import json
+import random
+import statistics
+import sys
+from pathlib import Path
+
+
+def load(path):
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt") as handle:
+        return json.load(handle)
+
+
+def bootstrap_mean(values, resamples=2000, seed=0x5EED):
+    generator = random.Random(seed)
+    count = len(values)
+    means = sorted(
+        statistics.fmean([values[generator.randrange(count)] for _ in range(count)])
+        for _ in range(resamples)
+    )
+    return means[int(0.025 * (resamples - 1))], means[int(0.975 * (resamples - 1))]
+
+
+def hodges_lehmann(values):
+    return statistics.median(
+        (values[i] + values[j]) / 2 for i in range(len(values)) for j in range(i, len(values))
+    )
+
+
+def cells(run):
+    control, candidate = run["variant_order"]
+    for job, block in run["statistics"].items():
+        comparisons = [
+            c
+            for c in block["comparisons"].values()
+            if (c["control"], c["candidate"]) == (control, candidate)
+        ]
+        assert len(comparisons) == 1, (job, block["comparisons"])
+        harness = comparisons[0]["metrics"]["wall_ns"]["median_change_pct"]
+        first, walls = {}, {}
+        for sample in run["samples"]:
+            if sample["job"] != job or sample["warmup"]:
+                continue
+            first.setdefault(sample["ordinal"], sample["variant"])
+            if sample["valid"]:
+                walls.setdefault(sample["ordinal"], {})[sample["variant"]] = sample["metrics"][
+                    "wall_ns"
+                ]
+        pairs = [
+            (first[o], w[control], w[candidate])
+            for o, w in sorted(walls.items())
+            if control in w and candidate in w
+        ]
+        yield job, control, candidate, harness, pairs
+
+
+def pct(value):
+    return f"{value:+.2f}%"
+
+
+def table(title, rows):
+    print(title)
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    for row in rows:
+        print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip())
+    print()
+
+
+def main(argv):
+    root = Path(argv[1])
+    order_rows, estimator_rows, skipped = [], [], []
+    for name in argv[2:]:
+        run = load(root / name)
+        arms = run.get("variant_order") or []
+        if len(arms) != 2:
+            skipped.append(f"{name} ({len(arms)} arms)")
+            continue
+        for job, control, candidate, harness, pairs in cells(run):
+            change = [100 * (b - a) / a for _, a, b in pairs]
+            paired = statistics.median(change)
+            assert abs(paired - harness) < 0.0015, (name, job, paired, harness)
+            a_first = [c for (f, _, _), c in zip(pairs, change) if f == control]
+            b_first = [c for (f, _, _), c in zip(pairs, change) if f == candidate]
+            med_a, med_b = statistics.median(a_first), statistics.median(b_first)
+            mean_a, mean_b = statistics.fmean(a_first), statistics.fmean(b_first)
+            label = (name, job, f"{candidate}-vs-{control}")
+            order_rows.append(
+                label
+                + (
+                    f"{len(a_first)}+{len(b_first)}",
+                    f"{control}-first {pct(med_a)}",
+                    f"{candidate}-first {pct(med_b)}",
+                    f"arm {pct((med_a + med_b) / 2)}",
+                    f"order {pct((med_a - med_b) / 2)}",
+                    f"| means {pct(mean_a)} {pct(mean_b)}",
+                    f"order {pct((mean_a - mean_b) / 2)}",
+                )
+            )
+            low, high = bootstrap_mean(change)
+            control_median = statistics.median(a for _, a, _ in pairs)
+            candidate_median = statistics.median(b for _, _, b in pairs)
+            estimator_rows.append(
+                label
+                + (
+                    f"paired {pct(paired)}",
+                    f"mean {pct(statistics.fmean(change))} [{pct(low)}, {pct(high)}]",
+                    f"HL {pct(hodges_lehmann(change))}",
+                    f"marginal {pct(100 * (candidate_median / control_median - 1))}",
+                    f"positive {sum(c > 0 for c in change)}/{len(change)}",
+                    f"range [{pct(min(change))}, {pct(max(change))}]",
+                )
+            )
+    table(
+        "Order split (pairs control-first + candidate-first): medians, then means, of the"
+        " pairs by which arm ran first",
+        order_rows,
+    )
+    table(
+        "Estimators: the harness's paired median beside the mean (bootstrap 95%),"
+        " Hodges-Lehmann, and marginal medians",
+        estimator_rows,
+    )
+    if skipped:
+        print("Skipped, not two arms: " + ", ".join(skipped))
+
+
+if __name__ == "__main__":
+    main(sys.argv)

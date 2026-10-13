@@ -1154,17 +1154,18 @@ rebuild them from this list and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-222** and **H199**; exp-202 is the 0.3.0 release standing.
-H198 (registered 2026-10-13) is the 0.5.0 release candidate’s Linux gate and is recorded
-from exp-222 on. exp-217–221 and H197 are the 0.5.0 stack’s Linux release measurement
-(`fdu-088k`, branch `claude/linux-0.5.0`): H193’s give-back at 100 pairs (exp-217), the
-age column’s price on one codebase against a measurement-only no-ages arm (exp-218),
-H197’s parent-relative directory opens (exp-219, accepted on `node-modules-dense` and
-not shipped; branch `claude/h197-relative-opens`), H195’s two-arm Linux rerun (exp-220),
-and several roots’ per-root cost on Linux (exp-221). H195 and exp-214–215 are the
-several-roots single-root guard on [#192](https://github.com/jlevy/fdu/pull/192):
-exp-214 the registered paired run at the final head, exp-215 an earlier exploratory run
-that preceded the registration.
+**Ids.** Next free are **exp-224** and **H199**; exp-202 is the 0.3.0 release standing.
+H198 is the 0.5.0 release candidate’s Linux gate: exp-222 is the dense summary against
+the age column’s base (`fdu-4arl`, inconclusive at +3%, not reproduced), and exp-223 is
+the standing against v0.4.0. exp-217–221 and H197 are the 0.5.0 stack’s Linux release
+measurement (`fdu-088k`, branch `claude/linux-0.5.0`): H193’s give-back at 100 pairs
+(exp-217), the age column’s price on one codebase against a measurement-only no-ages arm
+(exp-218), H197’s parent-relative directory opens (exp-219, accepted on
+`node-modules-dense` and not shipped; branch `claude/h197-relative-opens`), H195’s
+two-arm Linux rerun (exp-220), and several roots’ per-root cost on Linux (exp-221). H195
+and exp-214–215 are the several-roots single-root guard on
+[#192](https://github.com/jlevy/fdu/pull/192): exp-214 the registered paired run at the
+final head, exp-215 an earlier exploratory run that preceded the registration.
 H196 and exp-216 are several roots’ per-root fixed cost on the same pull request.
 exp-203–208 are reserved for the platform review’s macOS cells (M1–M6 in
 [its protocol](../research/research-2026-09-29-platform-review-of-the-linux-round.md)),

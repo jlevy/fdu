@@ -1,0 +1,12 @@
+Order split (pairs control-first + candidate-first): medians, then means, of the pairs by which arm ran first
+run.json.gz                   aggregate-summary  final-vs-v040  50+50  v040-first -0.26%   final-first -3.49%  arm -1.88%  order +1.61%  | means +3.23% -2.58%  order +2.91%
+run.json.gz                   default-tree       final-vs-v040  50+50  v040-first +10.35%  final-first +6.64%  arm +8.50%  order +1.85%  | means +9.31% +9.71%  order -0.20%
+run-k3-lnx-h198-v040.json.gz  aggregate-summary  final-vs-v040  50+50  v040-first +0.26%   final-first -3.94%  arm -1.84%  order +2.10%  | means +2.76% -0.64%  order +1.70%
+run-k3-lnx-h198-v040.json.gz  default-tree       final-vs-v040  50+50  v040-first +3.36%   final-first +4.26%  arm +3.81%  order -0.45%  | means +4.61% +4.66%  order -0.03%
+
+Estimators: the harness's paired median beside the mean (bootstrap 95%), Hodges-Lehmann, and marginal medians
+run.json.gz                   aggregate-summary  final-vs-v040  paired -2.07%  mean +0.32% [-2.52%, +3.22%]   HL -0.55%  marginal +0.14%  positive 45/100  range [-32.30%, +57.79%]
+run.json.gz                   default-tree       final-vs-v040  paired +7.91%  mean +9.51% [+6.87%, +12.37%]  HL +9.03%  marginal +7.63%  positive 74/100  range [-17.66%, +51.54%]
+run-k3-lnx-h198-v040.json.gz  aggregate-summary  final-vs-v040  paired -2.06%  mean +1.06% [-1.78%, +3.75%]   HL -0.04%  marginal -2.43%  positive 45/100  range [-31.79%, +41.07%]
+run-k3-lnx-h198-v040.json.gz  default-tree       final-vs-v040  paired +3.83%  mean +4.63% [+1.54%, +7.88%]   HL +4.33%  marginal +3.39%  positive 56/100  range [-30.93%, +39.60%]
+

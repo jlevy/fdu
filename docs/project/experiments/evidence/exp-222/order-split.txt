@@ -1,0 +1,12 @@
+Order split (pairs control-first + candidate-first): medians, then means, of the pairs by which arm ran first
+run.json.gz                    aggregate-summary  final-vs-age    50+50  age-first -0.22%    final-first +0.19%  arm -0.01%  order -0.21%  | means +2.59% +0.82%  order +0.88%
+run.json.gz                    default-tree       final-vs-age    50+50  age-first +0.62%    final-first -1.72%  arm -0.55%  order +1.17%  | means +1.13% -0.37%  order +0.75%
+run-k4-nmd-h198-roots.json.gz  aggregate-summary  final-vs-roots  50+50  roots-first +0.22%  final-first -6.96%  arm -3.37%  order +3.59%  | means +1.26% -5.10%  order +3.18%
+run-k4-nmd-h198-roots.json.gz  default-tree       final-vs-roots  50+50  roots-first -3.14%  final-first -0.32%  arm -1.73%  order -1.41%  | means -1.71% +1.48%  order -1.60%
+
+Estimators: the harness's paired median beside the mean (bootstrap 95%), Hodges-Lehmann, and marginal medians
+run.json.gz                    aggregate-summary  final-vs-age    paired -0.22%  mean +1.70% [-1.49%, +4.93%]  HL +1.70%  marginal +0.89%  positive 49/100  range [-77.76%, +33.89%]
+run.json.gz                    default-tree       final-vs-age    paired -0.36%  mean +0.38% [-2.77%, +3.46%]  HL +0.23%  marginal -0.01%  positive 49/100  range [-48.29%, +48.39%]
+run-k4-nmd-h198-roots.json.gz  aggregate-summary  final-vs-roots  paired -3.77%  mean -1.92% [-4.60%, +0.77%]  HL -2.63%  marginal -3.80%  positive 44/100  range [-25.22%, +35.61%]
+run-k4-nmd-h198-roots.json.gz  default-tree       final-vs-roots  paired -2.34%  mean -0.11% [-2.38%, +2.17%]  HL -0.60%  marginal +0.08%  positive 45/100  range [-24.61%, +34.72%]
+

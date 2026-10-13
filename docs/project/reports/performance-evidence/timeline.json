@@ -54812,6 +54812,426 @@
    "subject": "d5230e4f6092:17089:236b7d536c42",
    "title": "Linux: several roots pay about 0.5 ms a root, 272 small roots five times their parent",
    "trials": 20
+  },
+  {
+   "anchored": false,
+   "candidate": "1c42c91f probe (the 0.5.0 candidate, #202's head)",
+   "change_pct": -0.216,
+   "commit": "1c42c91f",
+   "compares": true,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "23d11b19 probe (the age column's base)",
+   "date": "2026-10-13",
+   "decision": "rejected",
+   "entries": 79957,
+   "family": "Linux:ffbd3cb6be62",
+   "hypotheses": [
+    "H198"
+   ],
+   "id": "exp-222",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 94178742,
+        "control": 93614139
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.313,
+        "ci95_high_pct": 3.624,
+        "ci95_low_pct": -3.176,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 341608500,
+        "control": 345802000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.367,
+        "ci95_high_pct": 3.416,
+        "ci95_low_pct": -2.445,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 257486500,
+        "control": 255767000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.206,
+        "ci95_high_pct": 6.286,
+        "ci95_low_pct": -1.49,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 86367500,
+        "control": 88657000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -2.228,
+        "ci95_high_pct": 3.762,
+        "ci95_low_pct": -7.47,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 98050188,
+        "control": 97180556
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.216,
+        "ci95_high_pct": 3.887,
+        "ci95_low_pct": -3.501,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1226.286478982453,
+      "control": 1215.4102330002377
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 101087478,
+        "control": 100974660
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.363,
+        "ci95_high_pct": 4.719,
+        "ci95_low_pct": -4.385,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 358723500,
+        "control": 361834500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.116,
+        "ci95_high_pct": 3.688,
+        "ci95_low_pct": -3.994,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 254546000,
+        "control": 253373500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.107,
+        "ci95_high_pct": 2.581,
+        "ci95_low_pct": -4.042,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 101570500,
+        "control": 103580000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -2.388,
+        "ci95_high_pct": 4.912,
+        "ci95_low_pct": -10.188,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 105621031.5,
+        "control": 105627696
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.364,
+        "ci95_high_pct": 4.439,
+        "ci95_low_pct": -4.313,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1320.9729166927223,
+      "control": 1321.0562677439123
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 222,
+   "path": "exp-222-linux-h198-the-0-5-0-candidate-s-dense-summary-is-level-with.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "not a speed decision: the release gate's reading of fdu-4arl; two-arm, 100 pairs, quiet: aggregate-summary on node-modules-dense -0.22% [-3.50%, +3.89%] against +2% to +6% predicted, inconclusive under H195's registered rule (the interval crosses +3%), so the tag proceeds and fdu-4arl stays open; mean +1.70% [-1.49%, +4.93%], Hodges-Lehmann +1.70%, order effect -0.21%; exp-220's +5.28% does not reproduce; (C) the several-roots head 0d6011da against the candidate -3.77% [-7.44%, +0.91%] with a +3.59% order effect",
+   "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-222/run.json.gz",
+   "subject": "ffbd3cb6be62:79957:62125c60d0dd",
+   "title": "Linux: H198, the 0.5.0 candidate's dense summary is level with the age column's base, inconclusive at +3%",
+   "trials": 100
+  },
+  {
+   "anchored": false,
+   "candidate": "1c42c91f probe (the 0.5.0 candidate, #202's head)",
+   "change_pct": 7.912,
+   "commit": "1c42c91f",
+   "compares": true,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "c041ed1c probe (v0.4.0)",
+   "date": "2026-10-13",
+   "decision": "rejected",
+   "entries": 79957,
+   "family": "Linux:ffbd3cb6be62",
+   "hypotheses": [
+    "H198"
+   ],
+   "id": "exp-223",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 90743164,
+        "control": 90766789.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.856,
+        "ci95_high_pct": 2.457,
+        "ci95_low_pct": -4.213,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 331631000,
+        "control": 331979500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.725,
+        "ci95_high_pct": 3.406,
+        "ci95_low_pct": -1.746,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 246775000,
+        "control": 246757000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.446,
+        "ci95_high_pct": 3.536,
+        "ci95_low_pct": -3.206,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 84245000,
+        "control": 83222000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 4.007,
+        "ci95_high_pct": 10.391,
+        "ci95_low_pct": -0.871,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 94520130.5,
+        "control": 94392375
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -2.067,
+        "ci95_high_pct": 2.278,
+        "ci95_low_pct": -4.624,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1182.1370299035732,
+      "control": 1180.5392273346924
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 97831231,
+        "control": 90841550.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 7.957,
+        "ci95_high_pct": 13.019,
+        "ci95_low_pct": 5.308,
+        "evidence": "regressed",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 344261500,
+        "control": 329565000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 5.385,
+        "ci95_high_pct": 9.997,
+        "ci95_low_pct": 1.096,
+        "evidence": "regressed",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 243450000,
+        "control": 227923000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 7.319,
+        "ci95_high_pct": 12.594,
+        "ci95_low_pct": 2.356,
+        "evidence": "regressed",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 101162000,
+        "control": 94677500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 6.909,
+        "ci95_high_pct": 15.211,
+        "ci95_low_pct": -0.787,
+        "evidence": "unclear",
+        "pairs": 100,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 102616420,
+        "control": 95340119.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 7.912,
+        "ci95_high_pct": 12.975,
+        "ci95_low_pct": 5.459,
+        "evidence": "regressed",
+        "pairs": 100,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1283.3950748527334,
+      "control": 1192.3924046675088
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 223,
+   "path": "exp-223-linux-h198-the-0-5-0-candidate-against-v0-4-0-default-tree-7.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "not a speed decision: the 0.5.0 release's Linux standing; two-arm, 100 pairs, quiet: default-tree +7.91% [+5.46%, +12.97%] on node-modules-dense against +3% to +7% predicted, the age column's statx (exp-217, exp-218), and +3.83% [-1.64%, +8.48%] on linux-v6.12 against -2% to +3%; aggregate-summary -2.07% [-4.62%, +2.28%] and -2.06% [-4.47%, +1.82%], non-inferior at +3% on both trees",
+   "reference_tools": [],
+   "run_artifact": "docs/project/experiments/evidence/exp-223/run.json.gz",
+   "subject": "ffbd3cb6be62:79957:62125c60d0dd",
+   "title": "Linux: H198, the 0.5.0 candidate against v0.4.0, default tree +7.9% dense, summaries non-inferior",
+   "trials": 100
   }
  ],
  "history": [
@@ -59195,6 +59615,29 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 538992241,
+   "directories": 9439,
+   "entries": 79957,
+   "experiments": [
+    "exp-217",
+    "exp-218",
+    "exp-219",
+    "exp-220",
+    "exp-222",
+    "exp-223"
+   ],
+   "files": 70411,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "ffbd3cb6be62:79957:62125c60d0dd",
+   "labels": [
+    "node-modules-dense"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 179605080,
    "directories": 2240,
    "entries": 11141,
@@ -59367,27 +59810,6 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": true
-  },
-  {
-   "apparent_bytes": 538992241,
-   "directories": 9439,
-   "entries": 79957,
-   "experiments": [
-    "exp-217",
-    "exp-218",
-    "exp-219",
-    "exp-220"
-   ],
-   "files": 70411,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "ffbd3cb6be62:79957:62125c60d0dd",
-   "labels": [
-    "node-modules-dense"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
   },
   {
    "apparent_bytes": 1085083672,
@@ -60072,15 +60494,15 @@
    "baseline": 17,
    "blocked": 2,
    "in-progress": 4,
-   "rejected": 73,
+   "rejected": 75,
    "superseded": 6
   },
-  "experiments": 213,
+  "experiments": 215,
   "first_date": "2026-08-10",
-  "hypotheses": 143,
-  "last_date": "2026-10-10",
+  "hypotheses": 144,
+  "last_date": "2026-10-13",
   "platforms": {
-   "Linux": 68,
+   "Linux": 70,
    "macOS": 145
   }
  },
