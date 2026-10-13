@@ -1,15 +1,14 @@
 # fdu
 
-**Fastest du replacement, with `.gitignore`-aware sizes and code and document counts,
-for the command line, Python, and Rust**
+**Fast du replacement, with `.gitignore`-aware sizes and code and document counts, for
+the command line, Python, and Rust**
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, with reusable metadata and content state.
-It walks a tree on several threads through each platform’s native directory interface,
-and on a generated million-entry tree (875,000 files) it finished ahead of `du` and the
-seven other disk-usage tools measured on Linux and macOS
-([performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)).
+It walks a tree on several threads through each platform’s native directory interface;
+[performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)
+compares it with other tools by build, platform, and tree.
 
 This crate is the `fdu` command line.
 It is also a library that re-exports the whole

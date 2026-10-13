@@ -1,15 +1,14 @@
 # fdu (Python)
 
-**Fastest du replacement, with `.gitignore`-aware sizes and code and document counts,
-for the command line, Python, and Rust**
+**Fast du replacement, with `.gitignore`-aware sizes and code and document counts, for
+the command line, Python, and Rust**
 
 Python bindings for [fdu](https://github.com/jlevy/fdu), which reports, for every
 directory in a tree at once, its size, file count, recency, and file kinds, and on
 request lines of code by language and words by document type.
-It walks a tree on several threads through each platform’s native directory interface,
-and on a generated million-entry tree (875,000 files) it finished ahead of `du` and the
-seven other disk-usage tools measured on Linux and macOS
-([performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)).
+It walks a tree on several threads through each platform’s native directory interface;
+[performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)
+compares it with other tools by build, platform, and tree.
 
 ## Set Up with Any Coding Agent
 

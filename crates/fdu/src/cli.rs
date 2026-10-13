@@ -134,16 +134,14 @@ Run `fdu --docs` for setup, libraries, more commands, cache behavior, and the fu
 macro_rules! docs_guide {
     ($one_path_watch:literal, $watch_composition:literal, $mode_flags:literal) => {
         concat!(
-            r"fdu — the fastest du replacement, with .gitignore-aware sizes and code and
+            r"fdu — a fast du replacement, with .gitignore-aware sizes and code and
 document counts, for the command line, Python, and Rust.
 
   For every directory in a tree at once, fdu reports its size, file count,
   recency, and file kinds, and on request lines of code by language and words
   by document type.
   It walks the tree on several threads through each platform's native
-  directory interface, and on a generated million-entry tree (875,000 files)
-  it finished ahead of du and the seven other disk-usage tools measured on
-  Linux and macOS.
+  directory interface.
   Content metrics are cached between runs, and every capability is also a
   Rust and Python API.
   Performance measurements: https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md
