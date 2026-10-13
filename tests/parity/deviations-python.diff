@@ -1551,7 +1551,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,260 +1,1 @@
+@@ -1,277 +1,1 @@
 -fdu — the fastest du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1588,6 +1588,16 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -USE AS A LIBRARY
 -  Python: `uv add fdu` (or `pip install fdu`)
 -  Rust:   `cargo add fdu` (or `cargo add fdu-core` for the engine alone)
+-
+-  Choose the CLI for individual reports. Python fdu.report makes a one-shot
+-  report; fdu.open keeps an index for repeated questions. Python fdu.opened
+-  and Rust OpenedIndex serve progressive, paged clients.
+-  Python guide: [SANDBOX]/README.md
+-  Rust API: https://docs.rs/fdu
+-  Usage recipes: https://github.com/jlevy/fdu/blob/main/docs/usage.md
+-  Machine contract: https://github.com/jlevy/fdu/blob/main/docs/machine-output.md
+-  Online main-branch docs may describe a newer build; this guide and --help
+-  describe the running executable.
 -
 -START HERE
 -  A report requires a PATH. Use `.` for the current directory.
@@ -1784,6 +1794,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -OUTPUT AND AUTOMATION
 -  Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
+-  A Files watch emits an initial ordinary report, then change records;
+-  aggregate views repaint reports. An invalidate change requires rebuilding
+-  or resynchronizing the inventory, not continuing from incomplete state.
+-  Before automating, check status.complete, errors and errors_omitted,
+-  provenance.freshness/source, tree truncation, and metric coverage.
+-  A multi-root report has root: null and roots; its tree section has tree: null,
+-  a combined total, and trees. Read the machine contract before parsing it.
 -  Cache status is its own document in every machine format: fdu.cache/3.
 -  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.

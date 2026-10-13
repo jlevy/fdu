@@ -171,6 +171,16 @@ USE AS A LIBRARY
   Python: `uv add fdu` (or `pip install fdu`)
   Rust:   `cargo add fdu` (or `cargo add fdu-core` for the engine alone)
 
+  Choose the CLI for individual reports. Python fdu.report makes a one-shot
+  report; fdu.open keeps an index for repeated questions. Python fdu.opened
+  and Rust OpenedIndex serve progressive, paged clients.
+  Python guide: https://github.com/jlevy/fdu/blob/main/crates/fdu-py/README.md
+  Rust API: https://docs.rs/fdu
+  Usage recipes: https://github.com/jlevy/fdu/blob/main/docs/usage.md
+  Machine contract: https://github.com/jlevy/fdu/blob/main/docs/machine-output.md
+  Online main-branch docs may describe a newer build; this guide and --help
+  describe the running executable.
+
 START HERE
   A report requires a PATH. Use `.` for the current directory.
 
@@ -367,6 +377,13 @@ IGNORE RULES
 
 OUTPUT AND AUTOMATION
   Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
+  A Files watch emits an initial ordinary report, then change records;
+  aggregate views repaint reports. An invalidate change requires rebuilding
+  or resynchronizing the inventory, not continuing from incomplete state.
+  Before automating, check status.complete, errors and errors_omitted,
+  provenance.freshness/source, tree truncation, and metric coverage.
+  A multi-root report has root: null and roots; its tree section has tree: null,
+  a combined total, and trees. Read the machine contract before parsing it.
   Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -2372,8 +2389,12 @@ fn compose_skill_from(template: &str) -> String {
     // public skill byte-stable across installation platforms before substituting the
     // version. It is the build version `--version` prints, dev revision and all: the
     // skill tells its reader to re-run `--install-skill` when the two differ, which is
-    // only a usable rule if the stamp is the same string.
-    template.replace("\r\n", "\n").replace("__FDU_VERSION__", env!("FDU_BUILD_VERSION"))
+    // only a usable rule if the stamp is the same string. The registry pin uses the
+    // package release version: development display stamps are not published packages.
+    template
+        .replace("\r\n", "\n")
+        .replace("__FDU_VERSION__", env!("FDU_BUILD_VERSION"))
+        .replace("__FDU_RELEASE_VERSION__", env!("CARGO_PKG_VERSION"))
 }
 
 #[cfg(any(unix, windows))]
@@ -3282,6 +3303,8 @@ mod tests {
     #[test]
     fn every_command_the_skill_shows_resolves() {
         let skill = compose_skill();
+        let fallback_prefix =
+            format!("uvx --isolated --no-build fdu@{} ", env!("CARGO_PKG_VERSION"));
         let mut in_bash = false;
         let mut checked = 0;
         for line in skill.lines() {
@@ -3291,7 +3314,7 @@ mod tests {
             }
             let line = line.trim_start();
             let command = line
-                .strip_prefix("uvx --no-build fdu@latest ")
+                .strip_prefix(fallback_prefix.as_str())
                 .or_else(|| line.strip_prefix("fdu "))
                 .filter(|_| in_bash);
             let Some(command) = command else { continue };
@@ -4023,10 +4046,9 @@ mod tests {
         assert!(!ColorContext { skill: true, ..auto_terminal }.enabled());
     }
 
-    /// The runner rule is the user's decision of 2026-09-24: an installed `fdu` first,
-    /// else `uvx --no-build fdu@latest`, and the stamp is the build version so "re-run when
-    /// `--version` differs" compares like with like. It replaced an exact pin, which
-    /// a dev build could never satisfy.
+    /// Prefer the matching local executable. A published wheel fallback pins the
+    /// package release, while the generation stamp preserves the development identity.
+    /// An unpublished development build must not silently select another release.
     #[test]
     fn portable_skill_prefers_the_installed_command_and_names_its_own_build() {
         let skill = compose_skill();
@@ -4035,17 +4057,24 @@ mod tests {
         assert!(!skill.contains('\r'), "the public skill must use portable LF endings");
         assert!(skill.contains("complete fdu usage contract"));
         assert!(skill.contains("needs no setup chat or prior session"));
-        assert!(skill.contains("command -v fdu"), "the installed command comes first");
+        let fallback = format!("uvx --isolated --no-build fdu@{} ", env!("CARGO_PKG_VERSION"));
+        let local = skill.find("Check `fdu --version`").expect("check the local version first");
+        let remote = skill.find(&fallback).expect("the fallback pins an isolated release wheel");
+        assert!(local < remote, "the installed command comes first");
+        assert!(!skill.contains("fdu@latest"), "no moving registry fallback");
+        assert!(skill.contains("local executable until this release is published"));
         assert!(
-            skill.contains("uvx --no-build fdu@latest "),
-            "the fallback is the latest release and requires a wheel"
+            skill.contains(&format!(
+                "uv tool install --no-build fdu=={}",
+                env!("CARGO_PKG_VERSION")
+            ))
         );
-        assert!(!skill.contains("--from fdu=="), "no exact pin is left in the skill");
-        assert!(skill.contains("uv tool install --no-build fdu"));
-        assert!(skill.contains("uv tool upgrade --no-build fdu"));
-        assert!(skill.contains("cargo install --locked fdu"));
+        assert!(
+            skill.contains(&format!("cargo install --locked fdu@{}", env!("CARGO_PKG_VERSION")))
+        );
         assert!(skill.contains(&format!("Generated by fdu `{}`", env!("FDU_BUILD_VERSION"))));
         assert!(!skill.contains("__FDU_VERSION__"));
+        assert!(!skill.contains("__FDU_RELEASE_VERSION__"));
 
         // The generated-by marker sits right after the frontmatter, so it neither
         // disturbs the frontmatter nor gets lost among the body's comments.
@@ -4055,8 +4084,14 @@ mod tests {
             "the marker follows the frontmatter"
         );
         assert_eq!(
-            compose_skill_from("---\r\nversion: __FDU_VERSION__\r\n"),
-            format!("---\nversion: {}\n", env!("FDU_BUILD_VERSION"))
+            compose_skill_from(
+                "---\r\nversion: __FDU_VERSION__\r\nrelease: __FDU_RELEASE_VERSION__\r\n"
+            ),
+            format!(
+                "---\nversion: {}\nrelease: {}\n",
+                env!("FDU_BUILD_VERSION"),
+                env!("CARGO_PKG_VERSION")
+            )
         );
     }
 
