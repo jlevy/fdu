@@ -5,7 +5,7 @@ title: Prepare the 0.5.0 release identity, notes, demo, and stability evidence
 kind: task
 status: in_progress
 priority: 1
-version: 19
+version: 20
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -23,7 +23,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-11T21:57:50.991Z
-updated_at: 2026-10-13T18:01:51.861Z
+updated_at: 2026-10-13T19:29:24.897Z
 started_at: 2026-10-11T21:58:48.661Z
 ---
 Follow the release checklist after merging stack #193. Prepare the version bump and changelog, update the approved demo asset declaration and GIF, document current Linux evidence without unsupported lead claims, run release stability and rehearsal, and stop before tagging or publishing pending explicit release authorization. Parent stabilization fdu-6uwu. Include fdu-eruq citation and fdu-8k4k claim qualification.
@@ -46,3 +46,6 @@ Cleanup removed three fully merged owned worktrees, obsolete fdu build/demo arti
 
 
 2026-10-13 (Claude Code session finishing the release, on the maintainer's instructions in that conversation): the maintainer waived Phase 6 human real-window and Windows Terminal progress QA for 0.5.0 (automated: 38/38 pty checks and 3/3 terminal tests passed on the candidate), and accepted fdu-wo7c as live-tree churn, not a tag blocker. The maintainer gave the go-ahead to merge #202 once reviewed and green, and to tag and publish v0.5.0 once every gate passes, including the Linux dense-summary cell (H198, pre-registered 871bc6bd on claude/serene-keller-dlvsbd); the maintainer approves the release environment. Remaining: #202 gate/review/merge, H198 cells, new release identity at #202's merge, Linux stability pass, rehearsal, release body, tag, demo (the declared mp4 is a user-attachment this container cannot download), publish, verification.
+
+
+2026-10-13 H198 recorded (exp-222/223, b502f4a0): the dense summary is level with the age column's base (inconclusive at +3%, the tag proceeds, fdu-4arl stays open); against v0.4.0 the default tree is +7.91% dense and +3.83% kernel (the age column's price), and the summaries are non-inferior on both trees. #202 got review A (approve with changes); all of A1-A8 are being applied (Fast tagline everywhere, the assembled lead claim removed, measurements-page passages, sample revision, maintenance comment). The demo mp4 was fetched through the comment's signed URL and matches the declaration (3,179,202 bytes, sha256 110862d1...).
