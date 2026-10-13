@@ -294,11 +294,10 @@ Predicted:
 - one two-arm run per tree, 3 warmups and 100 pairs fixed in advance;
 - no invalid sample, and each tree verified unchanged across its run.
 
-**Binaries.** Built and hashed before any timing, with nothing else running during the
-cells; exp-222’s `binaries.sha256.txt` lists them:
-- v0.4.0 is the probe built from the release’s tag commit `c041ed1c` (sha256
-  `6188c098`). exp-217 used `148ef78e`, `main` after that release.
-- The candidate is `1c42c91f` (sha256 `bdd13649`).
+**Binaries.** Built before any timing, with nothing else running during the cells:
+- v0.4.0 is the probe built from the release’s tag commit `c041ed1c`. exp-217 used
+  `148ef78e`, `main` after that release.
+- The candidate is the probe built from `1c42c91f`.
 
 | Tree | Job | v0.4.0 → candidate (median wall) | Paired median [95%] | Mean [95% bootstrap] | Hodges–Lehmann | Prediction |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -312,14 +312,13 @@ times are not comparable across those sessions.
 **The subject.** `node-modules-dense` was rebuilt on 2026-10-10 and still matches that
 day’s fingerprint.
 
-**Binaries.** Built and hashed before any timing, with nothing else running during the
-cells; the hashes are in `binaries.sha256.txt`:
+**Binaries.** All built before any timing, with nothing else running during the cells:
 
-| Arm | Commit | Probe sha256 |
+| Arm | Commit | Binary |
 | --- | --- | --- |
-| The age column’s base | `23d11b19` | `683bf0cb` (the exp-217 to exp-220 binary) |
-| The several-roots head | `0d6011da` | `d93d5a43` (the same) |
-| The candidate | `1c42c91f`, #202’s head: `e6b8850b` plus `README.md` | `bdd13649` |
+| The age column’s base | `23d11b19` | the probe exp-217 to exp-220 timed, reused (its hash matches theirs) |
+| The several-roots head | `0d6011da` | the same, reused |
+| The candidate | `1c42c91f`, #202’s head: `e6b8850b` plus `README.md` | built for this record |
 
 | Cell | Job | Control → candidate (median wall) | Paired median [95%] | Mean [95% bootstrap] | Hodges–Lehmann |
 | --- | --- | --- | --- | --- | --- |
