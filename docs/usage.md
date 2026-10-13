@@ -199,7 +199,7 @@ symlinks alike, so deleting or renaming a file makes its directory young and a f
 installed tree reads as new even when its files keep archive times.
 The scan root’s own time does not count.
 With no filter, a directory’s age in the tree is its age in `--long`; under a filter,
-each row ages only what it counts, so `--kind file --modified-before 1y` never shows a
+each row ages only what it counts, so `--kind file --modified-before 365d` never shows a
 row aged `3d`. An age is `unknown` where part of the subtree was not listed, and `—` on
 a row that counts nothing.
 `--sort mtime` orders tree rows by this age.
@@ -633,8 +633,12 @@ unchanged, replaces only files it generated, and refuses a `SKILL.md` written by
 with exit 2. Deleting those directories uninstalls it.
 The generated file is the complete agent-facing usage contract and does not depend on
 the installing session’s prompt or memory.
-The skill prefers an `fdu` on `PATH` and otherwise runs `uvx --no-build fdu@latest`;
-installing the skill does not install the command.
+The skill prefers an `fdu` on `PATH` whose version matches its generation stamp.
+Its fallback pins the package release version with `uvx --isolated --no-build`, and may
+be used only after that release is published.
+A development-generated skill requires its matching local executable until publication;
+it never substitutes an older version or `@latest`. Installing the skill does not
+install the command.
 The zero-install fallback follows uv’s `exclude-newer` policy; see the
 [installation note](../README.md#other-ways-to-install) if a just-published release is
 filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and later

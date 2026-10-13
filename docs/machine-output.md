@@ -75,8 +75,10 @@ A watch measures each repaint from that repaint’s own instant, so ages stay cu
 a long session, while the time windows it selects by stay the absolute bounds its
 request resolved when it was built.
 `provenance.generated_at` describes report generation and `provenance.scan_started_at`
-is the conservative incremental-sync watermark; neither should be substituted for the
-age reference. Signed age can exceed an i64 even though each timestamp fits one.
+is a conservative lower bound for later mtime-based selection, not a complete change
+log: deletions and files copied or restored with older mtimes are not selected.
+Neither should be substituted for the age reference.
+Signed age can exceed an i64 even though each timestamp fits one.
 Use an integer-preserving parser; nanosecond values exceed JavaScript’s exact binary64
 integer range.
 Each RFC 3339 field is the readable twin of an exact `*_ns` field, never a
@@ -266,8 +268,13 @@ require one compatible list section.
 Largest/recent retain their file ranking and support Paths and Long.
 Cache-status human aliases render its table.
 A List watch repaints snapshots.
-A Files watch streams raw changes in Text or machine formats; explicit Tree, Paths, and
-Long repaint snapshots instead.
+A Files watch first writes an ordinary report (`fdu.report/11` in machine formats), then
+streams raw changes (`fdu.stream/2`) in Text or machine formats; explicit Tree, Paths,
+and Long repaint snapshots instead.
+Aggregate views also repaint reports.
+An `invalidate` change means incremental state is no longer sufficient: rebuild or
+resynchronize the inventory before relying on subsequent changes.
+A consumer must handle the initial report and the change-record schema separately.
 Creating, removing, or renaming an entry also moves its directory’s own modification
 time, so a Files watch follows that change with an `upsert` record for the directory,
 unless it is the scan root or the selection leaves directories out.

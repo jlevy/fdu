@@ -5,17 +5,18 @@ for the command line, Python, and Rust**
 
 For every directory in a file tree, fdu reports its size, file count, most recent
 change, file kinds, and how much of it `.gitignore` covers.
-Optionally, it also analyizes lines of code by programming language or words, paragraphs,
+Optionally, it also analyzes lines of code by programming language or words, paragraphs,
 and pages in documents for Markdown or text.
 
-I’ve found I was in need of a tool like this more than ever now I routinely have
-agent worktrees with half a million files. I wanted a tool for myself and for agents
-to have visibility and manage disk usage.
+I’ve found I was in need of a tool like this more than ever now I routinely have agent
+worktrees with half a million files.
+I wanted a tool for myself and for agents to have visibility and manage disk usage.
 
-It is optimized native code, heavily parallel with OS-specific techniques for macOS and Linux.
-On a sample million-entry tree fdu is 9x faster than
-`du` and at least 1.2 to 3x faster than all other disk-usage tools measured for
-plain disk usage, while also offering a cross-platform CLI and more functionality.
+It is optimized native code, heavily parallel with OS-specific techniques for macOS and
+Linux.
+On a sample million-entry tree fdu is 9x faster than `du` in the exploratory macOS
+measurements and ahead of the other disk-usage tools measured on that tree, while also
+offering a cross-platform CLI and more functionality.
 See the [speed measurements](#speed).
 
 The same engine powers the `fdu` command, a Python package, and a Rust crate.
@@ -27,8 +28,8 @@ See also the [comparison to alternatives](#comparison-to-alternatives).
 
 [![fdu on the Linux kernel source: the usage tree with size and age colors, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/pull/196#issuecomment-6129700944)
 
-*fdu v0.5.0 on the Linux 7.3-rc6 source (1.7 GiB, 95,938 files), recorded in real
-time on an older Mac M1 Pro.*
+*fdu v0.5.0 on the Linux 7.3-rc6 source (1.7 GiB, 95,938 files), recorded in real time
+on an older Mac M1 Pro.*
 
 <!-- The speed claim above is repeated, without numbers, in crates/fdu/README.md,
 crates/fdu-py/README.md, crates/fdu/src/skills/SKILL.md, and the --docs guide in
