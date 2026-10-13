@@ -5,7 +5,7 @@ title: Prepare the 0.5.0 release identity, notes, demo, and stability evidence
 kind: task
 status: in_progress
 priority: 1
-version: 17
+version: 18
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -23,7 +23,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-11T21:57:50.991Z
-updated_at: 2026-10-13T08:23:33.588Z
+updated_at: 2026-10-13T16:43:08.220Z
 started_at: 2026-10-11T21:58:48.661Z
 ---
 Follow the release checklist after merging stack #193. Prepare the version bump and changelog, update the approved demo asset declaration and GIF, document current Linux evidence without unsupported lead claims, run release stability and rehearsal, and stop before tagging or publishing pending explicit release authorization. Parent stabilization fdu-6uwu. Include fdu-eruq citation and fdu-8k4k claim qualification.
@@ -41,3 +41,5 @@ Final update: rehearsal38295552345 completed successfully; all8 packages downloa
 Previous untagged 924007e4 candidate retired with exact-commit lease; evidence preserved. New release directory release-0.5.0-e6b8850b has passing preflight, derived/inspected release body, and successful non-publishing rehearsal 38359873752. All eight files downloaded and checksum-verified; platform install and API compatibility checks passed; publication and announcement skipped. Exact rehearsed Mac arm64 wheel installed through uv as fdu 0.5.0, installed public-API smoke passed, existing .agents and .claude skills refreshed.
 
 Cleanup removed three fully merged owned worktrees, obsolete fdu build/demo artifacts, and the completed validation target/cache after preserving its exact tested binary and complete evidence. Other-project cleanup was rejected by automatic approval review; an additional explicit authorization question is pending, and no such data was removed. Last physical free space was about 9.8 GiB (10.5 GB), below final stability's 12 GB floor. Final candidate stability preflight refused 9.6 GB at its observation; no override. Library fdu-wo7c, Linux performance fdu-4arl, and human/Windows terminal QA remain open. User has authorized end-to-end publication after gates, but no tag or registry publication occurred. Heartbeat remains paused. Final readiness is preserved under release-0.5.0-e6b8850b/readiness.json.
+
+2026-10-13 final macOS completion: exact merged release candidate e6b8850b287785fbea38f2b89fed643b5846ef6f passed all 15 automated stability stages. Full make check, all five cross-lint targets, semver policy and local release rehearsal passed. Exact wheel from GitHub rehearsal 38359873752 installed; 49/49 CLI, 38/38 PTY, three terminal tests, full correctness/negative controls passed. All 65 peer readings on five trees explained: 52 exact, Library 13 within measured movement; no UNEXPLAINED. Original too-fast Linux source PTY preflight preserved; rerun on Applications passed. Executable/source/timed caches internal; shared Mac remained loaded, so no quiet final-candidate non-inferiority claim. All run-specific worktrees, targets, environments, fixtures and internal runtime removed; evidence remains in release-0.5.0-e6b8850b/stability. Closed fdu-fd5a. Release still blocked by fdu-4arl Linux disposition, historical fdu-wo7c disposition and human/Windows Phase 6. No tag or publication. Linux handoff requested; corrected media and self-doc changes already merged in PRs 200/201. Main CI 38359485996 passed all20; rehearsal all8artifact checks passed. Latest macOS full evidence is private local storage, not committed; Linux agent must not assume those absolute paths are accessible.
