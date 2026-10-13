@@ -1,7 +1,7 @@
 # fdu
 
-**Fastest du replacement, with `.gitignore`-aware sizes and code and document counts,
-for the command line, Python, and Rust**
+**Fast du replacement, with `.gitignore`-aware sizes and code and document counts, for
+the command line, Python, and Rust**
 
 For every directory in a file tree, fdu reports its size, file count, most recent
 change, file kinds, and how much of it `.gitignore` covers.
@@ -14,10 +14,9 @@ I wanted a tool for myself and for agents to have visibility and manage disk usa
 
 It is optimized native code, heavily parallel with OS-specific techniques for macOS and
 Linux.
-On a sample million-entry tree fdu is 9x faster than `du` in the exploratory macOS
-measurements and ahead of the other disk-usage tools measured on that tree, while also
-offering a cross-platform CLI and more functionality.
-See the [speed measurements](#speed).
+It combines directory sizes, content analysis, cached results, and live updates in
+a cross-platform CLI. See [speed and caching](#speed) and the
+[performance measurements](docs/performance-measurements.md).
 
 The same engine powers the `fdu` command, a Python package, and a Rust crate.
 It offers APIs and agent-friendly use as a skill.
@@ -31,11 +30,11 @@ See also the [comparison to alternatives](#comparison-to-alternatives).
 *fdu v0.5.0 on the Linux 7.3-rc6 source (1.7 GiB, 95,938 files), recorded in real time
 on an older Mac M1 Pro.*
 
-<!-- The speed claim above is repeated, without numbers, in crates/fdu/README.md,
+<!-- Shared capability descriptions also appear in crates/fdu/README.md,
 crates/fdu-py/README.md, crates/fdu/src/skills/SKILL.md, and the --docs guide in
 crates/fdu/src/cli.rs, whose output tests/golden/cli-surface.tryscript.md and
-tests/parity/deviations-python.diff record. The tagline is also the description in
-crates/fdu/Cargo.toml and crates/fdu-py/pyproject.toml. Update them together. -->
+tests/parity/deviations-python.diff record. Package descriptions are in
+crates/fdu/Cargo.toml and crates/fdu-py/pyproject.toml. Keep behavioral claims consistent. -->
 
 ## Key Features
 
@@ -97,9 +96,8 @@ versions, and uv cool-off policies, see [Other Ways to Install](#other-ways-to-i
 
 ## Quick Start
 
-The samples on this page come from a fresh clone of this repository at revision
-`55d66863`; your numbers will differ.
-A one-level summary of the clone, its hidden `.git/` directory included:
+The samples on this page show a fresh clone of this repository; your numbers will
+differ. A one-level summary of the clone, its hidden `.git/` directory included:
 
 ```console
 $ fdu . --depth=1
@@ -393,122 +391,32 @@ Later questions reuse the index; `refresh` reconciles it against the tree, and w
 
 ## Speed
 
-fdu is fast by measured selection.
-Before writing a walker, the project read the source of the disk-usage tools and walkers
-it found (dust, dua, gdu, ncdu, dut, bfs, and fd first; pdu, diskus, and dumac later)
-and listed what set the fastest apart.
-Each technique became a hypothesis for an agent-run
-[performance loop](docs/project/guides/performance-loop.md), which makes one change at a
-time, measures it against the previous build in interleaved pairs, and keeps it only
-when it is at least 3% faster with a 95% interval below zero.
+fdu walks directories in parallel and uses native directory readers: `getattrlistbulk`
+on macOS, and `getdents64` with directory-relative `statx` on Linux.
+One-shot metadata summaries and bounded trees can avoid keeping a full index while still
+counting every selected entry.
+`.gitignore` rules are indexed by name, extension, and suffix to reduce pattern
+matching.
 
-- **Taken from peers:** a bounded pool of breadth-first walkers; `getattrlistbulk` on
-  macOS, as dumac uses; raw `getdents64` and directory-relative `statx` on Linux, as dut
-  and bfs use, where pdu, diskus, and dust stat full paths; and, like pdu, a summary or
-  default tree that keeps only what it prints while still counting every entry.
-- **Measured and rejected:** io_uring, as bfs uses, measured several times slower, and
-  larger read buffers and deeper worker pools were no faster.
-- **Added beyond them:** `.gitignore` classification on by default, which pdu, diskus,
-  and dust do not read; a worker count chosen from measured service time, which no
-  surveyed tool adapts; a saved scan revalidated by modification time; and a content
-  cache that rereads only changed files, neither of which any surveyed tool has.
+Metadata reports read filesystem metadata and `.gitignore` files.
+Code and document analysis also reads file contents; the content cache reuses results
+for unchanged files, so repeated analysis need not reread the whole tree.
+A retained index serves repeated queries, and `--stale-ok` can answer from a saved scan
+without walking again when an older answer is acceptable.
 
-[The file roll-up engine survey](docs/project/research/research-2026-08-06-file-rollup-engine.md),
-[the Linux peer study](docs/project/research/research-2026-09-29-linux-peers-matchers-and-hot-path.md),
-and
-[the pdu brief](docs/project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)
-record each technique and its verdict, rejected ones included.
-Changes the loop kept include these, with their measured effects:
-
-- **Parallel bulk reads:** Threads walk the tree at once, and on macOS `getattrlistbulk`
-  returns many entries’ names and sizes per call (with the rest of the first campaign,
-  54.5% less time for a cold scan on macOS and 52.0% for re-checking a saved one;
-  [exp-032](docs/project/experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)).
-- **A native directory reader on Linux:** `getdents64` fills a reused buffer, and
-  `statx` reads each entry relative to its directory (9–10% less time for
-  `--view=summary` on two real trees, and 4% for the default tree on one of them;
-  [exp-185](docs/project/experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md),
-  [exp-186](docs/project/experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)).
-- **Summaries without an index:** A summary is totalled as the walk runs (14.6% less
-  time on macOS and 95% less memory;
-  [exp-040](docs/project/experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md)).
-- **Indexed `.gitignore` rules:** Rules are matched without allocating, chained per
-  directory listing, and bucketed by literal name, extension, and suffix, so most
-  entries are classified without running a glob (46.2%, 35.9%, and 29.6% less time on
-  the Linux kernel source’s default tree;
-  [exp-173](docs/project/experiments/exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md),
-  [exp-174](docs/project/experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md),
-  [exp-178](docs/project/experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md)).
-- **A default tree that keeps only what it shows:** Files too small to reach a row fold
-  into their directories’ totals (13.5% less time on the kernel source;
-  [exp-180](docs/project/experiments/exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md)).
-  On the generated million-entry tree, 0.3.0’s default tree peaks at 57 MiB of memory,
-  where 0.2.1’s peaked at 293 MiB
-  ([exp-202](docs/project/experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
-
-[The evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
-records every experiment, rejected ones included.
-
-The figures below are historical measurements of the builds named beside them.
-They are not measurements of the 0.5.0 release candidate.
-In the 2026-10-10 Linux rerun, neither the 0.5.0 development build nor 0.4.0 showed a
-resolved lead over `pdu --max-depth 2` or diskus on the two real trees; the generated
-million-entry tree retained its leads.
-See
-[the current Linux evidence](docs/performance-measurements.md#the-050-development-build).
-
-Time to report on the generated million-entry tree, 875,000 files and 2.99 GB of
-allocated space, with warm filesystem caches, as a multiple of fdu’s time (lower is
-faster):
-
-| Tool | Linux | macOS, exploratory |
-| --- | ---: | ---: |
-| **fdu** | **1.00×** (0.95 s) | **1.00×** (6.4 s) |
-| [pdu](https://github.com/KSXGitHub/parallel-disk-usage) `--max-depth 2` | 1.19× | — |
-| [diskus](https://github.com/sharkdp/diskus) | 1.24× | 1.42× |
-| [pdu](https://github.com/KSXGitHub/parallel-disk-usage) | 1.25× | 1.49× |
-| [dust](https://github.com/bootandy/dust) | 1.62× | 1.57× |
-| [gdu](https://github.com/dundee/gdu) | 2.58× | 1.67× |
-| GNU [du](https://www.gnu.org/software/coreutils/) | 2.60× | 10.6× |
-| [ncdu](https://dev.yorhel.nl/ncdu) | 2.74× | 10.7× |
-| [dua](https://github.com/Byron/dua-cli) | 3.34× | 1.61× |
-| [dumac](https://github.com/healeycodes/dumac#readme) | — | 1.09× |
-| BSD `du` | — | 9.0× |
-
-Linux is a 4-vCPU virtual machine on ext4. pdu, `pdu --max-depth 2`, and diskus ran
-beside fdu 0.3.0 (0.95 s) on 2026-09-30. The other Linux tools ran a day earlier beside
-the pre-release engine `ebc06c78` (1.09 s), so their multiples are of that engine’s time
-and understate 0.3.0’s lead.
-On the two real trees, every tool took 29% to 38% longer in the 0.3.0 session than
-earlier that day, and about ten points of the 19% gap to `pdu --max-depth 2` on this
-tree are probably that session rather than fdu.
-macOS is one exploratory session on an M1 Pro’s APFS SSD, on 2026-09-28, with a
-pre-0.2.0 build on a heavily loaded, uncontrolled host; pdu ran there as
-`--max-depth 1`. It is exploration, not a claim the project’s
-[performance loop](docs/project/guides/performance-loop.md#host-pressure-regimes) would
-accept, and dumac, the closest tool there, was measured only on macOS. Windows has no
-measurements. fdu’s default report covers about 920,000 files and 3.1 GB a second on
-Linux (fdu 0.3.0), and 137,000 files and 0.47 GB a second on macOS (the pre-0.2.0
-build); these are metadata rates, since sizing a file reads none of its contents.
-[Performance Measurements](docs/performance-measurements.md) has each run’s intervals,
-memory, and what each tool returns.
-
-Counting source lines reads every byte.
-On a copy of the Linux v6.12 source without `.git`, 86,618 files and 1.48 GB, fdu 0.3.0
-ran `fdu --analyze=code --view=code --no-gitignore --cache=off` in 8.2 s, about 10,600
-files and 0.18 GB a second; [scc](https://github.com/boyter/scc) took 1.4 s and
-[tokei](https://github.com/XAMPPRocky/tokei) 2.2 s, each with ignore rules off.
-Run again under the default cache policy, fdu answered from its content cache in 0.55 s,
-about 158,000 files a second and 2.5 times as fast as scc.
-These are medians of 12 adjacent pairs on the same Linux host, on 2026-09-30; see
-[source-line counting](docs/performance-measurements.md#source-line-counting).
+[Performance measurements](docs/performance-measurements.md) records the workloads,
+platforms, exact builds, and uncertainty behind comparisons with other tools.
+The [performance loop](docs/project/guides/performance-loop.md) evaluates changes with
+paired runs on real trees, and the
+[performance evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
+retains the experiments and their measured effects.
 
 ## Comparison to Alternatives
 
 Many tools report disk usage, and this is how fdu compares with the ones people most
 often reach for, and with the two leading source-line counters for its code analysis.
-Each cell was checked against that tool’s source or documentation; [Speed](#speed)
-compares their run times.
+Each cell was checked against that tool’s source or documentation; the
+[performance measurements](docs/performance-measurements.md) compare their run times.
 ✅ means the tool does what the row names, text alone means partial or different support,
 ❌ means none (any text says what the tool does instead), and — means the row does not
 apply:
@@ -519,7 +427,6 @@ apply:
 | Tree breakdown and pruning | ✅ depth, breadth, minimum share, row limit | ✅ depth, size floor | TUI browsing | ✅ depth, top N, size floor | depth; TUI browsing | depth, top N files; TUI browsing | ✅ depth, minimum share | ❌ | ❌ | ❌ per language or file | ❌ per language or file |
 | `.gitignore` | ✅ classify; include, exclude, or only ignored | ❌ | ❌ | ❌ | partial: TUI dims ignored entries; `--ignore-from` patterns | ❌¹ | ❌ | ❌ | ❌ | ✅ exclude | ✅ exclude, inside a git repository |
 | Source code analysis² | ✅ 15 languages: code, comment, and blank lines; per directory in the Rust API | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ 366 languages; complexity and cost estimates | ✅ 333 languages; embedded languages |
-| Code analysis speed, Linux source³ | 8.2 s; 0.55 s repeated | — | — | — | — | — | — | — | — | 1.4 s | 2.2 s |
 | Text analysis | ✅ lines, words, paragraphs, pages | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | APIs and machine output | ✅ Rust, Python; JSON, JSONL, YAML | tab-separated text; `-0` | JSON export | JSON (`-j`) | Rust library; snapshot files | JSON export; SQLite or Badger | ✅ Rust library; JSON | Rust library | ❌ | ✅ Go package; JSON, CSV, HTML, SQL | ✅ Rust library; JSON |
 | Watch and stream | ✅ `--watch`, JSONL change stream | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -531,11 +438,10 @@ interactively, which fdu does not; gdu can also serve a browser view, and `dua c
 finds build products to remove.
 `du` is already installed on every Unix-like system.
 diskus and dumac answer one total from a small binary, and pdu draws a compact size
-chart; they are the closest to fdu in speed.
-For line counts alone, use scc or tokei: they count hundreds of languages to fdu’s 15,
-tokei counts embedded code, scc estimates complexity, and both count a large tree
-several times as fast as fdu’s first run, though fdu’s cached repeat is faster than
-either. Use fdu for a tree you can prune, a `.gitignore`-aware answer, content metrics,
+chart.
+For line counts alone, use scc or tokei: they count hundreds of languages to fdu’s
+15, tokei counts embedded code, and scc estimates complexity.
+Use fdu for a tree you can prune, a `.gitignore`-aware answer, content metrics,
 versioned machine output, a live or cached view, or a Rust or Python API; for code, it
 adds each language’s ignored share, and per-directory counts in Rust.
 
@@ -546,16 +452,10 @@ one file.
 count source lines, not disk usage, so the disk-usage rows show “—”. They count far more
 languages than fdu; tokei also counts code embedded in another language, such as
 Markdown code fences, and scc estimates complexity and cost.
-On the Linux kernel’s C sources and headers, all three give the same code, comment, and
-blank counts for 99.7% of files; the
-[SLOC tools survey](docs/project/research/research-2026-09-29-sloc-tools-survey.md)
-explains the rest. [cloc](https://github.com/AlDanial/cloc) recognizes the most
-languages, 402, but runs as a single Perl process by default.
-
-³ Median wall time for fdu 0.3.0 on a copy of the Linux v6.12 source without `.git`,
-each tool with every ignore-file source off, hidden files counted, and text output; see
-[Speed](#speed) and
-[Performance Measurements](docs/performance-measurements.md#source-line-counting).
+The [SLOC tools survey](docs/project/research/research-2026-09-29-sloc-tools-survey.md)
+compares their counting conventions and supported languages.
+[cloc](https://github.com/AlDanial/cloc) recognizes the most languages, 402, but runs as
+a single Perl process by default.
 
 Versions checked for the feature cells: GNU coreutils `du` 9.4, and its source after
 9.12; ncdu 1.19 and 2.9.2; dust 1.2.5; dua 2.45.0; gdu 5.37.0, and its main branch at
