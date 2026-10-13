@@ -15,7 +15,7 @@ I wanted a tool for myself and for agents to have visibility and manage disk usa
 It is optimized native code, heavily parallel with OS-specific techniques for macOS and
 Linux.
 It combines directory sizes, content analysis, cached results, and live updates in
-a cross-platform CLI. See [speed and caching](#speed) and the
+a cross-platform CLI. See [speed](#speed) and the
 [performance measurements](docs/performance-measurements.md).
 
 The same engine powers the `fdu` command, a Python package, and a Rust crate.
@@ -30,11 +30,13 @@ See also the [comparison to alternatives](#comparison-to-alternatives).
 *fdu v0.5.0 on the Linux 7.3-rc6 source (1.7 GiB, 95,938 files), recorded in real time
 on an older Mac M1 Pro.*
 
-<!-- Shared capability descriptions also appear in crates/fdu/README.md,
-crates/fdu-py/README.md, crates/fdu/src/skills/SKILL.md, and the --docs guide in
-crates/fdu/src/cli.rs, whose output tests/golden/cli-surface.tryscript.md and
-tests/parity/deviations-python.diff record. Package descriptions are in
-crates/fdu/Cargo.toml and crates/fdu-py/pyproject.toml. Keep behavioral claims consistent. -->
+<!-- The tagline is duplicated as the description in crates/fdu/Cargo.toml (the first
+line of `fdu --help`) and crates/fdu-py/pyproject.toml, the heading of
+crates/fdu/README.md and crates/fdu-py/README.md, the first line of the --docs guide in
+crates/fdu/src/cli.rs, and the GitHub repository description. Speed wording also appears
+in those READMEs, crates/fdu/src/skills/SKILL.md, and --docs, whose output
+tests/golden/cli-surface.tryscript.md and tests/parity/deviations-python.diff record.
+Update them together. -->
 
 ## Key Features
 
@@ -96,8 +98,9 @@ versions, and uv cool-off policies, see [Other Ways to Install](#other-ways-to-i
 
 ## Quick Start
 
-The samples on this page show a fresh clone of this repository; your numbers will
-differ. A one-level summary of the clone, its hidden `.git/` directory included:
+The samples on this page come from a fresh clone of this repository at revision
+`55d66863`; your numbers will differ.
+A one-level summary of the clone, its hidden `.git/` directory included:
 
 ```console
 $ fdu . --depth=1
@@ -399,8 +402,8 @@ counting every selected entry.
 matching.
 
 Metadata reports read filesystem metadata and `.gitignore` files.
-Code and document analysis also reads file contents; the content cache reuses results
-for unchanged files, so repeated analysis need not reread the whole tree.
+Content analysis also reads file contents; the content cache reuses results for
+unchanged files, so repeated analysis need not reread the whole tree.
 A retained index serves repeated queries, and `--stale-ok` can answer from a saved scan
 without walking again when an older answer is acceptable.
 
@@ -440,10 +443,12 @@ finds build products to remove.
 diskus and dumac answer one total from a small binary, and pdu draws a compact size
 chart.
 For line counts alone, use scc or tokei: they count hundreds of languages to fdu’s
-15, tokei counts embedded code, and scc estimates complexity.
-Use fdu for a tree you can prune, a `.gitignore`-aware answer, content metrics,
-versioned machine output, a live or cached view, or a Rust or Python API; for code, it
-adds each language’s ignored share, and per-directory counts in Rust.
+15, tokei counts embedded code, and scc estimates complexity;
+[source-line counting](docs/performance-measurements.md#source-line-counting) compares
+their run times with fdu’s. Use fdu for a tree you can prune, a `.gitignore`-aware
+answer, content metrics, versioned machine output, a live or cached view, or a Rust or
+Python API; for code, it adds each language’s ignored share, and per-directory counts in
+Rust.
 
 ¹ gdu’s unreleased main branch adds `--ignore-from-gitignore`, which reads patterns from
 one file.

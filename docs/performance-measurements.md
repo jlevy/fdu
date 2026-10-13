@@ -1,10 +1,9 @@
 # fdu Performance Measurements
 
-This page has the measurements behind the README’s [Speed](../README.md#speed) section:
-each run’s engine, date, host, intervals, and memory, what each tool returns, and the
-throughput figures the README rounds.
-The experiment records under [project/experiments](project/experiments/) hold the raw
-evidence, and
+This page has the measurements the README’s [Speed](../README.md#speed) section links
+to: each run’s engine, date, host, intervals, and memory, what each tool returns, and
+throughput figures. The experiment records under
+[project/experiments](project/experiments/) hold the raw evidence, and
 [the performance evidence report](project/reports/report-2026-08-20-fdu-performance-evidence.md)
 is the full record of every experiment the project has run.
 
@@ -31,8 +30,6 @@ is the full record of every experiment the project has run.
   rest.
 
 ## Throughput
-
-The README rounds these rates.
 
 ### Disk Usage
 
@@ -161,8 +158,6 @@ performance changes (`ebc06c78`):
 Every interval excludes zero.
 A peak of ≤ 54 MiB is a bound, not a measurement: Linux carries a process’s peak memory
 across `exec`, so a tool smaller than the harness reports the harness’s peak.
-The README’s Linux column takes pdu and diskus from the 0.3.0 run above and the other
-tools from this run.
 The [Linux comparison](project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 has versions, CPU time, and the protocol.
 
