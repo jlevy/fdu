@@ -15,6 +15,9 @@ patterns:
   # edits); a build without git metadata reports the bare semver. The semver itself
   # is still asserted exactly — only the build metadata varies.
   DEV_REVISION: '(-dev\+g[0-9a-f]{7,12}(\.dirty)?)?'
+  # V8 rejects the full skill's long literal regex. This zero-width assertion
+  # splits it without consuming or eliding output; every byte remains asserted.
+  REGEX_BOUNDARY: '(?=\n|$)'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
   PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
 ---
@@ -414,7 +417,7 @@ repeated run reuses unchanged records.
 Coverage is scoped to the analyzers too: an unsupported deeper analyzer leaves byte
 metadata visible but does not retain a separate lower-level metric record for that file.
 
-## Pick the View, Then Shape It
+## Pick the View, Then Shape It[REGEX_BOUNDARY]
 
 - `--view list` (default), with `--format tree` for directory roll-ups, `--format paths`
   for complete flat matching paths, or `--long` for size, age, and path.
