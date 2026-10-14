@@ -57,6 +57,8 @@ OS-native file watching with streaming APIs.
 It is designed from the start to be usable in pure Rust, from Python,
 or as a CLI or agent skill.
 
+More on how it was built [in my Twitter post](https://x.com/ojoshe/status/2110201362189594898).
+
 ## Key Features
 
 - **Extensive metrics:** Different `--view` options show total size, file count, age of
