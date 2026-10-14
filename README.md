@@ -2,6 +2,9 @@
 
 **Fastest du replacement and file tree analysis for 100+GB, million-file worktrees**
 
+fdu is a ground-up rewrite of both du and more modern tools like dust.
+It is pre-built and distributed via PyPI and `uv` so you can run it right now with `uvx fdu@latest`.
+
 For every directory in a file tree, fdu reports its size, file count, most recent
 change, file kinds, how much `.gitignore` files cover.
 Optionally, it also analyzes lines of code by programming language or words, paragraphs,
@@ -15,8 +18,8 @@ cross-platform CLI. See [speed measurements](#speed) and the
 [comparison to alternatives](#comparison-to-alternatives).
 
 It is packaged for convenience as a CLI installable via PyPI and uv, so you can run it
-on most platforms instantly via `uvx fdu@latest`. It offers APIs and agent-friendly use
-as a skill.
+on most platforms instantly via `uvx fdu@latest` or `uv tool install fdu@latest`.
+It offers APIs and agent-friendly use as a skill.
 
 ![fdu on the Linux kernel source](docs/media/fdu-demo.gif)
 
@@ -33,13 +36,24 @@ Update them together. -->
 
 ## Why
 
-`du` has always been slow for large directories.
-Alternatives like `dust` are better but do not have all the features you might want.
-I was in need of a tool like this more than ever now I routinely have agent worktrees
-with hundreds of thousands of files or 100GB+. In-depth disk usage reports or code
-analytics on large directories can take minutes.
+Over the past few months, I found myself managing numerous worktrees with hundreds of
+thousands of files or 100GB+ folders.
+Agents struggle to tally disk usage, file age, or know where to
+begin to clean up large folders.
 I wanted a tool for myself and for agents to have visibility and manage or clean up
 large numbers of files efficiently.
+I've also been building applications like file managers that need to have live
+visibility over 100K-1M files.
+
+Thanks to an agentic performance iteration loop, fdu is the fastest tool of its kind,
+typically walking and tallying 5-10GB/s or 100-300K files/s on my old MacBook.
+That is ~9x faster than du and 10-100% faster than other modern native/Rust/Go options.
+
+Also, existing high-performance file analytics tools are not designed flexibly enough.
+I wanted something that is designed in layers with both easy reports but also
+OS-native file watching with streaming APIs.
+It is designed from the start to be usable in pure Rust, from Python,
+or as a CLI or agent skill.
 
 ## Key Features
 
@@ -91,7 +105,7 @@ final-summary requests, lifecycle choices, coverage, paging, and current costs.
 
 Hand any coding agent this one instruction:
 
-> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> Run `uvx fdu@latest --install-skill` from the project root to install fdu’s
 > self-contained skill for current and future agent sessions.
 
 The command writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under
@@ -110,9 +124,9 @@ you need; no Rust toolchain is required.
 Run the latest release once, or install it as a command and upgrade it later:
 
 ```shell
-uvx --no-build fdu@latest .
-uv tool install --no-build fdu
-uv tool upgrade --no-build fdu
+uvx fdu@latest .
+uv tool install fdu
+uv tool upgrade fdu
 ```
 
 `pip install fdu` installs the same command along with the
