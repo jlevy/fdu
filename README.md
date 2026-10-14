@@ -1,21 +1,15 @@
 # fdu
 
-**Fastest du replacement, with code and document reporting, for
-the command line, Python, and Rust**
+**Fastest du replacement and file tree analysis for 100+GB, million-file worktrees**
 
 For every directory in a file tree, fdu reports its size, file count, most recent
-change, file kinds, how much `.gitignore`files cover.
+change, file kinds, how much `.gitignore` files cover.
 Optionally, it also analyzes lines of code by programming language or words, paragraphs,
 and pages in documents for Markdown or text.
 
-I was in need of a tool like this more than ever now I routinely have agent
-worktrees with half a million files.
-Measuring disk usage of 100GB or more or getting in-depth code analytics on large directories
-is far too slow.
-I wanted a tool for myself and for agents to have visibility and manage and clean up
-large numbers of files efficiently.
-
-It is optimized native code, parallel with OS-specific techniques for macOS and Linux.
+The same engine powers the `fdu` command, a Python package, and a Rust crate.
+It is systematically optimized native code, with parallelized, OS-specific techniques
+for macOS and Linux.
 It combines directory sizes, content analysis, cached results, and live updates in
 a cross-platform CLI. See [speed measurements](#speed) and the
 [comparison to alternatives](#comparison-to-alternatives).
@@ -23,7 +17,7 @@ a cross-platform CLI. See [speed measurements](#speed) and the
 It is packaged for convenience as a CLI installable via PyPI and uv, so you can run it
 on most platforms instantly via `uvx fdu@latest`.
 It offers APIs and agent-friendly use as a skill.
-The same engine powers the `fdu` command, a Python package, and a Rust crate.
+
 
 ![fdu on the Linux kernel source](docs/media/fdu-demo.gif)
 
@@ -37,6 +31,16 @@ crates/fdu/src/cli.rs, and the GitHub repository description. Speed wording also
 in those READMEs, crates/fdu/src/skills/SKILL.md, and --docs, whose output
 tests/golden/cli-surface.tryscript.md and tests/parity/deviations-python.diff record.
 Update them together. -->
+
+## Why
+
+`du` has always been slow for large directories.
+Alternatives like `dust` are better but do not have all the features you might want.
+I was in need of a tool like this more than ever now I routinely have agent
+worktrees with hundreds of thousands of files or 100GB+.
+In-depth disk usage reports or code analytics on large directories can take minutes.
+I wanted a tool for myself and for agents to have visibility and manage or clean up
+large numbers of files efficiently.
 
 ## Key Features
 
@@ -56,9 +60,8 @@ Update them together. -->
 - **Find and inventory:** Select entries by kind, glob, size, and age, such as every
   `node_modules` untouched for 30 days, and print them as a tree, plain paths,
   size-and-age rows, or a complete JSON inventory.
-- **Live updates:** `--watch` keeps a report current from the platform’s native file
-  events (FSEvents, inotify, `ReadDirectoryChangesW`) and can stream each change as JSON
-  Lines.
+- **Live updates:** Designed to support watching an entire folder for changes
+  and streaming results, using each platform’s native file events (FSEvents, inotify, `ReadDirectoryChangesW`).
 - **For scripts, agents, and programs:** Terminal, text, JSON, JSONL, and YAML outputs
   make scripting easy.
   `fdu --install-skill` gives coding agents a self-contained skill; and the same
