@@ -3,9 +3,9 @@ type: is
 id: is-01m4pfhrrvbd19h3wwrqte3zan
 title: Prepare the 0.5.0 release identity, notes, demo, and stability evidence
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 20
+version: 21
 delegate: claude-code@spud10
 labels: []
 dependencies: []
@@ -23,8 +23,12 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-11T21:57:50.991Z
-updated_at: 2026-10-13T19:29:24.897Z
+updated_at: 2026-10-14T01:24:20.407Z
 started_at: 2026-10-11T21:58:48.661Z
+closed_at: 2026-10-14T01:24:20.406Z
+close_reason: "fdu 0.5.0 released 2026-10-14 from 4a513b00 (tag v0.5.0): publishing run 38493673234 green, every registry identical (make release-published), make release-announced --cargo all ok; README rewrite merged in #202; records in PR #203"
+resolution: null
+duplicate_of: null
 ---
 Follow the release checklist after merging stack #193. Prepare the version bump and changelog, update the approved demo asset declaration and GIF, document current Linux evidence without unsupported lead claims, run release stability and rehearsal, and stop before tagging or publishing pending explicit release authorization. Parent stabilization fdu-6uwu. Include fdu-eruq citation and fdu-8k4k claim qualification.
 
