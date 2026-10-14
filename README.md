@@ -1,31 +1,31 @@
 # fdu
 
-**Fast du replacement, with `.gitignore`-aware sizes and code and document counts, for
+**Fastest du replacement, with code and document reporting, for
 the command line, Python, and Rust**
 
 For every directory in a file tree, fdu reports its size, file count, most recent
-change, file kinds, and how much of it `.gitignore` covers.
+change, file kinds, how much `.gitignore`files cover.
 Optionally, it also analyzes lines of code by programming language or words, paragraphs,
 and pages in documents for Markdown or text.
 
-I’ve found I was in need of a tool like this more than ever now I routinely have agent
+I was in need of a tool like this more than ever now I routinely have agent
 worktrees with half a million files.
-I wanted a tool for myself and for agents to have visibility and manage disk usage.
+Measuring disk usage of 100GB or more or getting in-depth code analytics on large directories
+is far too slow.
+I wanted a tool for myself and for agents to have visibility and manage and clean up
+large numbers of files efficiently.
 
-It is optimized native code, heavily parallel with OS-specific techniques for macOS and
-Linux.
+It is optimized native code, parallel with OS-specific techniques for macOS and Linux.
 It combines directory sizes, content analysis, cached results, and live updates in
-a cross-platform CLI. See [speed](#speed) and the
-[performance measurements](docs/performance-measurements.md).
+a cross-platform CLI. See [speed measurements](#speed) and the
+[comparison to alternatives](#comparison-to-alternatives).
 
-The same engine powers the `fdu` command, a Python package, and a Rust crate.
-It offers APIs and agent-friendly use as a skill.
 It is packaged for convenience as a CLI installable via PyPI and uv, so you can run it
 on most platforms instantly via `uvx fdu@latest`.
+It offers APIs and agent-friendly use as a skill.
+The same engine powers the `fdu` command, a Python package, and a Rust crate.
 
-See also the [comparison to alternatives](#comparison-to-alternatives).
-
-[![fdu on the Linux kernel source: the usage tree with size and age colors, then lines of code by language and words by document type, first with fdu’s cache cleared and then from the cache](docs/media/fdu-demo.gif)](https://github.com/jlevy/fdu/pull/196#issuecomment-6129700944)
+![fdu on the Linux kernel source](docs/media/fdu-demo.gif)
 
 *fdu v0.5.0 on the Linux 7.3-rc6 source (1.7 GiB, 95,938 files), recorded in real time
 on an older Mac M1 Pro.*
@@ -40,9 +40,10 @@ Update them together. -->
 
 ## Key Features
 
-- **Every directory at once:** One walk gives each directory’s size, file count, and
-  newest change, as a bounded tree (`fdu .`), one total (`--view=summary`), the largest
-  or most recent files, or breakdowns by file type, family, extension, and language.
+- **Extensive metrics:** Different `--view` options show
+  total size, file count, age of entire directories, tree overview,
+  largest or or most recent files, and breakdowns by file type, family,
+  extension, and programming language.
 - **`.gitignore`-aware sizes:** Rows show how much of their size the tree’s own
   `.gitignore` files cover, and `--ignored=exclude` or `--ignored=only` reports one
   side. Rules apply per directory, as git applies them; `.git/info/exclude` and global
@@ -58,8 +59,9 @@ Update them together. -->
 - **Live updates:** `--watch` keeps a report current from the platform’s native file
   events (FSEvents, inotify, `ReadDirectoryChangesW`) and can stream each change as JSON
   Lines.
-- **For scripts, agents, and programs:** JSON, JSON Lines, and YAML carry a versioned
-  schema; `fdu --install-skill` gives coding agents a self-contained skill; and the same
+- **For scripts, agents, and programs:** Terminal, text, JSON, JSONL, and YAML outputs
+  make scripting easy.
+  `fdu --install-skill` gives coding agents a self-contained skill; and the same
   engine is a Python package and a Rust crate.
 
 ## Set Up with Any Coding Agent
