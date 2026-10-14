@@ -50,7 +50,7 @@ dua 2.45.0, and diskus 0.9.0.
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 1: Setup | ✅ Passed | `fdu --version` printed `fdu 0.5.0-dev+g4a513b00f`, from `fdu-0.5.0-cp312-abi3-manylinux_2_34_x86_64.whl` |
-| Phase 2: Small-tree views | ✅ Passed | 22 checks: 22 ok, on a checkout of this repository at the release commit |
+| Phase 2: Small-tree views | ✅ Passed | 22 checks, all ok: the 4 sanity flags (help, version, docs, skill) and 18 views, on a checkout of this repository at the release commit |
 | Phase 3: Cache × analyze | ✅ Passed | 16 checks: 16 ok |
 | Phase 4: Medium tree | ✅ Passed | 9 checks: 9 ok, on `linux-v6.12` with `Documentation/` analyzed |
 | Phase 5: Bounded large tree | ✅ Passed | 2 checks: 2 ok, on the generated million-entry tree |
@@ -74,6 +74,12 @@ dua 2.45.0, and diskus 0.9.0.
   [−3.50%, +3.89%] against the age column’s base.
   That is inconclusive at the registered +3% margin, so by the registered rule the tag
   proceeded and `fdu-4arl` stays open.
+
+Earlier release records remain in the
+[0.4.0 report](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
+(macOS) and the
+[0.3.0 report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md)
+(the previous Linux pass).
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked | ⏭️ Waived
 

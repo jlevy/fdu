@@ -54815,7 +54815,7 @@
   },
   {
    "anchored": false,
-   "candidate": "1c42c91f probe (the 0.5.0 candidate, #202's head)",
+   "candidate": "1c42c91f probe (the 0.5.0 candidate, #202's head when measured)",
    "change_pct": -0.216,
    "commit": "1c42c91f",
    "compares": true,
@@ -55025,7 +55025,7 @@
   },
   {
    "anchored": false,
-   "candidate": "1c42c91f probe (the 0.5.0 candidate, #202's head)",
+   "candidate": "1c42c91f probe (the 0.5.0 candidate, #202's head when measured)",
    "change_pct": 7.912,
    "commit": "1c42c91f",
    "compares": true,
@@ -55226,7 +55226,7 @@
    "platform": "Linux",
    "primary_job": "default-tree",
    "primary_metric": "wall_ns",
-   "reason": "not a speed decision: the 0.5.0 release's Linux standing; two-arm, 100 pairs, quiet: default-tree +7.91% [+5.46%, +12.97%] on node-modules-dense against +3% to +7% predicted, the age column's statx (exp-217, exp-218), and +3.83% [-1.64%, +8.48%] on linux-v6.12 against -2% to +3%; aggregate-summary -2.07% [-4.62%, +2.28%] and -2.06% [-4.47%, +1.82%], non-inferior at +3% on both trees",
+   "reason": "not a speed decision: the 0.5.0 release's Linux standing; two-arm, 100 pairs, quiet: default-tree +7.91% [+5.46%, +12.97%] on node-modules-dense against +3% to +7% predicted, the age column's statx (exp-217, exp-218), and +3.83% [-1.64%, +8.48%] on linux-v6.12 against -2% to +3%; aggregate-summary -2.07% [-4.62%, +2.28%] and -2.06% [-4.47%, +1.82%], non-inferior at +3% on both trees by the paired median; the bootstrap mean's intervals reach +3.22% and +3.75%",
    "reference_tools": [],
    "run_artifact": "docs/project/experiments/evidence/exp-223/run.json.gz",
    "subject": "ffbd3cb6be62:79957:62125c60d0dd",

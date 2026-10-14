@@ -40,7 +40,7 @@ experiment:
     warmups: 3
     interleaved: true
     control: "23d11b19 probe (the age column's base)"
-    candidate: "1c42c91f probe (the 0.5.0 candidate, #202's head)"
+    candidate: "1c42c91f probe (the 0.5.0 candidate, #202's head when measured)"
     control_binary:
       name: age
       sha256: 683bf0cb610780c29b0498435dd014a484a01e6bf8add20d03b48c7f20880a94
@@ -318,7 +318,14 @@ day’s fingerprint.
 | --- | --- | --- |
 | The age column’s base | `23d11b19` | the probe exp-217 to exp-220 timed, reused (its hash matches theirs) |
 | The several-roots head | `0d6011da` | the same, reused |
-| The candidate | `1c42c91f`, #202’s head: `e6b8850b` plus `README.md` | built for this record |
+| The candidate | `1c42c91f`, #202’s head when measured: `e6b8850b` plus `README.md` | built for this record |
+
+#202 merged later at `7fc71fe7` as release commit `4a513b00`. That commit differs from
+`1c42c91f` in documentation and in two string constants of the `fdu` binary: the
+`--docs` guide in `crates/fdu/src/cli.rs`, and the `description` in
+`crates/fdu/Cargo.toml` that `--help` prints.
+No engine or reader code changed, and the probe builds from `fdu-core` alone, so these
+readings stand for v0.5.0.
 
 | Cell | Job | Control → candidate (median wall) | Paired median [95%] | Mean [95% bootstrap] | Hodges–Lehmann |
 | --- | --- | --- | --- | --- | --- |
@@ -335,6 +342,9 @@ In (C) the order effect is large: the summary’s pairs give +0.22% where the
 several-roots head ran first and −6.96% where the candidate did.
 That is an arm effect of −3.37% and an order effect of +3.59%. So (C) places the
 candidate at or below the several-roots head, but does not size the difference.
+
+(C)’s run is `run-k4-nmd-h198-roots.json.gz`. `order-split.txt` is the output of
+`order.py.txt`, exp-220’s script unchanged, over both runs.
 
 ## Decision
 

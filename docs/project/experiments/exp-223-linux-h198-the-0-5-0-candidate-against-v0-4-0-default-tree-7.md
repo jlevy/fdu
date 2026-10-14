@@ -40,7 +40,7 @@ experiment:
     warmups: 3
     interleaved: true
     control: c041ed1c probe (v0.4.0)
-    candidate: "1c42c91f probe (the 0.5.0 candidate, #202's head)"
+    candidate: "1c42c91f probe (the 0.5.0 candidate, #202's head when measured)"
     control_binary:
       name: v040
       sha256: 6188c098c55222b5d81f0639333bcb63908f0a7bbf75aa0b6401f1ddca816c60
@@ -268,7 +268,7 @@ experiment:
     primary_job: default-tree
     primary_metric: wall_ns
     change_pct: 7.912
-    reason: "not a speed decision: the 0.5.0 release's Linux standing; two-arm, 100 pairs, quiet: default-tree +7.91% [+5.46%, +12.97%] on node-modules-dense against +3% to +7% predicted, the age column's statx (exp-217, exp-218), and +3.83% [-1.64%, +8.48%] on linux-v6.12 against -2% to +3%; aggregate-summary -2.07% [-4.62%, +2.28%] and -2.06% [-4.47%, +1.82%], non-inferior at +3% on both trees"
+    reason: "not a speed decision: the 0.5.0 release's Linux standing; two-arm, 100 pairs, quiet: default-tree +7.91% [+5.46%, +12.97%] on node-modules-dense against +3% to +7% predicted, the age column's statx (exp-217, exp-218), and +3.83% [-1.64%, +8.48%] on linux-v6.12 against -2% to +3%; aggregate-summary -2.07% [-4.62%, +2.28%] and -2.06% [-4.47%, +1.82%], non-inferior at +3% on both trees by the paired median; the bootstrap mean's intervals reach +3.22% and +3.75%"
     commit: 1c42c91f
     kept: candidate
 ---
@@ -297,7 +297,14 @@ Predicted:
 **Binaries.** Built before any timing, with nothing else running during the cells:
 - v0.4.0 is the probe built from the release’s tag commit `c041ed1c`. exp-217 used
   `148ef78e`, `main` after that release.
-- The candidate is the probe built from `1c42c91f`.
+- The candidate is the probe built from `1c42c91f`, #202’s head when measured.
+
+#202 merged later at `7fc71fe7` as release commit `4a513b00`. That commit differs from
+`1c42c91f` in documentation and in two string constants of the `fdu` binary: the
+`--docs` guide in `crates/fdu/src/cli.rs`, and the `description` in
+`crates/fdu/Cargo.toml` that `--help` prints.
+No engine or reader code changed, and the probe builds from `fdu-core` alone, so these
+readings stand for v0.5.0.
 
 | Tree | Job | v0.4.0 → candidate (median wall) | Paired median [95%] | Mean [95% bootstrap] | Hodges–Lehmann | Prediction |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -309,6 +316,8 @@ Predicted:
 Split by which arm ran first, the run-order effect is under ±2% on every `default-tree`
 cell (`order-split.txt`). The summaries reach +1.61% on the dense tree and +2.10% on the
 kernel tree by median, and +2.91% on the dense tree by mean.
+The `linux-v6.12` run is `run-k3-lnx-h198-v040.json.gz`, and exp-222’s `order.py.txt`
+made `order-split.txt`.
 
 ## Decision
 
@@ -321,9 +330,12 @@ This is the 0.5.0 release’s measured standing against 0.4.0 on Linux.
   [+3.53%, +10.46%], and five and a half points of it are the column on one codebase
   (exp-218). On the directory-sparse kernel tree it is +3.83% and not resolved; its
   mean’s interval excludes zero.
-- **The summary is non-inferior at +3% on both trees.** That is −2.07% and −2.06%, so
-  0.5.0’s several-roots reader costs a single-root summary nothing measurable against
-  0.4.0.
+- **The summary is non-inferior at +3% by the paired median on both trees:** −2.07%
+  [−4.62%, +2.28%] and −2.06% [−4.47%, +1.82%]. The bootstrap mean classifies
+  differently. Its intervals reach +3.22% and +3.75%, so by the mean both are
+  inconclusive. Both medians fall below the predicted ranges.
+  The dense tree’s does not reproduce exp-217’s +5.45% [+1.99%, +7.20%] for the shipped
+  head against v0.4.0, just as exp-222 does not reproduce exp-220’s +5.28%.
 
 Recorded `rejected` as a speed claim with the candidate kept, as exp-217 recorded the
 same comparison.

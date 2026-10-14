@@ -250,6 +250,10 @@ unprivileged user, with 26 cases and 72 cross-warm pairs.
 The refusal tree held 14 kinds and the served tree 13: `chardev` and `blockdev` need
 root, and APFS refuses a name that is not valid UTF-8. The full record is in the
 [0.5.0 candidate stability-pass report](../reports/report-2026-10-12-release-0.5.0-stability-pass.md).
+Earlier runs remain in the
+[0.4.0 report](../reports/report-2026-10-09-release-0.4.0-stability-pass.md) (macOS) and
+the [0.3.0 report](../reports/report-2026-09-30-release-0.3.0-stability-pass.md)
+(Linux).
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

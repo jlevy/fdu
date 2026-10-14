@@ -7170,7 +7170,7 @@ Full record:
 
 Control: 23d11b19 probe (the age column’s base)
 
-Candidate: 1c42c91f probe (the 0.5.0 candidate, #202’s head)
+Candidate: 1c42c91f probe (the 0.5.0 candidate, #202’s head when measured)
 
 **`aggregate-summary`** (cold start) — the comparison the verdict rests on
 
@@ -7203,7 +7203,7 @@ Full record:
 
 Control: c041ed1c probe (v0.4.0)
 
-Candidate: 1c42c91f probe (the 0.5.0 candidate, #202’s head)
+Candidate: 1c42c91f probe (the 0.5.0 candidate, #202’s head when measured)
 
 **`default-tree`** (warm start) — the comparison the verdict rests on
 
@@ -7223,7 +7223,8 @@ Cost to carry: 0 lines; no new dependencies.
 pairs, quiet: default-tree +7.91% [+5.46%, +12.97%] on node-modules-dense against +3% to
 +7% predicted, the age column’s statx (exp-217, exp-218), and +3.83% [-1.64%, +8.48%] on
 linux-v6.12 against -2% to +3%; aggregate-summary -2.07% [-4.62%, +2.28%] and -2.06%
-[-4.47%, +1.82%], non-inferior at +3% on both trees.
+[-4.47%, +1.82%], non-inferior at +3% on both trees by the paired median; the bootstrap
+mean’s intervals reach +3.22% and +3.75%.
 
 Full record:
 [`exp-223-linux-h198-the-0-5-0-candidate-against-v0-4-0-default-tree-7.md`](../experiments/exp-223-linux-h198-the-0-5-0-candidate-against-v0-4-0-default-tree-7.md)

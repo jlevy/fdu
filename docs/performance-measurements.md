@@ -105,7 +105,10 @@ head and its base. That interval crosses the registered +3% non-inferiority marg
 establishes neither non-inferiority nor inferiority at that margin.
 The estimated change ranges from about +3.5% to +5.3% across estimators; attribution
 remains open. These measurements describe the development commits named in the
-experiments, not a timed run of the final 0.5.0 candidate.
+experiments. A timed run of the 0.5.0 candidate,
+[exp-222](project/experiments/exp-222-linux-h198-the-0-5-0-candidate-s-dense-summary-is-level-with.md),
+put this summary at −0.22% [−3.50%, +3.89%] against the several-roots base.
+That is still inconclusive at +3%, and exp-220’s +5.28% did not reproduce.
 
 ### The 0.3.0 Engine, Three Trees
 

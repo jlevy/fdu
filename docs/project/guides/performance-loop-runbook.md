@@ -998,6 +998,16 @@ command writes none; compare `default-tree` runs across this change with that in
 
 ## Current Pickup (2026-09-30)
 
+**Since then (2026-10-13).** H198 (exp-222, exp-223) timed the 0.5.0 candidate on a 2.8
+GHz 4-vCPU guest: quiet, two arms, 100 pairs a cell.
+One root’s dense summary is level with the age column’s base: −0.22% [−3.50%, +3.89%],
+inconclusive at +3%. exp-220’s +5.28% does not reproduce, and `fdu-4arl` stays open for
+a host with hardware counters.
+Against v0.4.0, the default tree is +7.91% [+5.46%, +12.97%] on `node-modules-dense`
+(the age column) and +3.83% [−1.64%, +8.48%] on `linux-v6.12`, unresolved.
+The summaries are −2.07% and −2.06% by the paired median.
+0.5.0 shipped from that candidate’s engine on 2026-10-14.
+
 **Since then (2026-10-10).** The 0.5.0 stack’s Linux release measurement (`fdu-088k`,
 exp-217 to exp-221) ran on a 4-vCPU guest at Linux 6.18.44-fc-v114. The age column costs
 the default tree one `statx` per directory and per symlink: +5.72% [+3.53%, +10.46%] on
