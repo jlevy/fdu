@@ -107,7 +107,7 @@ explains the stable-ABI tradeoff.
 | `Index.total()` / `rollup()` | Rust roll-ups | Dictionaries converted into typed values; extension tallies can grow with cardinality |
 | `Index.children()` | Direct children of one directory | All children materialized; this legacy operation has no page argument |
 | `fdu.report()` | One-shot engine contract; retains only the state that execution needs | An eagerly materialized selected report |
-| `Index.report()` / `Watch.report()` | A finished native report from retained state | The same eager report conversion |
+| `Index.report()` / `Watch.report()` | A selected native report; the legacy watch first snapshots its index | The same eager report conversion |
 | `OpenedIndex.read()` with `Tree` or `Flat` projections | Coherent native projections with page and work bounds | Dictionaries/lists followed by Python models for the returned pages |
 | `OpenedIndex.read()` with an `Aggregate` projection | Maintained aggregate where supported, otherwise capped work | A small typed answer with coverage and version information |
 | Opened `ReportProjection` | Native report subject to work allowance and query selection | Eager report conversion, including a native report clone |
@@ -160,6 +160,22 @@ Silently changing that contract to return twenty rows would lose data for invent
 incremental-sync callers.
 See `ViewSpec::default_limit` in
 [`query_report.rs`](../../../crates/fdu-core/src/query/query_report.rs).
+
+### Copy and sharing guarantees
+
+The
+[surface design’s copy matrix](../architecture/fdu-surface-architecture.md#current-copy-and-sharing-behavior)
+records each current path.
+There is no public zero-copy data export.
+Native handle ownership avoids exporting the inventory; selected pages still own copied
+native row values and allocate Python models.
+Ordinary pages do not retain the full temporary dictionary graph.
+Reports retain their wire graph and selected native report; `as_dict()` copies all
+nested containers while immutable scalars can remain shared.
+Opened report conversion clones only the selected report, while the legacy watch can
+clone the native inventory itself.
+A copy count must identify the representation and its lifetime rather than assume all
+data is duplicated identically.
 
 ## Choosing an API by Use Case
 
@@ -290,6 +306,31 @@ Wheel CLI timings include startup but call the Rust CLI directly.
 **Improvement:** benchmark the installed public Python API before publishing claims
 about Python throughput, heap cost, GC pauses, or responsiveness.
 Tracking: `fdu-88o1`.
+
+### A5 — Medium native-copy exposure: legacy watch snapshots the inventory
+
+`Index.watch()` clones the native index into an independent session.
+`Session::report` then calls `IndexHandle::snapshot()` before projecting each report,
+and due cache persistence can also take a snapshot.
+Even a small Python watch report can therefore incur inventory-sized native copying.
+The copied collections can still share `Arc` resources; this is not a byte-for-byte
+duplication of every resource.
+
+This is distinct from `OpenedIndex` sharing one native authority and projecting under
+its coherent read boundary.
+It is also distinct from the opened binding’s selected report clone and from Python
+object construction.
+See [`watch_session.rs`](../../../crates/fdu-core/src/watch_session.rs) and
+[`IndexHandle::snapshot`](../../../crates/fdu-core/src/index.rs).
+
+**Improvement:** measure legacy watch startup, repeated reports, and persistence
+snapshots against opened reads.
+Evaluate coherent projection or shared immutable storage while preserving independent
+watcher lifecycle, report identity, safe persistence, and writer progress.
+Snapshotting releases the native lock before longer work, so simply removing `clone()`
+can change concurrency behavior.
+No latency or memory regression was measured.
+Tracking: `fdu-xhge`.
 
 ### Bounded pages do not establish bounded total memory or constant query cost
 
@@ -451,6 +492,13 @@ one construction-only elapsed value.
    callers who request them (`fdu-5ve4`).
 5. Use measurements to decide whether direct models, export byte budgets, top-k query
    preparation, or columnar batches merit their additional contracts.
+
+The copy audit adds separate follow-ups for legacy full-index watch snapshots
+(`fdu-xhge`) and optional packed buffer/columnar export (`fdu-g20s`). A buffer handoff
+can avoid a copy into Python after native packing while still requiring native row/path
+copies to produce the export.
+Current page and change conversion should be measured before choosing direct models or
+shared immutable batch handles (`fdu-1yxw`).
 
 For present-day agent loops, request the summaries and pages actually needed, keep
 aggregation and selection in Rust, and release previous results promptly.

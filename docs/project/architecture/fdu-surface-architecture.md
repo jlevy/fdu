@@ -241,6 +241,47 @@ The [Python and Rust review](../reviews/review-2026-10-13-python-rust-boundary.m
 records current conversion costs, integration tradeoffs, and measurement gaps.
 A supported render-only native handle is proposed there; it is not a current public API.
 
+### Current copy and sharing behavior
+
+There is no public zero-copy inventory, page, or report-data export today.
+Moving an owned Rust value into a Python handle or sharing native state through `Arc`
+avoids an inventory transfer, but does not expose its storage as a Python buffer.
+
+| Path | Native ownership and copies | Python allocation |
+| --- | --- | --- |
+| `open()` / `scan()` | Move the owned Rust index into its handle | A handle, without one Python metadata object per file |
+| `OpenedIndex` ownership | Shared native authority; native handle clones share state | A native handle, without an exported inventory |
+| Opened Tree/Flat/Lookup | Construct owned requested rows and path/attribute values, not borrowed views of live entries | Dictionaries/lists and typed models; ordinary models do not retain the whole temporary conversion graph |
+| Aggregate/state | Owned small answers and envelopes | Small dictionaries and models; no per-inventory-row export |
+| Reports | Own the selected projection; opened conversion additionally clones the selected report | Rust JSON string converted to Python string, decoded containers, and models; wire graph and native report remain retained |
+| `Report.as_dict()` | No further native report clone | Copies every nested dictionary/list container; immutable keys and scalar values can remain shared |
+| Changes | Copy matching retained commits into an owned response | Materialized change dictionaries and typed batches, not views into the journal |
+| Legacy `Index.watch()` / `Watch.report()` | Clone the inventory into an independent session; each report snapshots that inventory before projection; due persistence can snapshot it too | Watch creation returns a handle; its reports then use the eager report pipeline |
+
+The serialized report string is an intermediate, not another permanently retained
+representation. Ordinary pages release their raw conversion containers after decoding,
+while `Report` deliberately keeps its wire graph.
+A native inventory clone copies owned entries and collections but can still share `Arc`
+resources. These differences prevent a fixed memory multiplier or a claim that every
+returned value is copied byte for byte.
+
+The implementation boundaries are `PyIndex` and `PyOneShot` in
+[`lib.rs`](../../../crates/fdu-py/src/lib.rs), page/report conversion in
+[`opened_binding.rs`](../../../crates/fdu-py/src/opened_binding.rs), and `_copy_json`
+and `Report` in [`_models.py`](../../../crates/fdu-py/python/fdu/_models.py).
+Legacy watch snapshots are explicit in `Session::report` and `IndexHandle::snapshot`.
+
+Future improvements are tracked independently: native/lazy report ownership
+(`fdu-5ve4`), legacy watch snapshots (`fdu-xhge`), optional bulk buffers or columnar
+export (`fdu-g20s`), and public-boundary measurements (`fdu-88o1`). Owned page/change
+conversion can also be simplified after measuring its temporary containers (`fdu-1yxw`).
+A packed immutable batch may copy data once from the index and then share its finished
+buffers with Python without another data copy.
+That would make that handoff zero-copy, not the entire query.
+Any such API needs explicit lifetime after refresh/close, release ownership,
+retained-memory accounting, and lossless path/version/coverage semantics.
+It must not keep a live index read lock for an arbitrary Python consumer lifetime.
+
 ### Rationale and binding practice
 
 A coarse language boundary amortizes call overhead and avoids creating Python objects
