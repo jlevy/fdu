@@ -10,14 +10,13 @@ and pages in documents for Markdown or text.
 The same engine powers the `fdu` command, a Python package, and a Rust crate.
 It is systematically optimized native code, with parallelized, OS-specific techniques
 for macOS and Linux.
-It combines directory sizes, content analysis, cached results, and live updates in
-a cross-platform CLI. See [speed measurements](#speed) and the
+It combines directory sizes, content analysis, cached results, and live updates in a
+cross-platform CLI. See [speed measurements](#speed) and the
 [comparison to alternatives](#comparison-to-alternatives).
 
 It is packaged for convenience as a CLI installable via PyPI and uv, so you can run it
-on most platforms instantly via `uvx fdu@latest`.
-It offers APIs and agent-friendly use as a skill.
-
+on most platforms instantly via `uvx fdu@latest`. It offers APIs and agent-friendly use
+as a skill.
 
 ![fdu on the Linux kernel source](docs/media/fdu-demo.gif)
 
@@ -36,18 +35,17 @@ Update them together. -->
 
 `du` has always been slow for large directories.
 Alternatives like `dust` are better but do not have all the features you might want.
-I was in need of a tool like this more than ever now I routinely have agent
-worktrees with hundreds of thousands of files or 100GB+.
-In-depth disk usage reports or code analytics on large directories can take minutes.
+I was in need of a tool like this more than ever now I routinely have agent worktrees
+with hundreds of thousands of files or 100GB+. In-depth disk usage reports or code
+analytics on large directories can take minutes.
 I wanted a tool for myself and for agents to have visibility and manage or clean up
 large numbers of files efficiently.
 
 ## Key Features
 
-- **Extensive metrics:** Different `--view` options show
-  total size, file count, age of entire directories, tree overview,
-  largest or or most recent files, and breakdowns by file type, family,
-  extension, and programming language.
+- **Extensive metrics:** Different `--view` options show total size, file count, age of
+  entire directories, tree overview, largest or or most recent files, and breakdowns by
+  file type, family, extension, and programming language.
 - **`.gitignore`-aware sizes:** Rows show how much of their size the tree’s own
   `.gitignore` files cover, and `--ignored=exclude` or `--ignored=only` reports one
   side. Rules apply per directory, as git applies them; `.git/info/exclude` and global
@@ -60,12 +58,13 @@ large numbers of files efficiently.
 - **Find and inventory:** Select entries by kind, glob, size, and age, such as every
   `node_modules` untouched for 30 days, and print them as a tree, plain paths,
   size-and-age rows, or a complete JSON inventory.
-- **Live updates:** Designed to support watching an entire folder for changes
-  and streaming results, using each platform’s native file events (FSEvents, inotify, `ReadDirectoryChangesW`).
+- **Live updates:** Designed to support watching an entire folder for changes and
+  streaming results, using each platform’s native file events (FSEvents, inotify,
+  `ReadDirectoryChangesW`).
 - **For scripts, agents, and programs:** Terminal, text, JSON, JSONL, and YAML outputs
   make scripting easy.
-  `fdu --install-skill` gives coding agents a self-contained skill; and the same
-  engine is a Python package and a Rust crate.
+  `fdu --install-skill` gives coding agents a self-contained skill; and the same engine
+  is a Python package and a Rust crate.
 
 ## Set Up with Any Coding Agent
 
@@ -418,6 +417,50 @@ The [performance loop](docs/project/guides/performance-loop.md) evaluates change
 paired runs on real trees, and the
 [performance evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
 retains the experiments and their measured effects.
+
+The figures below are historical measurements of the builds named beside them.
+They are not measurements of the final 0.5.0 release.
+In the 2026-10-10 Linux rerun, neither the 0.5.0 development build nor 0.4.0 showed a
+resolved lead over `pdu --max-depth 2` or diskus on the two real trees; the generated
+million-entry tree retained its leads.
+See
+[the current Linux evidence](docs/performance-measurements.md#the-050-development-build).
+
+Time to report on the generated million-entry tree, 875,000 files and 2.99 GB of
+allocated space, with warm filesystem caches, as a multiple of fdu’s time (lower is
+faster):
+
+| Tool | Linux | macOS, exploratory |
+| --- | ---: | ---: |
+| **fdu** | **1.00×** (0.95 s) | **1.00×** (6.4 s) |
+| [pdu](https://github.com/KSXGitHub/parallel-disk-usage) `--max-depth 2` | 1.19× | — |
+| [diskus](https://github.com/sharkdp/diskus) | 1.24× | 1.42× |
+| [pdu](https://github.com/KSXGitHub/parallel-disk-usage) | 1.25× | 1.49× |
+| [dust](https://github.com/bootandy/dust) | 1.62× | 1.57× |
+| [gdu](https://github.com/dundee/gdu) | 2.58× | 1.67× |
+| GNU [du](https://www.gnu.org/software/coreutils/) | 2.60× | 10.6× |
+| [ncdu](https://dev.yorhel.nl/ncdu) | 2.74× | 10.7× |
+| [dua](https://github.com/Byron/dua-cli) | 3.34× | 1.61× |
+| [dumac](https://github.com/healeycodes/dumac#readme) | — | 1.09× |
+| BSD `du` | — | 9.0× |
+
+Linux is a 4-vCPU virtual machine on ext4. pdu, `pdu --max-depth 2`, and diskus ran
+beside fdu 0.3.0 (0.95 s) on 2026-09-30. The other Linux tools ran a day earlier beside
+the pre-release engine `ebc06c78` (1.09 s), so their multiples are of that engine’s time
+and understate 0.3.0’s lead.
+On the two real trees, every tool took 29% to 38% longer in the 0.3.0 session than
+earlier that day, and about ten points of the 19% gap to `pdu --max-depth 2` on this
+tree are probably that session rather than fdu.
+macOS is one exploratory session on an M1 Pro’s APFS SSD, on 2026-09-28, with a
+pre-0.2.0 build on a heavily loaded, uncontrolled host; pdu ran there as
+`--max-depth 1`. It is exploration, not a claim the project’s
+[performance loop](docs/project/guides/performance-loop.md#host-pressure-regimes) would
+accept, and dumac, the closest tool there, was measured only on macOS. Windows has no
+measurements. fdu’s default report covers about 920,000 files and 3.1 GB a second on
+Linux (fdu 0.3.0), and 137,000 files and 0.47 GB a second on macOS (the pre-0.2.0
+build); these are metadata rates, since sizing a file reads none of its contents.
+[Performance Measurements](docs/performance-measurements.md) has each run’s intervals,
+memory, and what each tool returns.
 
 ## Comparison to Alternatives
 
