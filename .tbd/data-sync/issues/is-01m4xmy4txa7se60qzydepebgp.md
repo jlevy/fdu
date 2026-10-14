@@ -5,17 +5,17 @@ title: Clarify API names and separate lifecycle from materialization costs
 kind: task
 status: in_progress
 priority: 2
-version: 3
+version: 4
 delegate: claude-code@spud10
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-10-14T16:46:40.476Z
-updated_at: 2026-10-14T16:49:47.683Z
+updated_at: 2026-10-14T17:16:04.233Z
 started_at: 2026-10-14T16:46:52.679Z
 ---
 
 ## Notes
 
-User accepted three user-facing groups: Report API, Index API, Progressive API. Explain near top of public README, Python guide, architecture and review. Separate lifecycle/ownership from result detail/materialization and avoid universal speed rankings. Progressive supports offline/batch use; for a single final unfiltered metadata summary the one-shot Report planner can use a compact native reducer, while existing appropriate handles should be reused. Preserve current copying, GIL, partial-coverage and cursor constraints. Sol handles mechanics; parent verifies technical accuracy.
+Implemented near-top Report/Index/Progressive tables in README, Python guide, architecture and review. Guidance separates lifecycle from result volume and representation, supports offline progressive use, recommends eligible one-shot summary reduction or reuse of existing handles, and retains Index for analysis/cache/explicit-refresh needs. Native lifecycle/coarse-request policy is prescriptive. Added surface roadmap with priorities, acceptance and eight follow-ups, including cached-index explicit verification (fdu-l9jh). Documented intentional Python stale_ok refresh/watch restriction and required verified reopen. Sol mechanics and Astra technical/adversarial review completed; publication awaits full local gate and final CI.
