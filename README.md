@@ -80,28 +80,9 @@ or as a CLI or agent skill.
   `fdu --install-skill` gives coding agents a self-contained skill; and the same engine
   is a Python package and a Rust crate.
 
-## Choose a Python API
 
-Keep discovery, analysis, reconciliation, observation, querying, and engine shutdown in
-Rust. Python should set application policy through coarse requests and receive selected
-answers. The Python package offers three entry-point groups over that same engine:
 
-| API | Choose it for |
-| --- | --- |
-| Report API: `fdu.report()` | One answer per job or invocation, from a summary to a detailed report |
-| Index API: `fdu.open()` / `fdu.scan()` | Prepare once, reuse queries, and control refresh; supports analysis and cache policy on open |
-| Progressive API: `fdu.opened.OpenedIndex.open()` | Read during discovery, consume bounded pages, or follow optional changes in offline jobs or interactive applications |
-
-Native inventory is not automatically exported to Python.
-Returned rows and reports allocate Python values and can copy data; there is no public
-zero-copy data export.
-Minimize both boundary calls and returned volume.
-Detailed or complete results remain a deliberate option for custom Python logic, with
-their conversion and retention cost.
-See the [Python guide](crates/fdu-py/README.md#use-as-a-python-library) for
-final-summary requests, lifecycle choices, coverage, paging, and current costs.
-
-## Set Up with Any Coding Agent
+## Use Instantly with Any Coding Agent
 
 Hand any coding agent this one instruction:
 
@@ -116,6 +97,9 @@ Use `--agent-base DIR` to write `DIR/skills/fdu/SKILL.md` for one agent’s user
 such as `~/.claude`. Re-run the installer after upgrading to refresh the skill;
 `fdu --skill` prints it, and deleting the generated skill directories removes it.
 See the [skill usage guide](docs/usage.md#agent-skill).
+
+
+
 
 ## Install the Command Line
 
@@ -331,6 +315,28 @@ browser, uses `OpenedIndex` in Rust or `fdu.opened` in Python: it answers while 
 first walk is still running, reads large results a page at a time, and resumes its
 change feed from a cursor; see
 [long-lived roots](crates/fdu-py/README.md#long-lived-roots).
+
+
+## Python and Rust APIs
+
+Keep discovery, analysis, reconciliation, observation, querying, and engine shutdown in
+Rust. Python should set application policy through coarse requests and receive selected
+answers. The Python package offers three entry-point groups over that same engine:
+
+| API | Choose it for |
+| --- | --- |
+| Report API: `fdu.report()` | One answer per job or invocation, from a summary to a detailed report |
+| Index API: `fdu.open()` / `fdu.scan()` | Prepare once, reuse queries, and control refresh; supports analysis and cache policy on open |
+| Progressive API: `fdu.opened.OpenedIndex.open()` | Read during discovery, consume bounded pages, or follow optional changes in offline jobs or interactive applications |
+
+Native inventory is not automatically exported to Python.
+Returned rows and reports allocate Python values and can copy data; there is no public
+zero-copy data export.
+Minimize both boundary calls and returned volume.
+Detailed or complete results remain a deliberate option for custom Python logic, with
+their conversion and retention cost.
+See the [Python guide](crates/fdu-py/README.md#use-as-a-python-library) for
+final-summary requests, lifecycle choices, coverage, paging, and current costs.
 
 ## As a Python Module
 
