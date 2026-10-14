@@ -2,10 +2,15 @@
 //!
 //! # API shape
 //!
-//! Every method here is **bulk**: it returns a whole structured result in one call
-//! rather than exposing a cursor that Python iterates. A million small zero-copy calls
-//! lose comfortably to one large call, because the per-call boundary cost dominates once
-//! the native work per item is a field read.
+//! The Report API returns one selected answer with the native state that request needs.
+//! The index API (`Index`) returns after requested preparation; the caller controls
+//! refresh. The progressive API (`OpenedIndex`) allows reads during discovery and owns
+//! optional background observation. Both keep inventory in Rust and submit coarse native
+//! operations rather than require a Python callback per file. Result detail is separate:
+//! `Index` can return a small roll-up, and `OpenedIndex` can return a large eager report.
+//! Python conversion cost follows the selected result and its representation. Per-file
+//! work and engine lifecycle belong in Rust; Python should use coarse control/query calls
+//! and request the answers it needs, while complete materialization remains supported.
 //!
 //! `open()`, `scan()`, and the native reconciliation phase of `Index.refresh()` release
 //! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
@@ -322,7 +327,15 @@ impl PyIndex {
 
     /// Roll-up totals for the whole tree.
     fn total<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        rollup_dict(py, &self.inner.total())
+        let value = rollup_dict(py, &self.inner.total())?;
+        value.set_item(
+            "provenance",
+            self.inner
+                .provenance(Path::new(""))
+                .map(|value| provenance_dict(py, value))
+                .transpose()?,
+        )?;
+        Ok(value)
     }
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
@@ -330,7 +343,17 @@ impl PyIndex {
     #[allow(clippy::needless_pass_by_value)]
     fn rollup<'py>(&self, py: Python<'py>, path: PathBuf) -> PyResult<Option<Bound<'py, PyDict>>> {
         match self.inner.rollup(&path) {
-            Some(roll) => Ok(Some(rollup_dict(py, &roll)?)),
+            Some(roll) => {
+                let value = rollup_dict(py, &roll)?;
+                value.set_item(
+                    "provenance",
+                    self.inner
+                        .provenance(&path)
+                        .map(|value| provenance_dict(py, value))
+                        .transpose()?,
+                )?;
+                Ok(Some(value))
+            }
             None => Ok(None),
         }
     }
@@ -722,10 +745,9 @@ pub(crate) fn parse_control_limits(
 
 /// A live change feed over one index.
 ///
-/// Iteration yields one list of changes per batch. A tick with no changes yields an
-/// empty list rather than blocking forever, so a caller can break out on its own terms
-/// and the interpreter can always exit — an iterator that blocks indefinitely inside a
-/// GIL-holding call is how a Python process becomes unkillable.
+/// Iteration applies verified updates and yields one list of selected changes per batch.
+/// A tick with no changes yields an empty list, so the caller can regain control between
+/// waits. Native waiting releases the GIL.
 // Unsendable because the event queue belongs to the thread that created it: sharing one
 // feed across threads would give each an arbitrary half of the stream, and Python is
 // better told that at the boundary than left to discover it.
@@ -737,15 +759,11 @@ struct PyWatch {
 
 #[pymethods]
 impl PyWatch {
-    /// The live answer, as of now, from the index this session has been updating.
+    /// Snapshot the latest state applied by this query-bound session's iterator.
     ///
-    /// A watch run has no final answer: the aggregates are only true until the next
-    /// change, so a caller redrawing them needs the session's own index rather than the
-    /// one it was opened from. Reporting the opened index instead repaints numbers that
-    /// stopped being true at the first event, which looks like a working display and is
-    /// not one (fdu-m66a).
-    ///
-    /// Returns a snapshot, so rendering it twice gives the same answer both times.
+    /// Reporting does not consume pending events or update the originating `Index`.
+    /// The returned snapshot renders the same answer on repeated calls; its ages use
+    /// this report call's instant, while query selection windows remain fixed.
     fn report(&self) -> PyResult<PyOneShot> {
         let session =
             self.session.as_ref().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;

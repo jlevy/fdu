@@ -9,6 +9,7 @@ import sys
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import fdu
 import pytest
@@ -167,6 +168,33 @@ def test_opened_entry_selection_admits_canonical_suffixes_and_escaped_components
     assert selection.ancestor_names == ("x%FF", "..foo")
     with pytest.raises(TypeError, match="tuple of strings"):
         opened.EntrySelection(ancestor_names="src")  # pyright: ignore[reportArgumentType]
+
+
+def test_opened_rejects_unsupported_projections_before_native_dispatch(tmp_path: Path) -> None:
+    with opened.OpenedIndex.open(tmp_path) as actual:
+        calls: list[list[dict[str, object]]] = []
+
+        class NativeRead:
+            def read(
+                self,
+                projections: list[dict[str, object]],
+                *,
+                expected: dict[str, object] | None = None,
+            ) -> dict[str, object]:
+                calls.append(projections)
+                return actual._native.read(projections, expected=expected)
+
+        index = opened.OpenedIndex(cast(_native.OpenedIndex, NativeRead()))
+        for invalid in (object(), Query()):
+            for projections in ((invalid,), (opened.Diagnostics(), invalid)):
+                with pytest.raises(TypeError, match="unsupported projection type"):
+                    index.read(*projections)  # type: ignore[arg-type]
+                assert calls == []
+
+        answer = index.read(opened.Diagnostics())
+        assert calls == [[{"kind": "diagnostics"}]]
+        assert len(answer.results) == 1
+        assert isinstance(answer.results[0], opened.DiagnosticsResult)
 
 
 def test_opened_tree_defaults_to_one_visible_level_and_encodes_its_shape() -> None:

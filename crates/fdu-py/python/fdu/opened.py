@@ -1329,7 +1329,7 @@ def _entry_selection_wire(selection: EntrySelection) -> dict[str, object]:
     return values
 
 
-def _projection_wire(projection: Projection) -> dict[str, object]:
+def _projection_wire(projection: object) -> dict[str, object]:
     if isinstance(projection, Lookup):
         return {"kind": "lookup", "path": projection.path}
     if isinstance(projection, DirectoryRollUp):
@@ -1383,7 +1383,9 @@ def _projection_wire(projection: Projection) -> dict[str, object]:
             },
             "page": _page_wire(projection.page),
         }
-    return {"kind": "diagnostics"}
+    if isinstance(projection, Diagnostics):
+        return {"kind": "diagnostics"}
+    raise TypeError(f"unsupported projection type: {type(projection).__name__}")
 
 
 def _opened_call(function: Callable[..., Any], /, *args: object, **kwargs: object) -> Any:
@@ -1421,9 +1423,10 @@ def _opened_call(function: Callable[..., Any], /, *args: object, **kwargs: objec
 class OpenedIndex:
     """Synchronous, long-lived inventory over one filesystem root.
 
-    All substantial native work releases the GIL. Async applications should adapt the
-    blocking methods with their own executor policy so task lifetime remains owned by
-    the application rather than hidden inside this package.
+    Native open, read/state, change polling, refresh, prioritization, and close release
+    the GIL. Report serialization and Python result conversion run with it held. These
+    methods remain synchronous: async applications should adapt them with their own
+    executor policy so the application owns task lifetime and shutdown.
 
     Every failure of an accepted call raises ``OpenedIndexError`` or one of its
     subclasses. The exception is a panic inside the native engine on the calling thread,

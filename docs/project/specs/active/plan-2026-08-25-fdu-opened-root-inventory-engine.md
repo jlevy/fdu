@@ -42,8 +42,10 @@ One `OpenedIndex` holds discovery, the retained index, the commit journal, optio
 filesystem observation, continuation state, and worker lifetime.
 Every mutation enters one exact commit path.
 Reads and change polls are coherent views of committed state.
-The API is blocking and runtime-free in Rust; Python releases the GIL, and MetaBrowser
-owns the bounded bridge from blocking change polls to its async provider contract.
+The API is blocking and runtime-free in Rust.
+Python detaches native opened operations; report serialization and Python result
+conversion hold the GIL. MetaBrowser owns the bounded bridge from blocking change polls
+to its async provider contract.
 
 This plan deliberately does not reproduce all of PR #47. The branch is valuable as a
 prototype and source of tested components, but its history shows that implementing the
@@ -2116,17 +2118,28 @@ The rewrite adds a small number of named modules instead of continuing to grow
 | `crates/fdu-py/python/fdu/opened.py` | Direct public Python namespace, immutable values, and ergonomic validation over `_native.OpenedIndex`. Keeping it as the public submodule preserves every existing top-level one-shot name without adding a forwarding façade. | Background executors, an event loop, MetaBrowser vocabulary, or duplicated engine decisions. |
 | `src/metabrowser/inventory_engine/providers/fdu_inventory.py` in MetaBrowser | Contract mapping, one async change bridge, optional-package error handling. | Filesystem walking, retained entry replicas, aggregate stores, identity recipes. |
 
-`Index` remains the detached, independently owned one-shot value for compatibility.
-Its existing `since` surface becomes a nonblocking compatibility view over exact
-commits; opened-root polling adds identity and waiting without duplicating those
-commits.
-`IndexHandle` may remain as the existing short-write coordination primitive, but
-it is not an opened-root session and carries no session, continuation, or shutdown
-authority.
-`OpenedIndex` clones share exactly one live state; `close()` closes that state
-for every clone. `watch_session.rs` continues to serve the existing CLI watch surface
-during the rewrite and becomes a thin compatibility consumer only after the opened-root
-implementation is complete.
+The index API (`Index`) retains an independently owned native inventory after requested
+work finishes. It supports content analysis, cache policy on open, repeated selected
+queries, and manual refresh, with explicit status for incomplete coverage.
+Its `since` surface is a nonblocking view over exact commits; opened-root polling adds
+identity and waiting without duplicating those commits.
+`IndexHandle` is the short-write coordination primitive for reconciliation, query-bound
+watch sessions, and opened-root coordination.
+It carries no opened-root session, continuation, or shutdown authority.
+The progressive API (`OpenedIndex`) shares one live state across clones; `close()`
+closes that state for every clone.
+It supports offline jobs with observation disabled as well as interactive use.
+Callers needing a final whole-tree answer wait for the required coverage; early partial
+results and discovery-invalidated continuations stay explicit.
+Query-bound watch (`Watch`) uses `watch_session.rs`, as does CLI `--watch`. Python
+`Index.watch()` starts an independent native copy with a fixed query, selection-filtered
+changes, and its own report/persistence policy.
+Iteration applies verified updates and drives persistence; report calls snapshot the
+latest applied state without draining events or changing the originating `Index`.
+Internal consolidation must preserve these supported semantics; this plan does not
+establish that it is complete or require removal of the API. The
+[surface architecture](../../architecture/fdu-surface-architecture.md#python-result-ownership)
+records the lifecycle choices and their rationale.
 
 ### Checkpoint 1A: observable oracle
 
@@ -2215,7 +2228,7 @@ their owning producer, budget, and control beads rather than speculative kernel 
 | `scan_internal`, `scan_into_index*` | Produce verified parent-first inputs and use the exact baseline commit path. Preserve the blocking one-shot return and existing scan diagnostics. | Current `scan_populates_an_index_end_to_end`, baseline, depth, scope, serial/parallel equivalence tests. |
 | `reconcile_target_inner`, `reconcile_direct_parallel`, `apply_deferred_reconcile`, `flush_direct_reconcile_batch`, `flush_reconcile_batch` | Carry normalized verified inputs and conditional expectations into `commit_prepared`; stop publishing requested batches. | Current stale-arbitration, overflow retry, concurrent invalidation, widening, symlink, and scope mismatch tests. |
 | `watch::apply_intent`, `apply_observation`, `apply_reverified_with` | Verify outside the index guard, then conditionally call the exact commit path. Watch code receives the returned commit; it never reconstructs it. | Current blocked-verifier, contention, error-no-mutation, root-disappearance, and scope rejection tests. |
-| `watch_session::Session::next_batch` | Transitional adapter translates exact commits for the existing CLI watch surface. It does not own the new journal. | Existing `watch_session_integration.rs` and CLI watch goldens remain unchanged. |
+| `watch_session::Session::next_batch` | Query-bound session projects exact commits into selection-filtered changes for CLI and Python watch callers. It does not own the opened-root journal. | Existing `watch_session_integration.rs` and CLI watch goldens remain unchanged. |
 | `lib.rs` open and cache paths | Keep one-shot public behavior. Route any revalidation and state movement through the same internal commit path. | Existing warm/cold/cache-only/snapshot and surface parity corpus. |
 
 Unknown live ancestry has one path: the producer schedules reconciliation from the
@@ -2231,8 +2244,8 @@ The parallel cold walker now establishes parent-first causal publication without
 global level barrier; every reconciliation and watch callback receives the exact commit
 returned by the index, including state-only reconciliation boundaries; watch
 verification turns unknown ancestry into one bounded reconciliation request from the
-nearest known directory; and the transitional watch session derives its legacy change
-view from exact effective changes.
+nearest known directory; and the query-bound watch session derives its query-oriented
+change view from exact effective changes.
 The independent reference model no longer manufactures ancestry and requires generated
 producers to supply exact parent facts.
 
@@ -2277,7 +2290,7 @@ No Phase 2 bead starts if a one-shot surface differs without a reviewed correcti
 | New `opened/journal.rs` `JournalWait::{notify_commit, poll, reset_at, close}` plus `Index::since` | Retain exact commits once in the index, validate opened-root session and sequence, wait on a condition variable, return idle without moving the cursor, distinguish consumer reset, and wake on close. No copied commit store or subscriber queue. | `fdu-ngnm`: detached `since` and opened polling return the same commit range; immediate, blocking, timeout, state-only, slow consumer, floor, future/foreign, close, cancellation, and bounded-memory cases; extract `fad3d2f`, `1e1c207`, `44e79c3`, `eaae030`. |
 | `scan.rs` `normalize_subtree`, new `normalize_refresh_paths`, reconciliation functions | Generalize the sound PR #47 `d19b0ce` algorithms to a bounded path set and one conditional exact commit stream. Return accepted/rejected paths and the committed journal range. | `fdu-3za7`: canonical validation, duplicate and descendant collapse, missing/non-directory widening, control files, budget refusal, overlap with discovery/watch, and exact receipt. |
 | `watch.rs` plus `watch/scripted_events.rs` | Separate capture from verification. Capture before baseline where supported, buffer bounded hints, report overflow/gaps, reconcile, and use the opened-root commit path for the final state transition to `watching`. | `fdu-9jzp`: scripted before/during/after baseline events, overflow, registration gap, final reconciliation, live mutation, disabled-watch behavior, and deterministic shutdown. |
-| Transitional `watch_session.rs` | Consume the same verifier and exact commits for the CLI; do not share `OpenedIndex` journal or lifecycle state unless it can become a truly thin adapter. | Existing watch behavior and goldens. |
+| Query-bound `watch_session.rs` | Consume the same verifier and exact commits for CLI and Python watch callers. Preserve fixed-query, selection-filtered changes, independent state, iteration-driven updates, and report/persistence policy; share internals with `OpenedIndex` only when those semantics remain intact. | Existing watch behavior and goldens. |
 
 Each capability adds only its own typed, per-owner test seam while its production
 boundary is in view: lifecycle and joined shutdown with `fdu-mkga`, discovery order and

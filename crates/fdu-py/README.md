@@ -8,7 +8,7 @@ directory in a tree at once, its size, file count, recency, and file kinds, and 
 request lines of code by language and words by document type.
 It walks a tree on several threads through each platform’s native directory interface;
 [performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)
-compares it with other tools by build, platform, and tree.
+compare it with other tools by build, platform, and tree.
 
 ## Set Up with Any Coding Agent
 
@@ -46,6 +46,55 @@ to expire.
 uv add fdu
 pip install fdu
 ```
+
+Choose among three entry-point groups over the same Rust engine:
+
+| API | Choose it for |
+| --- | --- |
+| Report API: `fdu.report()` | One answer per invocation or job, from a summary to a detailed report |
+| Index API: `fdu.open()` / `fdu.scan()` | Prepare once, reuse queries, and control refresh; supports content analysis and cache policy on open |
+| Progressive API: `fdu.opened.OpenedIndex.open()` | Read during discovery, consume bounded pages, or follow changes in offline jobs or interactive applications |
+
+For a standalone final metadata summary, use an explicit summary request:
+
+```python
+from pathlib import Path
+
+import fdu
+
+report = fdu.report(Path("."), fdu.Query(views=(fdu.View.SUMMARY,)))
+```
+
+Under the default cache policy, a sole unfiltered metadata summary over the full
+population without analyzers can use a compact native reduction without a per-file
+index. Filters, analysis, or snapshot requirements can need retained index state.
+Query an appropriate existing handle instead of rescanning for its summary.
+
+`Index` and `OpenedIndex` both retain inventory in Rust.
+`Index` returns after requested preparation and leaves refresh to the caller; status
+records incomplete coverage.
+An `Index` returned by `fdu.open(..., stale_ok=True)` cannot refresh or start a watch;
+reopen with `stale_ok=False` for filesystem verification and subsequent refresh.
+`OpenedIndex` allows reads during discovery and can own background observation when
+requested. Offline jobs can leave `observe=False` (the default), wait for required
+coverage, inspect partial/limit outcomes, and consume and release pages.
+An early partial summary is not a final whole-tree answer; discovery can invalidate
+continuations.
+Query-bound `Index.watch()` is a separate convenience: it copies the index
+into an independent fixed-query session whose iterator applies updates and drives
+persistence.
+
+Keep per-file discovery, analysis, reconciliation, observation, queries, and shutdown in
+Rust. Python should send coarse requests and receive selected answers.
+Choose detail separately: an `Index` total can be small, and an opened report can be
+large and eager.
+Complete exports support custom Python processing at allocation and copy
+cost; native queries avoid exporting input rows but still require engine work.
+Paging adds calls and cursor handling while reducing each response and potentially peak
+retention if pages are released; total conversion and version invalidation still apply.
+The
+[surface guide](https://github.com/jlevy/fdu/blob/main/docs/project/architecture/fdu-surface-architecture.md#choosing-an-api-for-a-new-application)
+explains lifecycle choices and costs; performance depends on the measured workload.
 
 Lines of code by language and words by document type, from one scan:
 
@@ -122,8 +171,8 @@ result = index.refresh()
 print(result.status, index.since(mark).changes)
 ```
 
-Every method is bulk: it returns a whole structured result in one call rather than a
-cursor Python iterates.
+The index API (`Index`) returns whole selected results in bulk while retaining the
+inventory in Rust. The opened API below also supports continuation-based paging.
 Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
 unrelated Python threads and independent indexes can progress.
 Content analysis streams every eligible file through EOF. Binary data, invalid UTF-8,
@@ -132,9 +181,13 @@ partial; I/O failures and files changed during a read remain operational errors.
 One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
 that same object is rejected rather than becoming an unsynchronized shared-index access.
 The wheel enables the optional watch dependency and exposes `Index.watch()` as a
-closable, event-driven change feed.
-Content analysis itself remains one-shot: refresh reanalyzes after metadata
-reconciliation, while a watch feed reports metadata changes.
+closable, query-bound change feed.
+It copies the index into an independent session; iteration verifies and applies changes
+there and drives persistence.
+`Watch.report()` returns its latest applied answer without draining events or updating
+the original `Index`. Native watch startup currently holds the GIL, while iteration
+waits release it. Content analysis itself remains one-shot: refresh reanalyzes after
+metadata reconciliation, while a watch feed reports metadata changes.
 
 `Analysis` names the same analyzers as the command line’s `--analyze`: `lines`, `code`,
 and `words`, with `none` and `all` as totals.
@@ -147,10 +200,10 @@ An index holds exactly the analyzers it was opened with, so `index.report` never
 one: the same view on an index opened without `words` raises `InvalidArgumentError`
 naming the analyzer.
 `AnalysisOptions` is the control for the rest: analysis shown in a metadata view, such
-as code lines in `View.LANGUAGES`, and analysis an index runs for every read it serves.
-Typed report sections expose stable type/family groups, exact share fractions, line and
-word slots, page denominators, coverage outcomes, analyzer provenance, detection source
-and confidence, and generated/vendor/documentation flags.
+as code lines in `View.LANGUAGES`, and analysis retained for an index’s reports and
+rerun by refresh. Typed report sections expose stable type/family groups, exact share
+fractions, line and word slots, page denominators, coverage outcomes, analyzer
+provenance, detection source and confidence, and generated/vendor/documentation flags.
 The original extension grouping remains available as the `extensions` view.
 The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
 than separate native payloads for every Python minor release.
@@ -230,7 +283,7 @@ All four reads use one retained index without rescanning.
 `Format.TREE` explicitly requests the current tree; `PATHS` lists matching paths, `LONG`
 adds size and signed modification age, and JSON/JSONL/YAML carry exact metrics.
 `TEXT` selects automatic human presentation.
-Legacy `View.FILES` keeps flat name ordering, and `View.TREE` preserves structured
+The `View.FILES` preset uses flat name ordering, and `View.TREE` presents structured
 directory output. Largest/recent remain regular-file presets, with optional Paths/Long
 output.
 
@@ -284,7 +337,7 @@ limited. Details and exact fields are in the
 
 ## Long-Lived Roots
 
-`fdu.opened` is the direct typed interface to the long-lived engine.
+`fdu.opened` exposes the progressive API (`OpenedIndex`) over the shared native engine.
 It starts progressive discovery, returns several projections from one coherent version,
 exposes exact resumable changes, verifies explicit path sets, accepts discovery
 priorities, and joins all native work on close:
@@ -303,10 +356,24 @@ with opened.OpenedIndex.open(Path("."), opened.OpenedOptions(observe=True)) as i
     changed = index.changes(cursor, timeout=1.0)
 ```
 
-The methods are synchronous and release the GIL during native work.
+The methods are synchronous.
+Opened native open/read/state, change polling, refresh, prioritization, and close
+release the GIL. Report serialization and Python result construction currently hold it.
 An async application adapts them with its own executor policy, keeping task and shutdown
 ownership visible. The package does not run a private event loop or shell out to the
-command line.
+command line. Cancelling an executor future does not itself cancel native work.
+Closing an `OpenedIndex` shuts down its shared root for all aliases rather than one
+request.
+
+Retain the inventory in Rust and request summaries, selected answers, or bounded pages
+for ordinary Python use.
+Complete reports remain available when needed, with allocation cost proportional to the
+selected result. Public reports eagerly decode JSON into dictionaries and typed Python
+models and retain both the wire representation and a native rendering handle;
+`as_dict()` copies the wire containers again.
+Neither reports nor pages are zero-copy exports.
+Complete paged enumeration can bound Python retention when previous pages are released,
+subject to continuation invalidation as the engine version changes.
 
 The wheel also exposes the native Rust CLI as the `fdu` console script.
 Argument parsing, help, streams, color, errors, broken-pipe handling, and exit status

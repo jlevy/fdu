@@ -86,7 +86,7 @@ snapshot ---- load/validate ---+--> verified producers
                      |                                 |
                      v                                 v
           detached / one-shot lifecycle       opened / live lifecycle
-          complete Index or Report            OpenedIndex + shared state
+          prepared Index or Report            OpenedIndex + shared state
                      |                                 |
                      +----------------+----------------+
                                       |
@@ -105,7 +105,7 @@ second source of filesystem truth.
 
 ### Architectural Commitments
 
-#### One fact model serves every lifecycle
+#### One Fact Model Serves Every Lifecycle
 
 `Index` is the authoritative in-memory representation of retained filesystem facts,
 control state, classification, directory completeness, and roll-ups.
@@ -135,7 +135,7 @@ one-shot metadata report writes nothing, since no later one-shot report reads it
 content analysis, retained sessions, watches, and refreshes write, because a later
 reader exists.
 
-#### Retained state changes cost, never answers
+#### Retained State Changes Cost, Never Answers
 
 Retained and cached state exists to make answers cheaper.
 It lives in stores (the index a lifecycle keeps, the metadata snapshot, and the content
@@ -151,7 +151,7 @@ histories and public routes.
 Per-tier provenance describes how the answer was obtained;
 [the cache design](../guides/cache-design.md) specifies policy and persistence.
 
-#### One opened root has one authority
+#### One Opened Root Has One Authority
 
 `OpenedIndex` is the public authority for one opened root.
 Its clones refer to one private shared state containing the index, logical version,
@@ -168,7 +168,7 @@ explicit close is the error-reporting path.
 Worker closures hold weak state references or narrower shared state so they cannot keep
 the final public handle alive.
 
-#### One exact commit is the truth consumers observe
+#### One Exact Commit Is the Truth Consumers Observe
 
 Every observable fact change and lifecycle transition lands through one atomic commit
 path. Constructing an unpublished detached baseline is not an observable transition.
@@ -182,7 +182,7 @@ Mutation helpers record the effects they actually applied while facts and reduce
 impact is derived from those effects.
 A no-op does not consume a version or journal slot.
 
-#### Every answer is bounded and honest
+#### Every Answer Is Bounded and Honest
 
 An interactive operation has explicit input, output, and work bounds.
 One read returns projections from one coherent engine version and lifecycle state.
@@ -191,17 +191,17 @@ it never presents partial calculation as exact.
 
 Presence uses three-valued knowledge:
 
-- `present` when the entry is retained;
-- `absent` only when the relevant directory coverage is complete;
+- `present` when the entry is retained
+- `absent` only when the relevant directory coverage is complete
 - `unknown` when discovery, a resource stop, or an inaccessible boundary prevents an
-  absence claim.
+  absence claim
 
 Trust and coverage are separate.
 A complete cached value can be structurally complete but stale; a freshly discovered
 partial subtree can be current but incomplete.
 Neither axis may be inferred from the other.
 
-#### A complete behavior session is inspectable
+#### A Complete Behavior Session Is Inspectable
 
 The engine’s values are complete enough for a client or test recorder to explain one
 causal session: options, requests, responses, commits, coherent state, work, recovery,
@@ -215,13 +215,13 @@ or trigger named failures.
 They control when production behavior runs; they never state filesystem facts, mint
 commits, or bypass verification.
 
-#### Optional mechanisms remain removable
+#### Optional Mechanisms Remain Removable
 
 The retained index, commit path, explicit refresh, bounded reads, opened lifecycle
 state, journal, continuation table, and shutdown use the standard library and build
 without native observation.
-The `watch` feature supplies observation hints and their driver, not a second index or
-change contract.
+The `watch` build feature supplies observation hints and their driver, not a second
+index or change contract.
 
 Ignore handling is a fixed semantic capability, always compiled in.
 It adds no dependency, so a compile-time gate would remove only code; what a consumer
@@ -263,7 +263,7 @@ The target models are in
 
 ### Core Values and Ownership
 
-#### Detached index
+#### Detached Index
 
 `Index` is an independently owned tree image.
 It stores platform-native path facts, parent relationships, reducers, classification
@@ -305,8 +305,8 @@ does not rebuild the index or change the public mutation contract.
 These are private representation choices, not requirements on callers or future
 backends.
 
-`IndexHandle` remains a short-write coordination primitive for reconciliation and
-compatibility paths.
+`IndexHandle` is a short-write coordination primitive for reconciliation, query-bound
+watch sessions, and opened-root coordination.
 It is not the live-root API and does not acquire change-poll or shutdown authority.
 
 #### Commit
@@ -314,15 +314,15 @@ It is not the live-root API and does not acquire change-poll or shutdown authori
 `Commit` is the atomic public consequence of one accepted mutation batch or lifecycle
 transition. It orders changes with a monotonic process-local version and carries:
 
-- exact inserted, removed, replaced, metadata, classification, and control effects;
-- the derived domains and bounded paths a consumer may need to reread;
-- lifecycle, coverage, freshness, and recovery state after the transition;
-- bounded work and issues associated with the transition.
+- exact inserted, removed, replaced, metadata, classification, and control effects
+- the derived domains and bounded paths a consumer may need to reread
+- lifecycle, coverage, freshness, and recovery state after the transition
+- bounded work and issues associated with the transition
 
 For observable mutations, facts, reducers, state, version, and journal publication move
 together. There is no route that changes one without the others.
 
-#### Persisted snapshot
+#### Persisted Snapshot
 
 A snapshot is a detached representation, not a dormant opened root.
 It contains the complete retained entry facts, the engine fingerprint, the validated
@@ -339,7 +339,7 @@ The current format does not encode an unfinished frontier, unknown children, evi
 nodes, or a resource-stopped baseline, so those states are rejected rather than reloaded
 later as complete.
 
-#### Opened root
+#### Opened Root
 
 `OpenedIndex` is the public API and ownership handle for one live root.
 A clone contains only a reference to the same private shared state.
@@ -354,14 +354,14 @@ It does not translate or mirror `Index`: `Index` is the detached fact value, whi
 
 The shared state contains:
 
-- the guarded current `Index`;
-- one opaque session identity and monotonically increasing version;
-- validated root, scope, and semantic identities;
-- lifecycle, coverage, freshness, progress, and bounded issues;
-- one bounded commit journal and its condition variable;
-- one bounded continuation table;
-- the discovery frontier and scheduling hints;
-- cancellation plus every worker and bridge wakeup it owns.
+- the guarded current `Index`
+- one opaque session identity and monotonically increasing version
+- validated root, scope, and semantic identities
+- lifecycle, coverage, freshness, progress, and bounded issues
+- one bounded commit journal and its condition variable
+- one bounded continuation table
+- the discovery frontier and scheduling hints
+- cancellation plus every worker and bridge wakeup it owns
 
 The synchronous Rust boundary has one constructor and five lifecycle operations:
 
@@ -384,7 +384,7 @@ Progressive discovery accepts cache-off delivery without content analysis; obser
 is configured by `OpenOptions`. Unsupported delivery combinations fail before discovery
 starts.
 
-#### Reports and derived report plans
+#### Reports and Derived Report Plans
 
 `Query` values are immutable requests over retained facts.
 `Report` values are immutable, provenance-carrying answers.
@@ -423,7 +423,7 @@ The aggregate-only plan tallies the share as it counts each entry, from the cont
 table and the ignored directories it keeps, so it serves the default summary as well as
 one that turned observation off.
 
-#### Content index and sidecar
+#### Content Index and Sidecar
 
 Content analysis is a derived tier over metadata facts.
 The sparse content index and content roll-ups exist only when an analysis profile is
@@ -445,7 +445,7 @@ work.
 
 ### Serving Lifecycles
 
-#### Detached and one-shot
+#### Detached and One-Shot
 
 The blocking `open()` lifecycle may load a compatible snapshot, but it completes the
 required filesystem reconciliation before returning a fresh answer.
@@ -454,8 +454,10 @@ a partial cold result.
 
 A `stale_ok` delivery is the explicit exception: it performs no filesystem verification,
 labels the source as cached, and fails when no usable snapshot exists.
-The caller receives a complete `Index` and an `OpenReport` describing the path taken,
+The caller receives a prepared `Index` and an `OpenReport` describing the path taken,
 work, and any partial errors.
+Coverage remains explicit; returning an index does not promise that every entry was
+accessible.
 
 One-shot `report()` may use the derived-report plan when the request proves that
 retained state has no consumer.
@@ -472,12 +474,22 @@ system reclaim it. `query::report` and `report_in` take `&Request` and, after
 metadata. The report echoes the request, never the store; every report uses the same
 schema version.
 
+Query-bound watch uses `watch_session::Session`, the same session the CLI’s `--watch`
+drives. Python `Index.watch()` copies its retained index into an independent session
+bound to a fixed query.
+`Session::next_batch` verifies and applies event hints; Python iteration and the CLI
+also call `persist_due`. `Session::report` snapshots only the state already applied.
+It does not advance pending events or mutate the originating `Index`. The progressive
+API owns its discovery and optional observation workers.
+It also serves offline jobs with observation disabled; a final whole-tree answer still
+requires the appropriate discovery coverage.
+
 Live paths refuse what they cannot keep current.
 `watch_session::Session::start` refuses analyzed content rather than reporting the
 metrics it opened with as fresh, and an opened-root read refuses a `documents` view
 rather than answering zero words.
 
-#### Opened and long-lived
+#### Opened and Long-Lived
 
 The opened lifecycle returns while cold discovery may still be running.
 It owns the root from baseline discovery through optional observation and explicit
@@ -495,10 +507,13 @@ the backend can support honestly.
 Unsupported combinations fail explicitly rather than silently omitting paths.
 
 Interactive serving state is opt-in and belongs to the opened lifecycle alone.
-An opened root allocates one optional set of maintained structures — portable path and
+An opened root allocates one optional set of maintained structures (portable path and
 per-directory child order, classification and declared-name tallies, and a global file
-recency order — and updates them inside the same exact commit that moves the facts, so a
-read traverses maintained state instead of scanning and sorting per request.
+recency order) and updates them inside the same exact commit that moves the facts.
+Paged projections traverse the relevant maintained order instead of rebuilding it per
+request. Other projections can still require selection traversal, and `ReportProjection`
+uses ordinary report construction after its work estimate passes.
+Its allowance is not a wall-clock deadline or a byte-memory budget.
 A detached `Index`, a snapshot, a one-shot report, and the command line allocate none of
 it, retain none of it, and pay nothing for it.
 That isolation is a tested boundary, not an intention: the assertion is that a detached
@@ -516,11 +531,11 @@ Configuration separates answer semantics from execution policy and query selecti
 Scope identity (`EntryScope`, which an opened root’s `EngineVersion` and a store’s entry
 tier both record) contains values that change which facts the engine may retain:
 
-- hidden-component admission and any exact-name allowlist;
-- symlink-following behavior;
-- filesystem-boundary behavior;
-- admitted object kinds;
-- an explicit retained-depth bound, when the serving lifecycle supports one.
+- hidden-component admission and any exact-name allowlist
+- symlink-following behavior
+- filesystem-boundary behavior
+- admitted object kinds
+- an explicit retained-depth bound, when the serving lifecycle supports one
 
 A query or display depth is selection, not scope.
 The live lifecycle’s observation-compatible default is an unbounded-depth retained
@@ -592,15 +607,15 @@ The `cli-axes` golden pins the command line’s extension view at the raw level 
 
 Every returned value carries enough context to calibrate it:
 
-- source records whether facts were scanned, revalidated, journal-scoped, or cached;
-- coverage records whether the relevant retained scope is complete or partial;
+- source records whether facts were scanned, revalidated, journal-scoped, or cached
+- coverage records whether the relevant retained scope is complete or partial
 - observation time records when the underlying evidence was collected: a report’s
   `scan_started_at` and each entry’s `observed_at_ns`, which for an entry still carrying
   a loaded snapshot’s value is the snapshot file’s modification time rather than its
-  capture instant;
+  capture instant
 - lifecycle records whether the opened root is discovering, reconciling, watching,
-  resource-stopped, closing, closed, or terminally failed;
-- bounded issues explain operational conditions that affect the answer.
+  resource-stopped, closing, closed, or terminally failed
+- bounded issues explain operational conditions that affect the answer
 
 Coverage does not imply direction.
 A partial result grows monotonically only while an additive producer is running; a
@@ -646,7 +661,7 @@ stores application query names.
 
 ### Producers and State Transitions
 
-#### Cold scan and progressive discovery
+#### Cold Scan and Progressive Discovery
 
 A cold scan establishes a historyless baseline through the normal index mutation rules.
 The detached builder consumes parent-first directory groups through the shared scanner
@@ -677,7 +692,7 @@ the retained set; the caller reopens with a larger budget.
 It never changes scope, retained facts, query semantics, or the engine version.
 Progress reports committed counters and coverage, not incidental queue order.
 
-#### Snapshot reconciliation and explicit refresh
+#### Snapshot Reconciliation and Explicit Refresh
 
 Reconciliation conditionally applies verified differences while it walks.
 Explicit `refresh(paths)` accepts a bounded set of canonical relative paths, validates
@@ -688,7 +703,7 @@ Refresh cannot bypass admission, control files, resource budgets, or commit trut
 Its result reports accepted and rejected paths, terminal version and state, commit range
 or exact changes, bounded work, and issues.
 
-#### Native observation
+#### Native Observation
 
 Filesystem events are scheduling hints, not facts.
 The observer coalesces hints and verifies affected paths before submitting prepared
@@ -708,8 +723,8 @@ Hints arriving during verification remain queued for the next batch.
 
 Provider loss and consumer lag are different recovery boundaries:
 
-- observer loss or ambiguity invalidates and reconciles affected filesystem scope;
-- a consumer older than the retained commit floor receives a coherent consumer reset.
+- observer loss or ambiguity invalidates and reconciles affected filesystem scope
+- a consumer older than the retained commit floor receives a coherent consumer reset
 
 They never share one reset flag.
 
@@ -726,35 +741,36 @@ It performs no filesystem I/O and no unbounded scan or sort while holding the gu
 
 The native projection vocabulary stays smaller than any one application’s algebra:
 
-1. lookup with three-valued knowledge;
-2. parent-first tree pages with directory completeness;
-3. portable-path-ordered flat entry pages;
-4. maintained roll-ups and existing report queries;
-5. fixed-size diagnostics.
+1. lookup with three-valued knowledge
+2. parent-first tree pages with directory completeness
+3. portable-path-ordered flat entry pages
+4. maintained roll-ups and existing report queries
+5. fixed-size diagnostics
 
 Repeated exact aggregates are maintained at commit time only when their read frequency
 and measured cost justify mutation and memory overhead.
-An unmaintained compound total is `exact(n)` or `at_least(n)` under a request cap.
+An unmaintained compound total is `exact(n)` or `at_least(n)` under a request count cap,
+or `Limit` when it exhausts its work allowance before reaching either answer.
 
 Every ordered page has a **total** order: two providers answering one query at one
 version return the same rows in the same sequence, with no tie left to insertion order,
 hash iteration, or a stable sort’s input order.
-An order a provider merely happens to produce is not a contract, and an order stated
-only as prose is not either — “parent-first” once stood here and did not distinguish
-level order from pre-order, which are different sequences for any tree deeper than one
-level.
+An order a provider merely happens to produce is not a contract.
+“Parent-first” alone does not distinguish level order from pre-order, which are
+different sequences for any tree deeper than one level.
 
 Tree order is **breadth-first level order**: all children of the requested path, then
 all children of those directories, to the query’s maximum depth.
 Within one parent, directories precede nondirectories and each partition is ordered by
 canonical component UTF-8 bytes.
 Level order matches parent-first discovery, so a page is served from the knowledge that
-exists earliest, and it keeps truncation honest — a pre-order page cut at its row bound
+exists earliest, and it keeps truncation honest: a pre-order page cut at its row bound
 can return one directory and a thousand of its descendants while leaving the caller
 unable to tell whether the parent held two entries or two thousand.
 
 Flat and catalog rows are ordered by complete canonical POSIX-relative UTF-8 bytes.
-No read projection serves ranked recency yet.
+No dedicated paged projection uses the maintained recency order yet; an opened report
+can already request a recent-files report.
 An opened root maintains a newest-first order of regular files for one, and the page
 that serves it must meet this contract.
 Ranked recency has a selection order and a presentation order, and they differ.
@@ -774,9 +790,9 @@ row.
 
 Every entry has a canonical portable name, so ordered pages and native roll-ups answer
 over one population.
-A native path need not be UTF-8, so exactly two kinds of byte are percent-escaped —
-those that do not decode, and `%` itself, whose escaping is what keeps the mapping
-injective. Nothing else changes, because the result is a JSON string and not a URL.
+A native path need not be UTF-8, so exactly two kinds of byte are percent-escaped: those
+that do not decode, and `%` itself, whose escaping is what keeps the mapping injective.
+Nothing else changes, because the result is a JSON string and not a URL.
 
 A directory whose own name required escaping still lists its children, and a complete
 directory that does not hold a name answers `absent` rather than `unknown`, because
@@ -788,15 +804,20 @@ A record contains the pinned version, normalized query identity, and native resu
 traversal position. The public token contains no trusted path, total, sort key, request,
 or signature.
 
-A flat continuation stores the last emitted portable path, which alone fixes the
-position. A tree continuation stores a stack of at most the query’s maximum depth
-`(parent portable path, last emitted child name)` pairs, which enumerates a level
-lazily. It deliberately does not store the frontier: the set of directories one level up
-is unbounded in directory width, so it cannot fit a bounded record, and re-deriving it
-per page would make paging one wide level quadratic in the number of pages.
+A flat continuation stores the first unvisited portable path; resumption includes that
+position. A tree continuation stores one frame containing the native parent path, depth,
+child partition, next child position, and the first directory noticed at the following
+level. The parent’s ancestor chain supplies traversal ancestry, so the record stores
+neither a stack of frames nor a breadth-first frontier.
+The frontier is unbounded in directory width; storing it would violate the record bound,
+while re-deriving it per page would make paging one wide level quadratic in the number
+of pages.
 
 A continuation fails explicitly when its version is stale, belongs to another opened
-root, or its record was evicted.
+root, or its record was evicted or consumed.
+Successful resumption consumes its token.
+To assemble one coherent complete enumeration, a caller must restart after version
+invalidation rather than combine pages from different versions.
 Close clears the table.
 No page retains a historical index image.
 
@@ -823,10 +844,23 @@ Blocking or substantial native work is exposed clearly so language bindings can 
 their runtime lock. The Python package mirrors engine values; it does not add a
 long-lived async executor.
 
+Python keeps the retained inventory native, but constructs Python objects for returned
+pages and eagerly decodes selected reports.
+Native index scanning/reconciliation, explicit opened operations, and watch waits
+release the GIL. Query-bound watch startup, some report preparation and rendering,
+implicit final-reference teardown, and result construction currently hold it.
+The [surface architecture](fdu-surface-architecture.md#python-result-ownership) owns
+those conversion details.
+Page bounds do not bound cumulative client retention or the whole native inventory;
+optional `max_files` limits retained regular files, not all entries or memory bytes.
+
 An async application owns its bridge from blocking change polls to its event loop.
 That bridge may own cancellation, host generations, root replacement, and application
 cache invalidation. It may not walk the filesystem, retain an entry replica, rebuild
 roll-ups, reproduce scope or fingerprint rules, or invent paging semantics.
+Cancelling an executor future does not itself cancel native work.
+`OpenedIndex.close()` shuts down the shared root for all aliases rather than cancelling
+one request.
 
 The command line presents engine capability and invents none.
 An additive embedded API does not need to become a default CLI mode before a client has
@@ -845,12 +879,12 @@ real opened-root state and commit path.
 
 A scenario is a compact action script:
 
-- open with validated options and deterministic worker policy;
-- pause or release a named scheduling boundary;
-- create, modify, remove, rename, or make a path inaccessible;
-- deliver a real or scripted observer hint, gap, or overflow;
-- call read, changes, refresh, prioritize, or close;
-- record the production response, drained commits, bounded state, and final projection.
+- open with validated options and deterministic worker policy
+- pause or release a named scheduling boundary
+- create, modify, remove, rename, or make a path inaccessible
+- deliver a real or scripted observer hint, gap, or overflow
+- call read, changes, refresh, prioritize, or close
+- record the production response, drained commits, bounded state, and final projection
 
 The recorder normalizes only fields classified as unstable, such as temporary root
 paths, wall-clock timestamps, and platform identities.
@@ -871,7 +905,7 @@ mutex, thread, or batching details changed.
 
 ## Trade-offs and Alternatives
 
-### Shared fact model instead of a streaming subsystem
+### Shared Fact Model instead of a Streaming Subsystem
 
 **Chosen approach:** Detached and opened lifecycles use one `Index`, commit path, and
 query model.
@@ -882,7 +916,7 @@ callbacks, but it duplicates mutation, aggregation, freshness, and query semanti
 **Rationale:** Streaming changes when an answer becomes visible, not what the answer
 means. One fact model makes parity structural and keeps the additive cost bounded.
 
-### One opened root instead of progressive and watch sessions
+### One Opened Root instead of Progressive and Watch Sessions
 
 **Chosen approach:** One `OpenedIndex` lifetime covers discovery through observation and
 close.
@@ -894,7 +928,7 @@ An application-owned live-state coordinator duplicates engine truth and shutdown
 **Rationale:** Version, history, continuations, workers, and close need one place to
 agree.
 
-### Exact commits instead of requested-operation deltas
+### Exact Commits instead of Requested-Operation Deltas
 
 **Chosen approach:** Mutation helpers record exact effects and publish one atomic
 commit.
@@ -906,7 +940,7 @@ Independent callbacks can drift from retained facts.
 **Rationale:** Effective changes are already known where reducers move.
 Retaining them there removes reconstruction and makes model-based tests decisive.
 
-### Synchronous core instead of an async runtime
+### Synchronous Core instead of an Async Runtime
 
 **Chosen approach:** Core uses threads, locks, condition variables, cancellation, and
 blocking operations; bindings and applications own async adaptation.
@@ -918,7 +952,7 @@ application’s event loop.
 **Rationale:** The filesystem and existing engine are synchronous.
 A runtime-free API works from Rust, Python, the CLI, and other runtimes.
 
-### Handle-local continuations instead of signed tokens
+### Handle-local Continuations instead of Signed Tokens
 
 **Chosen approach:** An opaque identifier addresses bounded state in one opened root.
 
@@ -929,7 +963,7 @@ Offset tokens rescan and repeat work proportional to the index.
 **Rationale:** Bounded opened-root-local state is smaller, easy to invalidate, and can
 retain the native traversal position needed for proportional paging.
 
-### Cold progressive serving before mixed-source serving
+### Cold Progressive Serving before Mixed-Source Serving
 
 **Chosen approach:** A live baseline is cold and carries directory completeness.
 
@@ -940,7 +974,7 @@ move, and deletion.
 **Rationale:** Cold progressive facts have one explainable trust source.
 Mixed-source serving remains additive once its trust model is proven.
 
-### Fixed ignore partition instead of generic tags
+### Fixed Ignore Partition instead of Generic Tags
 
 **Chosen approach:** Maintain the demonstrated `all` and `unignored` partition by
 default, and drop it only for a request that turns `read_controls` off.
@@ -952,7 +986,7 @@ right abstraction.
 **Rationale:** The fixed partition meets the known use case and can be removed or
 generalized when evidence demands it.
 
-### Controlled sessions instead of an internal trace bus
+### Controlled Sessions instead of an Internal Trace Bus
 
 **Chosen approach:** Test-only control drives the real opened-root state and records
 public operations, commits, state, work, recovery, and shutdown.
@@ -1045,8 +1079,8 @@ idle native observer performs no filesystem work.
 An engine change is sound only if these answers remain yes:
 
 - Do detached and opened lifecycles use one fact and query model?
-- Is `OpenedIndex` the only live-root behavior surface, with private shared state rather
-  than a parallel service API?
+- Is `OpenedIndex` the progressive API, with private shared state rather than a parallel
+  service API?
 - Does one shared live state retain all authority for one root?
 - Does every observable mutation or lifecycle transition produce one exact atomic
   commit?

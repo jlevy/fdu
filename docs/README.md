@@ -28,6 +28,8 @@ live change feed, the Rust and Python libraries, speed, and comparison with othe
   state, commits, serving, paging, observation, and shutdown
 - [Surface architecture](project/architecture/fdu-surface-architecture.md): how the
   engine, command line, and Python package stay in parity
+- [Python and Rust boundary review](project/reviews/review-2026-10-13-python-rust-boundary.md):
+  materialization costs, bounded reads, integration choices, and measurement gaps
 - [Cache design](project/guides/cache-design.md): metadata snapshots, content sidecars,
   verification costs, and cache policies
 - [Architecture index](project/architecture/README.md)
@@ -64,7 +66,7 @@ live change feed, the Rust and Python libraries, speed, and comparison with othe
 - [Agent and contributor instructions](../AGENTS.md)
 - [Supply-chain policy](../SUPPLY-CHAIN-SECURITY.md)
 - [Integration runbook](project/guides/integration-runbook.md)
-- [Installed CLI QA playbook](../tests/qa/cli-installed-e2e.qa.md) — sequential
+- [Installed CLI QA playbook](../tests/qa/cli-installed-e2e.qa.md): sequential
   PATH-binary views, cache × analyze timings, and bounded large-tree checks
 - [Release process](project/guides/release-process.md)
 - [First-release verification](project/specs/active/plan-2026-09-18-fdu-first-release-verification.md)
