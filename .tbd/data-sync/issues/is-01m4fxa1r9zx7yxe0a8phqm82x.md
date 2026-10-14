@@ -5,7 +5,7 @@ title: "fdu 0.5.0: several paths in one report, and an age column in the tree"
 kind: epic
 status: in_progress
 priority: 1
-version: 40
+version: 41
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -48,7 +48,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-10-09T08:43:37.094Z
-updated_at: 2026-10-12T00:26:39.448Z
+updated_at: 2026-10-14T01:24:26.372Z
 started_at: 2026-10-11T23:22:07.655Z
 ---
 Implements the plan spec. Part 1: the tree shows each subtree's age (the list-row activity definition, unknown when incomplete) in text and RFC 3339 + exact ns in machine formats; fdu.report/11. Part 2: PATH... over one or more disjoint roots, merged in the engine before bounds, as if each were run and summed. Answers fdu-onoo and fdu-khu8 open question 2.
@@ -56,3 +56,6 @@ Implements the plan spec. Part 1: the tree shows each subtree's age (the list-ro
 ## Notes
 
 Implementation and release-preparation PRs #191/#192/#194/#195/#196/#197 are merged. Release source at 33a3a890 has exactly the d0862487 tested tree. Current tag blockers/decisions are Library peer discrepancy fdu-wo7c, Linux attribution fdu-4arl, and human terminal Phase 6. Release evidence documentation and non-publishing rehearsal are underway. Do not infer publication authorization from preparation or merges.
+
+
+2026-10-14: fdu 0.5.0 shipped (tag v0.5.0 at 4a513b00; https://github.com/jlevy/fdu/releases/tag/v0.5.0). Remaining open children are post-release follow-ups; records in PR #203.

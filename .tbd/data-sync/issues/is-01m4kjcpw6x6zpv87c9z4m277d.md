@@ -5,7 +5,7 @@ title: Attribute one root's 5% slower summary at the several-roots head on a den
 kind: bug
 status: open
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-10-09-fdu-multiple-paths-and-tree-age.md
 delegate: claude-code@spud10
 labels: []
@@ -14,7 +14,7 @@ parent_id: is-01m4fxa1r9zx7yxe0a8phqm82x
 hold: null
 hold_until: null
 created_at: 2026-10-10T18:49:47.654Z
-updated_at: 2026-10-11T05:29:06.481Z
+updated_at: 2026-10-13T19:29:16.267Z
 started_at: 2026-10-11T05:28:43.852Z
 ---
 exp-220 (Linux, quiet, two-arm, 40 pairs): aggregate-summary on node-modules-dense is slower at 0d6011da (#192's head) than at 23d11b19 (#192's base), paired median +5.28% [+2.27%, +7.62%]; linux-v6.12 +0.92% [-2.75%, +5.38%]. Under H195's registered rule the dense cell is inconclusive, not a regression: the interval lies above zero but crosses the +3% margin, so non-inferiority is neither shown nor refuted (review A1 on PR #194).
@@ -28,3 +28,7 @@ Counted work does not explain it: instructions +0.3% (callgrind, two runs each: 
 Also #192's own one-root path on the kernel tree (review A14; exp-217 callgrind.txt, one run each): linux-v6.12 default-tree 339.50M instructions at v0.4.0, 343.93M at 23d11b19, 352.59M at 0d6011da, with the consumer thread 230.38M to 232.66M (+1.0%) from 23d11b19 to 0d6011da. Whole-process counts move a few million between valgrind runs.
 
 H195 predicted no per-entry cost for one root. Next: a two-arm rerun at more pairs with a second estimator beside the paired median (fdu-ee2u); a profile with hardware counters (perf stat cycles, cache and branch misses) on a host that exposes them, both binaries; check code layout (the probe's text grew 287 KB) and the summary route's thread and channel behaviour.
+
+## Notes
+
+2026-10-13 pre-tag reading, H198 (pre-registered 871bc6bd, recorded exp-222 on claude/serene-keller-dlvsbd at b502f4a0): two-arm, 100 pairs, quiet, 4-vCPU Firecracker guest (Xeon 2.8 GHz). The release candidate 1c42c91f against the age column's base 23d11b19, aggregate-summary on node-modules-dense: paired median -0.22% [-3.50%, +3.89%], mean +1.70% [-1.49%, +4.93%], Hodges-Lehmann +1.70%, order effect -0.21%. Inconclusive at +3% by H195's registered rule, so the tag proceeds; exp-220's +5.28% does not reproduce. Conditional cell (C), the several-roots head 0d6011da against the candidate: -3.77% [-7.44%, +0.91%], order effect +3.59%. Bead stays open for attribution on a host with hardware counters, as registered.
