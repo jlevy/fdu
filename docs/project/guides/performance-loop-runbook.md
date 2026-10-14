@@ -998,6 +998,16 @@ command writes none; compare `default-tree` runs across this change with that in
 
 ## Current Pickup (2026-09-30)
 
+**Since then (2026-10-13).** H198 (exp-222, exp-223) timed the 0.5.0 candidate on a 2.8
+GHz 4-vCPU guest: quiet, two arms, 100 pairs a cell.
+One root’s dense summary is level with the age column’s base: −0.22% [−3.50%, +3.89%],
+inconclusive at +3%. exp-220’s +5.28% does not reproduce, and `fdu-4arl` stays open for
+a host with hardware counters.
+Against v0.4.0, the default tree is +7.91% [+5.46%, +12.97%] on `node-modules-dense`
+(the age column) and +3.83% [−1.64%, +8.48%] on `linux-v6.12`, unresolved.
+The summaries are −2.07% and −2.06% by the paired median.
+0.5.0 shipped from that candidate’s engine on 2026-10-14.
+
 **Since then (2026-10-10).** The 0.5.0 stack’s Linux release measurement (`fdu-088k`,
 exp-217 to exp-221) ran on a 4-vCPU guest at Linux 6.18.44-fc-v114. The age column costs
 the default tree one `statx` per directory and per symlink: +5.72% [+3.53%, +10.46%] on
@@ -1154,17 +1164,20 @@ rebuild them from this list and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-222** and **H198**; exp-202 is the 0.3.0 release standing.
-exp-217–221 and H197 are the 0.5.0 stack’s Linux release measurement (`fdu-088k`, branch
-`claude/linux-0.5.0`): H193’s give-back at 100 pairs (exp-217), the age column’s price
-on one codebase against a measurement-only no-ages arm (exp-218), H197’s parent-relative
-directory opens (exp-219, accepted on `node-modules-dense` and not shipped; branch
-`claude/h197-relative-opens`), H195’s two-arm Linux rerun (exp-220), and several roots’
-per-root cost on Linux (exp-221). H195 and exp-214–215 are the several-roots single-root
-guard on [#192](https://github.com/jlevy/fdu/pull/192): exp-214 the registered paired
-run at the final head, exp-215 an earlier exploratory run that preceded the
-registration. H196 and exp-216 are several roots’ per-root fixed cost on the same pull
-request. exp-203–208 are reserved for the platform review’s macOS cells (M1–M6 in
+**Ids.** Next free are **exp-224** and **H199**; exp-202 is the 0.3.0 release standing.
+H198 is the 0.5.0 release candidate’s Linux gate: exp-222 is the dense summary against
+the age column’s base (`fdu-4arl`, inconclusive at +3%, not reproduced), and exp-223 is
+the standing against v0.4.0. exp-217–221 and H197 are the 0.5.0 stack’s Linux release
+measurement (`fdu-088k`, branch `claude/linux-0.5.0`): H193’s give-back at 100 pairs
+(exp-217), the age column’s price on one codebase against a measurement-only no-ages arm
+(exp-218), H197’s parent-relative directory opens (exp-219, accepted on
+`node-modules-dense` and not shipped; branch `claude/h197-relative-opens`), H195’s
+two-arm Linux rerun (exp-220), and several roots’ per-root cost on Linux (exp-221). H195
+and exp-214–215 are the several-roots single-root guard on
+[#192](https://github.com/jlevy/fdu/pull/192): exp-214 the registered paired run at the
+final head, exp-215 an earlier exploratory run that preceded the registration.
+H196 and exp-216 are several roots’ per-root fixed cost on the same pull request.
+exp-203–208 are reserved for the platform review’s macOS cells (M1–M6 in
 [its protocol](../research/research-2026-09-29-platform-review-of-the-linux-round.md)),
 which assigned them before any ran.
 exp-209–213 and H191–H194 record the tree age column on

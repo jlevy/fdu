@@ -71,9 +71,9 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
+| Linux 6.18.44-fc-v114, ext4 | virtualized | warm-steady | 7 |
 | Linux 6.18.44-fc-v50, ext4 | virtualized | warm-steady | 7 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v114, ext4 | virtualized | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -298,6 +298,8 @@ dead end.
 | 219 | [Linux: H197 parent-relative directory opens cut the dense tree’s default tree 3.4% and summary 5.1%](#exp-219--linux-h197-parent-relative-directory-opens-cut-the-dense-trees-default-tree-34-and-summary-51) | H197 | `default-tree` | -3.4% | ✅ accepted |
 | 220 | [Linux: H195 quiet rerun, one root’s summary 5.3% slower on the dense tree, render-yaml faster](#exp-220--linux-h195-quiet-rerun-one-roots-summary-53-slower-on-the-dense-tree-render-yaml-faster) | H195 | `aggregate-summary` | +5.3% | ❌ rejected |
 | 221 | [Linux: several roots pay about 0.5 ms a root, 272 small roots five times their parent](#exp-221--linux-several-roots-pay-about-05-ms-a-root-272-small-roots-five-times-their-parent) | H196 | `roots-default-tree` | +425.5% | ❌ rejected |
+| 222 | [Linux: H198, the 0.5.0 candidate’s dense summary is level with the age column’s base, inconclusive at +3%](#exp-222--linux-h198-the-050-candidates-dense-summary-is-level-with-the-age-columns-base-inconclusive-at-3) | H198 | `aggregate-summary` | -0.2% | ❌ rejected |
+| 223 | [Linux: H198, the 0.5.0 candidate against v0.4.0, default tree +7.9% dense, summaries non-inferior](#exp-223--linux-h198-the-050-candidate-against-v040-default-tree-79-dense-summaries-non-inferior) | H198 | `default-tree` | +7.9% | ❌ rejected |
 
 ## The experiments
 
@@ -7162,6 +7164,71 @@ the summary; far past fdu-ich9’s 10% bar on Linux too.
 Full record:
 [`exp-221-linux-several-roots-pay-about-0-5-ms-a-root-272-small-roots-.md`](../experiments/exp-221-linux-several-roots-pay-about-0-5-ms-a-root-272-small-roots-.md)
 
+### exp-222 — Linux: H198, the 0.5.0 candidate’s dense summary is level with the age column’s base, inconclusive at +3%
+
+❌ rejected · 2026-10-13 · H198 · commit `1c42c91f`
+
+Control: 23d11b19 probe (the age column’s base)
+
+Candidate: 1c42c91f probe (the 0.5.0 candidate, #202’s head when measured)
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 97.2 | 98.1 | -0.22% (n.s.) | [-3.50%, +3.89%] |
+| component (ms) | 93.6 | 94.2 | +0.31% (n.s.) | [-3.18%, +3.62%] |
+| cpu (ms) | 345.8 | 341.6 | -0.37% (n.s.) | [-2.44%, +3.42%] |
+| user (ms) | 88.7 | 86.4 | -2.23% (n.s.) | [-7.47%, +3.76%] |
+| system (ms) | 255.8 | 257.5 | +3.21% (n.s.) | [-1.49%, +6.29%] |
+
+Other jobs, wall time: `default-tree` -0.4% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** not a speed decision: the release gate’s reading of fdu-4arl; two-arm, 100
+pairs, quiet: aggregate-summary on node-modules-dense -0.22% [-3.50%, +3.89%] against
++2% to +6% predicted, inconclusive under H195’s registered rule (the interval crosses
++3%), so the tag proceeds and fdu-4arl stays open; mean +1.70% [-1.49%, +4.93%],
+Hodges-Lehmann +1.70%, order effect -0.21%; exp-220’s +5.28% does not reproduce; (C) the
+several-roots head 0d6011da against the candidate -3.77% [-7.44%, +0.91%] with a +3.59%
+order effect.
+
+Full record:
+[`exp-222-linux-h198-the-0-5-0-candidate-s-dense-summary-is-level-with.md`](../experiments/exp-222-linux-h198-the-0-5-0-candidate-s-dense-summary-is-level-with.md)
+
+### exp-223 — Linux: H198, the 0.5.0 candidate against v0.4.0, default tree +7.9% dense, summaries non-inferior
+
+❌ rejected · 2026-10-13 · H198 · commit `1c42c91f`
+
+Control: c041ed1c probe (v0.4.0)
+
+Candidate: 1c42c91f probe (the 0.5.0 candidate, #202’s head when measured)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 95.3 | 102.6 | +7.91% (regression) | [+5.46%, +12.97%] |
+| component (ms) | 90.8 | 97.8 | +7.96% (regression) | [+5.31%, +13.02%] |
+| cpu (ms) | 329.6 | 344.3 | +5.38% (regression) | [+1.10%, +10.00%] |
+| user (ms) | 94.7 | 101.2 | +6.91% (n.s.) | [-0.79%, +15.21%] |
+| system (ms) | 227.9 | 243.4 | +7.32% (regression) | [+2.36%, +12.59%] |
+
+Other jobs, wall time: `aggregate-summary` -2.1% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** not a speed decision: the 0.5.0 release’s Linux standing; two-arm, 100
+pairs, quiet: default-tree +7.91% [+5.46%, +12.97%] on node-modules-dense against +3% to
++7% predicted, the age column’s statx (exp-217, exp-218), and +3.83% [-1.64%, +8.48%] on
+linux-v6.12 against -2% to +3%; aggregate-summary -2.07% [-4.62%, +2.28%] and -2.06%
+[-4.47%, +1.82%], non-inferior at +3% on both trees by the paired median; the bootstrap
+mean’s intervals reach +3.22% and +3.75%.
+
+Full record:
+[`exp-223-linux-h198-the-0-5-0-candidate-against-v0-4-0-default-tree-7.md`](../experiments/exp-223-linux-h198-the-0-5-0-candidate-against-v0-4-0-default-tree-7.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -7332,6 +7399,17 @@ state rather than a change.
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
 
+### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v114, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 217 | Linux: H193, the age column costs the dense tree’s default command 5.7%, one statx per directory | `default-tree` | 94.3 | 101.9 | +5.7% | ❌ rejected |
+| 218 | Linux: the age column’s price on one codebase, 5.6% on the dense tree, inside noise on the kernel tree | `default-tree` | 92.0 | 97.8 | +5.6% | ❌ rejected |
+| 219 | Linux: H197 parent-relative directory opens cut the dense tree’s default tree 3.4% and summary 5.1% | `default-tree` | 97.0 | 94.4 | -3.4% | ✅ accepted |
+| 220 | Linux: H195 quiet rerun, one root’s summary 5.3% slower on the dense tree, render-yaml faster | `aggregate-summary` | 90.8 | 90.2 | +5.3% | ❌ rejected |
+| 222 | Linux: H198, the 0.5.0 candidate’s dense summary is level with the age column’s base, inconclusive at +3% | `aggregate-summary` | 97.2 | 98.1 | -0.2% | ❌ rejected |
+| 223 | Linux: H198, the 0.5.0 candidate against v0.4.0, default tree +7.9% dense, summaries non-inferior | `default-tree` | 95.3 | 102.6 | +7.9% | ❌ rejected |
+
 ### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -7398,15 +7476,6 @@ state rather than a change.
 | 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
 | 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 | 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
-
-### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v114, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 217 | Linux: H193, the age column costs the dense tree’s default command 5.7%, one statx per directory | `default-tree` | 94.3 | 101.9 | +5.7% | ❌ rejected |
-| 218 | Linux: the age column’s price on one codebase, 5.6% on the dense tree, inside noise on the kernel tree | `default-tree` | 92.0 | 97.8 | +5.6% | ❌ rejected |
-| 219 | Linux: H197 parent-relative directory opens cut the dense tree’s default tree 3.4% and summary 5.1% | `default-tree` | 97.0 | 94.4 | -3.4% | ✅ accepted |
-| 220 | Linux: H195 quiet rerun, one root’s summary 5.3% slower on the dense tree, render-yaml faster | `aggregate-summary` | 90.8 | 90.2 | +5.3% | ❌ rejected |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 

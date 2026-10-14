@@ -201,79 +201,59 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-The 0.5.0 candidate pass recorded on 2026-10-12 used the isolated wheel built from
-`d0862487939ea653351808d6143b4fe8e1f92351`, reporting `fdu 0.5.0-dev+gd08624879`. Its
-tree, `67e3ca0f6475d371cec13465569dadc9bdbe3216`, matches merged preparation commit
-`33a3a890cefb4848d3b609925e9682e483246b46` and commit checked again after merging main
-`6117ae41108311f3650dc165abd7424ca2cf7277`. Correctness checks passed; the wider release
-pass remains blocked by Library peer QA (`fdu-wo7c`) and the separate Linux summary
-pre-tag decision (`fdu-4arl`). Passing warm/cold checks do not disposition those
-findings.
+The 0.5.0 release pass on 2026-10-14 tested release commit
+`4a513b00f7d7a508344725a5ebd48e84299f4727` (tree
+`bd82aedb40b7e50c1e128c3be791335408abda32`), the commit tagged `v0.5.0` and published.
+The candidate was the wheel the pass built from that commit,
+`fdu-0.5.0-cp312-abi3-manylinux_2_34_x86_64.whl`, which reported
+`fdu 0.5.0-dev+g4a513b00f`. Every pass and both deliberate breaks passed.
 
 **Regime.**
 
-- **Host.** Bare metal: MacBookPro18,1, 10 CPUs and 32 GiB, macOS 26.5.2 (Darwin arm64,
-  kernel 25.5.0). Other tasks and application activity continued; recorded load averages
-  were 11.60, 9.30, and 8.60.
-- **Filesystem.** APFS; correctness fixtures used short external scratch paths, with
-  builds and task caches on that volume too.
-- **Privilege.** Both trees and every pass ran as an unprivileged user, so refusal bits
-  bound the process and no device nodes could be created.
-- **Source fixture.** The local QA kernel Makefile reports Linux 7.3.0-rc6; the archived
-  `linux-v6.12` role was an alias, not version provenance.
+- **Host.** A 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18.44), not
+  bare metal.
+- **Filesystem.** ext4, with the trees under a short scratch directory every user can
+  reach.
+- **Privilege.** The refusal pass ran as `nobody`; the others ran as root, with
+  `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1` declared.
 - **Cache state.** A fresh cache directory for every case.
 
-This run supplies no Linux or Windows runtime validation.
-The original local gates passed, and `make check` passed again at `6117ae411`. The later
-GitHub
-[release rehearsal, run 38187708393](https://github.com/jlevy/fdu/actions/runs/38187708393)
-passed on merged preparation commit `33a3a890`, with all eight artifact files verified
-by SHA-256 and inspected; publishing and announcement were skipped.
-The complete
-[0.5.0 stability-pass report](../reports/report-2026-10-12-release-0.5.0-stability-pass.md)
-records the wider peer failures and release decisions.
-
-**Kinds.** The refusal tree held 14 kinds and the served tree 13, omitting refusals by
-design. Each lacked `chardev`, `blockdev`, and `non-utf8-name`: the first two need root,
-and APFS refuses the last.
-The case-colliding names became one file.
-Every refusal case came back partial, so the induced refusals took effect.
-`fdu-579b` has not decided hard-link attribution; these checks establish warm/cold
-agreement, not that counting policy’s correctness.
-
+**Kinds.** The refusal tree held 16 kinds and lacked one: `permission-denied-effective`,
+which root cannot experience.
+The served tree held all 16 kinds.
 There were 26 cases and a cross-warm matrix of 8 warmers by 9 asks.
 
 | Pass | Result |
 | --- | --- |
-| `--refusals-only`, refusal tree, as an unprivileged user | 26 of 26 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
+| `--refusals-only`, refusal tree, as `nobody` | 26 of 26 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
 | `warm_cold.py`, complete tree | 26 of 26 served `cache_only` and labelled `stale`; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
 | `cross_warm.py`, complete tree | 72 of 72 pairs matched the cold answer; 0 violations; exit status 0 |
 
 The deliberate breaks confirmed the checks reject incorrect serving:
 
 - **No snapshot stored.** A wrapper turned `--cache on` into `--cache off`.
-  `warm_cold.py` exited 1 and caught all 26 cases: 17 `NO-SNAPSHOT` and 9
-  `NOT-WARM(scanned)`. `cross_warm.py` exited 1 and caught all 17 same-analyzer pairs as
-  `NOT-WARM(scanned)`.
+  `warm_cold.py` exited 1 and caught all 26 cases: 17 `NO-SNAPSHOT` and 9 `NOT-WARM`.
+  `cross_warm.py` exited 1 and caught all 17 same-analyzer pairs as `NOT-WARM`.
 - **Partial answer stored.** A wrapper relabeled cold output as `cache_only` for
   `--stale-ok`. All 26 cases reported `PARTIAL-STORED`, and `--refusals-only` exited 1.
 
 Every case is retained in the
-[0.5.0 stability-pass report](../reports/report-2026-10-12-release-0.5.0-stability-pass.md).
-The previous macOS run, for 0.4.0 on 2026-10-09, remains in its
-[stability-pass report](../reports/report-2026-10-09-release-0.4.0-stability-pass.md).
+[0.5.0 release stability-pass report](../reports/report-2026-10-14-release-0.5.0-stability-pass.md).
+`fdu-579b` has not decided hard-link attribution; these checks establish warm/cold
+agreement, not that counting policy’s correctness.
 
-### Previous Run: 0.3.0 on Linux
+### Previous Run: 0.5.0 Candidate on macOS
 
-On 2026-09-30, against `e808f9604`, the 0.3.0 release candidate, the candidate wheel ran
-all three passes on a 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18) on
-ext4, the refusal pass as `nobody` and the others as root.
-Each passed with zero failures, 23 cases each and 30 cross-warm pairs, and each was also
-checked by breaking it.
-Both trees held all 16 kinds the builder then made, the device nodes and the name that
-is not valid UTF-8 among them, and the case-colliding names stayed two files.
-The full record is in this file’s history and in the
-[0.3.0 stability-pass report](../reports/report-2026-09-30-release-0.3.0-stability-pass.md).
+On 2026-10-12, against the 0.5.0 preparation tree `67e3ca0f` (commit `d08624879`), all
+three passes and both breaks passed on a bare-metal M1 Pro, macOS 26.5.2, APFS, as an
+unprivileged user, with 26 cases and 72 cross-warm pairs.
+The refusal tree held 14 kinds and the served tree 13: `chardev` and `blockdev` need
+root, and APFS refuses a name that is not valid UTF-8. The full record is in the
+[0.5.0 candidate stability-pass report](../reports/report-2026-10-12-release-0.5.0-stability-pass.md).
+Earlier runs remain in the
+[0.4.0 report](../reports/report-2026-10-09-release-0.4.0-stability-pass.md) (macOS) and
+the [0.3.0 report](../reports/report-2026-09-30-release-0.3.0-stability-pass.md)
+(Linux).
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

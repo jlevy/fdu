@@ -33,66 +33,55 @@ Library steps are time-boxed and must stay bounded.
 
 * * *
 
-## Current Status (Last Update 2026-10-12)
+## Current Status (Last Update 2026-10-14)
 
-**0.5.0 is blocked before tagging.** The five-subject peer pass failed on home Library
-in both runs. `fdu-wo7c` needs diagnosis and maintainer disposition; the separate Linux
-summary attribution in `fdu-4arl` also needs a pre-tag decision.
-The original 15 automated stages passed with only two peer subjects, so that narrower
-result did not establish required Phase 7 coverage.
+**0.5.0 is released.** The release commit, `4a513b00f7d7a508344725a5ebd48e84299f4727`
+(tree `bd82aedb40b7e50c1e128c3be791335408abda32`), passed every automated stage of the
+stability pass on Linux.
+It was tagged `v0.5.0` and published to crates.io, PyPI, and GitHub on 2026-10-14.
 
-The installed candidate was the isolated uv-tool wheel built from
-`d0862487939ea653351808d6143b4fe8e1f92351`, reporting `fdu 0.5.0-dev+gd08624879`. Its
-tree, `67e3ca0f6475d371cec13465569dadc9bdbe3216`, matches merged preparation commit
-`33a3a890cefb4848d3b609925e9682e483246b46` and commit checked again after merging main
-`6117ae41108311f3650dc165abd7424ca2cf7277`. The host was bare metal, MacBookPro18,1, 10
-CPUs and 32 GiB, macOS 26.5.2 on APFS, unprivileged with no declared preconditions.
-Other tasks and applications continued; recorded load averages were 11.60, 9.30, and
-8.60. Scratch, builds, and task caches used external APFS. Timings are single
-observations on this loaded host.
+The installed candidate was the wheel built from the release commit,
+`fdu-0.5.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.5.0-dev+g4a513b00f`.
+The host was a 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18.44) on
+ext4, as root with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and
+`FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`. The peers were GNU du 9.4, dust 1.2.5, pdu 0.24.0,
+dua 2.45.0, and diskus 0.9.0.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Setup | ✅ Passed | Candidate wheel from `d08624879` installed as an isolated uv tool; `--help`, `--version`, `--docs`, and `--skill` passed |
-| Phase 2: Small-tree views | ✅ Passed | All 18 view checks passed, including ignored population, depth and scan bounds, and JSON/YAML totals |
-| Phase 3: Cache × analyze | ✅ Passed | `off` left no snapshot; warm code and lines revalidated all 1,361 records; extra analyzers and formats passed; watch exited on SIGINT |
-| Phase 4: Medium tree | ✅ Passed | Linux source 7.3-rc6 metadata checks passed; `FDU_QA_MEDIUM_ANALYZE` explicitly selected `Documentation/`, and both subtree analyze and warm reuse ran and passed |
-| Phase 5: Bounded large tree | ✅ Passed | Application Support depth 1 exited 0; depth 2 exited 2 with expected permission partials; no SIGKILL, peak RSS 19.6 MiB |
-| Phase 6: Terminal Progress | ⏳ Pending | All 38 pty checks and 3 terminal tests passed against the candidate. A person has not watched a real window; Windows progress QA has not run |
-| Phase 7: Peer agreement | ❌ Failed | Self-test: 13 exact readings. Each wider run: all 52 readings on checkout, Rust toolchains, Applications, and Linux source agreed exactly. Library failed both: first GNU/BSD allocated differences and `Interrupted`; repeat a corrected pdu apparent total 29,232 bytes above the following fdu reading and recurring `Interrupted`. No thresholds changed; `fdu-wo7c` remains open |
-| Phase 8: Results | ⏸️ Blocked | All 49 harness checks passed, including medium subtree analysis. The [0.5.0 stability-pass report](../../docs/project/reports/report-2026-10-12-release-0.5.0-stability-pass.md) records full tables, repeated peer failures, and triage; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records passing cache checks and negative controls |
+| Phase 1: Setup | ✅ Passed | `fdu --version` printed `fdu 0.5.0-dev+g4a513b00f`, from `fdu-0.5.0-cp312-abi3-manylinux_2_34_x86_64.whl` |
+| Phase 2: Small-tree views | ✅ Passed | 22 checks, all ok: the 4 sanity flags (help, version, docs, skill) and 18 views, on a checkout of this repository at the release commit |
+| Phase 3: Cache × analyze | ✅ Passed | 16 checks: 16 ok |
+| Phase 4: Medium tree | ✅ Passed | 9 checks: 9 ok, on `linux-v6.12` with `Documentation/` analyzed |
+| Phase 5: Bounded large tree | ✅ Passed | 2 checks: 2 ok, on the generated million-entry tree |
+| Phase 6: Terminal Progress | ⏭️ Waived | The pty probe passed 38 of 38 checks and all 3 terminal tests passed. The probe’s first attempt refused to run because the default trees scanned too fast for it to judge frames; it was rerun alone on larger trees. A person has not watched a real window, and Windows progress QA has not run: the maintainer waived both for 0.5.0 |
+| Phase 7: Peer agreement | ✅ Passed | Self-test: 12 readings agree exactly. Real trees: 36 of 36 readings on `node-modules-dense`, `linux-v6.12`, and `cargo-registry-src` agree exactly, 0 `UNEXPLAINED` |
+| Phase 8: Results | ✅ Passed | 49 checks: 49 ok, 0 warn, 0 fail. The [0.5.0 release stability-pass report](../../docs/project/reports/report-2026-10-14-release-0.5.0-stability-pass.md) keeps every table and the release record; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records its passes and breaks |
 
-In both interrupted Library observations, the detailed set stayed at the same 64 refused
-paths before and after the observation, with 511 total refusals.
-A later alternating-version probe reproduced `Interrupted` on published 0.4.0 at a path
-that reported a permission error in the other seven reads, including all four candidate
-reads. That symptom is not exclusive to 0.5.0; it does not explain the pdu size residual
-or clear Phase 7.
+**Pre-tag decisions.**
 
-The original four local gates passed; `make check` passed again at `6117ae411`. All 20
-jobs in
-[merged-main CI run 38187381778](https://github.com/jlevy/fdu/actions/runs/38187381778)
-passed. The later GitHub
-[release rehearsal, run 38187708393](https://github.com/jlevy/fdu/actions/runs/38187708393)
-passed at `33a3a890`: five platform wheels, one sdist, and two crates passed SHA-256
-verification and artifact inspection.
-Publishing and announcement were skipped.
-The approved demo is visual evidence and supplies no quiet-host performance result.
+- **Phase 7 on macOS.** The macOS candidate pass of 2026-10-12 failed peer agreement on
+  the live home Library.
+  Its four quieter trees agreed on all 52 readings in both runs.
+  The maintainer accepted the Library residual as live-tree churn and not a tag blocker:
+  its discrepancies moved between runs and did not reproduce under focused brackets, and
+  its `Interrupted` symptom also occurs on published 0.4.0. `fdu-wo7c` stays open as a
+  post-release macOS investigation.
+  That pass’s
+  [report](../../docs/project/reports/report-2026-10-12-release-0.5.0-stability-pass.md)
+  keeps its tables.
+- **The Linux summary result.** H198 (exp-222) put one root’s dense summary at −0.22%
+  [−3.50%, +3.89%] against the age column’s base.
+  That is inconclusive at the registered +3% margin, so by the registered rule the tag
+  proceeded and `fdu-4arl` stays open.
 
-This macOS pass supplies no Linux or Windows runtime validation.
 Earlier release records remain in the
 [0.4.0 report](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
-and
-[0.3.0 Linux report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md).
+(macOS) and the
+[0.3.0 report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md)
+(the previous Linux pass).
 
-**Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
-
-**Next Steps:**
-
-1. Diagnose the remaining Library discrepancy and record the maintainer disposition
-   under `fdu-wo7c`; resolve the separate pre-tag decision under `fdu-4arl`.
-2. Complete human observation of Phase 6 and Windows progress QA.
-3. Record release authorization only after the pre-tag decisions are resolved.
+**Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked | ⏭️ Waived
 
 * * *
 

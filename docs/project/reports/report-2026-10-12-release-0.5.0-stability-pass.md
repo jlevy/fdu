@@ -4,8 +4,10 @@ This is the full record of the 0.5.0 release checklist’s stability pass (step 
 [release process](../guides/release-process.md#the-steps)), written by
 `make release-stability`. The summaries belong beside the procedures, in the
 [QA playbook’s Current Status](../../../tests/qa/cli-installed-e2e.qa.md) and the
-[correctness runbook’s Last Recorded Run](../guides/correctness-runbook.md#last-recorded-run);
-this report keeps every table they summarize.
+[correctness runbook’s Last Recorded Run](../guides/correctness-runbook.md#last-recorded-run)
+until the [2026-10-14 record](report-2026-10-14-release-0.5.0-stability-pass.md)
+replaced them; they remain in those files’ history.
+This report keeps every table they summarized.
 
 ## Verdict
 
