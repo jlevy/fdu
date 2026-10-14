@@ -738,7 +738,7 @@ recorded on the release bead `fdu-f243`.
 | `make release-published` | crates.io `fdu-core` and `fdu` and PyPI `fdu` 0.5.0 each identical to the run’s files |
 | `make release-announced --cargo` | Every line `ok`: the release title, body, and twelve assets; docs.rs built for both crates; `uvx fdu@0.5.0` and `fdu@latest`, and a `cargo install` build, each print `fdu 0.5.0` |
 | Use after publication | The PyPI wheel through `uvx` rendered a tree with ages; the crates.io build gave a summary and a two-root report with its total row; the PyPI package’s `fdu.report` returned both roots |
-| Cleanup | `release/v0.5.0` deleted from origin; the repository description now says “Fast du replacement”, matching the tagline |
+| Cleanup | `release/v0.5.0` deleted from origin; the `v0.5.0` tag remains |
 
 As the guide asks: `Announce on GitHub` succeeded, all twelve assets were verified, and
 `make release-demo` attached the declared video.
