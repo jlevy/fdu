@@ -1,5 +1,7 @@
 # fdu
 
+[![Follow @ojoshe on X](https://img.shields.io/badge/follow_%40ojoshe-black?logo=x&logoColor=white)](https://x.com/ojoshe)
+
 **Fastest du replacement and file tree analysis for 100+GB, million-file worktrees**
 
 fdu is a ground-up rewrite of both du and more modern tools like dust.
