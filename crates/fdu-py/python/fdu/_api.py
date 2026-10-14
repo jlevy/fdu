@@ -308,16 +308,14 @@ class Watch(Iterator[tuple[Change, ...]]):
         return tuple(_change(item) for item in next(self._native))
 
     def report(self) -> Report:
-        """The live answer, as of now, from the index this session has been updating.
+        """Snapshot the latest state applied by this query-bound session's iterator.
 
-        A watch run has no final answer: the aggregates are true only until the next
-        change, so redrawing them needs the session's own index rather than the one it was
-        opened from. Reporting the opened index repaints numbers that stopped being true
-        at the first event -- a display that looks like it works and does not.
+        Iteration verifies and applies pending changes and drives persistence. Reporting
+        does not drain events or update the originating Index. The returned report is an
+        immutable answer, so rendering it again preserves the same snapshot.
 
-        Its ages are measured from the instant of this call, so a file written since the
-        watch started is not dated in the future; the time windows the query selects by
-        stay the absolute bounds they resolved to when the watch began.
+        Ages use this call's instant; the query's relative-time selection windows stay
+        at the absolute bounds resolved when the watch began.
         """
 
         handle = _call(self._native.report)
@@ -463,9 +461,12 @@ class Index:
         )
 
     def watch(self, options: WatchOptions | None = None) -> Watch:
-        """Keep this index current and report it as it changes.
+        """Watch an independent copy of this index under one fixed query.
 
-        The watch continues the scan that built the index under the same scope, so it
+        Iteration verifies and applies updates to the session; ``Watch.report()``
+        snapshots its latest applied answer without draining events. The original index
+        remains unchanged and stays usable after the watch closes.
+        The watch continues under the scan's scope, so it
         observes ``.gitignore`` control state unless the index was opened with
         ``ScanOptions(read_controls=False)``. Iterating the feed persists verified
         changes under ``auto``; cache write failures warn without ending the feed.

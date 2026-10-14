@@ -66,7 +66,7 @@ live change feed, the Rust and Python libraries, speed, and comparison with othe
 - [Agent and contributor instructions](../AGENTS.md)
 - [Supply-chain policy](../SUPPLY-CHAIN-SECURITY.md)
 - [Integration runbook](project/guides/integration-runbook.md)
-- [Installed CLI QA playbook](../tests/qa/cli-installed-e2e.qa.md) — sequential
+- [Installed CLI QA playbook](../tests/qa/cli-installed-e2e.qa.md): sequential
   PATH-binary views, cache × analyze timings, and bounded large-tree checks
 - [Release process](project/guides/release-process.md)
 - [First-release verification](project/specs/active/plan-2026-09-18-fdu-first-release-verification.md)

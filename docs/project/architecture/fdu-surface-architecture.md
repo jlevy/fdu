@@ -24,33 +24,38 @@ second implementation.
 `fdu-core` is authoritative.
 The other two present it; neither may know something it does not.
 
-The engine has two additive serving lifecycles, not two engines:
+The engine has two additive serving lifecycles:
 
-- the detached lifecycle returns a complete `Index` or `Report` after the work needed
-  for that answer finishes;
-- the opened lifecycle returns one shared `OpenedIndex` while cold discovery proceeds
-  and exposes bounded reads, change polling, refresh, prioritization, and joined close.
+- The batch API (`Index`) waits for the requested scan, reconciliation, and analysis
+  work before returning an owned native index.
+  Its status records any incomplete coverage.
+  Repeated queries and manual refresh operate on that retained value.
+- The progressive/live API (`OpenedIndex`) returns shared native state while cold
+  discovery proceeds and exposes bounded reads, change polling, refresh, prioritization,
+  optional observation workers, and joined close.
 
-Both use the same facts, reducers, exact commit path, query vocabulary, and runtime type
-registry. The ownership and concurrency rules are in
+One-shot `report()` prepares an answer without promising to retain an index.
+Query-bound watch (`Watch`) starts an independent live session from a copy of a batch
+index. Iteration applies verified updates and drives persistence; `Watch.report()` reads
+only the latest applied state and does not drain pending events or update the original
+`Index`. The Rust CLI’s `--watch` uses the same `watch_session::Session`.
+
+These paths use the same facts, reducers, mutation rules, query vocabulary, and runtime
+type registry. The ownership and concurrency rules are in
 [the engine architecture](fdu-engine-architecture.md).
 
-### Why the packages are shaped this way
+### Why the Packages Are Shaped This Way
 
-`cargo install fdu` has to work, because that is what someone who knows the tool will
-type — and the previous layout answered it with cargo’s own *“there is nothing to
-install … it has no binaries”*.
-
-So `fdu` is the package a user installs.
-It carries the binary and re-exports the engine, which means `cargo add fdu` also gives
-a library caller the whole API: one name to know either way.
-`fdu-core` exists so that the command line can depend on the engine **as an external
-crate**, which is what makes the boundary real.
+`fdu` is the package a user installs with `cargo install fdu`. It carries the binary and
+re-exports the engine, which means `cargo add fdu` also gives a library caller the whole
+API: one name to know either way.
+`fdu-core` exists so that the command line can depend on the engine *as an external
+crate*, which is what makes the boundary real.
 
 Two published Rust crates, and no more; `fdu-py` is built only into the Python package.
-The Python binding needs the command line reachable as a library — its console script
-compiles `run_process` into the extension module — which is why `fdu` is a library as
-well as a binary.
+The Python binding needs the command line reachable as a library: its console script
+compiles `run_process` into the extension module, so `fdu` is a library as well as a
+binary.
 
 ## How the Boundary Is Enforced
 
@@ -64,24 +69,23 @@ tree="$(cargo tree -p fdu-core --all-features --prefix none)" || exit 1
 ! printf '%s\n' "$tree" | grep -qE '^(clap|anyhow) '
 ```
 
-`--prefix none` is load-bearing: without it `cargo tree` indents dependencies with
+`--prefix none` is required here: without it `cargo tree` indents dependencies with
 `├── `, so `^clap` matches nothing and the check can never fire.
-Capturing before testing is load-bearing for the same kind of reason — a pipeline’s
-status is its last command’s, so piping a failing `cargo tree` straight into `grep`
+Capturing the dependency tree before testing its contents preserves a failing
+`cargo tree` status.
+A pipeline’s status is its last command’s, so piping that failure straight into `grep`
 would report success having checked nothing.
 
-The engine must not acquire the command line’s dependencies.
-It had: `report_format` took its ANSI colour types from `clap::builder::styling`, so the
-engine compiled an argument parser to name three colours — and rendering had to hide
-behind a build feature because of it, which meant a library caller could produce a
-report and not print it.
+The engine must not acquire the command line’s dependencies, including argument parsing
+or its styling types.
+Rendering is an engine capability available to library callers.
 
 ## How Agreement Is Enforced
 
 `tests/golden/*.tryscript.md` records complete command-line product sessions.
 The same applicable corpus is replayed against the Python surface through a shim
 (`tests/parity/py/parity_cli.py`) that serves fdu’s argv using only the public Python
-package — not a wrapper around the binary, which would test nothing.
+package. A wrapper around the binary would not exercise the Python API.
 
 Cases the Python API cannot own, such as the Rust argument parser’s help or a static
 document not shipped in the wheel, are declined explicitly by name in `run-parity.mjs`.
@@ -99,7 +103,7 @@ Parity checks agreement after the fact.
 [Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
 asks for it by construction: one request model and one answer shape in the engine, which
 each surface parses into and serializes from.
-The request half is built that way now: both surfaces fill one surface-neutral
+The request half follows that model: both surfaces fill one surface-neutral
 `RequestSpec`, `Request::build` parses it, and each renders whatever refusal comes back
 through its own `AxisNames`, so a grammar, a default, and a rule that relates one axis
 to another are each stated once.
@@ -111,14 +115,15 @@ strings and lossless raw paths.
 records the model and its acceptance checks.
 
 Differences land in `tests/parity/deviations-python.diff`, committed and reviewed like
-any golden. Each is matched against a named class in `scripts/parity-classes.mjs`, and
-**a difference matching none fails the run**.
+any golden.
+Each is matched against a named class in `scripts/parity-classes.mjs`, and *a
+difference matching none fails the run*.
 
 A class is a claim about the API and needs the same scrutiny as changing behaviour.
 When one stops explaining anything it is deleted rather than kept: its matcher would
 still match, so it would silently absorb the next real regression.
 
-### What deviation classes mean
+### What Deviation Classes Mean
 
 - **Each surface names its own parameter.** There is no `--view` in Python, so its
   diagnostics name the parameter: `tip: show it: --view code` is
@@ -144,17 +149,19 @@ still match, so it would silently absorb the next real regression.
 `fdu.report()` and `fdu.open()` are not the same contract, and the difference is
 observable.
 
-`open` retains an index and writes a snapshot: right for a caller asking many questions.
+`open` retains an index and participates in caching under its delivery policy: useful
+for a caller asking many questions.
+Snapshot writes depend on cache policy, completeness, and the work performed.
 `report` runs the command line’s one-shot contract, retaining the least state the
 request needs.
 Under the default `CachePolicy.AUTO` a metadata report writes no snapshot,
 and an unfiltered summary is answered by a transient tier that retains no index,
 classifying each entry against `.gitignore` as it counts it when observation is on.
 
-Using `open` for a single question caches state the walk never saved, which a later
-`stale_ok` read can see.
-That was a real defect: a Python run left cache state on a tree that the same command
-would not have.
+Choosing `open` for a single question can retain and cache state that a one-shot report
+would not retain, which a later `stale_ok` read can see.
+Use `report` for the command line’s one-shot policy and `open` when a retained index is
+needed.
 
 The two also differ on content views, for the same reason.
 `report` builds its own basis, so `Query(views=(View.CODE,))` runs the code analyzer,
@@ -205,10 +212,25 @@ Python is both a distribution surface and a typed library over the native engine
 The standalone Rust executable requires no Python runtime; the PyPI console script uses
 a small Python launcher into the same native command-line implementation.
 
-Opening an index keeps its inventory in Rust.
+The Python APIs serve different caller lifecycles:
+
+| API | Use it for | Ownership and current behavior |
+| --- | --- | --- |
+| One-shot `fdu.report()` | One summary or selected report | Waits for the requested work and returns an eager selected report; retains only the native state that execution needs |
+| Batch API: `fdu.open()` / `fdu.scan()` returning `Index` | Requested content analysis, repeated snapshot queries, manual refresh, or selected bulk results | Waits for the requested work; retains an owned Rust index with explicit coverage; `open` applies cache policy |
+| Progressive/live API: `fdu.opened.OpenedIndex.open()` | Interactive discovery, bounded pages, coherent reads, and live changes | Shared Rust state and owned discovery/optional observation workers; current delivery is cache-off and has no content analysis |
+| Query-bound watch: `Index.watch()` returning `Watch` | Repeating one metadata query and consuming selection-filtered changes | Independent native copy, fixed query and report/persistence policy; iteration drives updates and persistence, and the original `Index` is unchanged |
+
+“Batch” describes when the operation returns, not an export of the whole inventory.
+The `Index` handle keeps its inventory in Rust; queries convert only requested answers.
+Manual refresh can mutate it, and incomplete scans remain visible in its status.
+A watch’s relative-time selection windows stay fixed after query construction, while
+report ages use the instant of each report call.
+Its report reflects the latest state applied by iteration, not pending events.
+
 Selection, aggregation, ordering, and reconciliation remain engine operations.
-`OpenedIndex` also owns ongoing discovery and observation: Python submits control and
-query requests, reads selected projections, and polls changes.
+`OpenedIndex` owns ongoing discovery and optional observation: Python submits control
+and query requests, reads selected projections, and polls changes.
 Per-file traversal and maintenance do not require Python callbacks or exported metadata
 objects. The boundary is coarse operations and requested results, rather than one
 crossing per indexed file.
@@ -241,7 +263,7 @@ The [Python and Rust review](../reviews/review-2026-10-13-python-rust-boundary.m
 records current conversion costs, integration tradeoffs, and measurement gaps.
 A supported render-only native handle is proposed there; it is not a current public API.
 
-### Current copy and sharing behavior
+### Current Copy and Sharing Behavior
 
 There is no public zero-copy inventory, page, or report-data export today.
 Moving an owned Rust value into a Python handle or sharing native state through `Arc`
@@ -256,7 +278,7 @@ avoids an inventory transfer, but does not expose its storage as a Python buffer
 | Reports | Own the selected projection; opened conversion additionally clones the selected report | Rust JSON string converted to Python string, decoded containers, and models; wire graph and native report remain retained |
 | `Report.as_dict()` | No further native report clone | Copies every nested dictionary/list container; immutable keys and scalar values can remain shared |
 | Changes | Copy matching retained commits into an owned response | Materialized change dictionaries and typed batches, not views into the journal |
-| Legacy `Index.watch()` / `Watch.report()` | Clone the inventory into an independent session; each report snapshots that inventory before projection; due persistence can snapshot it too | Watch creation returns a handle; its reports then use the eager report pipeline |
+| Query-bound `Index.watch()` / `Watch.report()` | Clone the inventory into an independent session; each report snapshots that inventory before projection; due persistence can snapshot it too | Watch creation returns a handle; its reports then use the eager report pipeline |
 
 The serialized report string is an intermediate, not another permanently retained
 representation. Ordinary pages release their raw conversion containers after decoding,
@@ -269,20 +291,21 @@ The implementation boundaries are `PyIndex` and `PyOneShot` in
 [`lib.rs`](../../../crates/fdu-py/src/lib.rs), page/report conversion in
 [`opened_binding.rs`](../../../crates/fdu-py/src/opened_binding.rs), and `_copy_json`
 and `Report` in [`_models.py`](../../../crates/fdu-py/python/fdu/_models.py).
-Legacy watch snapshots are explicit in `Session::report` and `IndexHandle::snapshot`.
+Query-bound watch snapshots are explicit in `Session::report` and
+`IndexHandle::snapshot`.
 
 Future improvements are tracked independently: native/lazy report ownership
-(`fdu-5ve4`), legacy watch snapshots (`fdu-xhge`), optional bulk buffers or columnar
-export (`fdu-g20s`), and public-boundary measurements (`fdu-88o1`). Owned page/change
-conversion can also be simplified after measuring its temporary containers (`fdu-1yxw`).
-A packed immutable batch may copy data once from the index and then share its finished
-buffers with Python without another data copy.
+(`fdu-5ve4`), query-bound watch snapshots (`fdu-xhge`), optional bulk buffers or
+columnar export (`fdu-g20s`), and public-boundary measurements (`fdu-88o1`). Owned
+page/change conversion can also be simplified after measuring its temporary containers
+(`fdu-1yxw`). A packed immutable batch may copy data once from the index and then share
+its finished buffers with Python without another data copy.
 That would make that handoff zero-copy, not the entire query.
 Any such API needs explicit lifetime after refresh/close, release ownership,
 retained-memory accounting, and lossless path/version/coverage semantics.
 It must not keep a live index read lock for an arbitrary Python consumer lifetime.
 
-### Rationale and binding practice
+### Rationale and Binding Practice
 
 A coarse language boundary amortizes call overhead and avoids creating Python objects
 for facts an application never consumes.
@@ -303,9 +326,10 @@ When adding or changing a Python capability:
    validates and submits a coarse request; it does not walk files, invoke a callback per
    entry, or reconstruct roll-ups from exported rows.
 2. Keep retained state behind a native handle.
-   Repeated queries can use a retained `Index`; progressive and live clients use
-   `OpenedIndex` projections and state/change polling rather than fetch a full inventory
-   on every iteration. Handle reset and version invalidation explicitly.
+   Repeated batch queries can use `Index`; progressive and live clients can use
+   `OpenedIndex` projections and state/change polling.
+   A caller repeating a fixed metadata query can use `Watch` and consume its iterator to
+   apply updates. Handle reset and version invalidation explicitly.
 3. Return the information the caller requested: aggregates, selected rows, bounded
    pages, or changes. Release consumed pages when complete enumeration need not remain in
    Python. Do not confuse a row cap with a byte cap or a work estimate with a deadline.
@@ -330,8 +354,9 @@ The costs should follow a deliberate request.
 ## Interactive Client Boundary
 
 The Python package mirrors the opened lifecycle with synchronous operations.
-Blocking engine operations release the GIL; Python result construction and some report
-preparation and rendering phases currently run with it held.
+Native batch scanning/reconciliation, opened operations, and watch waits release the
+GIL. Query-bound watch startup, some report preparation and rendering, and Python result
+construction currently hold it.
 The package does not add an async runtime or hide long-lived polls in Python’s shared
 executor.
 
@@ -387,14 +412,13 @@ client has proven it.
 ## References
 
 - [Architecture index](README.md)
-- [Design principles](fdu-design-principles.md) — the rules and why they are
-  load-bearing
-- [Engine architecture](fdu-engine-architecture.md) — facts, ownership, commits,
+- [Design principles](fdu-design-principles.md): the rules and their rationale
+- [Engine architecture](fdu-engine-architecture.md): facts, ownership, commits,
   lifecycles, reads, paging, and shutdown
-- [Python CLI parity](../specs/done/plan-2026-08-21-fdu-python-cli-parity.md) — the
+- [Python CLI parity](../specs/done/plan-2026-08-21-fdu-python-cli-parity.md): the
   harness and what it found
-- [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md)
-  — the crate split, and why a test-only Rust shim was the wrong instrument
+- [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md):
+  the crate split and the test-shim decision
 
 ## List Selection and Presentation
 
@@ -404,7 +428,7 @@ reading; CLI and Python forward the choice.
 Flat Paths/Long and machine List requests materialize matching rows; ordinary unfiltered
 Tree keeps its maintained roll-up path.
 Full keeps its bounded digest.
-Legacy Files preserves name ordering and legacy Tree preserves structured hierarchy
+The Files preset uses name ordering and the Tree preset presents structured hierarchy
 output. Explicit Paths/Long overrides Tree presentation.
 
 Directory report rows measure eligible subtrees before name/kind/size/age selection.

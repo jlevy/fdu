@@ -1,4 +1,4 @@
-# Python and Rust Architecture Review — 2026-10-13
+# Python and Rust Architecture Review (2026-10-13)
 
 ## Verdict
 
@@ -7,9 +7,20 @@ they need only aggregates or pages.
 Scanning, analysis, reconciliation, ordering, and roll-ups belong to the engine.
 Python supplies requests and application policy.
 
-`OpenedIndex` is the main architectural answer for repeated and live Python use.
-It owns the changing inventory and discovery/observation lifecycle in Rust, while Python
-requests selected projections, reads state, and polls changes.
+The batch API (`Index`) supports requested content analysis, cache policy on open,
+repeated snapshot queries, explicit refresh, and selected bulk results while retaining
+the inventory in Rust.
+“Batch” means the requested work finishes before the call returns; it does not imply
+exporting every entry or complete coverage despite scan errors.
+
+The progressive/live API (`OpenedIndex`) owns the changing inventory and
+discovery/optional-observation lifecycle in Rust, while Python requests selected
+projections, reads state, and polls changes.
+It currently uses cache-off metadata discovery without content analysis.
+Query-bound watch (`Watch`) starts an independent fixed-query session from a batch
+index, with the same `Session` used by CLI `--watch`. Iteration applies verified updates
+and drives persistence; its reports snapshot the latest applied state.
+It does not update the originating index or drain pending events merely by reporting.
 Walking and maintaining each file do not require a Python callback or a Python metadata
 object. A Python client can answer a question about a large tree from a small aggregate
 or page.
@@ -75,7 +86,7 @@ Existing tests are evidence of intended coverage, not new test results.
 
 ## What Crosses the Boundary Today
 
-### Package and engine ownership
+### Package and Engine Ownership
 
 [`fdu-py/Cargo.toml`](../../../crates/fdu-py/Cargo.toml) builds a PyO3 0.29 `cdylib`,
 using `abi3-py312`. [Maturin packaging](../../../crates/fdu-py/pyproject.toml) installs
@@ -99,15 +110,15 @@ validation.
 [PyO3 distribution documentation](https://pyo3.rs/v0.29.0/building-and-distribution.html)
 explains the stable-ABI tradeoff.
 
-### Inventory ownership and result ownership are different
+### Inventory Ownership and Result Ownership Are Different
 
 | Operation | Native ownership and work | Python result |
 | --- | --- | --- |
-| `fdu.open()` / `fdu.scan()` | A retained Rust `Index`; native opening runs detached from Python | A handle, not one Python object per indexed file |
+| Batch `fdu.open()` / `fdu.scan()` | A retained owned Rust `Index` with explicit coverage; native opening runs detached from Python | A handle, not one Python object per indexed file |
 | `Index.total()` / `rollup()` | Rust roll-ups | Dictionaries converted into typed values; extension tallies can grow with cardinality |
-| `Index.children()` | Direct children of one directory | All children materialized; this legacy operation has no page argument |
+| `Index.children()` | Direct children of one directory | All children materialized; this batch operation has no page argument |
 | `fdu.report()` | One-shot engine contract; retains only the state that execution needs | An eagerly materialized selected report |
-| `Index.report()` / `Watch.report()` | A selected native report; the legacy watch first snapshots its index | The same eager report conversion |
+| `Index.report()` / `Watch.report()` | A selected native report; the query-bound watch first snapshots its index | The same eager report conversion |
 | `OpenedIndex.read()` with `Tree` or `Flat` projections | Coherent native projections with page and work bounds | Dictionaries/lists followed by Python models for the returned pages |
 | `OpenedIndex.read()` with an `Aggregate` projection | Maintained aggregate where supported, otherwise capped work | A small typed answer with coverage and version information |
 | Opened `ReportProjection` | Native report subject to work allowance and query selection | Eager report conversion, including a native report clone |
@@ -118,7 +129,7 @@ different lifetime contracts.
 `fdu.open()` and `OpenedIndex.open()` should not be treated as interchangeable.
 The engine architecture owns their discovery, persistence, and shutdown semantics.
 
-### Reports have an eager conversion pipeline
+### Reports Have an Eager Conversion Pipeline
 
 The ordinary report producers in [`_api.py`](../../../crates/fdu-py/python/fdu/_api.py)
 follow this sequence:
@@ -161,7 +172,7 @@ incremental-sync callers.
 See `ViewSpec::default_limit` in
 [`query_report.rs`](../../../crates/fdu-core/src/query/query_report.rs).
 
-### Copy and sharing guarantees
+### Copy and Sharing Guarantees
 
 The
 [surface design’s copy matrix](../architecture/fdu-surface-architecture.md#current-copy-and-sharing-behavior)
@@ -172,8 +183,8 @@ native row values and allocate Python models.
 Ordinary pages do not retain the full temporary dictionary graph.
 Reports retain their wire graph and selected native report; `as_dict()` copies all
 nested containers while immutable scalars can remain shared.
-Opened report conversion clones only the selected report, while the legacy watch can
-clone the native inventory itself.
+Opened report conversion clones only the selected report, while the query-bound watch
+can clone the native inventory itself.
 A copy count must identify the representation and its lifetime rather than assume all
 data is duplicated identically.
 
@@ -184,15 +195,18 @@ access to complete results.
 The API should explain each cost rather than prohibit the more expensive choice or
 silently change the answer.
 
-| Use case | Current approach and cost |
-| --- | --- |
-| Standalone command or shell pipeline | Use the Rust executable; no Python runtime or Python row objects |
-| PyPI-installed command | A small Python launcher invokes the same Rust CLI; no Python report-model conversion |
-| One summary or selected report | `fdu.report()` runs native work, then materializes the selected answer in Python |
-| Repeated questions over one tree | Retain a native index and run selection and aggregation there; convert only requested answers |
-| Interactive pages and live changes | Use `OpenedIndex` reads and change polls; release consumed pages and handle version invalidation |
-| Complete inventory for Python processing | Explicitly request complete results and accept materialization, or consume and release pages with coherent-version handling |
-| Render and forward a large answer | Current Python reports still build models first; a supported native render-only path is a proposed improvement |
+The
+[surface guide’s API choice table](../architecture/fdu-surface-architecture.md#python-result-ownership)
+and [Python guide](../../../crates/fdu-py/README.md#use-as-a-python-library) distinguish
+one-shot reports, batch `Index`, progressive/live `OpenedIndex`, and query-bound
+`Watch`.
+
+Use a batch index for retained content-aware queries and manual refresh, an opened root
+for progressive pages and worker-driven live observation, and a watch iterator when one
+fixed metadata query and filtered changes are the desired contract.
+Standalone and PyPI-installed commands call the native CLI without Python report models.
+Complete Python inventories incur deliberate materialization costs; render-and-forward
+clients would benefit from the proposed native render-only path.
 
 ## Assessing the User’s Argument
 
@@ -233,7 +247,7 @@ disk” is supported.
 
 ## Adversarial Findings
 
-### A1 — High scalability exposure: eager report representations
+### A1: High Scalability Exposure: Eager Report Representations
 
 All public report producers eagerly create the wire graph and typed models and retain
 the native report. Large complete reports and repeated retained reports can therefore
@@ -247,11 +261,12 @@ Preserve snapshot identity, shared-schema parity, and the independent-copy contr
 This is a structural optimization proposal; its latency and memory benefit remain
 unmeasured. Tracking: `fdu-5ve4`.
 
-### A2 — Medium responsiveness exposure: native report work holds the GIL
+### A2: Medium Responsiveness Exposure: Native Report Work Holds the GIL
 
 The binding detaches scans, opening, refresh, watch waits, and opened engine reads.
-However, the legacy `Index.report_handle` and watch report construction,
-`PyOneShot::render`, and the one-shot `pending.join()` execute while attached.
+However, batch `Index.report_handle`, `Index.watch()` startup, watch report
+construction, `PyOneShot::render`, and the one-shot `pending.join()` execute while
+attached. Watch startup includes the inventory clone and session startup reconciliation.
 The opened report branch serializes and clones after its detached engine read has
 returned.
 
@@ -269,7 +284,7 @@ executor ownership for async use.
 detachment provides.
 Tracking: `fdu-rlqg`.
 
-### A3 — Medium correctness gap: opened reports bypass deep-tree decoding
+### A3: Medium Correctness Gap: Opened Reports Bypass Deep-Tree Decoding
 
 The ordinary report path calls `_loads_object`, whose decoder retries iteratively on
 `RecursionError`. The opened report branch calls standard-library `json.loads` directly.
@@ -293,7 +308,7 @@ Increasing Python’s recursion limit does not address that native recursion.
 Native stack exhaustion was not reproduced.
 Tracking: `fdu-v80c`.
 
-### A4 — Medium evidence gap: CLI and native probes omit Python conversion
+### A4: Medium Evidence Gap: CLI and Native Probes Omit Python Conversion
 
 `python-open-query` exists in the benchmark schema vocabulary, but the review found no
 corresponding implemented scenario or recorded run.
@@ -307,9 +322,10 @@ Wheel CLI timings include startup but call the Rust CLI directly.
 about Python throughput, heap cost, GC pauses, or responsiveness.
 Tracking: `fdu-88o1`.
 
-### A5 — Medium native-copy exposure: legacy watch snapshots the inventory
+### A5: Medium Native-Copy Exposure: Query-Bound Watch Snapshots the Inventory
 
-`Index.watch()` clones the native index into an independent session.
+`Index.watch()` clones the native index into an independent, query-bound session.
+The session advances through iteration, not through report calls.
 `Session::report` then calls `IndexHandle::snapshot()` before projecting each report,
 and due cache persistence can also take a snapshot.
 Even a small Python watch report can therefore incur inventory-sized native copying.
@@ -323,16 +339,18 @@ object construction.
 See [`watch_session.rs`](../../../crates/fdu-core/src/watch_session.rs) and
 [`IndexHandle::snapshot`](../../../crates/fdu-core/src/index.rs).
 
-**Improvement:** measure legacy watch startup, repeated reports, and persistence
+**Improvement:** measure query-bound watch startup, repeated reports, and persistence
 snapshots against opened reads.
 Evaluate coherent projection or shared immutable storage while preserving independent
-watcher lifecycle, report identity, safe persistence, and writer progress.
+watcher lifecycle, fixed query, selection-filtered changes, iteration-driven updates,
+report identity, safe persistence, and writer progress.
+Shared internals are useful only if those supported semantics remain intact.
 Snapshotting releases the native lock before longer work, so simply removing `clone()`
 can change concurrency behavior.
 No latency or memory regression was measured.
 Tracking: `fdu-xhge`.
 
-### Bounded pages do not establish bounded total memory or constant query cost
+### Bounded Pages Do Not Establish Bounded Total Memory or Constant Query Cost
 
 [`Page`](../../../crates/fdu-py/python/fdu/opened.py) defaults to 256 rows and 100,000
 work units. The [core contract](../../../crates/fdu-core/src/engine_contract.rs) caps a
@@ -371,7 +389,7 @@ timeouts, explicit close, and joined worker ownership remain necessary.
 `OpenedIndex.close()` shuts down the shared root for all aliases; it is not cancellation
 of one request.
 
-### Design documents were reconciled with the implementation
+### Design Documents Were Reconciled with the Implementation
 
 The governing documents and Python guide now state eager result ownership, distinguish
 display limits from operation limits, and qualify GIL-release and query-cost claims.
@@ -381,12 +399,10 @@ between a recent-files report and a dedicated recency page.
 The format principle now respects a report’s retained projection.
 Existing installed-wheel opened tests are acknowledged.
 
-The binding module’s statement that methods return whole results without cursors is too
-broad now that opened continuations exist.
-The opened Python class’s statement that all substantial native work releases the GIL
-omits report conversion.
-Those source-comment corrections remain with their implementation follow-ups so comments
-and behavior stay consistent.
+The binding module’s API description distinguishes whole batch results from opened pages
+and continuations. The opened Python class qualifies GIL release: native operations
+detach, while report serialization and Python conversion hold the GIL. These comment
+corrections describe the current implementation; the behavior gaps remain tracked above.
 The dated review records evidence; the architecture documents remain the governing
 contracts.
 
@@ -446,7 +462,7 @@ parsing each line into Python objects still incurs allocation.
 Streaming is primarily a peak-memory and backpressure property, not a promise of zero
 conversion CPU.
 
-## Measurements Needed Before Further Optimization
+## Measurements Needed before Further Optimization
 
 Run through an installed wheel whose native payload is pinned.
 Follow the [performance loop](../guides/performance-loop.md) for paired comparisons,
@@ -493,7 +509,7 @@ one construction-only elapsed value.
 5. Use measurements to decide whether direct models, export byte budgets, top-k query
    preparation, or columnar batches merit their additional contracts.
 
-The copy audit adds separate follow-ups for legacy full-index watch snapshots
+The copy audit adds separate follow-ups for query-bound full-index watch snapshots
 (`fdu-xhge`) and optional packed buffer/columnar export (`fdu-g20s`). A buffer handoff
 can avoid a copy into Python after native packing while still requiring native row/path
 copies to produce the export.
@@ -518,6 +534,10 @@ Python also provides a library API. `OpenedIndex` keeps the changing inventory,
 observation, selection, and aggregation in Rust.
 Python requests summaries or bounded pages and polls changes; it does not need a
 metadata object or callback for every indexed file.
+The batch `Index` API also retains its inventory in Rust, supports content analysis and
+manual refresh, and converts requested results.
+Query-bound `Watch` repeats a fixed metadata query in an independent session; consuming
+its iterator applies updates.
 The intent is to keep per-file work native and cross the boundary through coarse
 operations returning the information the caller needs.
 Complete inventories remain available when needed, with their associated conversion

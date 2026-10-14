@@ -2,10 +2,11 @@
 //!
 //! # API shape
 //!
-//! Every method here is **bulk**: it returns a whole structured result in one call
-//! rather than exposing a cursor that Python iterates. A million small zero-copy calls
-//! lose comfortably to one large call, because the per-call boundary cost dominates once
-//! the native work per item is a field read.
+//! Batch `Index` methods return whole selected results in one call. The opened API
+//! returns bounded pages and exposes continuations. Both submit coarse native operations
+//! rather than require a Python callback per indexed file. Retained inventories stay in
+//! Rust; returned rows and reports allocate Python values, so conversion cost depends on
+//! the selected result and its representation.
 //!
 //! `open()`, `scan()`, and the native reconciliation phase of `Index.refresh()` release
 //! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
@@ -722,10 +723,9 @@ pub(crate) fn parse_control_limits(
 
 /// A live change feed over one index.
 ///
-/// Iteration yields one list of changes per batch. A tick with no changes yields an
-/// empty list rather than blocking forever, so a caller can break out on its own terms
-/// and the interpreter can always exit — an iterator that blocks indefinitely inside a
-/// GIL-holding call is how a Python process becomes unkillable.
+/// Iteration applies verified updates and yields one list of selected changes per batch.
+/// A tick with no changes yields an empty list, so the caller can regain control between
+/// waits. Native waiting releases the GIL.
 // Unsendable because the event queue belongs to the thread that created it: sharing one
 // feed across threads would give each an arbitrary half of the stream, and Python is
 // better told that at the boundary than left to discover it.
@@ -737,15 +737,11 @@ struct PyWatch {
 
 #[pymethods]
 impl PyWatch {
-    /// The live answer, as of now, from the index this session has been updating.
+    /// Snapshot the latest state applied by this query-bound session's iterator.
     ///
-    /// A watch run has no final answer: the aggregates are only true until the next
-    /// change, so a caller redrawing them needs the session's own index rather than the
-    /// one it was opened from. Reporting the opened index instead repaints numbers that
-    /// stopped being true at the first event, which looks like a working display and is
-    /// not one (fdu-m66a).
-    ///
-    /// Returns a snapshot, so rendering it twice gives the same answer both times.
+    /// Reporting does not consume pending events or update the originating `Index`.
+    /// The returned snapshot renders the same answer on repeated calls; its ages use
+    /// this report call's instant, while query selection windows remain fixed.
     fn report(&self) -> PyResult<PyOneShot> {
         let session =
             self.session.as_ref().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;

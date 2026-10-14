@@ -9,9 +9,9 @@ unexpected result. This contract applies to the CLI, installed wheel, Python rep
 rendering, and watch reports.
 
 The implementation rules are documented beside
-[the shared renderer](../../../../crates/fdu-core/src/report_format.rs),
-[the diagnostic collector](../../../../crates/fdu-core/src/report_format/report_epilogue.rs),
-and `write_report_diagnostics` in [the CLI](../../../../crates/fdu/src/cli.rs).
+[the shared renderer](../../../crates/fdu-core/src/report_format.rs),
+[the diagnostic collector](../../../crates/fdu-core/src/report_format/report_epilogue.rs),
+and `write_report_diagnostics` in [the CLI](../../../crates/fdu/src/cli.rs).
 Keep those comments and this guide consistent.
 
 ## Row Styling
@@ -117,9 +117,9 @@ Stacking is human output only: machine formats keep one record per row.
 
 ## Content Reports and Names
 
-Analyzer names describe measurements (`lines`, `code`, `words`); canonical view names
-identify the population or grouping (`families`, `code`, `documents`). Multi-view
-headers use the uppercase canonical view name.
+Analyzer names describe measurements (`lines`, `code`, `words`); view names identify the
+population or grouping (`families`, `code`, `documents`). Multi-view headers use the
+uppercase view name.
 Metric labels belong in table columns or in a note naming the percentage’s denominator,
 so document-word percentages cannot be mistaken for byte percentages.
 A single view’s note names the measure alone; beside other views it names every non-byte
@@ -161,7 +161,7 @@ shared gray secondary role.
 Each row and TOTAL show only the gitignored share, as in `(0 gitignored)`, because the
 row value already includes it; the non-gitignored complement is never repeated.
 An unknown share, from a `.gitignore` that could not be read or applied, is added only
-when non-empty: `(20 gitignored, 10 unknown)`. TOTAL uses the complete selected
+when nonempty: `(20 gitignored, 10 unknown)`. TOTAL uses the complete selected
 population, including rows hidden by display limits.
 Unmeasured SLOC displays a dash, distinct from a measured zero.
 File coverage states how much was analyzed.
@@ -222,8 +222,9 @@ A library renderer returns only the formatted result; notes, the report’s own 
 and tips are exposed separately for the caller to route.
 
 The result itself holds only result rows, column headings, and multi-view section
-headers. Any other explanation — what a percentage measures, how much was analyzed, what
-a display limit hid, how to see more — is a classified `note:` or `tip:` line after the
+headers.
+Any other explanation (what a percentage measures, how much was analyzed, what a
+display limit hid, how to see more) is a classified `note:` or `tip:` line after the
 result, never an unprefixed line inside or above it.
 A multi-view section header may carry its own row bound, as in `LANGUAGES (6 of 11)`; a
 single-view report has no header, so its bound is a display-limit note.

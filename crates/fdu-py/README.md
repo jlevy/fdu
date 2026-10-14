@@ -8,7 +8,7 @@ directory in a tree at once, its size, file count, recency, and file kinds, and 
 request lines of code by language and words by document type.
 It walks a tree on several threads through each platform’s native directory interface;
 [performance measurements](https://github.com/jlevy/fdu/blob/main/docs/performance-measurements.md)
-compares it with other tools by build, platform, and tree.
+compare it with other tools by build, platform, and tree.
 
 ## Set Up with Any Coding Agent
 
@@ -76,6 +76,20 @@ carry `root`, the position of their root in `roots`, so
 A `str` or `Path` is always one root.
 `fdu.open` and `fdu.scan` take one root.
 
+Choose the API by the work and lifetime the application needs:
+
+| API | Use it for | Current behavior |
+| --- | --- | --- |
+| One-shot `fdu.report()` | One summary or selected report | Waits for requested work, then eagerly converts the selected answer; retains only the native state that execution needs |
+| Batch API: `fdu.open()` / `fdu.scan()` returning `Index` | Content analysis, repeated snapshot queries, manual refresh, and selected bulk results | Waits for requested work; retains an owned Rust index with explicit coverage; `open` applies cache policy |
+| Progressive/live API: `fdu.opened.OpenedIndex.open()` | Interactive discovery, bounded pages, coherent reads, and live changes | Shared native state with discovery and optional observation workers; currently cache-off with no content analysis |
+| Query-bound watch: `Index.watch()` returning `Watch` | One repeating metadata query and selection-filtered changes | Independent native copy and fixed query; iteration applies updates and drives persistence; the original `Index` is unchanged |
+
+“Batch” describes waiting for the requested scan/reconciliation and analysis work before
+returning. It does not mean exporting the inventory into Python: the handle keeps it in
+Rust, and queries convert only their requested answers.
+Its status records partial coverage, and explicit refresh can mutate the retained index.
+
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
 roll-ups, per-path provenance, cache management, refresh results, and change feeds.
@@ -122,8 +136,8 @@ result = index.refresh()
 print(result.status, index.since(mark).changes)
 ```
 
-The legacy `Index` methods return whole structured results in bulk.
-The opened API below also supports continuation-based paging.
+The batch API (`Index`) returns whole selected results in bulk while retaining the
+inventory in Rust. The opened API below also supports continuation-based paging.
 Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
 unrelated Python threads and independent indexes can progress.
 Content analysis streams every eligible file through EOF. Binary data, invalid UTF-8,
@@ -132,9 +146,13 @@ partial; I/O failures and files changed during a read remain operational errors.
 One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
 that same object is rejected rather than becoming an unsynchronized shared-index access.
 The wheel enables the optional watch dependency and exposes `Index.watch()` as a
-closable, event-driven change feed.
-Content analysis itself remains one-shot: refresh reanalyzes after metadata
-reconciliation, while a watch feed reports metadata changes.
+closable, query-bound change feed.
+It copies the index into an independent session; iteration verifies and applies changes
+there and drives persistence.
+`Watch.report()` returns its latest applied answer without draining events or updating
+the original `Index`. Native watch startup currently holds the GIL, while iteration
+waits release it. Content analysis itself remains one-shot: refresh reanalyzes after
+metadata reconciliation, while a watch feed reports metadata changes.
 
 `Analysis` names the same analyzers as the command line’s `--analyze`: `lines`, `code`,
 and `words`, with `none` and `all` as totals.
@@ -147,10 +165,10 @@ An index holds exactly the analyzers it was opened with, so `index.report` never
 one: the same view on an index opened without `words` raises `InvalidArgumentError`
 naming the analyzer.
 `AnalysisOptions` is the control for the rest: analysis shown in a metadata view, such
-as code lines in `View.LANGUAGES`, and analysis an index runs for every read it serves.
-Typed report sections expose stable type/family groups, exact share fractions, line and
-word slots, page denominators, coverage outcomes, analyzer provenance, detection source
-and confidence, and generated/vendor/documentation flags.
+as code lines in `View.LANGUAGES`, and analysis retained for an index’s reports and
+rerun by refresh. Typed report sections expose stable type/family groups, exact share
+fractions, line and word slots, page denominators, coverage outcomes, analyzer
+provenance, detection source and confidence, and generated/vendor/documentation flags.
 The original extension grouping remains available as the `extensions` view.
 The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
 than separate native payloads for every Python minor release.
@@ -230,7 +248,7 @@ All four reads use one retained index without rescanning.
 `Format.TREE` explicitly requests the current tree; `PATHS` lists matching paths, `LONG`
 adds size and signed modification age, and JSON/JSONL/YAML carry exact metrics.
 `TEXT` selects automatic human presentation.
-Legacy `View.FILES` keeps flat name ordering, and `View.TREE` preserves structured
+The `View.FILES` preset uses flat name ordering, and `View.TREE` presents structured
 directory output. Largest/recent remain regular-file presets, with optional Paths/Long
 output.
 
@@ -284,9 +302,9 @@ limited. Details and exact fields are in the
 
 ## Long-Lived Roots
 
-`fdu.opened` is the direct typed interface to the long-lived engine.
-It starts progressive discovery, returns several projections from one coherent version,
-exposes exact resumable changes, verifies explicit path sets, accepts discovery
+`fdu.opened` exposes the progressive/live API (`OpenedIndex`) over the shared native
+engine. It starts progressive discovery, returns several projections from one coherent
+version, exposes exact resumable changes, verifies explicit path sets, accepts discovery
 priorities, and joins all native work on close:
 
 ```python
@@ -304,8 +322,8 @@ with opened.OpenedIndex.open(Path("."), opened.OpenedOptions(observe=True)) as i
 ```
 
 The methods are synchronous.
-Blocking engine operations release the GIL; Python result construction and some report
-preparation and rendering phases currently hold it.
+Opened native open/read/state, change polling, refresh, prioritization, and close
+release the GIL. Report serialization and Python result construction currently hold it.
 An async application adapts them with its own executor policy, keeping task and shutdown
 ownership visible. The package does not run a private event loop or shell out to the
 command line. Cancelling an executor future does not itself cancel native work.

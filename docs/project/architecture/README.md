@@ -18,6 +18,7 @@ under the corresponding `docs/project` directories.
 | [Design principles](fdu-design-principles.md) | Why the system behaves as it does: truth, defaults, bounds, query semantics, performance evidence, and dependency boundaries | Choosing a default, ordering, output shape, trust claim, performance change, or new abstraction |
 | [Engine architecture](fdu-engine-architecture.md) | How `fdu-core` owns facts, commits, detached and opened lifecycles, persistence, observation, reads, paging, testing, and shutdown | Changing scanning, indexing, reconciliation, snapshots, live inventory, refresh, journals, continuations, or engine-side tests |
 | [Surface architecture](fdu-surface-architecture.md) | How the Rust engine, command line, Python package, parity harness, and application adapters fit together | Adding public capability, changing packaging, exposing a binding, or integrating an interactive client |
+| [Output design](fdu-output-design.md) | Human report layout, styling, omissions, diagnostics, and stream routing | Changing visible output or its interpretation |
 
 Read the principles first.
 Then read the engine or surface document for the boundary being changed.
@@ -51,11 +52,11 @@ ownership.
 
 Architecture updates should:
 
-- state contracts rather than branch or rollout status;
-- link to detail instead of duplicating it;
-- preserve the distinction between principles, engine mechanisms, and public surfaces;
-- revise open questions and potential improvements when a decision settles;
-- update repository guidance and active-plan references when a file is renamed.
+- state contracts rather than branch or rollout status
+- link to detail instead of duplicating it
+- preserve the distinction between principles, engine mechanisms, and public surfaces
+- revise open questions and potential improvements when a decision settles
+- update repository guidance and active-plan references when a file is renamed
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

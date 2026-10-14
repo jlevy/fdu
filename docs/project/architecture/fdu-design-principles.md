@@ -20,7 +20,7 @@ The reasoning matters more than the rule, so each one states what goes wrong wit
 
 Start with [First Principles](#first-principles).
 Those six govern the rest, and they are the ones most easily broken by a choice that
-looks ordinary — every example in them is a real defect that passed review because it
+looks ordinary; every example in them is a real defect that passed review because it
 resembled what other tools do.
 The first two are the deepest: model every key concept explicitly, in one place, and as
 a consequence, let caching improve performance without ever changing semantics.
@@ -92,12 +92,12 @@ timestamps) describes the delivery.
 For any request and any history of earlier requests, cache writes, evictions, and file
 changes, a run returns one of four outcomes, compared on content and tree status:
 
-- the cold answer to the same request;
+- the cold answer to the same request
 - a partial answer containing exactly the part of the tree the run verified, equal to a
   cold answer over that part, with its tree status naming what is missing (retained
-  facts under an unverified subtree are never served);
-- a failure that names why the delivery cannot answer;
-- under `--stale-ok`, the cold answer at a recorded earlier state, labelled stale.
+  facts under an unverified subtree are never served)
+- a failure that names why the delivery cannot answer
+- under `--stale-ok`, the cold answer at a recorded earlier state, labelled stale
 
 For one request, delivery, and history, every route and surface returns the same kind of
 outcome, and every machine format parses back to the same value.
@@ -131,14 +131,14 @@ A path-independence test replays requests across histories, deliveries, mutation
 surfaces, and formats against cold answers.
 Its registry of known violations is empty, so any disagreement fails it.
 
-### One Engine, and Surfaces That Cannot Disagree With It
+### One Engine, and Surfaces That Cannot Disagree with It
 
 fdu answers one question through three surfaces: the `fdu-core` engine, the `fdu`
 command line, and the `fdu` Python package.
 Two rules hold them together, and both are enforced mechanically because both were
 broken while everyone believed they held.
 
-**The command line invents nothing.** Every capability it offers must exist in the
+**The command line invents nothing:** Every capability it offers must exist in the
 engine, because a capability reachable only by flag is one a library caller cannot have
 and a script must shell out for.
 This is not checked by review: the command line lives in a separate crate and depends on
@@ -148,16 +148,16 @@ Anything the command line needs becomes a visible act of making something public
 than a `pub(crate)` nobody sees.
 
 The rule had been quietly false in both directions.
-Five capabilities existed only in the command line — rendering cache status, rendering
+Five capabilities existed only in the command line: rendering cache status, rendering
 watch records, a watch’s live report, the one-shot execution contract, and the note
 naming a view that was dropped.
 And the engine had come to depend on its own front end, calling into the command line to
 format a number.
 
-**Every surface gives the same answer.** One golden corpus is replayed against each
+**Every surface gives the same answer:** One golden corpus is replayed against each
 surface. Differences are recorded in a committed artifact, each one classified by a
-mechanical matcher, and a difference matching no known cause **fails the build** — so
-“we know why these differ” is checked rather than claimed.
+mechanical matcher, and a difference matching no known cause *fails the build*, so “we
+know why these differ” is checked rather than claimed.
 
 Language bindings should make efficient native use convenient: retain inventory in the
 engine, perform selection and aggregation there, and return the summaries or bounded
@@ -165,7 +165,11 @@ pages a caller needs.
 Keep per-file traversal, observation, reconciliation, and roll-up maintenance native.
 Cross the language boundary through coarse control and query operations rather than
 per-file callbacks or an eagerly exported inventory replica.
-`OpenedIndex` provides this ownership boundary for repeated and live clients.
+The batch API (`Index`) provides native ownership for repeated snapshot queries and
+manual refresh. The progressive/live API (`OpenedIndex`) adds ongoing discovery, bounded
+reads, and optional observation.
+Query-bound watch (`Watch`) supports a fixed metadata query in an independent session,
+with iteration driving verified updates.
 Native inventory size need not determine the amount of data returned to Python.
 Complete Python results remain available when callers need them, with their conversion
 and retention costs stated explicitly.
@@ -177,7 +181,7 @@ The corpus is not duplicated and no expected output is written twice, which matt
 than it sounds: two copies of the expected bytes drift, and the drift is invisible
 because each copy passes its own test.
 The artifact is also non-empty by construction, because a naive parity run treats “no
-differences” as success — and that is exactly what a harness silently testing the wrong
+differences” as success, which is exactly what a harness silently testing the wrong
 binary produces, so the most dangerous failure would otherwise look like the best
 outcome.
 
@@ -194,8 +198,8 @@ Common practice is evidence about what people expect, not evidence about what is
 correct. A convention arrives carrying the assumptions of the tool it came from, and
 those assumptions may not hold here.
 
-`--view files` shipped defaulting to name-ascending order — what `ls`, `find`, and `fd`
-all do — and to ten rows, which keeps a report readable.
+`--view files` shipped defaulting to name-ascending order (what `ls`, `find`, and `fd`
+all do) and to ten rows, which keeps a report readable.
 Both are ordinary choices and each is defensible alone.
 Together they produced *the ten alphabetically-first entries of a 192,871-entry tree*,
 which answers no question anyone asks: not what is large, not what changed, not what is
@@ -232,11 +236,11 @@ The current metadata default is the List view in Tree format, preserving that di
 question and its existing output.
 Flat List formats answer “which matching entries are present and largest”: complete by
 default, with size ordering and path tie-breaks.
-Legacy Files remains a complete name-ordered listing for existing callers.
+The Files preset provides a complete name-ordered listing.
 
 ### Truncate Freely; Never Truncate Silently
 
-Bounding output is legitimate and usually necessary — an unbounded listing of a million
+Bounding output is legitimate and usually necessary: an unbounded listing of a million
 entries is unreadable and rarely what was wanted.
 Truncation is not a compromise.
 
@@ -245,7 +249,7 @@ Every bound states itself: the tree view marks where it dropped children, and on
 numbers are large it says how much it dropped, because `…` after ten rows of 192,871
 understates the situation by four orders of magnitude.
 
-Every presentation bound is liftable by a flag named where the bound is stated —
+Every presentation bound is liftable by a flag named where the bound is stated:
 `--limit all`, `--depth all`. A truncation the caller cannot remove is a limitation
 wearing a default’s clothes.
 
@@ -265,11 +269,11 @@ Rendering is exact only over the whole document, because list tightness, heading
 link references resolve across it, so the parser holds the source and a document-wide
 parse beside it: a worker’s memory grows with the file, and one generated or
 concatenated file could exhaust it.
-No Markdown file anyone writes is near the bound, so every real document is still
-rendered exactly. The file is still read whole, every other analyzer counts it as it
-counts any file, and the bound states itself: the row says `counted as text`, machine
-output carries `text_only` in the words coverage map, and the report’s note names the
-bound for the files its selection shows.
+Markdown files at or below the bound are rendered exactly.
+Larger files are still read whole, every other analyzer counts them as it counts any
+file, and the bound states itself: the row says `counted as text`, machine output
+carries `text_only` in the words coverage map, and the report’s note names the bound for
+the files its selection shows.
 Lifting it would take an analyzer option in the request’s content identity, beside the
 analyzer set, so that a lifted bound re-analyzes the records counted as text; the
 request model has no such option yet.
@@ -289,10 +293,11 @@ compose around that model instead of creating variants of it.
 
 ### One Fact Model, Two Serving Lifecycles
 
-`open()` is deliberately blocking: it loads a usable snapshot and completes a filesystem
-reconciliation before returning.
-It never serves the snapshot as fresh before that pass, and never replaces a complete
-snapshot with a partial result.
+The batch API’s `open()` waits for the scan or reconciliation required by its delivery.
+It may load a usable snapshot; a fresh delivery verifies it before returning.
+`stale_ok` is the explicit unverified delivery, as described under
+[Fastest Answer the Data Allows, Never Silently Stale](#fastest-answer-the-data-allows-never-silently-stale).
+A partial result carries incomplete status and never replaces a complete snapshot.
 
 `IndexHandle` and the reconciliation APIs support readers between applied batches, with
 explicit `Fresh`, `Reconciling`, `Stale`, and `Partial` state, but an application must
@@ -493,7 +498,7 @@ Distilled from
 after building it. Where implementation forced an amendment, the amendment is recorded
 here rather than the original intent.
 
-The governing aspiration: the design should fit the contours of the real problem — no
+The governing aspiration: the design should fit the contours of the real problem: no
 more complexity, but no less either.
 Simple things stay simple (`fdu .` is a good answer) and complex things stay possible,
 because any axis composes with any other.
@@ -527,11 +532,11 @@ Format and mode are delivery: they decide only how an answer is produced and
 shown
 ([Caching Improves Performance, Never Semantics](#caching-improves-performance-never-semantics)).
 
-**Scope versus selection is the load-bearing distinction.** Scope decides what is
-observed and cached, so stored state for one scope serves every selection and view over
-that scope; selection filters the retained index at view time and is never part of the
-cache key. That is why narrowing a filter never costs a rescan, and it is the same
-reasoning as tagging ignored entries rather than pruning them.
+**Scope versus selection:** Scope decides what is observed and cached, so stored state
+for one scope serves every selection and view over that scope; selection filters the
+retained index at view time and is never part of the cache key.
+That is why narrowing a filter never costs a rescan, and it is the same reasoning as
+tagging ignored entries rather than pruning them.
 
 Several paths are one scope with several disjoint roots, not a new axis: `fdu docs src`
 answers what `fdu docs` and `fdu src` would, added, with every display bound applied
@@ -621,7 +626,7 @@ requested analyzers’ results.
 That projection is sound only when results and coverage are stored per analyzer, so an
 unsupported analyzer can never erase another analyzer’s results.
 
-**Cost flows one way; display follows cost.** A view with a metadata meaning never
+**Cost flows one way; display follows cost:** A view with a metadata meaning never
 enables an analyzer, and no view presents an unmeasured value as zero: a display choice
 that has a cheap answer must never quietly turn into a read of every file in the tree.
 If `--view languages` read file bodies because it *can* show code lines, a metadata
@@ -632,8 +637,8 @@ so none of them implies anything.
 A view with no metadata meaning is different: `code` and `documents` show nothing
 without analysis, so there is no cheap version of them to protect, and naming one is a
 request for the analysis it shows.
-When a request builds its own basis -- the command line, `fdu.report`, a Rust caller of
-`Request::build` -- it enables the analyzers its views imply (`ViewSpec::implies`, one
+When a request builds its own basis (the command line, `fdu.report`, a Rust caller of
+`Request::build`), it enables the analyzers its views imply (`ViewSpec::implies`, one
 table in the request model) in union with the ones `--analyze` names, so `--view code`
 and `--analyze code` are one basis with one sidecar and one answer.
 A basis an index already holds is never widened: the index holds what it was opened
@@ -647,10 +652,9 @@ The reverse direction carries no hazard, because it re-projects state already pa
 so the analyzer set selects the *default* view, the one each content view implies, and
 an explicit `--view` always wins.
 What this protects is that a run displays what it paid for.
-A request that reads content and renders none of it is a defect -- it is the shape the
-CLI shipped in when `--analyze` had no axis of its own -- so it says which view would
-show the analysis, and a view `full` omitted for lack of analysis is named in the report
-rather than silently dropped.
+A request that reads content and renders none of it is a defect, so it says which view
+would show the analysis, and a view `full` omitted for lack of analysis is named in the
+report rather than silently dropped.
 
 Expected content coverage is distinct from operational completeness.
 Binary data, invalid UTF-8, and file types without a requested analyzer remain explicit
@@ -667,16 +671,16 @@ recorded exception under “Truncate Freely; Never Truncate Silently”.
 
 The delta contract stands: `scan` and `watch` produce observations, the index consumes
 them, and views only read.
-`report()` is a pure function of an index, a query, and provenance — no filesystem
-access, no mutation, and the same inputs always produce the same report.
+`report()` is a pure reader of an index, a validated request, and an explicit generation
+instant: no filesystem access or mutation, and the same inputs produce the same report.
 The one-shot execution planner sits before that reader boundary: it chooses what state
 must be retained, then constructs the same immutable `Report` shape.
-It never changes `report(index, query, provenance)` or lets a view reach into the
+It never changes `report(index, request, generated_at)` or lets a view reach into the
 filesystem.
 
-*Amended during implementation.* The plan sketched `report(index, query)`. Provenance is
-a third argument because `generated_at` cannot be sampled inside a pure function; making
-it an input is what keeps the goldens meaningful.
+The generation instant is an explicit argument rather than sampled inside the reader;
+provenance is derived from retained state and the request.
+This keeps the goldens meaningful.
 
 Purity at this boundary is necessary but not sufficient.
 An index is shaped by the requests that built it, so a reader that sees only the index
@@ -705,9 +709,8 @@ differ only in cost and provenance, never in the answer.
 
 `--stale-ok` is the one tier that can be stale, and it says so: the loaded index is
 marked unverified rather than replaying the freshness it was saved with.
-It fails when no usable snapshot exists rather than silently scanning, because a fast
-path that is sometimes a full walk — with nothing in the output to say which happened —
-is worse than no fast path.
+It fails when no usable snapshot exists rather than silently scanning: a fast path that
+sometimes performs a full walk without saying so is worse than no fast path.
 
 See [the cache design](../guides/cache-design.md) for the two layers and what
 verification costs.
@@ -731,8 +734,8 @@ exit-code mapping, and the human text layout.
 The progress indicator shows where that line falls: what a run has walked is an engine
 fact, a `Progress` handle any library caller can poll, while whether to draw it, when,
 and how is a terminal decision the command line owns.
-Everything else — value grammars, selection semantics, view construction, cache policy,
-session coordination — is library code.
+Value grammars, selection semantics, view construction, cache policy, and session
+coordination are library code.
 
 ### Subsume the Neighbours
 
@@ -767,10 +770,6 @@ produced it.
 [The surface architecture](fdu-surface-architecture.md#machine-output-schemas) lists the
 schemas and the constant that defines each.
 
-This principle inverted a rule that used to exist: `--by-type` conflicted with `--json`,
-because the type breakdown was human-only.
-Under the axis design that combination is not merely legal but required to work.
-
 One-shot human text has one intentional presentation-only suffix: a compact performance
 line after the report.
 It is transient execution telemetry, not query data, so it stays outside `Report` and
@@ -786,18 +785,18 @@ was filesystem work.
 Watch has no final answer and therefore has no footer, which is why a text watch run
 draws a gray rule carrying the render instant above each repaint instead: with no footer
 and no framing, the last row of one repaint and the first row of the next were adjacent
-lines, and a blank line could not say which — that is already what separates two views
-inside one report. The rule appears between repaints and never above the first, so a
-watch run’s opening answer stays byte-identical to the same query run without `--watch`.
-Machine formats need none of this: every repaint is a fresh envelope carrying its own
-`generated_at`. Terminal text renders the footer in gray; uncolored text contains no
-escape sequences.
+lines, and a blank line could not distinguish them because it already separates two
+views inside one report.
+The rule appears between repaints and never above the first, so a watch run’s opening
+answer stays byte-identical to the same query run without `--watch`. Machine formats
+need none of this: every repaint is a fresh envelope carrying its own `generated_at`.
+Terminal text renders the footer in gray; uncolored text contains no escape sequences.
 
 Text carries one more presentation-only element the machine formats do not need: when a
 run returns more than one view, each block is introduced by an all-caps header naming
 it, blocks separated by a blank line.
 Machine formats already tag every report with a `view` field, so only text had lost the
-labelling — `types` and `families` render as tables of the same shape, and concatenating
+labelling: `types` and `families` render as tables of the same shape, and concatenating
 them left the reader to recover which was which from the order they had been requested
 in. The header is conditional rather than unconditional for one reason: a single-view
 report has nothing to disambiguate, and leaving it bare is what keeps `fdu --view files`
@@ -816,8 +815,8 @@ than left to decay while repaints call it fresh.
 Each repaint computes its tree status and provenance from the index, as an opened-root
 read does; a repaint over a partial index is never labelled complete.
 
-Detection is event-driven — the OS notification backend, never polling — so an idle tree
-costs no filesystem work, a property asserted by test rather than described.
+Detection uses the OS notification backend rather than polling, so an idle tree costs no
+filesystem work, a property asserted by test rather than described.
 `--interval` throttles only how often aggregate views repaint; it plays no part in
 detection. Each repaint measures its ages from its own instant, so a file written during
 the session is not dated in the future; the windows the query selects by do not slide,
@@ -846,10 +845,10 @@ question must return the same number.
 A directory is an entry like any other: a selection that rejects it leaves it out of the
 `dirs` tally exactly as it leaves it out of a listing.
 
-This was got wrong once and is worth stating because the failure was quiet.
+A previous tally violated this rule without an error or diagnostic.
 The tally was folded from the traversal, which visits every directory it descends into,
-while the files view filtered entry by entry — two routes to the same number, and only
-one of them consulted the selection.
+while the files view filtered entry by entry.
+These were two routes to the same number, and only one of them consulted the selection.
 `--kind file` reported directories, and `--min-size 1G` reported directories over a tree
 with nothing in it that large.
 The count reached machine output too, so a scripted consumer got a number that did not
@@ -868,9 +867,8 @@ and `--watch`, the engine’s `open` and `prepare_report`, and Python’s `fdu.o
 a typed “not observed” (`ControlStateNotObserved`, or `null` in machine output), never
 with “not ignored” and never with a zero share.
 
-The default is on because the question it answers is the one people ask of a large tree
-first — how much of this is build output and dependencies — and because one default
-leaves one default snapshot scope.
+The default is on because it answers “how much of this is build output and
+dependencies?” and because one default leaves one default snapshot scope.
 The default went on, off, and on again within one day while it was argued, each time for
 a reason that held on its own: off kept one-shot reports cheap and out of reach of the
 control bounds, and on made the index answer exactly.
@@ -901,13 +899,12 @@ the pooled total (fdu-ij5n; whether to make the estimate additive is fdu-x3pq).
 
 The extension view got this wrong by inheriting the answer to a different question.
 “What is this name’s extension” is correctly `None` for `Makefile`, and the roll-up used
-that verdict directly, so extension-less names — `Makefile`, `README`, `.gitignore` —
-were tallied nowhere.
-The rows reported 235 bytes of a 263-byte tree and said nothing about the remainder,
-which is the silent-lie failure the provenance rules exist to prevent, arrived at
-through arithmetic instead of caching.
-They are now bucketed under `(none)`; a derived extension always carries a leading dot,
-so the label cannot collide with a real one.
+that verdict directly, so extensionless names (`Makefile`, `README`, `.gitignore`) were
+tallied nowhere. The rows reported 235 bytes of a 263-byte tree and said nothing about
+the remainder, which is the silent-lie failure the provenance rules exist to prevent,
+arrived at through arithmetic instead of caching.
+Extensionless names are bucketed under `(none)`; a derived extension always carries a
+leading dot, so the label cannot collide with a real one.
 
 A bucketing rule is part of how the engine interprets a tree, so it is versioned into
 the snapshot fingerprint rather than left to the on-disk layout version.
@@ -952,7 +949,7 @@ reviewable.
 Their value depends on one habit: **classify every field as stable or unstable.** Paths
 inside the fixture, byte counts, entry counts, kinds, and schema strings are stable and
 must match exactly. Sandbox paths, timestamps, allocated sizes, and inode-derived values
-are unstable and get a *named pattern* — never a bare line elision, which would hide the
+are unstable and get a *named pattern*, never a bare line elision, which would hide the
 field instead of freeing its value.
 
 Re-recording is normal; **reading the diff is the point.** In this workstream the
@@ -968,13 +965,13 @@ Two hazards worth remembering, both found the hard way:
   Ids are assigned in first-seen order, so serial and parallel walks legitimately assign
   them differently; public `RollUp` values resolve their maps to owned names and can be
   retained or compared directly.
-- Deep trees must be handled iteratively everywhere — expansion, all three renderers,
-  and `Drop`. Derived drop glue recurses per level, so a deep tree overflowed the stack
-  on release even after rendering was fixed.
+- Deep trees must be handled iteratively everywhere: expansion, all three renderers, and
+  `Drop`. Derived drop glue recurses per level, so a deep tree overflowed the stack on
+  release even after rendering was fixed.
 
 ## Performance
 
-### Fast Without the OS’s Help; Faster with It
+### Fast without the OS’s Help; Faster with It
 
 Every platform API is an optional accelerator layered on a portable path that is already
 fast on its own, and the portable path is what correctness depends on.
@@ -983,10 +980,10 @@ Three tiers, in order: an explicit walk that is quick by itself, a cache that is
 where a cache can help, and OS-specific enhancements that make the first two cheaper
 where the platform offers them.
 
-A feature that is unavailable, disabled, or degraded falls back to the tier below it and
-loses speed, never accuracy.
+An accelerator that is unavailable, disabled, or degraded falls back to the tier below
+it and loses speed, never accuracy.
 `getattrlistbulk`, `statx`, `io_uring`, fanotify, and the FSEvents journal are all
-probe-and-fallback, never load-bearing.
+optional accelerators; correctness depends on the portable path.
 
 ### Claim Only What the Benchmarks Have Shown
 
@@ -1019,8 +1016,8 @@ including the failures, is in
 
 A relative verdict can say a change paid; it can never say how much is left, so a queue
 ordered only by relative wins drifts toward whatever is easiest to improve next.
-Each tier’s distance to the measured machine floor — one enumeration and one metadata
-read per entry, and nothing else — is the budget every hypothesis on that tier shares,
+Each tier’s distance to the measured machine floor (one enumeration and one metadata
+read per entry, and nothing else) is the budget every hypothesis on that tier shares,
 and a hypothesis states the share of that budget its mechanism can reach before it is
 run. A tier close to its floor is a result, recorded and closed, not a place to keep
 digging; the denominators and the closure thresholds are in
@@ -1035,7 +1032,7 @@ change on an interval that crosses zero: it asserts more than the evidence suppo
 it is harder to notice because the value looks settled.
 
 So a shared default needs evidence in every regime it claims, and a constant with
-evidence in one is a constant the others inherit — which its doc comment should say.
+evidence in one is a constant the others inherit; its doc comment should say so.
 A `cfg(target_os)` branch with a guess on one side is worse than a shared value, because
 it looks like evidence.
 Which constant rests on which run is in
