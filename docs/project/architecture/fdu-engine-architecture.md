@@ -9,8 +9,8 @@ model, bounded reads, persistence, observation, and shutdown.
 
 The engine has one fact model and two additive serving lifecycles:
 
-- a batch/detached lifecycle for blocking opens, one-shot reports, snapshots, and
-  callers that own an `Index` value;
+- a detached lifecycle for blocking opens, one-shot reports, snapshots, and callers that
+  own an `Index` value;
 - an opened lifecycle for progressive discovery, repeated reads, change polling,
   explicit refresh, scheduling hints, optional observation, and joined shutdown.
 
@@ -479,8 +479,10 @@ drives. Python `Index.watch()` copies its retained index into an independent ses
 bound to a fixed query.
 `Session::next_batch` verifies and applies event hints; Python iteration and the CLI
 also call `persist_due`. `Session::report` snapshots only the state already applied.
-It does not advance pending events or mutate the originating batch index.
-The progressive/live API owns its discovery and optional observation workers.
+It does not advance pending events or mutate the originating `Index`. The progressive
+API owns its discovery and optional observation workers.
+It also serves offline jobs with observation disabled; a final whole-tree answer still
+requires the appropriate discovery coverage.
 
 Live paths refuse what they cannot keep current.
 `watch_session::Session::start` refuses analyzed content rather than reporting the
@@ -844,9 +846,9 @@ long-lived async executor.
 
 Python keeps the retained inventory native, but constructs Python objects for returned
 pages and eagerly decodes selected reports.
-Native batch scanning/reconciliation, opened operations, and watch waits release the
-GIL. Query-bound watch startup, some report preparation and rendering, and result
-construction currently hold it.
+Native index scanning/reconciliation, explicit opened operations, and watch waits
+release the GIL. Query-bound watch startup, some report preparation and rendering,
+implicit final-reference teardown, and result construction currently hold it.
 The [surface architecture](fdu-surface-architecture.md#python-result-ownership) owns
 those conversion details.
 Page bounds do not bound cumulative client retention or the whole native inventory;
@@ -1077,8 +1079,8 @@ idle native observer performs no filesystem work.
 An engine change is sound only if these answers remain yes:
 
 - Do detached and opened lifecycles use one fact and query model?
-- Is `OpenedIndex` the progressive/live API, with private shared state rather than a
-  parallel service API?
+- Is `OpenedIndex` the progressive API, with private shared state rather than a parallel
+  service API?
 - Does one shared live state retain all authority for one root?
 - Does every observable mutation or lifecycle transition produce one exact atomic
   commit?

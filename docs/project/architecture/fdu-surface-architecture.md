@@ -13,6 +13,27 @@ serving lifecycles, paging, and shutdown.
 This document explains how those engine capabilities reach users without acquiring a
 second implementation.
 
+## Choose a Python API
+
+The Python package exposes three entry-point groups over one Rust engine.
+They describe how a caller obtains and retains answers, separately from the three
+distribution surfaces below:
+
+| API | Choose it for |
+| --- | --- |
+| Report API: `fdu.report()` | One answer per invocation or job, from a summary to a detailed report |
+| Index API: `fdu.open()` / `fdu.scan()` | Prepare an index once, reuse queries, and control refresh; supports content analysis and cache policy on open |
+| Progressive API: `fdu.opened.OpenedIndex.open()` | Read during discovery, consume bounded pages, or follow changes; useful for offline jobs and interactive applications |
+
+Keep discovery, analysis, reconciliation, observation, querying, and shutdown in Rust.
+Python should own application policy, send coarse control/query requests, and receive
+selected answers. New per-file capabilities belong in `fdu-core`, not Python traversal,
+aggregation, or per-entry callback loops.
+Minimize both boundary frequency and returned volume; a giant export is not justified
+merely by making one call.
+Complete Python materialization remains a supported deliberate choice for custom logic
+or small datasets.
+
 ## The Three Surfaces
 
 | Crate or package | What it is | Who uses it |
@@ -26,19 +47,19 @@ The other two present it; neither may know something it does not.
 
 The engine has two additive serving lifecycles:
 
-- The batch API (`Index`) waits for the requested scan, reconciliation, and analysis
+- The index API (`Index`) waits for the requested scan, reconciliation, and analysis
   work before returning an owned native index.
   Its status records any incomplete coverage.
   Repeated queries and manual refresh operate on that retained value.
-- The progressive/live API (`OpenedIndex`) returns shared native state while cold
-  discovery proceeds and exposes bounded reads, change polling, refresh, prioritization,
-  optional observation workers, and joined close.
+- The progressive API (`OpenedIndex`) returns shared native state while cold discovery
+  proceeds and exposes bounded reads, change polling, refresh, prioritization, optional
+  observation workers, and joined close.
 
 One-shot `report()` prepares an answer without promising to retain an index.
-Query-bound watch (`Watch`) starts an independent live session from a copy of a batch
-index. Iteration applies verified updates and drives persistence; `Watch.report()` reads
-only the latest applied state and does not drain pending events or update the original
-`Index`. The Rust CLI’s `--watch` uses the same `watch_session::Session`.
+Query-bound watch (`Watch`) starts an independent live session from a copy of an
+`Index`. Iteration applies verified updates and drives persistence; `Watch.report()`
+reads only the latest applied state and does not drain pending events or update the
+original `Index`. The Rust CLI’s `--watch` uses the same `watch_session::Session`.
 
 These paths use the same facts, reducers, mutation rules, query vocabulary, and runtime
 type registry. The ownership and concurrency rules are in
@@ -212,21 +233,19 @@ Python is both a distribution surface and a typed library over the native engine
 The standalone Rust executable requires no Python runtime; the PyPI console script uses
 a small Python launcher into the same native command-line implementation.
 
-The Python APIs serve different caller lifecycles:
-
-| API | Use it for | Ownership and current behavior |
-| --- | --- | --- |
-| One-shot `fdu.report()` | One summary or selected report | Waits for the requested work and returns an eager selected report; retains only the native state that execution needs |
-| Batch API: `fdu.open()` / `fdu.scan()` returning `Index` | Requested content analysis, repeated snapshot queries, manual refresh, or selected bulk results | Waits for the requested work; retains an owned Rust index with explicit coverage; `open` applies cache policy |
-| Progressive/live API: `fdu.opened.OpenedIndex.open()` | Interactive discovery, bounded pages, coherent reads, and live changes | Shared Rust state and owned discovery/optional observation workers; current delivery is cache-off and has no content analysis |
-| Query-bound watch: `Index.watch()` returning `Watch` | Repeating one metadata query and consuming selection-filtered changes | Independent native copy, fixed query and report/persistence policy; iteration drives updates and persistence, and the original `Index` is unchanged |
-
-“Batch” describes when the operation returns, not an export of the whole inventory.
-The `Index` handle keeps its inventory in Rust; queries convert only requested answers.
-Manual refresh can mutate it, and incomplete scans remain visible in its status.
+Both the index API (`Index`) and progressive API (`OpenedIndex`) retain their inventory
+in Rust. `Index` returns after the requested preparation and lets the caller control
+refresh; incomplete scans remain visible in its status.
+`OpenedIndex` allows reads during progressive discovery and owns optional background
+observation, coherent reads, paging, and change lifecycles.
+Observation runs only when explicitly requested.
+Query-bound `Watch` is a convenience for repeating a fixed metadata query with
+selection-filtered changes.
+Python `Index.watch()` starts an independent copy with its own report/persistence
+policy. Iteration applies updates and drives persistence; reports snapshot applied state
+without draining pending events or changing the original index.
 A watch’s relative-time selection windows stay fixed after query construction, while
 report ages use the instant of each report call.
-Its report reflects the latest state applied by iteration, not pending events.
 
 Selection, aggregation, ordering, and reconciliation remain engine operations.
 `OpenedIndex` owns ongoing discovery and optional observation: Python submits control
@@ -238,10 +257,54 @@ A summary or bounded page can therefore keep Python conversion small even when t
 native inventory is large; native discovery and query costs still belong to the engine.
 Exact change consumption under discovery or heavy churn can return more information, so
 the abstraction does not promise low result volume for every workload.
-The ordinary usage pattern should request summaries, selected rows, bounded pages, or
-incremental changes rather than build an application-owned inventory replica.
-Complete results remain supported when the caller needs them; their allocation cost must
-not be hidden by silent truncation.
+
+### Choosing an API for a New Application
+
+Use the Report API for one answer per job or invocation.
+For one final metadata summary, request only `View.SUMMARY`: under the default cache
+policy, an unfiltered full-population request without analyzers can use a compact
+reduction that retains aggregates and control information without a per-file index.
+Filters, analysis, stale delivery, or snapshot requirements can require retained index
+state.
+If an appropriate index or session already exists, query it rather than rescan for
+a summary.
+
+Use the Index API for repeated queries over explicitly prepared state and
+caller-controlled refresh, especially when content analysis or cache policy is required.
+Its inventory stays unchanged between explicit refreshes.
+An `Index` returned by `fdu.open(..., stale_ok=True)` cannot refresh or start a watch;
+reopen with `stale_ok=False` for filesystem verification and subsequent refresh.
+Prefer the Progressive API for a long-lived metadata service or when early results,
+bounded paging, scoped refresh, or ongoing changes are needed.
+Its current delivery is cache-off with no content analysis.
+Offline jobs can use `observe=False` (the default), wait for required discovery
+coverage, inspect partial/limit outcomes, and consume and release pages.
+An early partial aggregate is not a final whole-tree summary, and discovery can
+invalidate continuations.
+
+Application versus script and summary versus detail do not by themselves select an API.
+All three provide useful current contracts; no deprecation is recommended.
+Internal consolidation should preserve analysis/cache capabilities, explicit-refresh
+behavior, coverage and parity, and avoid measured performance regressions.
+Improving conversion, GIL release, and watch copying is independent of removing a public
+API.
+
+### Lifecycle and Result Detail
+
+Lifecycle is one choice: request one report, prepare an `Index` before querying it, or
+read from an `OpenedIndex` while discovery and optional observation proceed.
+Result detail and representation are a separate choice.
+`Index.total()` and `rollup()` can return small summaries; an `OpenedIndex`
+`ReportProjection` can eagerly materialize a large report.
+For either API, Python conversion follows the objects, bytes, and representation
+returned, while native query preparation has its own cost.
+
+More detailed results give the caller flexibility to process data in Python, at the cost
+of allocation, copying, and retention.
+Complete exports remain supported when the caller needs them, with no silent truncation.
+Native selection and aggregation avoid exporting the input rows to Python, but still
+incur engine work. Performance depends on cache state, enabled analyzers, selection,
+projection, lifecycle, and the measured workload.
 
 Public reports currently construct a complete JSON rendering of the selected answer,
 decode dictionaries and lists, and build typed Python models eagerly.
@@ -252,12 +315,14 @@ multiplier. Tree and flat opened pages also allocate dictionaries, lists, and ty
 Python values. Neither path is a zero-copy export.
 Python `Report.render(JSONL)` returns a complete string.
 
-Paged enumeration can bound client retention when consumed pages are released; retaining
-every page accumulates Python memory.
+Paging trades more calls and cursor handling for smaller responses.
+It can reduce time to the first usable page and peak Python retention when consumed
+pages are released; retaining every page accumulates Python memory.
+Complete consumption still pays the total conversion cost.
 Page row and work caps are operation bounds, not a byte-memory guarantee, and
 `ReportProjection` has its own work allowance rather than the page row cap.
-Continuations depend on the current engine version and do not preserve a historical
-inventory for complete export.
+Continuations depend on the current engine version and can be invalidated; they do not
+preserve a historical inventory for complete export.
 
 The [Python and Rust review](../reviews/review-2026-10-13-python-rust-boundary.md)
 records current conversion costs, integration tradeoffs, and measurement gaps.
@@ -326,8 +391,8 @@ When adding or changing a Python capability:
    validates and submits a coarse request; it does not walk files, invoke a callback per
    entry, or reconstruct roll-ups from exported rows.
 2. Keep retained state behind a native handle.
-   Repeated batch queries can use `Index`; progressive and live clients can use
-   `OpenedIndex` projections and state/change polling.
+   Repeated queries can use `Index`; progressive and live clients can use `OpenedIndex`
+   projections and state/change polling.
    A caller repeating a fixed metadata query can use `Watch` and consume its iterator to
    apply updates. Handle reset and version invalidation explicitly.
 3. Return the information the caller requested: aggregates, selected rows, bounded
@@ -354,9 +419,9 @@ The costs should follow a deliberate request.
 ## Interactive Client Boundary
 
 The Python package mirrors the opened lifecycle with synchronous operations.
-Native batch scanning/reconciliation, opened operations, and watch waits release the
-GIL. Query-bound watch startup, some report preparation and rendering, and Python result
-construction currently hold it.
+Native index scanning/reconciliation, explicit opened operations, and watch waits
+release the GIL. Query-bound watch startup, some report preparation and rendering,
+implicit final-reference teardown, and Python result construction currently hold it.
 The package does not add an async runtime or hide long-lived polls in Python’s shared
 executor.
 
@@ -389,6 +454,32 @@ client has proven it.
 
 ## Future Considerations
 
+### Python Boundary Roadmap
+
+Correctness comes first.
+Establish installed-wheel measurements alongside API work and before making performance
+claims; later optimization depends on that evidence.
+Preserve snapshot/version identity, coverage, lossless paths, ownership, close behavior,
+and cross-surface parity throughout.
+This roadmap improves the supported APIs and does not plan to deprecate Index.
+
+| Priority | Improvement | Acceptance | Tracking |
+| --- | --- | --- | --- |
+| First | Share deep-tree decoding and move owned opened reports into their handles | Deep reports decode across lifecycles without recursive cloning; immutable report identity and parity hold | `fdu-v80c` |
+| First | Detach native report work, watch startup, blocking joins, and implicit final-reference teardown where safe | Competing Python threads progress; borrowing, lock order, and joined shutdown remain correct | `fdu-rlqg` |
+| Alongside API work | Establish an installed-wheel public-loop benchmark baseline | Inventory size and result size vary independently; conversion, teardown, memory, and responsiveness are measured on identified artifacts | `fdu-88o1` |
+| Next, guided by evidence | Support render-only or lazy immutable reports | Unused models and wire graphs need not be built; requested typed values and independent `as_dict()` copies remain correct | `fdu-5ve4` |
+| Conditional on measurement | Reduce query-bound watch inventory copies | Fixed-query, selection-filtered, iteration-driven behavior, report identity, safe persistence, and writer progress remain intact | `fdu-xhge` |
+| Conditional on measurement | Simplify page and change conversion | Fewer temporary representations preserve exact ordering, path/coverage/version values, and bounded operation semantics | `fdu-1yxw` |
+| Optional, demand and evidence required | Add packed buffers or columnar export | Explicit lifetimes, release ownership, retained-memory accounting, and lossless semantics; consumers do not hold live index locks | `fdu-g20s` |
+| Optional API evaluation | Evaluate explicit verification of a cached Python `Index` | Opening stays snapshot-only; verification requires explicit intent; preserve cache policy, immutable prior reports, and truthful partial/failure status; measure reopening and overlapping-inventory costs before choosing an API | `fdu-l9jh` |
+
+There is no public zero-copy data export today.
+A future buffer handoff may share finished storage with Python while still requiring
+native packing and row/path copies first.
+The [boundary review](../reviews/review-2026-10-13-python-rust-boundary.md) owns the
+findings, detailed tradeoffs, and measurement matrix.
+
 ### Open Questions
 
 - Which opened-lifecycle capabilities should eventually receive an explicit CLI
@@ -400,10 +491,6 @@ client has proven it.
 
 ### Potential Improvements
 
-- Add warm-history replays to parity, so a golden also checks that a cached answer
-  equals the cold one.
-- Generalize the parity runner to register another public binding without copying the
-  golden corpus or expected output.
 - Reduce deviation classes whenever public types can carry the missing information
   directly.
 - Expand cross-surface lifecycle conformance beyond the installed-wheel smoke tests that

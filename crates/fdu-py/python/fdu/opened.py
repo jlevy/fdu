@@ -1329,7 +1329,7 @@ def _entry_selection_wire(selection: EntrySelection) -> dict[str, object]:
     return values
 
 
-def _projection_wire(projection: Projection) -> dict[str, object]:
+def _projection_wire(projection: object) -> dict[str, object]:
     if isinstance(projection, Lookup):
         return {"kind": "lookup", "path": projection.path}
     if isinstance(projection, DirectoryRollUp):
@@ -1383,7 +1383,9 @@ def _projection_wire(projection: Projection) -> dict[str, object]:
             },
             "page": _page_wire(projection.page),
         }
-    return {"kind": "diagnostics"}
+    if isinstance(projection, Diagnostics):
+        return {"kind": "diagnostics"}
+    raise TypeError(f"unsupported projection type: {type(projection).__name__}")
 
 
 def _opened_call(function: Callable[..., Any], /, *args: object, **kwargs: object) -> Any:

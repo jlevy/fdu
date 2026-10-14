@@ -25,6 +25,7 @@ from ._models import (
     ClearSummary,
     EntryKind,
     Format,
+    Freshness,
     IgnoredEntries,
     Provenance,
     Query,
@@ -367,6 +368,11 @@ class Index:
         return self._native.clock
 
     @property
+    def freshness(self) -> Freshness:
+        """Read the native inventory's freshness without constructing a report."""
+        return Freshness(self._native.freshness)
+
+    @property
     def status(self) -> Status:
         return status_from_dict(_call(self._native.status))
 
@@ -404,11 +410,20 @@ class Index:
         )
 
     def total(self) -> RollUp:
-        return rollup_from_dict(_call(self._native.total), self.provenance())
+        raw = _call(self._native.total)
+        provenance = raw["provenance"]
+        return rollup_from_dict(
+            raw, None if provenance is None else provenance_from_dict(provenance)
+        )
 
     def rollup(self, path: str | Path) -> RollUp | None:
         raw = _call(self._native.rollup, path)
-        return None if raw is None else rollup_from_dict(raw, self.provenance(path))
+        if raw is None:
+            return None
+        provenance = raw["provenance"]
+        return rollup_from_dict(
+            raw, None if provenance is None else provenance_from_dict(provenance)
+        )
 
     def children(self, path: str | Path = Path()) -> tuple[Child, ...] | None:
         raw = _call(self._native.children, path)
@@ -437,6 +452,9 @@ class Index:
 
     def refresh(self) -> RefreshResult:
         """Reverify metadata and content, then persist according to this index's cache policy.
+
+        An index opened with ``stale_ok=True`` cannot refresh or start a watch; reopen
+        with ``stale_ok=False`` for filesystem verification and subsequent refresh.
 
         Under ``auto``, a later ``stale_ok=True`` open sees the refreshed facts. Partial
         scans preserve the complete snapshot and save only verified compatible content.
@@ -589,18 +607,17 @@ def report(
 ) -> Report:
     """One report, retaining the least state the request needs.
 
-    Under ``CachePolicy.AUTO`` a metadata report neither reads nor writes the snapshot
-    cache, and a content-analysis report reads and writes it; ``CachePolicy.ON`` writes
-    after a one-shot report too, which is how to leave a snapshot for a later
-    ``stale_ok=True`` report that answers without touching the tree.
+    With ``stale_ok=False``, under ``CachePolicy.AUTO`` a metadata report neither reads
+    nor writes the snapshot cache, and a content-analysis report uses it.
+    ``CachePolicy.ON`` requests snapshot persistence for a complete fresh one-shot report
+    too; ``stale_ok=True`` reads a usable snapshot without filesystem verification.
 
-    The contract the command line runs under, and until now the only way to get it was to
-    be the command line. :func:`open` takes the session path: it retains an index and
-    writes a snapshot, which is right for a caller asking many questions and wrong for one
-    asking a single question. An unfiltered summary is answered by a transient tier that
-    retains nothing, so writing a snapshot for it caches state the walk never saved --
-    which meant a Python caller left cache state on a tree that the same command would
-    not have, visible to a later ``stale_ok=True`` read.
+    This is the command line's one-shot contract. The planner retains the least native
+    state the request needs. An eligible sole unfiltered metadata summary keeps aggregate
+    and control state without a per-file index. Filters, analysis, or snapshot requirements
+    can require a retained index. :func:`open` retains an index and caches according to
+    policy; repeated queries can use Index or OpenedIndex according to their lifecycle
+    and capability needs.
 
     A report observes ``.gitignore`` control state unless ``ScanOptions(read_controls=False)``
     turns it off: every summary, tree, extension, and file row then carries its ignored
@@ -613,7 +630,10 @@ def report(
     ``words`` analyzer, in union with ``analysis``. Other views read no file contents
     unless ``analysis`` names an analyzer.
 
-    Use :func:`open` when you will ask more than one question; the index is the point.
+    For one answer, use this Report API. Reuse an appropriate existing index or opened
+    session when available. For repeated queries, choose Index for explicitly prepared,
+    caller-refreshed state and its analysis/cache capabilities, or OpenedIndex for
+    progressive discovery, bounded reads, and optional background observation.
 
     ``root`` is one directory, or a sequence of disjoint directories reported as one, as
     ``fdu docs src`` does: sizes, counts, rows, shares, and bounds are taken over all of

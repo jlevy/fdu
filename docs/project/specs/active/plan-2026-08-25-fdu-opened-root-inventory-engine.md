@@ -2118,7 +2118,7 @@ The rewrite adds a small number of named modules instead of continuing to grow
 | `crates/fdu-py/python/fdu/opened.py` | Direct public Python namespace, immutable values, and ergonomic validation over `_native.OpenedIndex`. Keeping it as the public submodule preserves every existing top-level one-shot name without adding a forwarding façade. | Background executors, an event loop, MetaBrowser vocabulary, or duplicated engine decisions. |
 | `src/metabrowser/inventory_engine/providers/fdu_inventory.py` in MetaBrowser | Contract mapping, one async change bridge, optional-package error handling. | Filesystem walking, retained entry replicas, aggregate stores, identity recipes. |
 
-The batch API (`Index`) retains an independently owned native inventory after requested
+The index API (`Index`) retains an independently owned native inventory after requested
 work finishes. It supports content analysis, cache policy on open, repeated selected
 queries, and manual refresh, with explicit status for incomplete coverage.
 Its `since` surface is a nonblocking view over exact commits; opened-root polling adds
@@ -2126,8 +2126,11 @@ identity and waiting without duplicating those commits.
 `IndexHandle` is the short-write coordination primitive for reconciliation, query-bound
 watch sessions, and opened-root coordination.
 It carries no opened-root session, continuation, or shutdown authority.
-The progressive/live API (`OpenedIndex`) shares one live state across clones; `close()`
+The progressive API (`OpenedIndex`) shares one live state across clones; `close()`
 closes that state for every clone.
+It supports offline jobs with observation disabled as well as interactive use.
+Callers needing a final whole-tree answer wait for the required coverage; early partial
+results and discovery-invalidated continuations stay explicit.
 Query-bound watch (`Watch`) uses `watch_session.rs`, as does CLI `--watch`. Python
 `Index.watch()` starts an independent native copy with a fixed query, selection-filtered
 changes, and its own report/persistence policy.

@@ -34,7 +34,7 @@ def summarize(index: fdu.Index, path: Path = Path()) -> DirectorySummary | None:
         apparent_bytes=rollup.bytes,
         allocated_bytes=rollup.allocated,
         complete=index.status.complete,
-        freshness=index.report().provenance.freshness.value,
+        freshness=index.freshness.value,
     )
 
 

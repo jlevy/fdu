@@ -2,11 +2,15 @@
 //!
 //! # API shape
 //!
-//! Batch `Index` methods return whole selected results in one call. The opened API
-//! returns bounded pages and exposes continuations. Both submit coarse native operations
-//! rather than require a Python callback per indexed file. Retained inventories stay in
-//! Rust; returned rows and reports allocate Python values, so conversion cost depends on
-//! the selected result and its representation.
+//! The Report API returns one selected answer with the native state that request needs.
+//! The index API (`Index`) returns after requested preparation; the caller controls
+//! refresh. The progressive API (`OpenedIndex`) allows reads during discovery and owns
+//! optional background observation. Both keep inventory in Rust and submit coarse native
+//! operations rather than require a Python callback per file. Result detail is separate:
+//! `Index` can return a small roll-up, and `OpenedIndex` can return a large eager report.
+//! Python conversion cost follows the selected result and its representation. Per-file
+//! work and engine lifecycle belong in Rust; Python should use coarse control/query calls
+//! and request the answers it needs, while complete materialization remains supported.
 //!
 //! `open()`, `scan()`, and the native reconciliation phase of `Index.refresh()` release
 //! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
@@ -323,7 +327,15 @@ impl PyIndex {
 
     /// Roll-up totals for the whole tree.
     fn total<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        rollup_dict(py, &self.inner.total())
+        let value = rollup_dict(py, &self.inner.total())?;
+        value.set_item(
+            "provenance",
+            self.inner
+                .provenance(Path::new(""))
+                .map(|value| provenance_dict(py, value))
+                .transpose()?,
+        )?;
+        Ok(value)
     }
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
@@ -331,7 +343,17 @@ impl PyIndex {
     #[allow(clippy::needless_pass_by_value)]
     fn rollup<'py>(&self, py: Python<'py>, path: PathBuf) -> PyResult<Option<Bound<'py, PyDict>>> {
         match self.inner.rollup(&path) {
-            Some(roll) => Ok(Some(rollup_dict(py, &roll)?)),
+            Some(roll) => {
+                let value = rollup_dict(py, &roll)?;
+                value.set_item(
+                    "provenance",
+                    self.inner
+                        .provenance(&path)
+                        .map(|value| provenance_dict(py, value))
+                        .transpose()?,
+                )?;
+                Ok(Some(value))
+            }
             None => Ok(None),
         }
     }

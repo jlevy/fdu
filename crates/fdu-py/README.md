@@ -47,6 +47,55 @@ uv add fdu
 pip install fdu
 ```
 
+Choose among three entry-point groups over the same Rust engine:
+
+| API | Choose it for |
+| --- | --- |
+| Report API: `fdu.report()` | One answer per invocation or job, from a summary to a detailed report |
+| Index API: `fdu.open()` / `fdu.scan()` | Prepare once, reuse queries, and control refresh; supports content analysis and cache policy on open |
+| Progressive API: `fdu.opened.OpenedIndex.open()` | Read during discovery, consume bounded pages, or follow changes in offline jobs or interactive applications |
+
+For a standalone final metadata summary, use an explicit summary request:
+
+```python
+from pathlib import Path
+
+import fdu
+
+report = fdu.report(Path("."), fdu.Query(views=(fdu.View.SUMMARY,)))
+```
+
+Under the default cache policy, a sole unfiltered metadata summary over the full
+population without analyzers can use a compact native reduction without a per-file
+index. Filters, analysis, or snapshot requirements can need retained index state.
+Query an appropriate existing handle instead of rescanning for its summary.
+
+`Index` and `OpenedIndex` both retain inventory in Rust.
+`Index` returns after requested preparation and leaves refresh to the caller; status
+records incomplete coverage.
+An `Index` returned by `fdu.open(..., stale_ok=True)` cannot refresh or start a watch;
+reopen with `stale_ok=False` for filesystem verification and subsequent refresh.
+`OpenedIndex` allows reads during discovery and can own background observation when
+requested. Offline jobs can leave `observe=False` (the default), wait for required
+coverage, inspect partial/limit outcomes, and consume and release pages.
+An early partial summary is not a final whole-tree answer; discovery can invalidate
+continuations.
+Query-bound `Index.watch()` is a separate convenience: it copies the index
+into an independent fixed-query session whose iterator applies updates and drives
+persistence.
+
+Keep per-file discovery, analysis, reconciliation, observation, queries, and shutdown in
+Rust. Python should send coarse requests and receive selected answers.
+Choose detail separately: an `Index` total can be small, and an opened report can be
+large and eager.
+Complete exports support custom Python processing at allocation and copy
+cost; native queries avoid exporting input rows but still require engine work.
+Paging adds calls and cursor handling while reducing each response and potentially peak
+retention if pages are released; total conversion and version invalidation still apply.
+The
+[surface guide](https://github.com/jlevy/fdu/blob/main/docs/project/architecture/fdu-surface-architecture.md#choosing-an-api-for-a-new-application)
+explains lifecycle choices and costs; performance depends on the measured workload.
+
 Lines of code by language and words by document type, from one scan:
 
 ```python
@@ -75,20 +124,6 @@ carry `root`, the position of their root in `roots`, so
 `total` and one `RootTree` per root.
 A `str` or `Path` is always one root.
 `fdu.open` and `fdu.scan` take one root.
-
-Choose the API by the work and lifetime the application needs:
-
-| API | Use it for | Current behavior |
-| --- | --- | --- |
-| One-shot `fdu.report()` | One summary or selected report | Waits for requested work, then eagerly converts the selected answer; retains only the native state that execution needs |
-| Batch API: `fdu.open()` / `fdu.scan()` returning `Index` | Content analysis, repeated snapshot queries, manual refresh, and selected bulk results | Waits for requested work; retains an owned Rust index with explicit coverage; `open` applies cache policy |
-| Progressive/live API: `fdu.opened.OpenedIndex.open()` | Interactive discovery, bounded pages, coherent reads, and live changes | Shared native state with discovery and optional observation workers; currently cache-off with no content analysis |
-| Query-bound watch: `Index.watch()` returning `Watch` | One repeating metadata query and selection-filtered changes | Independent native copy and fixed query; iteration applies updates and drives persistence; the original `Index` is unchanged |
-
-“Batch” describes waiting for the requested scan/reconciliation and analysis work before
-returning. It does not mean exporting the inventory into Python: the handle keeps it in
-Rust, and queries convert only their requested answers.
-Its status records partial coverage, and explicit refresh can mutate the retained index.
 
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
@@ -136,7 +171,7 @@ result = index.refresh()
 print(result.status, index.since(mark).changes)
 ```
 
-The batch API (`Index`) returns whole selected results in bulk while retaining the
+The index API (`Index`) returns whole selected results in bulk while retaining the
 inventory in Rust. The opened API below also supports continuation-based paging.
 Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
 unrelated Python threads and independent indexes can progress.
@@ -302,9 +337,9 @@ limited. Details and exact fields are in the
 
 ## Long-Lived Roots
 
-`fdu.opened` exposes the progressive/live API (`OpenedIndex`) over the shared native
-engine. It starts progressive discovery, returns several projections from one coherent
-version, exposes exact resumable changes, verifies explicit path sets, accepts discovery
+`fdu.opened` exposes the progressive API (`OpenedIndex`) over the shared native engine.
+It starts progressive discovery, returns several projections from one coherent version,
+exposes exact resumable changes, verifies explicit path sets, accepts discovery
 priorities, and joins all native work on close:
 
 ```python

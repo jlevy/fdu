@@ -159,15 +159,20 @@ surface. Differences are recorded in a committed artifact, each one classified b
 mechanical matcher, and a difference matching no known cause *fails the build*, so “we
 know why these differ” is checked rather than claimed.
 
-Language bindings should make efficient native use convenient: retain inventory in the
-engine, perform selection and aggregation there, and return the summaries or bounded
-pages a caller needs.
-Keep per-file traversal, observation, reconciliation, and roll-up maintenance native.
+Language bindings should keep the engine lifecycle in Rust: native state, discovery,
+analysis, reconciliation, observation, queries, and shutdown.
+Python should own application policy and coarse control requests, then receive the
+summaries, selected rows, or bounded pages it needs.
+A new per-file capability belongs in `fdu-core`; Python should not rebuild inventory,
+aggregation, or per-entry callback loops.
+Minimize both boundary frequency and returned volume; combining work into a giant export
+merely to save calls defeats that purpose.
 Cross the language boundary through coarse control and query operations rather than
 per-file callbacks or an eagerly exported inventory replica.
-The batch API (`Index`) provides native ownership for repeated snapshot queries and
-manual refresh. The progressive/live API (`OpenedIndex`) adds ongoing discovery, bounded
-reads, and optional observation.
+The Report API (`fdu.report`) serves one answer and retains only the native state that
+request requires. The index API (`Index`) provides native ownership for repeated queries
+and manual refresh. The progressive API (`OpenedIndex`) adds ongoing discovery, bounded
+reads, and optional observation, including offline jobs with observation disabled.
 Query-bound watch (`Watch`) supports a fixed metadata query in an independent session,
 with iteration driving verified updates.
 Native inventory size need not determine the amount of data returned to Python.
@@ -293,7 +298,7 @@ compose around that model instead of creating variants of it.
 
 ### One Fact Model, Two Serving Lifecycles
 
-The batch API’s `open()` waits for the scan or reconciliation required by its delivery.
+The index API’s `open()` waits for the scan or reconciliation required by its delivery.
 It may load a usable snapshot; a fresh delivery verifies it before returning.
 `stale_ok` is the explicit unverified delivery, as described under
 [Fastest Answer the Data Allows, Never Silently Stale](#fastest-answer-the-data-allows-never-silently-stale).

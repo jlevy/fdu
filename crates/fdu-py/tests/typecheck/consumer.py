@@ -26,7 +26,8 @@ for section in report.sections:
 
 rollup: fdu.RollUp = index.total()
 file_count: int = rollup.files
-print(file_count)
+index_freshness: fdu.Freshness = index.freshness
+print(file_count, index_freshness)
 
 tree_report: fdu.Report = index.report(fdu.Query(views=(fdu.View.TREE,)))
 reference_at: datetime | None = tree_report.age_reference_at
