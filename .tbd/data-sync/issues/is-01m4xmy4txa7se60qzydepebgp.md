@@ -3,17 +3,21 @@ type: is
 id: is-01m4xmy4txa7se60qzydepebgp
 title: Clarify API names and separate lifecycle from materialization costs
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 4
+version: 5
 delegate: claude-code@spud10
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-10-14T16:46:40.476Z
-updated_at: 2026-10-14T17:16:04.233Z
+updated_at: 2026-10-14T17:59:33.539Z
 started_at: 2026-10-14T16:46:52.679Z
+closed_at: 2026-10-14T17:59:33.529Z
+close_reason: "Completed in PR #205 at bd7de58de9275919f740145a9d54926bd5f7a6e6: reconciled architecture and API guidance, eight-item tracked roadmap, three focused runtime fixes, and independent Astra review with no findings. All required local make check stages passed after a scoped embedded-Python host setup correction; 68 targeted and 81 full Python tests passed. CI run 38609685963 passed all 20 jobs on this exact commit. Eight future improvement beads remain open; no new performance claims."
+resolution: null
+duplicate_of: null
 ---
 
 ## Notes
