@@ -497,8 +497,11 @@ Unsupported combinations fail explicitly rather than silently omitting paths.
 Interactive serving state is opt-in and belongs to the opened lifecycle alone.
 An opened root allocates one optional set of maintained structures — portable path and
 per-directory child order, classification and declared-name tallies, and a global file
-recency order — and updates them inside the same exact commit that moves the facts, so a
-read traverses maintained state instead of scanning and sorting per request.
+recency order — and updates them inside the same exact commit that moves the facts.
+Paged projections traverse the relevant maintained order instead of rebuilding it per
+request. Other projections can still require selection traversal, and `ReportProjection`
+uses ordinary report construction after its work estimate passes.
+Its allowance is not a wall-clock deadline or a byte-memory budget.
 A detached `Index`, a snapshot, a one-shot report, and the command line allocate none of
 it, retain none of it, and pay nothing for it.
 That isolation is a tested boundary, not an intention: the assertion is that a detached
@@ -734,7 +737,8 @@ The native projection vocabulary stays smaller than any one application’s alge
 
 Repeated exact aggregates are maintained at commit time only when their read frequency
 and measured cost justify mutation and memory overhead.
-An unmaintained compound total is `exact(n)` or `at_least(n)` under a request cap.
+An unmaintained compound total is `exact(n)` or `at_least(n)` under a request count cap,
+or `Limit` when it exhausts its work allowance before reaching either answer.
 
 Every ordered page has a **total** order: two providers answering one query at one
 version return the same rows in the same sequence, with no tie left to insertion order,
@@ -754,7 +758,8 @@ can return one directory and a thousand of its descendants while leaving the cal
 unable to tell whether the parent held two entries or two thousand.
 
 Flat and catalog rows are ordered by complete canonical POSIX-relative UTF-8 bytes.
-No read projection serves ranked recency yet.
+No dedicated paged projection uses the maintained recency order yet; an opened report
+can already request a recent-files report.
 An opened root maintains a newest-first order of regular files for one, and the page
 that serves it must meet this contract.
 Ranked recency has a selection order and a presentation order, and they differ.
@@ -788,15 +793,20 @@ A record contains the pinned version, normalized query identity, and native resu
 traversal position. The public token contains no trusted path, total, sort key, request,
 or signature.
 
-A flat continuation stores the last emitted portable path, which alone fixes the
-position. A tree continuation stores a stack of at most the query’s maximum depth
-`(parent portable path, last emitted child name)` pairs, which enumerates a level
-lazily. It deliberately does not store the frontier: the set of directories one level up
-is unbounded in directory width, so it cannot fit a bounded record, and re-deriving it
-per page would make paging one wide level quadratic in the number of pages.
+A flat continuation stores the first unvisited portable path; resumption includes that
+position. A tree continuation stores one frame containing the native parent path, depth,
+child partition, next child position, and the first directory noticed at the following
+level. The parent’s ancestor chain supplies traversal ancestry, so the record stores
+neither a stack of frames nor a breadth-first frontier.
+The frontier is unbounded in directory width; storing it would violate the record bound,
+while re-deriving it per page would make paging one wide level quadratic in the number
+of pages.
 
 A continuation fails explicitly when its version is stale, belongs to another opened
-root, or its record was evicted.
+root, or its record was evicted or consumed.
+Successful resumption consumes its token.
+To assemble one coherent complete enumeration, a caller must restart after version
+invalidation rather than combine pages from different versions.
 Close clears the table.
 No page retains a historical index image.
 
@@ -823,10 +833,22 @@ Blocking or substantial native work is exposed clearly so language bindings can 
 their runtime lock. The Python package mirrors engine values; it does not add a
 long-lived async executor.
 
+Python keeps the retained inventory native, but constructs Python objects for returned
+pages and eagerly decodes selected reports.
+Its blocking engine operations release the GIL; result construction and some report
+preparation and rendering phases currently hold it.
+The [surface architecture](fdu-surface-architecture.md#python-result-ownership) owns
+those conversion details.
+Page bounds do not bound cumulative client retention or the whole native inventory;
+optional `max_files` limits retained regular files, not all entries or memory bytes.
+
 An async application owns its bridge from blocking change polls to its event loop.
 That bridge may own cancellation, host generations, root replacement, and application
 cache invalidation. It may not walk the filesystem, retain an entry replica, rebuild
 roll-ups, reproduce scope or fingerprint rules, or invent paging semantics.
+Cancelling an executor future does not itself cancel native work.
+`OpenedIndex.close()` shuts down the shared root for all aliases rather than cancelling
+one request.
 
 The command line presents engine capability and invents none.
 An additive embedded API does not need to become a default CLI mode before a client has

@@ -199,18 +199,55 @@ Change records and cache status have writers of their own.
 The declared field presence rules, renderers, and goldens under `tests/golden/` hold the
 wire shape together.
 
+## Python Result Ownership
+
+Python is both a distribution surface and a typed library over the native engine.
+The standalone Rust executable requires no Python runtime; the PyPI console script uses
+a small Python launcher into the same native command-line implementation.
+
+Opening an index keeps its inventory in Rust.
+Selection, aggregation, ordering, and reconciliation remain engine operations.
+The ordinary usage pattern should request summaries, selected rows, bounded pages, or
+incremental changes rather than build an application-owned inventory replica.
+Complete results remain supported when the caller needs them; their allocation cost must
+not be hidden by silent truncation.
+
+Public reports currently construct a complete JSON rendering of the selected answer,
+decode dictionaries and lists, and build typed Python models eagerly.
+The returned report retains both the wire graph and an immutable native rendering
+handle. `as_dict()` additionally copies its nested containers.
+Scalar values can be shared, so these representations do not imply a fixed memory
+multiplier. Tree and flat opened pages also allocate dictionaries, lists, and typed
+Python values. Neither path is a zero-copy export.
+Python `Report.render(JSONL)` returns a complete string.
+
+Paged enumeration can bound client retention when consumed pages are released; retaining
+every page accumulates Python memory.
+Page row and work caps are operation bounds, not a byte-memory guarantee, and
+`ReportProjection` has its own work allowance rather than the page row cap.
+Continuations depend on the current engine version and do not preserve a historical
+inventory for complete export.
+
+The [Python and Rust review](../reviews/review-2026-10-13-python-rust-boundary.md)
+records current conversion costs, integration tradeoffs, and measurement gaps.
+A supported render-only native handle is proposed there; it is not a current public API.
+
 ## Interactive Client Boundary
 
-The Python package mirrors the opened lifecycle as five synchronous operations.
-Calls that block or perform substantial native work release the GIL, but the package
-does not add an async runtime or hide long-lived polls in Python’s shared executor.
+The Python package mirrors the opened lifecycle with synchronous operations.
+Blocking engine operations release the GIL; Python result construction and some report
+preparation and rendering phases currently run with it held.
+The package does not add an async runtime or hide long-lived polls in Python’s shared
+executor.
 
 An async application adapts that synchronous surface at its own boundary.
 That adapter may own an event-loop bridge, root generations, and application cache
 invalidation, but it may not become another inventory engine: it does not walk the
 filesystem, retain an entry replica, rebuild roll-ups, or invent fingerprint and paging
 semantics. The bridge bounds in-flight polls and native results and joins its worker on
-close.
+close. Cancelling an executor future does not itself cancel native work.
+Closing an `OpenedIndex` shuts down its shared root for all aliases, rather than one
+request.
 
 An explicitly selected adapter fails visibly when its package or API is unavailable; it
 does not silently substitute another provider.
@@ -249,8 +286,8 @@ client has proven it.
   golden corpus or expected output.
 - Reduce deviation classes whenever public types can carry the missing information
   directly.
-- Add packaging-boundary conformance sessions for the opened lifecycle after its public
-  types stabilize.
+- Expand cross-surface lifecycle conformance beyond the installed-wheel smoke tests that
+  already cover opened projections, continuations, refresh, history, and shared close.
 
 ## References
 

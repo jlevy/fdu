@@ -159,6 +159,15 @@ surface. Differences are recorded in a committed artifact, each one classified b
 mechanical matcher, and a difference matching no known cause **fails the build** — so
 “we know why these differ” is checked rather than claimed.
 
+Language bindings should make efficient native use convenient: retain inventory in the
+engine, perform selection and aggregation there, and return the summaries or bounded
+pages a caller needs.
+Complete Python results remain available when callers need them, with their conversion
+and retention costs stated explicitly.
+A convenience wrapper must not silently truncate an enumeration or imply that exporting
+objects is free. Bounded paging can support complete consumption without retaining every
+page in Python.
+
 The corpus is not duplicated and no expected output is written twice, which matters more
 than it sounds: two copies of the expected bytes drift, and the drift is invisible
 because each copy passes its own test.
@@ -231,9 +240,17 @@ Every bound states itself: the tree view marks where it dropped children, and on
 numbers are large it says how much it dropped, because `…` after ten rows of 192,871
 understates the situation by four orders of magnitude.
 
-Every bound is liftable by a flag named where the bound is stated — `--limit all`,
-`--depth all`. A truncation the caller cannot remove is a limitation wearing a default’s
-clothes.
+Every presentation bound is liftable by a flag named where the bound is stated —
+`--limit all`, `--depth all`. A truncation the caller cannot remove is a limitation
+wearing a default’s clothes.
+
+Opened serving also has explicit operation limits on projections, page rows, work, and
+continuation storage.
+These protective limits are distinct from display truncation; `--limit all` does not
+disable them.
+Complete consumption can use successive pages, subject to the lifecycle and
+continuation rules in the
+[engine architecture](fdu-engine-architecture.md#reads-queries-and-paging).
 
 One bound is a deliberate exception, recorded here so that it reads as a decision rather
 than as a flag somebody forgot.
@@ -559,10 +576,14 @@ the heads of ignored subtrees rather than the index.
 It derives that decision from the complete request, exposes no fast-mode flag, and falls
 closed to the full index when any requirement is unproved.
 
-Within metadata report evaluation, two query-cost tiers follow from this, and both are
-milliseconds warm: an unfiltered request reads pre-computed roll-up state directly,
-while any selection filter triggers one traversal that re-aggregates what it admits.
-One traversal serves every filtered view in a request.
+Metadata query cost depends on selection and projection.
+Unfiltered summaries and ordinary tree projections can read maintained roll-up state;
+selection filters require a traversal that re-aggregates what they admit.
+Compatible views share that work.
+Flat list and file projections require candidates even without a selection filter, and
+ranked file reports collect and sort candidates before truncating their output.
+A small returned result therefore does not establish small native preparation cost.
+Timing claims require a measured inventory, projection, and cache regime.
 The one addition to the unfiltered tier is a tree’s age column: each row’s newest
 activity counts directories and symlinks, which the roll-up’s files-only recency leaves
 out, so the index maintains that maximum per directory beside its roll-ups and an
@@ -729,7 +750,9 @@ the same `Query`/`Report` layer.
 
 ### Formats Are Serializations, Not Features
 
-Every view renders in every format.
+Presentation is selected before report construction.
+Supported formats serialize the selected answer; rendering cannot recover rows discarded
+by its projection, and incompatible Tree, Paths, or Long re-rendering fails explicitly.
 Every format serializes one answer model: JSON, JSON Lines, and YAML parse back to the
 same value, Python values are constructed from it, and no writer alters a value, a path
 string included. Machine formats are schema-versioned, never colourized, and a schema

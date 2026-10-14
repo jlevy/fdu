@@ -122,8 +122,8 @@ result = index.refresh()
 print(result.status, index.since(mark).changes)
 ```
 
-Every method is bulk: it returns a whole structured result in one call rather than a
-cursor Python iterates.
+The legacy `Index` methods return whole structured results in bulk.
+The opened API below also supports continuation-based paging.
 Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
 unrelated Python threads and independent indexes can progress.
 Content analysis streams every eligible file through EOF. Binary data, invalid UTF-8,
@@ -303,10 +303,24 @@ with opened.OpenedIndex.open(Path("."), opened.OpenedOptions(observe=True)) as i
     changed = index.changes(cursor, timeout=1.0)
 ```
 
-The methods are synchronous and release the GIL during native work.
+The methods are synchronous.
+Blocking engine operations release the GIL; Python result construction and some report
+preparation and rendering phases currently hold it.
 An async application adapts them with its own executor policy, keeping task and shutdown
 ownership visible. The package does not run a private event loop or shell out to the
-command line.
+command line. Cancelling an executor future does not itself cancel native work.
+Closing an `OpenedIndex` shuts down its shared root for all aliases rather than one
+request.
+
+Retain the inventory in Rust and request summaries, selected answers, or bounded pages
+for ordinary Python use.
+Complete reports remain available when needed, with allocation cost proportional to the
+selected result. Public reports eagerly decode JSON into dictionaries and typed Python
+models and retain both the wire representation and a native rendering handle;
+`as_dict()` copies the wire containers again.
+Neither reports nor pages are zero-copy exports.
+Complete paged enumeration can bound Python retention when previous pages are released,
+subject to continuation invalidation as the engine version changes.
 
 The wheel also exposes the native Rust CLI as the `fdu` console script.
 Argument parsing, help, streams, color, errors, broken-pipe handling, and exit status
