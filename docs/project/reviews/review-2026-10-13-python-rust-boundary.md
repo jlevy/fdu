@@ -7,6 +7,21 @@ they need only aggregates or pages.
 Scanning, analysis, reconciliation, ordering, and roll-ups belong to the engine.
 Python supplies requests and application policy.
 
+`OpenedIndex` is the main architectural answer for repeated and live Python use.
+It owns the changing inventory and discovery/observation lifecycle in Rust, while Python
+requests selected projections, reads state, and polls changes.
+Walking and maintaining each file do not require a Python callback or a Python metadata
+object. A Python client can answer a question about a large tree from a small aggregate
+or page.
+
+The important boundary is between native inventory size and returned information volume.
+Queries and control requests cross into Rust; only their requested answers cross back.
+Python conversion cost follows those returned values rather than every indexed file
+merely because it exists.
+The native engine still pays for discovery, retention, and query preparation.
+Exact change consumption during discovery or heavy churn can also return substantial
+data; `OpenedIndex` does not guarantee low traffic for every request.
+
 The Python boundary still has material costs.
 Public reports eagerly serialize their selected result to JSON, decode dictionaries and
 lists, and construct typed Python models.
@@ -17,13 +32,23 @@ as JSON Lines returns a complete string rather than an incremental iterator.
 
 The early user’s concern is therefore useful, particularly for complete inventories and
 repeated large reports.
-Their allocation microbenchmark does not establish that Python overhead dominates fdu’s
-filesystem work, causes severe garbage-collection pauses, or creates GIL contention.
-Those are workload-dependent claims requiring measurements through the installed Python
-API.
+It does not describe the ordinary aggregate or bounded-read pattern over a retained
+`OpenedIndex`. Their allocation microbenchmark does not establish that Python overhead
+dominates fdu’s filesystem work, causes severe garbage-collection pauses, or creates GIL
+contention. Those are workload-dependent claims requiring measurements through the
+installed Python API.
 
-**Recommended direction:** keep PyO3 and the Rust-owned engine; improve the report
-boundary and its measurements before considering a different binding technology or
+The
+[surface design’s binding practice](../architecture/fdu-surface-architecture.md#rationale-and-binding-practice)
+states the rationale and implementation checklist: coarse requests, native ownership and
+reducers, selected answers, explicit complete exports, appropriate GIL release, and
+public-boundary measurements.
+Those are the rules for future Python capabilities; zero-copy is an optional
+representation choice rather than a prerequisite for efficient ordinary use.
+
+**Recommended direction:** keep PyO3 and the Rust-owned engine, make coarse native
+operations and selected answers the convenient Python path, and improve report
+conversion and its measurements before considering a different binding technology or
 columnar export.
 
 ## Scope and Evidence
@@ -441,14 +466,17 @@ Good point: traversal speed and the cost of constructing a Python result are dif
 measurements. The standalone CLI is Rust and needs no Python runtime.
 The PyPI command uses a small Python launcher into the same native CLI.
 
-Python also provides a library API. Traversal, analysis, observation, retained indexes,
-selection, and aggregation stay in Rust.
-Callers can request summaries, bounded pages, or incremental changes without
-constructing a Python object for every indexed file.
+Python also provides a library API. `OpenedIndex` keeps the changing inventory,
+observation, selection, and aggregation in Rust.
+Python requests summaries or bounded pages and polls changes; it does not need a
+metadata object or callback for every indexed file.
+The intent is to keep per-file work native and cross the boundary through coarse
+operations returning the information the caller needs.
 Complete inventories remain available when needed, with their associated conversion
 cost; paged consumption can keep client retention bounded when pages are released and
 version changes are handled.
 
+Complete reports and high-volume change consumption can still move substantial data.
 The current Python report API eagerly converts its selected answer through JSON and
 typed models, so it is not zero-copy.
 We’re tracking a render-only path, remaining GIL gaps, and installed-wheel benchmarks.

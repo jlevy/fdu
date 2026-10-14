@@ -162,6 +162,11 @@ mechanical matcher, and a difference matching no known cause **fails the build**
 Language bindings should make efficient native use convenient: retain inventory in the
 engine, perform selection and aggregation there, and return the summaries or bounded
 pages a caller needs.
+Keep per-file traversal, observation, reconciliation, and roll-up maintenance native.
+Cross the language boundary through coarse control and query operations rather than
+per-file callbacks or an eagerly exported inventory replica.
+`OpenedIndex` provides this ownership boundary for repeated and live clients.
+Native inventory size need not determine the amount of data returned to Python.
 Complete Python results remain available when callers need them, with their conversion
 and retention costs stated explicitly.
 A convenience wrapper must not silently truncate an enumeration or imply that exporting

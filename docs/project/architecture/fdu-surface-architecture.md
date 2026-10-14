@@ -207,6 +207,15 @@ a small Python launcher into the same native command-line implementation.
 
 Opening an index keeps its inventory in Rust.
 Selection, aggregation, ordering, and reconciliation remain engine operations.
+`OpenedIndex` also owns ongoing discovery and observation: Python submits control and
+query requests, reads selected projections, and polls changes.
+Per-file traversal and maintenance do not require Python callbacks or exported metadata
+objects. The boundary is coarse operations and requested results, rather than one
+crossing per indexed file.
+A summary or bounded page can therefore keep Python conversion small even when the
+native inventory is large; native discovery and query costs still belong to the engine.
+Exact change consumption under discovery or heavy churn can return more information, so
+the abstraction does not promise low result volume for every workload.
 The ordinary usage pattern should request summaries, selected rows, bounded pages, or
 incremental changes rather than build an application-owned inventory replica.
 Complete results remain supported when the caller needs them; their allocation cost must
@@ -231,6 +240,51 @@ inventory for complete export.
 The [Python and Rust review](../reviews/review-2026-10-13-python-rust-boundary.md)
 records current conversion costs, integration tradeoffs, and measurement gaps.
 A supported render-only native handle is proposed there; it is not a current public API.
+
+### Rationale and binding practice
+
+A coarse language boundary amortizes call overhead and avoids creating Python objects
+for facts an application never consumes.
+Keeping selection and aggregation beside the native inventory also gives them the
+engine’s ordering, coverage, and version semantics without rebuilding those rules in
+Python. Zero-copy export is one possible optimization for consumers that need bulk data;
+avoiding an unnecessary export is the ordinary goal.
+
+For example, an opened root holding 200,000 files can answer a maintained aggregate or a
+100-row page without constructing 200,000 Python metadata objects.
+This describes result conversion, not a guarantee that Rust examines only 100 candidates
+or finishes within a fixed time.
+Projection and selection determine native preparation cost.
+
+When adding or changing a Python capability:
+
+1. Put inventory work and its semantic request/result types in `fdu-core`. Python
+   validates and submits a coarse request; it does not walk files, invoke a callback per
+   entry, or reconstruct roll-ups from exported rows.
+2. Keep retained state behind a native handle.
+   Repeated queries can use a retained `Index`; progressive and live clients use
+   `OpenedIndex` projections and state/change polling rather than fetch a full inventory
+   on every iteration. Handle reset and version invalidation explicitly.
+3. Return the information the caller requested: aggregates, selected rows, bounded
+   pages, or changes. Release consumed pages when complete enumeration need not remain in
+   Python. Do not confuse a row cap with a byte cap or a work estimate with a deadline.
+4. Preserve explicit complete-result paths for callers that need Python-side processing.
+   State their materialization and retention costs; do not silently truncate an
+   enumeration. With the current eager row/model representation, larger results create
+   and retain more Python objects.
+5. Separate native work from Python-object construction.
+   Release the GIL while native computation and blocking waits can run without Python
+   objects, preserve borrowing and lock-order rules, and then convert the selected
+   answer. Current report exceptions are recorded in the boundary review; synchronous
+   calls still need application-owned adaptation when used from an event loop.
+6. Verify native/Python answer agreement and installed-wheel behavior.
+   Benchmark the complete public call, including conversion and teardown, with inventory
+   size and result size varied independently.
+   CLI throughput alone cannot validate this boundary.
+
+These rules guide the convenient path; they do not require every caller to minimize
+allocations or prohibit complete exports.
+The costs should follow a deliberate request.
 
 ## Interactive Client Boundary
 
