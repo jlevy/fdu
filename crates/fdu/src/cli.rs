@@ -251,7 +251,7 @@ MORE COMPOSITIONS
   fdu PATH --kind dir --full --format json                  recursive directory totals
   fdu PATH --kind file --full --format paths                find/fd-style file inventory
   fdu PATH --view=largest --limit=100                        the 100 largest files
-  fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
+  fdu PATH --view=files --kind=file --modified-since=1h      files modified lately
   fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
 ",
             $watch_composition,

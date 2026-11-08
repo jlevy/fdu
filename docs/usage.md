@@ -330,6 +330,8 @@ for window in ("1h", "24h", "7d"):
             selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,), modified_since=window),
         )
     )
+    summary = report.sections[0].summary
+    print(window, summary.files, summary.allocated)
 ```
 
 Exact net change, with deletions, needs a report saved before the window began; the

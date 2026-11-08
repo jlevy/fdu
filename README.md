@@ -170,7 +170,7 @@ Only `code` and `documents` read file contents; every other view reads metadata 
 | Languages by space | `fdu . --view=languages` |
 | File families, types, and extensions | `fdu . --view=families,types,extensions` |
 | Twenty largest files | `fdu . --view=largest` |
-| Ten most recently changed working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
+| Ten most recently modified working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
 | Where the files written in the last day are | `fdu . --kind=file --modified-since=24h` |
 | Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
 | Stay on one filesystem, like `du -x` (macOS and Linux) | `fdu . --one-filesystem` |
@@ -255,7 +255,7 @@ and supported languages.
 
 When free space drops, find where the new data is.
 fdu keeps no history of past sizes, but every file records when it was last modified, so
-one scan with no saved state shows everything written since a given time, by folder and
+one scan with no saved state shows the files written since a given time, by folder and
 largest first:
 
 ```shell

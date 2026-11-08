@@ -421,9 +421,9 @@ from `fdu.report/11`.
 ### Phase 0: Document what works today (`fdu-mncb`)
 
 - [x] This plan.
-- [x] The skill, `fdu --docs`, the README, and the usage guide gain a “what was written
-  recently” recipe with `--kind file --modified-since`, the reason `--kind file` is
-  required, and the modification-time blind spot.
+- [x] The skill, `fdu --help`, `fdu --docs`, both READMEs, and the usage guide gain a
+  “what was written recently” recipe with `--kind file --modified-since`, the reason
+  `--kind file` is required, and the modification-time blind spot.
 - [x] Pointers from the checkpoint plan, the change-source review, and `fdu-eas0`.
 
 ### Phase 1: Change time (`fdu-bo9q`, `fdu-xk3c`)
@@ -438,6 +438,9 @@ from `fdu.report/11`.
 - [ ] `changed_ns` and `changed_at` on rows and tree nodes that carry `mtime_ns`.
 - [ ] The selection-coverage note and its machine fields.
 - [ ] The skill and docs switch the recipe to `--changed-since`.
+- [ ] Once “changed” names change time, reword the places that use it for modification
+  activity, such as the tree’s age (“how long ago anything it counts last changed”) in
+  the skill, `--docs`, the usage guide, and the README.
 
 ### Phase 2: The `ages` view (`fdu-5079`, `fdu-alw7`)
 
