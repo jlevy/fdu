@@ -5,11 +5,15 @@ title: Design multi-root disk-pressure history with hourly and daily comparisons
 kind: feature
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md
 labels: []
 dependencies: []
 created_at: 2026-09-27T00:15:17.736Z
-updated_at: 2026-09-27T00:15:17.736Z
+updated_at: 2026-11-08T20:07:31.723Z
 ---
 Add an opt-in disk-history workflow alongside ordinary rollups and cache-assisted content analysis. Track Home, Applications, and canonical temporary roots without aliases or overlapping totals; retain immutable checkpoints for actual hour/day boundaries, share per-volume free-space samples, rank net growth and shrinkage, expose partial/mixed-age coverage and unexplained volume changes, and bound low-space refresh/persistence. FSEvents discovers changed scopes but does not reconstruct historical sizes or process causality. No mandatory daemon; optional scheduled captures preserve time boundaries. Implement through core and mirror CLI/Python after checkpoint and replay contracts.
+
+## Notes
+
+2026-11-08: the disk-pressure workflow's first response, when no baseline exists, is the written-recently recipe (skill section 'Find What Was Written Recently'; change-time version in plan-2026-11-08-fdu-recent-growth-and-volumes.md). Free-space history (samples over time) stays with this profile; the volumes view stores nothing.

@@ -5,7 +5,7 @@ title: "Reducer registry: make metrics registrations, not engine changes"
 kind: feature
 status: open
 priority: 2
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -17,7 +17,7 @@ dependencies:
     target: is-01kzg4d256qmchmtyvttnpvn4y
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:19.867Z
-updated_at: 2026-09-17T02:10:42.505Z
+updated_at: 2026-11-08T20:07:28.016Z
 ---
 Today RollUp is a fixed struct. Goal 6 requires new roll-up dimensions to be registrations against a stable interface.
 
@@ -32,3 +32,5 @@ Content tier is deferred but its place in the registry must be reserved now, bec
 ## Notes
 
 Before the reducer registry becomes a stable API, define aggregate overflow policy. Counts and byte sums are u64 and currently use ordinary addition; a theoretical aggregate above u64 can wrap in optimized builds. Evaluate checked/wider accumulators versus explicit saturation together with invertibility and snapshot encoding.
+
+2026-11-08: the ages view (fdu-5079, plan-2026-11-08-fdu-recent-growth-and-volumes.md) is the first user-visible recency histogram: a root-level partition by change-time band, computed per report from retained mtime/ctime. It does not need the registry; a per-directory band reducer would, if a folder-by-band matrix is ever wanted.

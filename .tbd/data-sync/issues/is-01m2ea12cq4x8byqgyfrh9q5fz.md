@@ -5,12 +5,12 @@ title: Implement durable disk-usage checkpoints and repeatable net comparisons
 kind: feature
 status: open
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md
 labels: []
 dependencies: []
 created_at: 2026-09-13T21:16:01.814Z
-updated_at: 2026-09-27T00:21:36.860Z
+updated_at: 2026-11-08T20:07:29.876Z
 ---
 Implement delivery slice 2 in fdu-core with CLI and Python parity: immutable durable checkpoint identity distinct from live clocks, explicit baseline capture and advancement, signed allocated/apparent/count deltas computed before ranking, and repeated A-to-B reads without refresh. Begin with complete scanned roots; preserve pinned baselines across refresh, failure, and cache eviction. Define compatible scope, unknown coverage, rename attribution, own-store exclusion, and concurrency/publication semantics before persistence. Integrate with existing block-format and durable-journal work for later bounded access.
 
@@ -36,3 +36,5 @@ Implement delivery slice 2 in fdu-core with CLI and Python parity: immutable dur
 - Renaming one link of a multi-link file: the expected-delta test covers all four outcomes (attributed link renamed and still first, or no longer first; another link renamed and still later, or now first).
 
 2026-09-26 design review: fdu 0.1.0 is released; the old DO NOT MAINTAIN / new public Attrs field assumption is no longer valid for compatible releases. Plan now requires compatibility review: prefer private retained link-count facts or an additive observation API, otherwise deliberate versioned breaking API with migration guidance. New multi-root hourly/daily disk-pressure profile is tracked separately as fdu-vw9r and must not alter ordinary rollups or cached content analysis.
+
+2026-11-08: plan-2026-11-08-fdu-recent-growth-and-volumes.md adds the zero-setup 'written since T' answer (one walk, no baseline; gross arrivals, deletions invisible). It is not a checkpoint comparison and must never be presented as net growth; a comparison can use its tree to confirm where growth lies. Its volumes view observes capacity at report time; a checkpoint's free-space sample can reuse that observation.

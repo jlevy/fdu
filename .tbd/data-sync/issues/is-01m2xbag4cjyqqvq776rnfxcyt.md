@@ -5,12 +5,14 @@ title: Add a volumes view over devices in the scan, not a duf clone
 kind: feature
 status: open
 priority: 3
-version: 2
+version: 4
+spec_path: docs/project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md
 labels:
   - design
 dependencies: []
+parent_id: is-01m6yc9x14t8x0v0j2v2dc34jv
 created_at: 2026-09-19T17:27:15.851Z
-updated_at: 2026-09-19T18:01:15.651Z
+updated_at: 2026-11-08T20:07:24.432Z
 ---
 Design review (2026-09-19): fdu should not grow a duf/df clone.
 
@@ -29,3 +31,5 @@ Do not implement unless a later decision promotes the thin annotation to a spec.
 Refinement (2026-09-19): the coherent shape is --view volumes over capacity pools that intersect the scan.
 
 Index already retains attrs.dev. Tree bytes by pool are a real roll-up. Free space is planner-observed statvfs in provenance (report() stays pure). Re-observe at query time; do not persist avail. Group by shared pool, not st_dev (APFS container / bind mounts). Not --analyze. Not the default. Compose as --view tree,volumes.
+
+Promoted (2026-11-08): the maintainer asked for a volume capacity view beside ordinary reports, as a convenience and not a df/duf replacement. Phase 3 of plan-2026-11-08-fdu-recent-growth-and-volumes.md specifies it: one row per filesystem holding a root or entered by the walk (by device, which merges bind mounts); capacity from statvfs / GetDiskFreeSpaceExW at report time, passed to the reader as an explicit input and a capacity provenance tier, never stored; in-use share is (capacity - available) / capacity, as duf shows; a pooled-filesystem note for APFS, btrfs, ZFS; no sums across rows; --scan-depth 0 is the fast capacity-only form. Joins --view full.

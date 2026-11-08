@@ -5,14 +5,14 @@ title: Narrow the getattrlistbulk attribute set to what the plan consumes
 kind: task
 status: open
 priority: 2
-version: 3
+version: 4
 labels:
   - performance
   - macos
   - campaign-2
 dependencies: []
 created_at: 2026-08-16T01:24:51.506Z
-updated_at: 2026-08-23T09:09:04.671Z
+updated_at: 2026-11-08T20:07:33.664Z
 ---
 Candidate hypothesis (H94 when the ledger takes it; H86-H93 are all consumer-side or
 I/O-path -- none touch the kernel-side attr request).
@@ -52,3 +52,5 @@ the scalar class decisively on this host, not within noise. Combined with the -1
 aggregate sys-time gap at identical enumeration counts, the kernel-side attr cost is
 the live mechanism. (Work-class caveat unchanged: fdu returns five tallies including
 counts and newest-mtime; dumac returns the allocated total only.)
+
+2026-11-08: change-time selection and the ages view (plan-2026-11-08-fdu-recent-growth-and-volumes.md) consume ATTR_CMN_CHGTIME. Any narrowing of the getattrlistbulk attribute set must keep it whenever a request needs change time.
