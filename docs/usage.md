@@ -273,6 +273,77 @@ Without `--kind`, `fdu . --modified-since 7d` therefore lists every directory wi
 activity this week at its full size beside the files that changed, and `--view summary`
 counts everything inside those directories; `--kind file` asks only for the files.
 
+### Find What Was Written Recently
+
+When free space drops, look for the data written since it was last fine.
+fdu keeps no history of past sizes, but every file records when it was last modified, so
+one scan with no saved state finds what was written in a window:
+
+```shell
+fdu ~ --kind=file --modified-since=24h                  # by folder, largest first
+fdu ~ --kind=file --modified-since=24h --view=summary   # their total
+fdu ~ --view=largest --modified-since=24h --limit=20    # the largest of them
+```
+
+Keep `--kind=file`, for the reason above: without it, a directory with any activity in
+the window is admitted at its full size, and at home-folder scale nearly every top-level
+directory has some activity in a day.
+With it, each folder counts only the files written in the window.
+The root row’s 100% is their total, not the tree’s; `fdu ~ --view=summary` gives the
+whole tree to compare.
+
+The result is data written in the window, not net growth:
+
+- A file written in the window counts at its full size, so a 1 MB append to a 10 GB file
+  counts 10 GB. The total is an upper bound on the growth those files caused.
+- Deleted files are not in the walk, and a file that shrank counts at its new size, so
+  space freed in the window is not subtracted and the total can exceed the space lost.
+- Data that arrived with an older modification time is missed.
+  `cp -p`, `rsync -a`, Finder and Explorer copies, `mv` from another filesystem, and
+  archive extraction keep the source’s times, downloads can take the server’s (wget does
+  by default), and Cargo stamps its extracted crate sources with a fixed 2006 time:
+  after a Cargo build that extracted 2,460 files (31 MiB), `--modified-since=2h` found
+  only Cargo’s empty `.cargo-ok` markers.
+  Their inode change time is still current, but fdu does not select by it.
+  Where the total falls short of the space lost,
+  `find ~ -type f -cmin -1440 -exec du -k {} + | sort -n | tail -20` lists the largest
+  files whose inode changed in the last day, these included.
+- Space outside the scanned paths, in filesystem snapshots, or in deleted files that a
+  process still holds open is in no walk.
+  `df` reports the volume’s free space; fdu reports what the scanned tree holds.
+
+The walk reads every entry’s metadata once and needs no cache.
+A home folder can hold millions of entries and take minutes, so start where growth is
+likely: the project, `~/.cache`, `~/Library/Caches`, agent state such as `~/.claude` and
+`~/.codex`, and the temporary directory, as several paths in one report if they do not
+overlap. Each window is one walk on the command line.
+To ask several windows, or to drill into folders, without walking again, scan the tree
+once in Python and query the index; `fdu.scan` reads and writes no cache:
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.scan(Path.home() / ".cache")
+for window in ("1h", "24h", "7d"):
+    report = index.report(
+        fdu.Query(
+            views=(fdu.View.SUMMARY,),
+            selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,), modified_since=window),
+        )
+    )
+    summary = report.sections[0].summary
+    print(window, summary.files, summary.allocated)
+```
+
+Exact net change, with deletions, needs a report saved before the window began; the
+[checkpoint design](project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md#interim-workflow)
+describes saving and comparing one.
+Selection by change time, an age profile of a tree, and the volume’s capacity beside the
+tree are planned in the
+[recent growth design](project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md).
+
 ### Find Old Environments and Build Directories
 
 Directory kind is a filter, just like name/path and modification time:

@@ -116,6 +116,7 @@ Examples:
   fdu . --view=code,documents   lines of code by language, words by document type
   fdu . --ignored=exclude       omit entries covered by .gitignore
   fdu . --view=summary          one total for the tree
+  fdu . --kind file --modified-since 24h
   fdu . --kind dir --include .venv --modified-before 7d --long
   fdu . --kind dir --include node_modules --modified-before 30d --long
   fdu . --kind dir --include target --modified-before 30d --format paths
@@ -191,6 +192,7 @@ START HERE
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
+    fdu . --kind=file --modified-since=24h     files written in the last day, by folder
     fdu docs src                               several paths as one report, with a total
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
@@ -249,7 +251,7 @@ MORE COMPOSITIONS
   fdu PATH --kind dir --full --format json                  recursive directory totals
   fdu PATH --kind file --full --format paths                find/fd-style file inventory
   fdu PATH --view=largest --limit=100                        the 100 largest files
-  fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
+  fdu PATH --view=files --kind=file --modified-since=1h      files modified lately
   fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
 ",
             $watch_composition,
@@ -298,6 +300,17 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   Exclusions win throughout the subtree before size/age filtering. Nested matching
   roots can overlap; aggregate views count the covered contents once. --size apparent
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
+
+WHAT WAS WRITTEN RECENTLY
+  fdu PATH --kind file --modified-since 24h
+  fdu PATH --view largest --modified-since 24h --limit 20
+
+  Each finds what was written in the last day, by folder or by file, in one scan
+  with no saved state. Keep --kind file: without it a directory with any activity
+  in the window counts at its full size. A file written in the window counts in
+  full, deleted files do not appear, and data that kept an older modification time
+  (cp -p, rsync -a, Finder or Explorer copies, mv from another filesystem,
+  archives, some downloads, Cargo's crate sources) is missed.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached

@@ -1,7 +1,19 @@
 {
   "schema": 1,
   "minimumAgeDays": 14,
-  "exceptions": [],
+  "exceptions": [
+    {
+      "id": "pulldown-cmark-0.13.6-rustsec-2026-0433",
+      "ecosystem": "cargo",
+      "name": "pulldown-cmark",
+      "version": "0.13.6",
+      "reason": "RUSTSEC-2026-0414 and RUSTSEC-2026-0433 (wikilink parsing) fail cargo deny on 0.13.4; 0.13.6, published 2026-10-30, is the first release that fixes both. fdu never enables ENABLE_WIKILINKS, so it is not exposed, but the audit gates every PR. Agent source review before approval: the downloaded crate matches the crates.io checksum 3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b; it was published by Martin1887, a crate owner, as 0.13.4 was; its src/ and build.rs are byte-identical to upstream tag v0.13.6 (014b61d38d235f382935bb676bab872b7680afa2); from 0.13.4 it changes only src/firstpass.rs and src/parse.rs (wikilink, nested-list, link-offset, and UTF-8 boundary hardening), test generation in build.rs behind the gen-tests feature, and tests, with no new dependency, no new unsafe code, and no file, network, process, or environment access.",
+      "approvedBy": "Repository maintainer, in the 2026-11-08 session for PR #208, on the condition of the agent supply-chain review recorded in reason",
+      "approvedAt": "2026-11-08T20:37:37Z",
+      "expiresAt": "2026-11-14T00:00:00Z",
+      "followUp": "0.13.6 clears the 14-day cool-off on 2026-11-13T08:50Z; remove this entry then and confirm 0.13.6 was not yanked (fdu-yy3g)."
+    }
+  ],
   "firstParty": [
     {
       "ecosystem": "npm",

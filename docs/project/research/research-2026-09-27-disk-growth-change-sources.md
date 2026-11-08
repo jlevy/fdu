@@ -1040,6 +1040,8 @@ Other corrections:
 - [FSEvents replay spike](../../../explorations/fsevents-replay/README.md)
 - [FSEvents-scoped revalidation plan](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 - [Disk-usage checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md)
+- [Recent growth plan](../specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md),
+  the no-baseline answer from one walk that this review’s walk measurements support
 - [Persistent-change prior art](research-2026-09-27-persistent-change-prior-art.md)
 - [Performance frontier](research-2026-08-10-performance-frontier.md)
 - [Metadata walk floor](../reports/report-2026-08-23-metadata-walk-floor.md)

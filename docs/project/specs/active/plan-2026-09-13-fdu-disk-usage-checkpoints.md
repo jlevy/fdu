@@ -160,6 +160,8 @@ The skill supplies suggestions and best practices; the engine owns validation,
 accounting, identity, and trust on every surface.
 Until the checkpoint API ships, the skill must describe this as proposed behavior and
 use only the documented interim report workflow, not invent checkpoint commands.
+Its written-recently recipe, which needs no saved state, is the first answer to a
+disk-pressure question in the meantime.
 
 ### Disk-pressure workflow: where did the space go?
 
@@ -198,6 +200,9 @@ If there is no suitable retained checkpoint, say that the requested window is
 unavailable and offer an explicitly different available interval or a new baseline.
 Do not silently label a three-day comparison “last hour,” interpolate old byte counts,
 or substitute the current modification-time filter.
+The written-since answer of the
+[recent growth plan](plan-2026-11-08-fdu-recent-growth-and-volumes.md#relationship-to-checkpoints)
+may be offered instead, under its own name: data written in the window, not net change.
 The permitted boundary tolerance and retention count are explicit profile settings;
 their defaults require storage and latency measurements.
 
@@ -280,7 +285,11 @@ Keep the reports outside the measured root.
 Both sizes are already present in JSON. This supplies a baseline today, but both
 captures still scan the selected tree, the sums count hard links and clones in full, and
 fdu does not yet provide the comparison command.
-`--modified-since` filters present files; it cannot recover old sizes or deleted files.
+`--modified-since` filters present files; it cannot recover old sizes or deleted files,
+and it misses files that arrived with older modification times.
+Where no report was saved, the
+[recent growth plan](plan-2026-11-08-fdu-recent-growth-and-volumes.md) answers a
+different question from one walk: where the data written in a window is now.
 `--depth` and `--exclude` are report controls, not a promise to avoid scanning
 descendants.
 
@@ -428,6 +437,8 @@ The default ranking is honest about these limits:
 
 - Every comparison shows the volume free-space change recorded with each checkpoint
   (`statvfs`), labeled volume-wide.
+  A checkpoint records the same capacity observation the recent growth plan’s `volumes`
+  view makes at report time.
 - Rows whose subtree contains a shared inode are marked shared.
 - On APFS, the output states that clone sharing is not visible and that allocated deltas
   can overstate physical change.
@@ -1014,6 +1025,7 @@ The plan above follows each recommendation.
 ## References
 
 - [Cache design](../../guides/cache-design.md)
+- [Recent growth, age profiles, and volume capacity](plan-2026-11-08-fdu-recent-growth-and-volumes.md)
 - [Opened-root inventory engine](plan-2026-08-25-fdu-opened-root-inventory-engine.md)
 - [FSEvents-scoped revalidation](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 - [Performance frontier](../../research/research-2026-08-10-performance-frontier.md)
