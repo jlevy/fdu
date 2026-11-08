@@ -326,7 +326,8 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 | crate::query::ViewSpec::Documents
                 | crate::query::ViewSpec::Files
                 | crate::query::ViewSpec::Largest
-                | crate::query::ViewSpec::Recent => entries,
+                | crate::query::ViewSpec::Recent
+                | crate::query::ViewSpec::Ages => entries,
             };
             total.saturating_add(rows)
         });
@@ -363,7 +364,8 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
             | crate::query::ViewSpec::Documents
             | crate::query::ViewSpec::Files
             | crate::query::ViewSpec::Largest
-            | crate::query::ViewSpec::Recent => {
+            | crate::query::ViewSpec::Recent
+            | crate::query::ViewSpec::Ages => {
                 work.rows = work.rows.saturating_add(entries);
             }
         }
@@ -380,6 +382,7 @@ fn report_rows(report: &crate::query::Report) -> u64 {
             crate::query::Section::Code(overview) => overview.languages.len() as u64,
             crate::query::Section::Files { rows, .. } => rows.len() as u64,
             crate::query::Section::Summary(_) => 1,
+            crate::query::Section::Ages(profile) => profile.bands.len() as u64,
         };
         total.saturating_add(rows)
     })

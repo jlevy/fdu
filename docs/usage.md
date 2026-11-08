@@ -350,8 +350,52 @@ for window in ("1h", "24h", "7d"):
 Exact net change, with deletions, needs a report saved before the window began; the
 [checkpoint design](project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md#interim-workflow)
 describes saving and comparing one.
-An age profile of a tree and the volume’s capacity beside the tree are planned in the
+The volume’s capacity beside the tree is planned in the
 [recent growth design](project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md).
+
+### See When the Space Arrived
+
+`--view ages` profiles the selected files by when they last changed, every window from
+one scan:
+
+```shell
+fdu ~ --view=ages
+fdu ~ --view=tree,ages --kind=file --changed-since=7d
+```
+
+On a Linux build container, during a day of Rust builds whose output is gitignored,
+`fdu / --one-filesystem --view=ages` printed:
+
+```text
+   7.7 GiB   18.9%  under 1h     9,004 files (7.7 GiB gitignored)
+    25 GiB   61.0%  1h to 1d     93,255 files (18 GiB gitignored)
+   3.8 GiB    9.4%  7d to 30d    61,112 files (768 MiB gitignored)
+   984 MiB    2.3%  30d to 90d   12,810 files
+   551 MiB    1.3%  90d to 1y    7,147 files
+   2.0 GiB    5.1%  1y to 3y     54,225 files (66 MiB gitignored)
+   848 MiB    2.0%  over 3y      37,542 files (24 KiB gitignored)
+note: ages are by change time: the newer of modification and status change
+```
+
+The bands are fixed: `future` (a timestamp at or after now), `under 1h`, `1h to 1d`,
+`1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`, `over 3y`, and
+`unknown`, where a change time was not observed.
+A year is 365.25 days, as in the tree’s age column.
+Each row is the window it names, `--changed-since 24h --changed-before 1h` for
+`1h to 1d`, over the same selection and instant; an entry exactly on an edge falls in
+the newer band. The rows add up to what `--view=summary` reports for the selection.
+Text leaves empty bands out; JSON keeps every band, with its edges as ages
+(`since_age_ns`, `before_age_ns`) and as instants (`since_ns`, `before_ns`, `since_at`,
+`before_at`), its `files`, `bytes`, `allocated`, and `ignored` tallies, and a
+`cumulative` tally of it and every newer band, which answers “how much changed within 30
+days?” without adding rows.
+
+The view is metadata only and composes with every selection: `--include='*.log'`
+profiles the logs, `--ignored=only` the gitignored files, and
+`--kind=dir --include=node_modules` the contents of every `node_modules`. Beside a tree,
+the tree’s age column stays modification activity while the bands are change time, and
+each is labeled. A `--watch` repaint measures the bands from its own instant, so a file
+moves to an older band with no filesystem change.
 
 ### Find Old Environments and Build Directories
 

@@ -627,7 +627,7 @@ An agent should be able to correct a command from its rejection alone.
 
 ```console
 $ fdu --cache off --view bogus project
-fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+fdu: invalid --view "bogus": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
 ? 2
 ```
 
@@ -635,7 +635,7 @@ fdu: invalid --view "bogus": expected one of list, summary, tree, families, type
 
 ```console
 $ fdu --cache off --view docs project
-fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+fdu: invalid --view "docs": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
 ? 2
 ```
 
@@ -892,6 +892,37 @@ is refused rather than falling back to name order.
 $ fdu --cache off --sort changed builds
 fdu: invalid --sort "changed": only flat rows carry a change time: sort files, largest, or recent, or list in a flat format, or sort by mtime
 ? 2
+```
+
+### Ages Profile the Selection by Change Time
+
+`--view ages` puts the selected files in fixed bands by how long ago they changed.
+Every payload here arrived moments ago, so all four are under an hour old, and the three
+that `--modified-before` calls old by modification time are new by change time.
+Text leaves empty bands out; machine output keeps every band, with its edges as ages and
+as instants and a cumulative tally.
+
+```console
+$ fdu --cache off --size apparent --view ages builds
+     240 B  100.0%  under 1h     4 files
+! note: ages are by change time: the newer of modification and status change
+! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --view ages --modified-before 30d --kind file builds
+     150 B  100.0%  under 1h     3 files
+! note: ages are by change time: the newer of modification and status change
+! note: selected 3 of 4 files, 150 B of 240 B
+! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --view ages --format jsonl builds 2>/dev/null | tail -n 1
+{"view": "ages", "basis": "changed", "bands": [{"band": "future", "since_age_ns": 0, "before_age_ns": null, "since_ns": [MTIME_NS], "before_ns": null, "since_at": "[RFC3339]", "before_at": null, "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "under 1h", "since_age_ns": 3600000000000, "before_age_ns": 0, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "1h to 1d", "since_age_ns": 86400000000000, "before_age_ns": 3600000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "1d to 7d", "since_age_ns": 604800000000000, "before_age_ns": 86400000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "7d to 30d", "since_age_ns": 2592000000000000, "before_age_ns": 604800000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "30d to 90d", "since_age_ns": 7776000000000000, "before_age_ns": 2592000000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "90d to 1y", "since_age_ns": 31557600000000000, "before_age_ns": 7776000000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "1y to 3y", "since_age_ns": 94672800000000000, "before_age_ns": 31557600000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "over 3y", "since_age_ns": null, "before_age_ns": 94672800000000000, "since_ns": null, "before_ns": [MTIME_NS], "since_at": null, "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "unknown", "since_age_ns": null, "before_age_ns": null, "since_ns": null, "before_ns": null, "since_at": null, "before_at": null, "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": null}], "total": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}
+? 0
 ```
 
 ### A Directory at the Scan-Depth Boundary Has an Unknown Age

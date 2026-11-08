@@ -516,10 +516,15 @@ from `fdu.report/11`.
 
 ### Phase 2: The `ages` view (`fdu-5079`, `fdu-alw7`)
 
-- [ ] `ViewSpec::Ages` over the index: band assignment from change time and the request
-  instant, partition and cumulative tallies, the ignored split, several roots.
-- [ ] Text renderer on the grouped-row layout; JSON, JSONL, and YAML records.
-- [ ] Inclusion in `--view full`.
+- [x] `ViewSpec::Ages` over the index: band assignment from change time and the request
+  instant, partition and cumulative tallies, the ignored split, several roots
+  (`query_ages.rs`). It profiles the files a summary of the same selection counts, so a
+  directory match profiles what it covers; the window identity holds for selections that
+  compose with `--kind file`, and the partition for every selection.
+- [x] Text renderer on the grouped-row layout; JSON, JSONL, and YAML records.
+  A watch’s repaint identity measures band instants from its fixed reference, so it
+  repaints when a file crosses an edge and not merely because the clock moved.
+- [x] Inclusion in `--view full`.
 - [ ] A performance-loop experiment for a derived route: an unfiltered `--view ages`
   (alone or with `summary`) can count bands as the walk reports entries, with no index,
   as unfiltered `summary` already does.

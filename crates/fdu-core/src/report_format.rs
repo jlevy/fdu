@@ -73,10 +73,10 @@ use crate::control::ControlCoverage;
 use crate::emit::{Event, IoFmt, JsonSink, Scalar, Shape, Sink, YamlSink};
 use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source};
 use crate::query::{
-    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MONTH_SECONDS, MetricGroup,
-    MetricRow, MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow,
-    TierState, TreeNode, TypeRow, ViewSpec, YEAR_SECONDS, format_rfc3339, format_rfc3339_nanos,
-    pages, with_rfc3339_nanos,
+    AgeProfile, AgeTally, CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally,
+    MONTH_SECONDS, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section,
+    ShareMetric, SizeMetric, SummaryRow, TierState, TreeNode, TypeRow, ViewSpec, YEAR_SECONDS,
+    format_rfc3339, format_rfc3339_nanos, pages, with_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -919,6 +919,7 @@ fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
                 sink.event(Event::EndSeq);
             });
         }
+        Section::Ages(profile) => emit_age_profile(sink, profile),
         Section::Summary(row) => {
             emit_field(sink, Field::always("summary"), true, |sink| {
                 emit_summary_row(sink, row);
@@ -926,6 +927,63 @@ fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
         }
     }
     sink.event(Event::EndMap);
+}
+
+/// An age profile: its basis, every band with its window as ages and as instants, and the
+/// total the bands partition.
+///
+/// Empty bands are kept, unlike in text, so a consumer indexes bands by label and never
+/// has to tell an empty band from one the report forgot.
+fn emit_age_profile(sink: &mut impl Sink, profile: &AgeProfile) {
+    emit_str_field(sink, "basis", profile.basis);
+    emit_field(sink, Field::always("bands"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for band in &profile.bands {
+            sink.event(Event::BeginMap(Shape::Block));
+            emit_str_field(sink, "band", band.band);
+            for (name, value) in [
+                ("since_age_ns", band.since_age_ns),
+                ("before_age_ns", band.before_age_ns),
+                ("since_ns", band.since_ns),
+                ("before_ns", band.before_ns),
+            ] {
+                emit_field(sink, Field::nullable(name), true, |sink| {
+                    emit_scalar(sink, value.map_or(Scalar::Null, Scalar::I64));
+                });
+            }
+            emit_field(sink, Field::nullable("since_at"), true, |sink| {
+                emit_instant(sink, band.since_ns);
+            });
+            emit_field(sink, Field::nullable("before_at"), true, |sink| {
+                emit_instant(sink, band.before_ns);
+            });
+            emit_age_tally_fields(sink, &band.tally);
+            emit_field(sink, Field::nullable("cumulative"), true, |sink| match &band.cumulative {
+                Some(tally) => {
+                    sink.event(Event::BeginMap(Shape::Inline));
+                    emit_age_tally_fields(sink, tally);
+                    sink.event(Event::EndMap);
+                }
+                None => emit_scalar(sink, Scalar::Null),
+            });
+            sink.event(Event::EndMap);
+        }
+        sink.event(Event::EndSeq);
+    });
+    emit_field(sink, Field::always("total"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        emit_age_tally_fields(sink, &profile.total);
+        sink.event(Event::EndMap);
+    });
+}
+
+fn emit_age_tally_fields(sink: &mut impl Sink, tally: &AgeTally) {
+    emit_u64_field(sink, "files", tally.files);
+    emit_u64_field(sink, "bytes", tally.bytes);
+    emit_u64_field(sink, "allocated", tally.allocated);
+    emit_field(sink, Field::nullable("ignored"), true, |sink| {
+        emit_ignored(sink, tally.ignored, false);
+    });
 }
 
 fn emit_bound_value(sink: &mut impl Sink, field: &'static str, bound: crate::query::Bound) {
@@ -1642,6 +1700,9 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
             },
             Section::Summary(row) => {
                 render_text_summary(&mut out, row, report.size, report.ignored_entries, color);
+            }
+            Section::Ages(profile) => {
+                render_text_ages(&mut out, profile, report.size, report.ignored_entries, color);
             }
         }
     }
@@ -2449,8 +2510,8 @@ fn bounded_rows(section: &Section) -> Option<(usize, usize)> {
         Section::Files { rows, total, .. } => (rows.len(), *total),
         Section::Extensions { rows, total, .. } => (rows.len(), *total),
         Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
-        // Trees carry their own omission records; summary cannot be bounded.
-        Section::Tree { .. } | Section::Summary(_) => return None,
+        // Trees carry their own omission records; summary and ages cannot be bounded.
+        Section::Tree { .. } | Section::Summary(_) | Section::Ages(_) => return None,
     };
     (shown < total).then_some((shown, total))
 }
@@ -2524,6 +2585,35 @@ fn render_text_metric_files(out: &mut String, report: &Report, rows: &[FileRow],
     }
 }
 
+/// One grouped row per band that holds a file, newest first: size, share of the profile's
+/// total, band, and file count, as every grouped view lays out its rows. Empty bands are
+/// left out here and kept in machine output.
+fn render_text_ages(
+    out: &mut String,
+    profile: &AgeProfile,
+    size: SizeMetric,
+    selected: IgnoredEntries,
+    color: bool,
+) {
+    let whole = pick(size, profile.total.bytes, profile.total.allocated);
+    let bands: Vec<_> = profile.bands.iter().filter(|band| band.tally.files > 0).collect();
+    let width = label_width(bands.iter().map(|band| band.band), TEXT_TYPE_LABEL_WIDTH);
+    for band in bands {
+        let tally = &band.tally;
+        let bytes = pick(size, tally.bytes, tally.allocated);
+        let _ = writeln!(
+            out,
+            "{}  {}  {} {} {}{}",
+            styled_bytes(bytes, TEXT_SIZE_WIDTH, color, false),
+            percentage_cell(bytes, whole, 1, TEXT_SHARE_WIDTH, color),
+            label_cell(band.band, width, STYLE_CATEGORY, color),
+            human_count(tally.files),
+            plural(tally.files, "file", "files"),
+            ignored_suffix(tally.ignored, size, selected, color),
+        );
+    }
+}
+
 fn render_text_summary(
     out: &mut String,
     row: &SummaryRow,
@@ -2588,6 +2678,7 @@ pub(super) fn view_header(view: ViewSpec) -> &'static str {
         ViewSpec::Largest => "LARGEST",
         ViewSpec::Recent => "RECENT",
         ViewSpec::Summary => "SUMMARY",
+        ViewSpec::Ages => "AGES",
     }
 }
 

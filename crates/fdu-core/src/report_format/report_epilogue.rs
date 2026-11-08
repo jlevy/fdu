@@ -130,6 +130,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     let mut share_labels: Vec<(&'static str, &'static str)> = Vec::new();
     let mut coverage = Vec::new();
     let mut zero = false;
+    let mut ages_shown = false;
     let mut reason = |why| {
         if !reasons.contains(&why) {
             reasons.push(why);
@@ -233,6 +234,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                 code_coverage(&mut coverage, overview);
             }
             Section::Files { .. } => {}
+            Section::Ages(_) => ages_shown = true,
         }
     }
     let mut includes = Vec::new();
@@ -272,6 +274,13 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                     .join(", ")
             ));
         }
+    }
+    // Beside a tree, whose ages are modification activity, the bands would otherwise read
+    // as the same clock; alone, the basis is still not what most readers assume.
+    if ages_shown {
+        notes.push(
+            "note: ages are by change time: the newer of modification and status change".to_owned(),
+        );
     }
     if let Some(metric) = report.sort_metric {
         notes.push(format!("note: ranked by {}", metric.replace('_', " ")));

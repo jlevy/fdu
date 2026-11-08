@@ -189,12 +189,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
--fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
-+fdu: invalid view "bogus": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+-fdu: invalid --view "bogus": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "bogus": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ The Unreleased View Alias Is Rejected
 @@ -1,1 +1,1 @@
--fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
-+fdu: invalid view "docs": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+-fdu: invalid --view "docs": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "docs": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
@@ -247,6 +247,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --sort "changed": only flat rows carry a change time: sort files, largest, or recent, or list in a flat format, or sort by mtime
 +fdu: invalid sort "changed": only flat rows carry a change time: sort files, largest, or recent, or list in a flat format, or sort by mtime
+  ✓ Ages Profile the Selection by Change Time
+  ✓ Ages Profile the Selection by Change Time
+  ✓ Ages Profile the Selection by Change Time
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
@@ -1240,9 +1243,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -fdu: --view code needs code analysis, which --watch cannot keep current; use a one-shot report
 +fdu: view code needs code analysis; this index was opened with analyze none
   ✗ Every View One Walk Can Answer
-@@ -1,11 +1,11 @@
- SUMMARY
-      256 B  7 files, 4 directories
+@@ -4,11 +4,11 @@
+ AGES
+      256 B  100.0%  under 1h     7 files
  TREE
 -██████████   100%       256 B  [AGE]  . 7 files
 -████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
@@ -1253,7 +1256,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
        77 B   30.1%  code               2 files
-@@ -22,10 +22,10 @@
+@@ -25,10 +25,10 @@
        39 B   50.6%  Python  1 file
        38 B   49.4%  Rust    1 file
  LARGEST  (2 of 7)
@@ -1267,8 +1270,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
     stderr:
-@@ -1,5 +1,5 @@
+@@ -1,6 +1,6 @@
  note: totals include descendants
+ note: ages are by change time: the newer of modification and status change
  note: display limits: row limit 2
  note: full omits code, documents without analysis
 -tip: show more: --limit=all
@@ -1276,9 +1280,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -1,11 +1,11 @@
- SUMMARY
-      256 B  7 files, 4 directories
+@@ -4,11 +4,11 @@
+ AGES
+      256 B  100.0%  under 1h     7 files
  TREE
 -██████████   100%       256 B  [AGE]  . 7 files
 -████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
@@ -1289,7 +1293,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
-@@ -28,10 +28,10 @@
+@@ -31,10 +31,10 @@
           1   25.0%         1      1             1/1  Python   (0 gitignored)
           4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
  LARGEST  (2 of 7)
@@ -1303,8 +1307,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
     stderr:
-@@ -2,6 +2,6 @@
- note: percentages are shares of code lines (CODE)
+@@ -3,6 +3,6 @@
+ note: ages are by change time: the newer of modification and status change
  note: 2 languages analyzed
  note: display limits: row limit 2
  note: full omits documents without words analysis
@@ -1313,9 +1317,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -1,11 +1,11 @@
- SUMMARY
-      256 B  7 files, 4 directories
+@@ -4,11 +4,11 @@
+ AGES
+      256 B  100.0%  under 1h     7 files
  TREE
 -██████████   100%       256 B  [AGE]  . 7 files
 -████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
@@ -1326,7 +1330,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
-@@ -39,10 +39,10 @@
+@@ -42,10 +42,10 @@
                                           3 words (0.0 pages)
                                           1 binary
  LARGEST  (2 of 7)
@@ -1340,9 +1344,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
     stderr:
-@@ -1,5 +1,5 @@
- note: totals include descendants
+@@ -2,5 +2,5 @@
  note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
+ note: ages are by change time: the newer of modification and status change
  note: 2 languages analyzed
  note: display limits: row limit 2
 -tip: show more: --limit=all
@@ -1656,7 +1660,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,292 +1,1 @@
+@@ -1,301 +1,1 @@
 -fdu — a fast du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1838,6 +1842,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  full, deleted files do not appear, and a chmod changes a file that did not grow.
 -  --sort changed orders files, largest, and recent by change time.
 -
+-  fdu PATH --view ages
+-  fdu PATH --view tree,ages --kind file --changed-since 7d
+-
+-  ages shows the selected files by when they last changed, every window from one
+-  scan: future, under 1h, 1h to 1d, 1d to 7d, 7d to 30d, 30d to 90d, 90d to 1y,
+-  1y to 3y, over 3y, and unknown. Each row is the --changed-since/--changed-before
+-  window it names, the rows add up to --view summary, and machine output adds each
+-  band's edges and the cumulative total of it and every newer band.
+-
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
 -  Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
 -             --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
@@ -1845,7 +1858,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -                                                        beyond what the views imply
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
 -             --breadth, --min-share
--  View       list,summary,tree,families,types,extensions,languages,code,documents,
+-  View       list,summary,ages,tree,families,types,extensions,languages,code,documents,
 -             largest,recent,files,full
 -  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
 -             --color, --progress

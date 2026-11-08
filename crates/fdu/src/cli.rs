@@ -315,6 +315,15 @@ WHAT WAS WRITTEN RECENTLY
   full, deleted files do not appear, and a chmod changes a file that did not grow.
   --sort changed orders files, largest, and recent by change time.
 
+  fdu PATH --view ages
+  fdu PATH --view tree,ages --kind file --changed-since 7d
+
+  ages shows the selected files by when they last changed, every window from one
+  scan: future, under 1h, 1h to 1d, 1d to 7d, 7d to 30d, 30d to 90d, 90d to 1y,
+  1y to 3y, over 3y, and unknown. Each row is the --changed-since/--changed-before
+  window it names, the rows add up to --view summary, and machine output adds each
+  band's edges and the cumulative total of it and every newer band.
+
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
@@ -322,7 +331,7 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
                                                         beyond what the views imply
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --breadth, --min-share
-  View       list,summary,tree,families,types,extensions,languages,code,documents,
+  View       list,summary,ages,tree,families,types,extensions,languages,code,documents,
              largest,recent,files,full
   Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
              --color, --progress
@@ -687,7 +696,7 @@ pub struct Cli {
 
     // ---- view: which roll-ups are reported ----
     /// Views: list, tree, files, extensions, types, families, languages, code, documents,
-    /// largest, recent, summary, or full. Defaults to list with no analysis, otherwise to
+    /// largest, recent, summary, ages, or full. Defaults to list with no analysis, otherwise to
     /// a view that displays the requested analysis. code and documents read file contents:
     /// each runs its analyzer.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]

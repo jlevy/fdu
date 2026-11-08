@@ -10,6 +10,7 @@
 //! [`Delivery::for_root`], which resolves a root to name its snapshot in a cache
 //! directory.
 
+mod query_ages;
 mod query_glob;
 mod query_report;
 mod query_request;
@@ -18,6 +19,7 @@ mod query_status;
 mod query_subtrees;
 mod query_values;
 
+pub use query_ages::{AGE_BASIS, AgeBand, AgeProfile, AgeTally};
 pub use query_glob::Pattern;
 pub use query_report::{
     AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, EntryTotals,

@@ -134,6 +134,8 @@ class View(StrEnum):
 
     LIST = "list"
     SUMMARY = "summary"
+    #: The selected regular files by change-time band, newest first.
+    AGES = "ages"
     TREE = "tree"
     FAMILIES = "families"
     TYPES = "types"
@@ -920,6 +922,54 @@ class SummarySection:
 
 
 @dataclass(frozen=True, slots=True)
+class AgeTally:
+    """The files, bytes, and ignored part one age band, or several, holds."""
+
+    files: int
+    bytes: int
+    allocated: int
+    #: The ignored part, or ``None`` when rules were unobserved or a counted file's
+    #: classification is unknown.
+    ignored: ExtensionTally | None
+
+
+@dataclass(frozen=True, slots=True)
+class AgeBand:
+    """One band of an age profile: the files one change-time window selects.
+
+    The band is the window ``changed_since=since_age, changed_before=before_age`` over the
+    same selection and instant, and ``since_ns``/``before_ns`` are those edges as instants.
+    """
+
+    #: ``future``, ``under 1h``, … ``over 3y``, or ``unknown``.
+    band: str
+    #: The oldest age the band holds, inclusive, in nanoseconds; ``None`` for ``over 3y``
+    #: and ``unknown``.
+    since_age_ns: int | None
+    #: The newest age it excludes; ``None`` for ``future`` and ``unknown``.
+    before_age_ns: int | None
+    since_ns: int | None
+    before_ns: int | None
+    since_at: datetime | None
+    before_at: datetime | None
+    tally: AgeTally
+    #: This band and every newer one; ``None`` for ``unknown``.
+    cumulative: AgeTally | None
+
+
+@dataclass(frozen=True, slots=True)
+class AgesSection:
+    """The selected regular files by change-time band, every band included."""
+
+    view: View
+    #: What the bands count by: ``changed``, the newer of modification and status change.
+    basis: str
+    bands: tuple[AgeBand, ...]
+    #: Every band together: the files and bytes a summary of the same selection reports.
+    total: AgeTally
+
+
+@dataclass(frozen=True, slots=True)
 class SectionBound:
     """What a section dropped when a limit applied.
 
@@ -1093,7 +1143,13 @@ class CodeSection:
 
 
 type ReportSection = (
-    SummarySection | ExtensionsSection | FilesSection | TreeSection | MetricsSection | CodeSection
+    SummarySection
+    | AgesSection
+    | ExtensionsSection
+    | FilesSection
+    | TreeSection
+    | MetricsSection
+    | CodeSection
 )
 
 
@@ -1684,6 +1740,45 @@ def _ignored_tally(value: object) -> IgnoredTally | None:
     )
 
 
+def _age_tally(value: object) -> AgeTally:
+    if not isinstance(value, dict):
+        raise TypeError("an age tally must be an object")
+    raw = cast(dict[str, Any], value)
+    return AgeTally(
+        files=int(raw["files"]),
+        bytes=int(raw["bytes"]),
+        allocated=int(raw["allocated"]),
+        ignored=_ignored_files(raw["ignored"]),
+    )
+
+
+def _ages_section(view: View, raw: dict[str, Any]) -> AgesSection:
+    bands = raw["bands"]
+    if not isinstance(bands, list):
+        raise TypeError("an ages section's bands must be a list")
+    return AgesSection(
+        view,
+        basis=str(raw["basis"]),
+        bands=tuple(
+            AgeBand(
+                band=str(band["band"]),
+                since_age_ns=_optional_int(band["since_age_ns"]),
+                before_age_ns=_optional_int(band["before_age_ns"]),
+                since_ns=_optional_int(band["since_ns"]),
+                before_ns=_optional_int(band["before_ns"]),
+                since_at=_instant(_optional_int(band["since_ns"])),
+                before_at=_instant(_optional_int(band["before_ns"])),
+                tally=_age_tally(band),
+                cumulative=_age_tally(band["cumulative"])
+                if band["cumulative"] is not None
+                else None,
+            )
+            for band in cast(list[dict[str, Any]], bands)
+        ),
+        total=_age_tally(raw["total"]),
+    )
+
+
 def _ignored_files(value: object) -> ExtensionTally | None:
     if value is None:
         return None
@@ -1906,6 +2001,8 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     ),
                 )
             )
+        elif view is View.AGES:
+            sections.append(_ages_section(view, raw))
         elif view is View.CODE:
             sections.append(CodeSection(view, _code_overview(raw["code"])))
         elif view is View.EXTENSIONS:

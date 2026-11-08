@@ -1054,3 +1054,34 @@ def test_a_report_carries_what_its_selection_admitted_beside_what_was_scanned() 
     assert report.scanned == fdu.EntryTotals(files=5, dirs=3, bytes=657, allocated=2560)
     with pytest.raises(TypeError, match="selected and scanned"):
         report_from_dict({**wire, "selected": [3]})
+
+
+def test_an_ages_section_decodes_every_band_with_its_window_and_cumulative_tally() -> None:
+    def band(name: str, since: int | None, before: int | None, files: int) -> dict[str, object]:
+        tally = {"files": files, "bytes": 10 * files, "allocated": 512 * files, "ignored": None}
+        return {
+            "band": name,
+            "since_age_ns": since,
+            "before_age_ns": before,
+            "since_ns": None if since is None else 1_000_000 - since,
+            "before_ns": None if before is None else 1_000_000 - before,
+            "since_at": "not consulted",
+            "before_at": "not consulted",
+            **tally,
+            "cumulative": None if name == "unknown" else tally,
+        }
+
+    section = {
+        "view": "ages",
+        "basis": "changed",
+        "bands": [band("future", 0, None, 1), band("unknown", None, None, 2)],
+        "total": {"files": 3, "bytes": 30, "allocated": 1536, "ignored": None},
+    }
+    ages = report_from_dict(_envelope([section])).sections[0]
+    assert isinstance(ages, fdu.AgesSection)
+    assert (ages.view, ages.basis, ages.total.files) == (fdu.View.AGES, "changed", 3)
+    future, unknown = ages.bands
+    assert (future.band, future.since_age_ns, future.before_age_ns) == ("future", 0, None)
+    assert future.since_at == datetime(1970, 1, 1, 0, 0, 0, 1000, tzinfo=UTC)
+    assert future.cumulative == future.tally
+    assert (unknown.cumulative, unknown.since_at) == (None, None)

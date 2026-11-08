@@ -65,6 +65,9 @@ pub enum ViewSpec {
     Recent,
     /// One aggregate row for everything selected.
     Summary,
+    /// The selected regular files by change-time band, newest first: every window from
+    /// one walk ([`AgeProfile`](crate::query::AgeProfile)).
+    Ages,
 }
 
 impl ViewSpec {
@@ -81,6 +84,7 @@ impl ViewSpec {
             | Self::Code
             | Self::Documents
             | Self::Summary
+            | Self::Ages
             // `largest` lands here for its own reason: it is named for the ranking,
             // so the ranking is not a display default but the view's whole content.
             | Self::Largest => SortKey::Size,
@@ -131,9 +135,10 @@ impl ViewSpec {
     ///
     /// One list, so a front end cannot hold a stale copy: the Python binding kept its own
     /// view parser and silently rejected `largest` and `recent` for exactly that reason.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::List,
         Self::Summary,
+        Self::Ages,
         Self::Tree,
         Self::Families,
         Self::Types,
@@ -165,6 +170,7 @@ impl ViewSpec {
             "recent" => Ok(Self::Recent),
             "files" => Ok(Self::Files),
             "summary" => Ok(Self::Summary),
+            "ages" => Ok(Self::Ages),
             // The expectation only. Each front end names its own flag and quotes the
             // offending token, so neither ends up saying "invalid --view invalid view".
             _ => Err(format!("expected one of {}", Self::vocabulary())),
@@ -193,6 +199,7 @@ impl ViewSpec {
             Self::Recent => "recent",
             Self::Files => "files",
             Self::Summary => "summary",
+            Self::Ages => "ages",
         }
     }
 
@@ -222,7 +229,8 @@ impl ViewSpec {
             | Self::Files
             | Self::Largest
             | Self::Recent
-            | Self::Summary => AnalysisSet::NONE,
+            | Self::Summary
+            | Self::Ages => AnalysisSet::NONE,
         }
     }
 
@@ -248,7 +256,8 @@ impl ViewSpec {
             | Self::Files
             | Self::Largest
             | Self::Recent
-            | Self::Summary => AnalysisSet::NONE,
+            | Self::Summary
+            | Self::Ages => AnalysisSet::NONE,
         }
     }
 
@@ -952,7 +961,7 @@ impl IgnoredTally {
         }
     }
 
-    fn add(&mut self, other: Self) {
+    pub(super) fn add(&mut self, other: Self) {
         self.files = self.files.saturating_add(other.files);
         self.dirs = self.dirs.saturating_add(other.dirs);
         self.bytes = self.bytes.saturating_add(other.bytes);
@@ -1407,6 +1416,8 @@ pub enum Section {
     },
     /// A summary view.
     Summary(SummaryRow),
+    /// An age profile.
+    Ages(Box<crate::query::AgeProfile>),
 }
 
 /// The rows of a tree over several roots.
@@ -1472,6 +1483,7 @@ impl Section {
                 *view
             }
             Self::Summary(_) => ViewSpec::Summary,
+            Self::Ages(_) => ViewSpec::Ages,
         }
     }
 }
@@ -2170,6 +2182,7 @@ fn read_roots(
     let mut shared_metric_summaries = (unfiltered && metric_consumers > 1)
         .then(|| metric_summaries(&query.views, &reads, query, content));
 
+    let age_reference_ns = crate::query::system_time_to_nanos(request.now);
     let mut sections: Vec<Section> = query
         .views
         .iter()
@@ -2180,11 +2193,10 @@ fn read_roots(
             if let Some(summary) = shared_metric_summary {
                 return Section::Metrics { view: *view, summary: Box::new(summary) };
             }
-            build_section(*view, &reads, labels, query, content)
+            build_section(*view, &reads, labels, query, content, age_reference_ns)
         })
         .collect();
 
-    let age_reference_ns = crate::query::system_time_to_nanos(request.now);
     measure_ages(&mut sections, age_reference_ns);
     let ignore_rules =
         merge_ignore_rules(reads.iter().map(|read| read.index.control_coverage()).collect());
@@ -2583,6 +2595,19 @@ fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>) {
                     stack.extend(node.children.iter_mut());
                 }
             }
+            // A band's edges are ages, fixed; only their instants follow the reference.
+            // Which band holds a file was decided against the request instant, so a watch
+            // whose identity pins the reference repaints when a file crosses an edge and
+            // not merely because the clock moved.
+            Section::Ages(profile) => {
+                let instant = |age: Option<i64>| {
+                    reference_ns.zip(age).and_then(|(reference, age)| reference.checked_sub(age))
+                };
+                for band in &mut profile.bands {
+                    band.since_ns = instant(band.since_age_ns);
+                    band.before_ns = instant(band.before_age_ns);
+                }
+            }
             _ => {}
         }
     }
@@ -2874,6 +2899,7 @@ fn needs_unfiltered_entry_rows(view: ViewSpec) -> bool {
             | ViewSpec::Files
             | ViewSpec::Largest
             | ViewSpec::Recent
+            | ViewSpec::Ages
     )
 }
 
@@ -2904,6 +2930,7 @@ fn build_section(
     labels: Option<&[NamedRoot]>,
     query: &Query,
     content: AnalysisSet,
+    now_ns: Option<i64>,
 ) -> Section {
     if query.tree_for(view) {
         let limits = TreeDisplayLimits {
@@ -2928,6 +2955,16 @@ fn build_section(
     match view {
         ViewSpec::Code => Section::Code(Box::new(code_overview(reads, query, content))),
         ViewSpec::Summary => Section::Summary(sum_roots(reads.iter().map(RootRead::summary))),
+        ViewSpec::Ages => {
+            // The same files `summary` counts, so the bands partition its totals.
+            let members: Vec<_> = reads.iter().map(RootRead::members).collect();
+            let observed = reads.iter().all(|read| read.index.observes_controls());
+            Section::Ages(Box::new(crate::query::query_ages::age_profile(
+                members.iter().flat_map(|rows| rows.iter()),
+                now_ns,
+                observed,
+            )))
+        }
         ViewSpec::Extensions => {
             let (rows, total, share_omitted) = extension_rows(reads, query);
             Section::Extensions { rows, total, share_omitted }
@@ -3224,7 +3261,8 @@ impl MetricAccumulator {
             | ViewSpec::Files
             | ViewSpec::Largest
             | ViewSpec::Recent
-            | ViewSpec::Summary => false,
+            | ViewSpec::Summary
+            | ViewSpec::Ages => false,
         };
         if !included {
             return;
@@ -3418,7 +3456,8 @@ impl MetricAccumulator {
             | ViewSpec::Files
             | ViewSpec::Largest
             | ViewSpec::Recent
-            | ViewSpec::Summary => {
+            | ViewSpec::Summary
+            | ViewSpec::Ages => {
                 unreachable!("only grouped views reach metric_summary")
             }
         };
@@ -5213,6 +5252,27 @@ mod tests {
         assert!(names(later, changed_since("365d")).is_empty());
         let changed_before = ReadSpec { changed_before: Some("365d"), ..ReadSpec::new() };
         assert_eq!(names(later, changed_before), both);
+
+        // The age profile moves with the instant too: both files arrived under an hour
+        // ago by change time, and 400 days on both are a year old.
+        let bands = |now: std::time::SystemTime| {
+            let spec = RequestSpec {
+                read: ReadSpec { views: Some("ages"), ..ReadSpec::new() },
+                ..RequestSpec::new(root.path())
+            };
+            let request = Request::build(&spec, now, &AxisNames::FIELDS).expect("parses");
+            match &report(&index, &request, generated_at()).expect("report").sections[0] {
+                Section::Ages(profile) => profile
+                    .bands
+                    .iter()
+                    .filter(|band| band.tally.files > 0)
+                    .map(|band| (band.band, band.tally.files))
+                    .collect::<Vec<_>>(),
+                other => panic!("expected ages, got {other:?}"),
+            }
+        };
+        assert_eq!(bands(now), [("under 1h", 2)]);
+        assert_eq!(bands(later), [("1y to 3y", 2)]);
     }
 
     /// A filtered root is 100% of what was selected; the coverage note and the envelope's
@@ -5253,6 +5313,90 @@ mod tests {
         // A display bound is not a selection, and has its own note.
         let bounded = reported(Selection { depth: Some(Bound::Limit(1)), ..Selection::default() });
         assert!(!bounded.notes.iter().any(|note| note.contains("selected")));
+    }
+
+    /// The plan's identities for `ages`: the bands partition `summary`, and each band is
+    /// the window it names, over the same selection and instant.
+    #[test]
+    fn every_age_band_is_its_window_and_the_bands_partition_the_summary() {
+        const HOUR: i64 = 3_600_000_000_000;
+        const DAY: i64 = 24 * HOUR;
+        let now_ns: i64 = 1_800_000_000_000_000_000;
+        let mut ops = vec![upsert("d", EntryKind::Dir, stamped(0, now_ns - 5, now_ns - 5))];
+        // One file per band and on each side of its edges, each with a modification time
+        // older than its change time, as a copy has.
+        let ages = [-3, 0, 1, HOUR, HOUR + 1, DAY, 3 * DAY, 8 * DAY, 40 * DAY, 100 * DAY];
+        let ages = ages.into_iter().chain([400 * DAY, 2_000 * DAY]);
+        for (position, age) in ages.enumerate() {
+            let size = 10 + position as u64;
+            let changed = now_ns - age;
+            ops.push(upsert(
+                &format!("d/f{position}"),
+                EntryKind::File,
+                stamped(size, changed - 10 * DAY, changed),
+            ));
+        }
+        ops.push(upsert("d/blind", EntryKind::File, stamped(5, now_ns, 0)));
+        ops.push(upsert("loose.txt", EntryKind::File, stamped(7, now_ns - DAY, now_ns - DAY)));
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(ops));
+        let now =
+            UNIX_EPOCH + Duration::from_nanos(u64::try_from(now_ns).expect("after the epoch"));
+        let read = |selection: Selection, view: ViewSpec| {
+            let query = Query {
+                selection: Selection { size: SizeMetric::Apparent, ..selection },
+                views: vec![view],
+                ..Query::default()
+            };
+            report(&index, &Request::new(Basis::held_by(&index), query, now), generated_at())
+                .expect("report")
+                .sections
+                .remove(0)
+        };
+        let summary = |selection: Selection| match read(selection, ViewSpec::Summary) {
+            Section::Summary(row) => (row.files, row.bytes),
+            other => panic!("expected a summary, got {other:?}"),
+        };
+        let profile = |selection: Selection| match read(selection, ViewSpec::Ages) {
+            Section::Ages(profile) => profile,
+            other => panic!("expected ages, got {other:?}"),
+        };
+        // A directory match covers its contents, in ages as in summary, so the bands
+        // partition what it covers. Its bands are not `--kind file` windows, which would
+        // replace the kind that selected the directory.
+        let covering = Selection {
+            kinds: vec![EntryKind::Dir],
+            include: vec![pattern("d")],
+            ..Selection::default()
+        };
+        let covered = profile(covering.clone());
+        assert_eq!((covered.total.files, covered.total.bytes), summary(covering));
+        assert_eq!(covered.total.files, 13, "d's files, not loose.txt");
+        for selection in [
+            Selection::default(),
+            Selection { include: vec![pattern("d/**")], ..Selection::default() },
+        ] {
+            let ages = profile(selection.clone());
+            assert_eq!((ages.total.files, ages.total.bytes), summary(selection.clone()));
+            for band in ages.bands.iter().filter(|band| band.band != "unknown") {
+                let window = Selection {
+                    kinds: vec![EntryKind::File],
+                    changed: TimeWindow { since: band.since_ns, before: band.before_ns },
+                    ..selection.clone()
+                };
+                assert_eq!(
+                    (band.tally.files, band.tally.bytes),
+                    summary(window),
+                    "{} is its window",
+                    band.band
+                );
+            }
+            let unknown = ages.bands.last().expect("an unknown band");
+            assert_eq!((unknown.band, unknown.tally.files), ("unknown", 1));
+        }
+        let files: Vec<_> =
+            profile(Selection::default()).bands.iter().map(|band| band.tally.files).collect();
+        assert_eq!(files, [2, 2, 3, 1, 1, 1, 1, 1, 1, 1], "future .. over 3y, unknown");
     }
 
     #[test]

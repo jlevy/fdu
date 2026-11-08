@@ -1112,6 +1112,9 @@ $ fdu --cache off --color never --size apparent --view full --limit 2 content-pr
 SUMMARY
      256 B  7 files, 4 directories
 
+AGES
+     256 B  100.0%  under 1h     7 files
+
 TREE
 ██████████   100%       256 B  [AGE]  . 7 files
 ████░░░░░░    38%        98 B  [AGE]    assets/ 2 files
@@ -1141,6 +1144,7 @@ RECENT  (2 of 7)
 [RFC3339]  assets[SEP]late.bin.txt
 [RFC3339]  docs[SEP]notes.txt
 ! note: totals include descendants
+! note: ages are by change time: the newer of modification and status change
 ! note: display limits: row limit 2
 ! note: full omits code, documents without analysis
 ! tip: show more: --limit=all
@@ -1157,6 +1161,9 @@ names the value that keeps the code analysis already chosen.
 $ fdu --cache off --color never --size apparent --analyze code --view full --limit 2 content-project
 SUMMARY
      256 B  7 files, 4 directories
+
+AGES
+     256 B  100.0%  under 1h     7 files
 
 TREE
 ██████████   100%       256 B  [AGE]  . 7 files
@@ -1194,6 +1201,7 @@ RECENT  (2 of 7)
 [RFC3339]  docs[SEP]notes.txt
 ! note: totals include descendants
 ! note: percentages are shares of code lines (CODE)
+! note: ages are by change time: the newer of modification and status change
 ! note: 2 languages analyzed
 ! note: display limits: row limit 2
 ! note: full omits documents without words analysis
@@ -1209,6 +1217,9 @@ With every analyzer enabled nothing is omitted, and no note appears.
 $ fdu --cache off --color never --size apparent --analyze all --view full --limit 2 content-project
 SUMMARY
      256 B  7 files, 4 directories
+
+AGES
+     256 B  100.0%  under 1h     7 files
 
 TREE
 ██████████   100%       256 B  [AGE]  . 7 files
@@ -1257,6 +1268,7 @@ RECENT  (2 of 7)
 [RFC3339]  docs[SEP]notes.txt
 ! note: totals include descendants
 ! note: percentages are shares of code lines (CODE), document words (DOCUMENTS)
+! note: ages are by change time: the newer of modification and status change
 ! note: 2 languages analyzed
 ! note: display limits: row limit 2
 ! tip: show more: --limit=all

@@ -34,6 +34,9 @@ if TYPE_CHECKING:
         watch_rule,
     )
     from ._models import (
+        AgeBand,
+        AgesSection,
+        AgeTally,
         Analysis,
         AnalysisMetadata,
         AnalysisOptions,
@@ -178,6 +181,9 @@ def _main() -> int:
 
 
 __all__ = [
+    "AgeBand",
+    "AgeTally",
+    "AgesSection",
     "Analysis",
     "AnalysisMetadata",
     "AnalysisOptions",

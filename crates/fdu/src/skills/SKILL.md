@@ -234,7 +234,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Scope | What is scanned and cached? | `PATH...`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
 | Content | Which file bodies are read beyond what the views imply? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--changed-since`, `--changed-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
+| View | Which roll-up is reported? | `--view list,summary,ages,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
 | Mode | How is work performed? | `--cache auto\|on\|off`, `--stale-ok`, `--cache-dir DIR`, `--watch`, `--workers N` |
 
@@ -440,6 +440,20 @@ deletions included, needs a report saved before the window began, written outsid
 keeps every directory and file at or above 1% of the root and stays small, and a later
 one is compared with it by path.
 With none saved, the written-data answer above is the one available.
+
+`--view ages` answers every window at once: the selected files by when they last
+changed, in fixed bands (`future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`,
+`30d to 90d`, `90d to 1y`, `1y to 3y`, `over 3y`, `unknown`), from one scan.
+
+```bash
+fdu PATH --view ages                                     # how much arrived when
+fdu PATH --view tree,ages --kind file --changed-since 7d # where this week's data is
+```
+
+Each row is the `--changed-since`/`--changed-before` window it names, the rows add up to
+`--view summary`, and JSON adds each band’s edges and a `cumulative` total of it and
+every newer band, which answers “how much changed within 30 days?”
+directly.
 
 ## Find Environments and Build Outputs
 

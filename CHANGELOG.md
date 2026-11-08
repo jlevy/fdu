@@ -27,6 +27,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Machine output: list rows carry `changed_ns` and `changed_at`, null where unknown, and
   `changed_at` is null for an incomplete subtree as `modified_at` is.
   Python `FileRow` gains `changed_ns` and `changed_at`.
+- `--view ages` (Python `View.AGES`, Rust `ViewSpec::Ages`) profiles the selected
+  regular files by change time in fixed bands, newest first: `future`, `under 1h`,
+  `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`, `over 3y`,
+  and `unknown`. Each band is the `--changed-since`/`--changed-before` window it names
+  over the same selection and instant, the bands add up to `--view summary`, and text
+  keeps the grouped-row layout, leaving empty bands out.
+  Machine output keeps every band, with its edges as ages and as instants, its tallies
+  and ignored part, and a `cumulative` tally of it and every newer band.
+  The view is metadata only, composes with every selection and several roots, shares one
+  walk with other views, and is part of `--view full`. A watch repaints when a file
+  crosses a band edge.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
   is not read as the whole tree.
@@ -37,7 +48,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Breaking:** the report schema is `fdu.report/12`, for the list-row and envelope
-  fields above.
+  fields above and the `ages` section.
+- **Breaking (Rust):** `ViewSpec` gains `Ages` and `Section` gains `Ages`, so an
+  exhaustive match over either needs the new arm; `ViewSpec::ALL` has 13 views.
 - **Breaking (Rust):** `Selection` gains `changed`, `Candidate` gains `changed_ns`,
   `FileRow` gains `changed_ns`, `SortKey` gains `Changed`, `ReadSpec` gains
   `changed_since` and `changed_before`, and `AxisNames` gains `changed_since` and
