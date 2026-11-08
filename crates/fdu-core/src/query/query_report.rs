@@ -470,6 +470,10 @@ pub struct AxisNames {
     pub modified_since: &'static str,
     /// The exclusive upper bound on modification time.
     pub modified_before: &'static str,
+    /// The inclusive lower bound on change time.
+    pub changed_since: &'static str,
+    /// The exclusive upper bound on change time.
+    pub changed_before: &'static str,
     /// The entry kinds a selection admits.
     pub kind: &'static str,
     /// The selection by ignored state, as one axis.
@@ -523,6 +527,8 @@ impl AxisNames {
         include: "--include",
         modified_since: "--modified-since",
         modified_before: "--modified-before",
+        changed_since: "--changed-since",
+        changed_before: "--changed-before",
         kind: "--kind",
         ignored: "--ignored",
         depth: "--depth",
@@ -564,6 +570,8 @@ impl AxisNames {
         include: "include",
         modified_since: "modified_since",
         modified_before: "modified_before",
+        changed_since: "changed_since",
+        changed_before: "changed_before",
         kind: "kind",
         ignored: "ignored",
         depth: "depth",
@@ -1300,6 +1308,12 @@ pub struct FileRow {
     pub allocated: u64,
     /// Modification time in nanoseconds since the Unix epoch.
     pub mtime_ns: i64,
+    /// Change time in nanoseconds since the Unix epoch, the newer of modification and
+    /// status change ([`Attrs::change_time_ns`](crate::Attrs::change_time_ns)), or `None`
+    /// where it was not observed. A measured directory's is the newest in its eligible
+    /// subtree, and `None` when any entry counted there had none; like `mtime_ns`, it is a
+    /// lower bound when `complete` is `Some(false)`.
+    pub changed_ns: Option<i64>,
     /// Descendant regular files for a directory; absent for other entry kinds.
     pub files: Option<u64>,
     /// Descendant directories, excluding the matching root; absent for other kinds.
@@ -2022,6 +2036,17 @@ fn totals_fit<'a>(roots: impl Iterator<Item = (&'a Path, [u64; 4])>) -> crate::R
     Ok(())
 }
 
+/// The note for `files` regular files whose change time was not observed, under a
+/// change-time bound: unknown is not old, so the reader is told they were left out
+/// rather than left to assume none exist.
+fn unknown_change_time_note(files: u64) -> String {
+    let (noun, pronoun) = if files == 1 { ("file has", "it") } else { ("files have", "them") };
+    format!(
+        "note: {} {noun} no observed change time, so no change-time bound selects {pronoun}",
+        crate::report_format::human_count(files)
+    )
+}
+
 /// Read one report from the indexes of its roots, in the roots' order.
 ///
 /// Every section accumulates over each root's [`RootRead`] and finalizes once, so display
@@ -2112,6 +2137,16 @@ fn read_roots(
         }
     }
     tips.extend(retained_refusals_tip(query, &ignore_rules));
+    if !query.selection.changed.is_unbounded() {
+        let unknown = reads
+            .iter()
+            .filter_map(|read| read.walked.as_ref())
+            .map(|walked| walked.unknown_changed)
+            .sum::<u64>();
+        if unknown > 0 {
+            notes.push(unknown_change_time_note(unknown));
+        }
+    }
     // Completeness rises to the root, so a root is incomplete exactly when some directory
     // below it is, and the report when some root is.
     if !query.min_share_for().admits(0, 1)
@@ -2347,6 +2382,10 @@ struct Walked {
     visible_files: BTreeSet<EntryId>,
     /// Selected contents whose ignore classification is unavailable, by ancestor directory.
     unknown_ignored: BTreeSet<EntryId>,
+    /// Regular files the walk considered, before positive predicates, whose change time
+    /// was not observed: the files no change-time bound can select, which a note counts so
+    /// that they are never taken for old.
+    unknown_changed: u64,
 }
 
 impl Walked {
@@ -2517,6 +2556,7 @@ fn walk(
         visible: BTreeSet::new(),
         visible_files: BTreeSet::new(),
         unknown_ignored: BTreeSet::new(),
+        unknown_changed: 0,
     };
     // No entry of an index that read no rule can be shown to be ignored or not, so
     // `report_in` refuses a selection by ignored state before it reaches this walk.
@@ -2579,16 +2619,19 @@ fn walk(
             let classification_admitted =
                 classification.is_some() || selection.ignored == IgnoredEntries::Include;
             let mut measured = *attrs;
+            let mut changed = attrs.change_time_ns();
             let subtree = directories.and_then(|values| values.get(&child)).copied();
             if let Some(subtree) = subtree {
                 measured.size = subtree.bytes;
                 measured.allocated = subtree.allocated;
                 measured.mtime_ns = subtree.mtime_ns;
+                changed = subtree.changed();
             }
             let (pruned, matches) = query_subtrees::with_candidate(
                 &child_path,
                 kind,
                 measured,
+                changed,
                 ignored,
                 identity,
                 |candidate| {
@@ -2598,16 +2641,25 @@ fn walk(
             if pruned {
                 continue;
             }
+            if kind == EntryKind::File
+                && changed.is_none()
+                && classification_admitted
+                && selection.ignored.admits(ignored)
+            {
+                walked.unknown_changed += 1;
+            }
             // An incomplete subtree's newest activity is a lower bound, not an age, so no
-            // modification bound can be shown to hold for it: `before` could be disproved
-            // by any unlisted descendant, and `since`, which a lower bound could prove, is
-            // held to the same rule so that a row's presence under a time filter always
-            // means the filter was decided on a complete measurement. A size bound still
-            // matches, since a lower bound at or above the minimum proves the true size is.
+            // time bound, by modification or by change, can be shown to hold for it:
+            // `before` could be disproved by any unlisted descendant, and `since`, which a
+            // lower bound could prove, is held to the same rule so that a row's presence
+            // under a time filter always means the filter was decided on a complete
+            // measurement. A size bound still matches, since a lower bound at or above the
+            // minimum proves the true size is. A subtree holding an unobserved change time
+            // has no change time at all, and `admits` already refused it.
+            let timed = !selection.modified.is_unbounded() || !selection.changed.is_unbounded();
             let matches = matches
                 && classification_admitted
-                && (selection.modified.is_unbounded()
-                    || subtree.is_none_or(|subtree| subtree.complete));
+                && (!timed || subtree.is_none_or(|subtree| subtree.complete));
             let row = FileRow {
                 root: 0,
                 path: child_path.clone(),
@@ -2615,6 +2667,7 @@ fn walk(
                 bytes: measured.size,
                 allocated: measured.allocated,
                 mtime_ns: measured.mtime_ns,
+                changed_ns: changed,
                 files: subtree.map(|subtree| subtree.files),
                 dirs: subtree.map(|subtree| subtree.dirs),
                 complete: subtree.map(|subtree| subtree.complete),
@@ -2966,6 +3019,7 @@ fn extension_rows(reads: &[RootRead<'_>], query: &Query) -> (Vec<TypeRow>, usize
             },
             count: |row: &TypeRow| row.files,
             mtime: |_: &TypeRow| None,
+            changed: |_: &TypeRow| None,
             name: borrowed_name(|row: &TypeRow| std::borrow::Cow::Borrowed(row.extension.as_str())),
             content_metric: |_: &TypeRow, _: &MetricDef| None,
             rank: |_: &TypeRow| 0,
@@ -3289,6 +3343,7 @@ impl MetricAccumulator {
                 },
                 count: |row: &MetricRow| row.files,
                 mtime: |_: &MetricRow| None,
+                changed: |_: &MetricRow| None,
                 name: borrowed_name(|row: &MetricRow| std::borrow::Cow::Borrowed(row.id.as_str())),
                 content_metric: MetricRow::metric_value,
                 rank: |_: &MetricRow| 0,
@@ -3423,6 +3478,8 @@ fn code_overview(reads: &[RootRead<'_>], query: &Query, content: AnalysisSet) ->
             }
             SortKey::Count => right.selected.source_files.cmp(&left.selected.source_files),
             SortKey::Mtime => right_facts.newest_mtime_ns.cmp(&left_facts.newest_mtime_ns),
+            // A grouped row carries no change time; validation refuses this sort here.
+            SortKey::Changed => std::cmp::Ordering::Equal,
             SortKey::Name => left.language.cmp(&right.language),
             SortKey::Metric(_) => {
                 let left_value = left_facts.metric.value(normalized);
@@ -3436,7 +3493,9 @@ fn code_overview(reads: &[RootRead<'_>], query: &Query, content: AnalysisSet) ->
                 }
             }
         };
-        let ordering = if query.selection.reverse && !matches!(sort_key, SortKey::Metric(_)) {
+        let ordering = if query.selection.reverse
+            && !matches!(sort_key, SortKey::Metric(_) | SortKey::Changed)
+        {
             ordering.reverse()
         } else {
             ordering
@@ -3581,6 +3640,7 @@ fn sort_file_rows_ranked(
             },
             count: |row: &FileRow| row.files.unwrap_or(1),
             mtime: |row: &FileRow| Some(row.mtime_ns),
+            changed: |row: &FileRow| row.changed_ns,
             name: borrowed_name(|row: &FileRow| row.path.to_string_lossy()),
             content_metric: |row: &FileRow, _: &MetricDef| row.sort_value,
             rank,
@@ -3751,6 +3811,7 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 mtime_ns: attrs.mtime_ns,
+                changed_ns: attrs.change_time_ns(),
                 files: None,
                 dirs: None,
                 complete: None,
@@ -3847,6 +3908,7 @@ fn root_trees(
             },
             count: |(row, _): &(TreeNode, usize)| row.files,
             mtime: |(row, _): &(TreeNode, usize)| row.mtime_ns,
+            changed: |_: &(TreeNode, usize)| None,
             name: borrowed_name(|(row, _): &(TreeNode, usize)| {
                 std::borrow::Cow::Borrowed(row.name.as_str())
             }),
@@ -4372,6 +4434,7 @@ fn child_rows(
             // The activity the age column shows, so the order matches the column it sorts
             // and the order a list sorted by recency already has.
             mtime: |(row, _): &(TreeNode, EntryId)| row.mtime_ns,
+            changed: |_: &(TreeNode, EntryId)| None,
             name: borrowed_name(|(row, _): &(TreeNode, EntryId)| {
                 std::borrow::Cow::Borrowed(row.name.as_str())
             }),
@@ -4394,10 +4457,13 @@ fn truncate<T>(rows: &mut Vec<T>, limit: Bound) -> usize {
 }
 
 /// Sort rows by the effective key for a view.
-struct SortAccessors<S, C, M, N, V, R> {
+struct SortAccessors<S, C, M, H, N, V, R> {
     size: S,
     count: C,
     mtime: M,
+    /// A row's change time, `None` where unknown; only flat rows carry one, and a request
+    /// sorting any other view by change time is refused before it is read.
+    changed: H,
     name: N,
     content_metric: V,
     /// The rank of the row's root ([`label_ranks`]), which decides before the name does;
@@ -4412,6 +4478,7 @@ fn sort_rows<T>(
     accessors: SortAccessors<
         impl Fn(&T, SizeMetric) -> u64,
         impl Fn(&T) -> u64,
+        impl Fn(&T) -> Option<i64>,
         impl Fn(&T) -> Option<i64>,
         impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
@@ -4442,12 +4509,13 @@ fn sort_rows_by<T>(
         impl Fn(&T, SizeMetric) -> u64,
         impl Fn(&T) -> u64,
         impl Fn(&T) -> Option<i64>,
+        impl Fn(&T) -> Option<i64>,
         impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
         impl Fn(&T) -> usize,
     >,
 ) {
-    let SortAccessors { size, count, mtime, name, content_metric, rank } = accessors;
+    let SortAccessors { size, count, mtime, changed, name, content_metric, rank } = accessors;
     let key = query.selection.sort.unwrap_or_else(|| view.default_sort());
     let metric = query.selection.size;
     // A row's name is its path under its root, so the root's rank comes first wherever the
@@ -4462,6 +4530,15 @@ fn sort_rows_by<T>(
             SortKey::Size => size(right, metric).cmp(&size(left, metric)),
             SortKey::Count => count(right).cmp(&count(left)),
             SortKey::Mtime => mtime(right).cmp(&mtime(left)),
+            // An unknown change time is not old, so it sorts after every known one in
+            // both directions rather than among the oldest.
+            SortKey::Changed => match (changed(left), changed(right)) {
+                (Some(left), Some(right)) if query.selection.reverse => left.cmp(&right),
+                (Some(left), Some(right)) => right.cmp(&left),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            },
             SortKey::Name => named(left, right),
             SortKey::Metric(metric_name) => {
                 let definition =
@@ -4483,7 +4560,7 @@ fn sort_rows_by<T>(
         ordering.then_with(|| named(left, right))
     });
 
-    if query.selection.reverse && !matches!(key, SortKey::Metric(_)) {
+    if query.selection.reverse && !matches!(key, SortKey::Metric(_) | SortKey::Changed) {
         rows.reverse();
     }
 }
@@ -4493,7 +4570,7 @@ mod tests {
     use super::*;
     use crate::engine_contract::{Attrs, Observation, Op};
     use crate::query::query_glob::Pattern;
-    use crate::query::query_selection::ModifiedWindow;
+    use crate::query::query_selection::TimeWindow;
     use std::fs;
     use std::time::{Duration, UNIX_EPOCH};
 
@@ -4739,7 +4816,7 @@ mod tests {
             (0, -10, vec!["empty".to_owned()]),
         ] {
             let selection = Selection {
-                modified: ModifiedWindow { before: Some(before), since: Some(since) },
+                modified: TimeWindow { before: Some(before), since: Some(since) },
                 ..base.clone()
             };
             let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
@@ -4849,8 +4926,8 @@ mod tests {
             "sizes are lower bounds and the age is unknown below the boundary"
         );
         for modified in [
-            ModifiedWindow { since: None, before: Some(100) },
-            ModifiedWindow { since: Some(0), before: None },
+            TimeWindow { since: None, before: Some(100) },
+            TimeWindow { since: Some(0), before: None },
         ] {
             assert_eq!(
                 directories(Selection { modified, ..Selection::default() }),
@@ -4864,17 +4941,202 @@ mod tests {
             "a lower bound at or above the minimum proves the true size is too"
         );
         assert!(directories(Selection { min_size: Some(101), ..Selection::default() }).is_empty());
+        // A change-time bound follows the same rule: an unlisted descendant could have
+        // changed at any time.
+        for changed in [
+            TimeWindow { since: None, before: Some(100) },
+            TimeWindow { since: Some(0), before: None },
+        ] {
+            assert_eq!(
+                directories(Selection { changed, ..Selection::default() }),
+                vec![("docs".to_string(), Some(true), 30, Some(-50))],
+                "an incomplete subtree satisfies no change-time bound"
+            );
+        }
         // A regular file has no subtree to be incomplete, and its own age stands.
         let files = files_of(&run(
             &index,
             &flat(Selection {
                 kinds: vec![EntryKind::File],
-                modified: ModifiedWindow { since: Some(45), before: None },
+                modified: TimeWindow { since: Some(45), before: None },
                 ..Selection::default()
             }),
         ));
         assert_eq!(files.len(), 1);
         assert_eq!((files[0].complete, files[0].age_ns), (None, Some(-50)));
+    }
+
+    /// Attributes whose status change differs from their modification time; zero is an
+    /// unobserved change time.
+    fn stamped(size: u64, mtime_ns: i64, ctime_ns: i64) -> Attrs {
+        Attrs { ctime_ns, ..attrs(size, mtime_ns) }
+    }
+
+    /// `copy` holds a file restored with an old modification time, `stale` one that has
+    /// not changed, and `blind` one whose change time was never observed.
+    fn change_time_sample() -> Index {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("copy", EntryKind::Dir, stamped(0, 5, 100)),
+            upsert("copy/old.bin", EntryKind::File, stamped(40, 1, 100)),
+            upsert("stale", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("stale/a.txt", EntryKind::File, stamped(10, 10, 10)),
+            upsert("blind", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("blind/b.dat", EntryKind::File, stamped(20, 200, 0)),
+        ]));
+        index
+    }
+
+    fn paths(rows: &[FileRow]) -> Vec<String> {
+        rows.iter().map(|row| row.path.to_string_lossy().into_owned()).collect()
+    }
+
+    #[test]
+    fn a_change_time_window_finds_what_a_modification_window_misses() {
+        let index = change_time_sample();
+        let window = |kinds: Vec<EntryKind>, modified, changed| {
+            files_of(&run(
+                &index,
+                &flat(Selection { kinds, modified, changed, ..Selection::default() }),
+            ))
+        };
+        let since = |since| TimeWindow { since: Some(since), before: None };
+        let file = || vec![EntryKind::File];
+        let dir = || vec![EntryKind::Dir];
+        // The copy kept an old modification time, so only its change time is new.
+        let native =
+            |parts: &[&str]| parts.iter().collect::<PathBuf>().to_string_lossy().into_owned();
+        assert_eq!(
+            paths(&window(file(), TimeWindow::default(), since(50))),
+            [native(&["copy", "old.bin"])]
+        );
+        assert_eq!(
+            paths(&window(file(), since(50), TimeWindow::default())),
+            [native(&["blind", "b.dat"])]
+        );
+        // A directory changed when anything it counts changed, and its change time is
+        // unknown when anything it counts has none, so `blind` matches no bound at all.
+        assert_eq!(paths(&window(dir(), TimeWindow::default(), since(50))), ["copy"]);
+        assert_eq!(
+            paths(&window(
+                dir(),
+                TimeWindow::default(),
+                TimeWindow { since: None, before: Some(50) }
+            )),
+            ["stale"]
+        );
+        assert_eq!(paths(&window(dir(), since(50), TimeWindow::default())), ["blind"]);
+        // Unbounded, every row is listed, each carrying its change time or none.
+        let rows = window(Vec::new(), TimeWindow::default(), TimeWindow::default());
+        let changed: BTreeMap<String, Option<i64>> = rows
+            .iter()
+            .map(|row| (row.path.to_string_lossy().into_owned(), row.changed_ns))
+            .collect();
+        assert_eq!(changed["copy"], Some(100));
+        assert_eq!(changed[&native(&["copy", "old.bin"])], Some(100));
+        assert_eq!(changed["stale"], Some(10));
+        assert_eq!(changed["blind"], None);
+        assert_eq!(changed[&native(&["blind", "b.dat"])], None);
+    }
+
+    #[test]
+    fn a_change_time_bound_says_how_many_files_it_could_not_judge() {
+        let index = change_time_sample();
+        let notes =
+            |selection: Selection| run(&index, &query(&[ViewSpec::Summary], selection)).notes;
+        let note = "note: 1 file has no observed change time, so no change-time bound selects it";
+        let bounded =
+            |changed| Selection { kinds: vec![EntryKind::File], changed, ..Selection::default() };
+        assert!(
+            notes(bounded(TimeWindow { since: Some(50), before: None })).iter().any(|n| n == note)
+        );
+        assert!(
+            notes(bounded(TimeWindow { since: None, before: Some(50) })).iter().any(|n| n == note)
+        );
+        // A modification bound judges that file by its own clock, so it needs no note.
+        let modified = Selection {
+            modified: TimeWindow { since: Some(50), before: None },
+            ..Selection::default()
+        };
+        assert!(!notes(modified).iter().any(|n| n.contains("change time")));
+        assert_eq!(
+            unknown_change_time_note(2_000),
+            "note: 2,000 files have no observed change time, so no change-time bound selects them"
+        );
+    }
+
+    /// A test cannot give a file an old change time, so the old side comes from moving the
+    /// request's instant: every window resolves against `request.now`.
+    ///
+    /// Unix only, where setting a modification time is itself a status change by POSIX;
+    /// a Windows walker reads change time from each entry's handle, which the synthetic
+    /// tests above cover through the same selection.
+    #[cfg(unix)]
+    #[test]
+    fn change_time_finds_a_backdated_file_and_both_clocks_age_with_the_requests_instant() {
+        use crate::query::{AxisNames, ReadSpec, RequestSpec};
+        let root = tempfile::tempdir().expect("root");
+        fs::write(root.path().join("fresh.txt"), "written now").expect("fresh");
+        fs::write(root.path().join("copied.txt"), "kept an old time").expect("copied");
+        // What `cp -p`, `tar -x`, and `touch -d` do: restore an old modification time.
+        let two_years = Duration::from_secs(2 * 365 * 86_400);
+        fs::File::options()
+            .write(true)
+            .open(root.path().join("copied.txt"))
+            .expect("open for timestamp")
+            .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::now() - two_years))
+            .expect("set timestamp");
+        let (index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        let names = |now: std::time::SystemTime, read: ReadSpec<'_>| {
+            let spec = RequestSpec {
+                read: ReadSpec { views: Some("files"), kinds: Some("file"), ..read },
+                ..RequestSpec::new(root.path())
+            };
+            let request = Request::build(&spec, now, &AxisNames::FIELDS).expect("parses");
+            paths(&files_of(&report(&index, &request, generated_at()).expect("report")))
+        };
+        let (both, fresh) = (["copied.txt", "fresh.txt"], ["fresh.txt"]);
+        let now = std::time::SystemTime::now() + Duration::from_secs(1);
+        let changed_since = |since| ReadSpec { changed_since: Some(since), ..ReadSpec::new() };
+        assert_eq!(names(now, changed_since("1h")), both, "change time sees the copy as new");
+        let modified_since = ReadSpec { modified_since: Some("1h"), ..ReadSpec::new() };
+        assert_eq!(names(now, modified_since), fresh, "modification time does not");
+        let arrivals = ReadSpec {
+            changed_since: Some("1h"),
+            modified_before: Some("365d"),
+            ..ReadSpec::new()
+        };
+        assert_eq!(names(now, arrivals), ["copied.txt"], "new by one clock, old by the other");
+
+        // Four hundred days on, both files are old by both clocks.
+        let later = now + Duration::from_secs(400 * 86_400);
+        assert!(names(later, changed_since("365d")).is_empty());
+        let changed_before = ReadSpec { changed_before: Some("365d"), ..ReadSpec::new() };
+        assert_eq!(names(later, changed_before), both);
+    }
+
+    #[test]
+    fn a_change_time_sort_puts_unknown_last_in_both_directions() {
+        let index = change_time_sample();
+        let sorted = |reverse| {
+            let selection = Selection {
+                kinds: vec![EntryKind::File],
+                sort: Some(SortKey::Changed),
+                reverse,
+                ..Selection::default()
+            };
+            paths(&files_of(&run(&index, &query(&[ViewSpec::Files], selection))))
+        };
+        let native =
+            |parts: &[&str]| parts.iter().collect::<PathBuf>().to_string_lossy().into_owned();
+        let (copy, stale, blind) = (
+            native(&["copy", "old.bin"]),
+            native(&["stale", "a.txt"]),
+            native(&["blind", "b.dat"]),
+        );
+        assert_eq!(sorted(false), [copy.clone(), stale.clone(), blind.clone()]);
+        assert_eq!(sorted(true), [stale, copy, blind]);
     }
 
     /// A legacy unscoped partial marker carries no authoritative child-list evidence,
@@ -5078,7 +5340,7 @@ mod tests {
             &query(
                 &[ViewSpec::Tree],
                 whole(Selection {
-                    modified: crate::query::query_selection::ModifiedWindow {
+                    modified: crate::query::query_selection::TimeWindow {
                         since: None,
                         before: Some(25),
                     },
@@ -5495,7 +5757,7 @@ mod tests {
         let index = sample();
         let selection = Selection {
             kinds: vec![EntryKind::File],
-            modified: ModifiedWindow { since: Some(20), before: Some(40) },
+            modified: TimeWindow { since: Some(20), before: Some(40) },
             sort: Some(SortKey::Mtime),
             ..Selection::default()
         };
@@ -8128,13 +8390,18 @@ mod tests {
             .expect("listed, not entered");
     }
 
-    /// A flat row's size is a layout decision: the root index rides in padding today, and
-    /// the next 8-byte field would grow every row a walk builds by a ninth (review C13 on
-    /// #192). Pinned where the layout is known.
+    /// A flat row's size is a layout decision: the root index rides in padding, and the
+    /// next 8-byte field grows every row a walk builds (review C13 on #192). Pinned where
+    /// the layout is known.
+    ///
+    /// 176 bytes until `changed_ns`, which took it to 192: the row's 16-byte alignment
+    /// (its `i128` age) rounds any 8-byte field up to 16, so an `Option<i64>` costs what a
+    /// niche-packed one would. Kept on the row because sorting and windowing a flat view
+    /// by change time read it there, and rows are built only for admitted entries.
     #[cfg(all(unix, target_pointer_width = "64"))]
     #[test]
     fn a_flat_row_keeps_its_size() {
-        assert_eq!(std::mem::size_of::<FileRow>(), 176);
+        assert_eq!(std::mem::size_of::<FileRow>(), 192);
     }
 
     /// Coverage over several roots adds its counts and keeps each refusal's root, and a

@@ -63,31 +63,45 @@ pub enum SortKey {
     Count,
     /// Newest modification time.
     Mtime,
+    /// Newest change time: the newer of modification and status change, as
+    /// [`Attrs::change_time_ns`](crate::Attrs::change_time_ns) defines it. An entry whose
+    /// change time is unknown sorts after every known one, newest first or reversed.
+    ///
+    /// Flat row views only: a tree node's age is modification activity, so a tree has no
+    /// change time to rank its children by.
+    Changed,
     /// Path or name, lexicographically.
     Name,
     /// One numeric content metric named by the shared metric registry.
     Metric(&'static str),
 }
 
-/// An inclusive-start, exclusive-end window over modification times, in nanoseconds.
+/// An inclusive-start, exclusive-end window over one entry timestamp, in nanoseconds since
+/// the Unix epoch.
 ///
 /// Half-open on purpose: `[since, before)` composes without double-counting when a caller
 /// walks a tree in windows, and the inclusive start is the safe side for sync — a file
-/// whose mtime equals the watermark re-lists, because duplicates are cheap and omissions
+/// whose time equals the watermark re-lists, because duplicates are cheap and omissions
 /// are not.
+///
+/// One type serves both bases a [`Selection`] filters on, modification time and change
+/// time, so the two windows share one interval rule.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct ModifiedWindow {
+pub struct TimeWindow {
     /// Inclusive lower bound.
     pub since: Option<i64>,
     /// Exclusive upper bound.
     pub before: Option<i64>,
 }
 
-impl ModifiedWindow {
-    /// Whether a modification time falls inside the window.
-    pub fn contains(&self, mtime_ns: i64) -> bool {
-        self.since.is_none_or(|since| mtime_ns >= since)
-            && self.before.is_none_or(|before| mtime_ns < before)
+/// The name [`TimeWindow`] had while modification time was the only basis.
+pub type ModifiedWindow = TimeWindow;
+
+impl TimeWindow {
+    /// Whether a timestamp falls inside the window.
+    pub fn contains(&self, time_ns: i64) -> bool {
+        self.since.is_none_or(|since| time_ns >= since)
+            && self.before.is_none_or(|before| time_ns < before)
     }
 
     /// Whether the window constrains anything at all.
@@ -290,7 +304,12 @@ pub struct Selection {
     /// Entry kinds to consider; empty means every kind.
     pub kinds: Vec<EntryKind>,
     /// Modification-time window.
-    pub modified: ModifiedWindow,
+    pub modified: TimeWindow,
+    /// Change-time window, over [`Candidate::changed_ns`].
+    ///
+    /// Composes with [`Self::modified`]: an entry must satisfy both. A bounded window
+    /// never admits an entry whose change time is unknown.
+    pub changed: TimeWindow,
     /// Entries to consider by `.gitignore` classification.
     ///
     /// Anything but [`IgnoredEntries::Include`] needs an index that observed control
@@ -351,6 +370,11 @@ pub struct Candidate<'a> {
     pub allocated: u64,
     /// Modification time in nanoseconds since the Unix epoch.
     pub mtime_ns: i64,
+    /// Change time in nanoseconds since the Unix epoch, or `None` where it was not
+    /// observed: [`Attrs::change_time_ns`](crate::Attrs::change_time_ns) for an entry read
+    /// from its own attributes, and a directory's newest in its eligible subtree where a
+    /// report measures one.
+    pub changed_ns: Option<i64>,
     /// Whether a `.gitignore` rule ignores the entry, or an ancestor of it.
     ///
     /// `false` in an index that observed no control state, where no selection by it is
@@ -453,6 +477,7 @@ impl Selection {
             && self.min_size.is_none()
             && self.kinds.is_empty()
             && self.modified.is_unbounded()
+            && self.changed.is_unbounded()
             && self.ignored == IgnoredEntries::Include
     }
 
@@ -470,6 +495,13 @@ impl Selection {
             }
         }
         if !self.modified.contains(candidate.mtime_ns) {
+            return false;
+        }
+        // Unknown is not old: an entry whose change time was never observed cannot be
+        // shown to fall inside any bound, `before` included.
+        if !self.changed.is_unbounded()
+            && !candidate.changed_ns.is_some_and(|changed| self.changed.contains(changed))
+        {
             return false;
         }
         // Exclusion wins: a pattern the caller wrote to keep something out should not be
@@ -817,6 +849,7 @@ mod tests {
             bytes,
             allocated: bytes.div_ceil(512) * 512,
             mtime_ns: mtime,
+            changed_ns: Some(mtime),
             ignored,
         })
     }
@@ -841,6 +874,7 @@ mod tests {
             bytes,
             allocated: bytes.div_ceil(512) * 512,
             mtime_ns: mtime,
+            changed_ns: Some(mtime),
             ignored,
         })
     }
@@ -884,10 +918,63 @@ mod tests {
         assert!(!admits(&allocated, "b.bin", EntryKind::File, 100, 0));
     }
 
+    fn changed_admits(selection: &Selection, mtime: i64, changed: Option<i64>) -> bool {
+        selection.admits(&Candidate {
+            relative: Path::new("a"),
+            name: "a",
+            kind: EntryKind::File,
+            bytes: 1,
+            allocated: 512,
+            mtime_ns: mtime,
+            changed_ns: changed,
+            ignored: false,
+        })
+    }
+
+    #[test]
+    fn the_changed_window_is_half_open_and_never_admits_an_unknown_change_time() {
+        let selection = Selection {
+            changed: TimeWindow { since: Some(100), before: Some(200) },
+            ..Selection::default()
+        };
+        assert!(!selection.is_unfiltered());
+        assert!(changed_admits(&selection, 0, Some(100)));
+        assert!(changed_admits(&selection, 0, Some(199)));
+        assert!(!changed_admits(&selection, 0, Some(200)));
+        assert!(!changed_admits(&selection, 150, Some(99)));
+        // The window reads change time, not modification time: an old modification time
+        // inside a new change time is a copy that kept its timestamp, and it is admitted.
+        assert!(changed_admits(&selection, -5, Some(150)));
+        assert!(!changed_admits(&selection, 150, None));
+        // An open-ended `before` still refuses an unknown change time: unknown is not old.
+        let before = Selection {
+            changed: TimeWindow { since: None, before: Some(200) },
+            ..Selection::default()
+        };
+        assert!(changed_admits(&before, 0, Some(i64::MIN)));
+        assert!(!changed_admits(&before, 0, None));
+        // An unbounded change window constrains nothing, unknown change times included.
+        assert!(changed_admits(&Selection::default(), 0, None));
+    }
+
+    #[test]
+    fn modified_and_changed_windows_compose() {
+        // `--changed-since 1d --modified-before 365d`: data that arrived recently carrying
+        // an old modification time, which is usually a copy or an extracted archive.
+        let selection = Selection {
+            modified: TimeWindow { since: None, before: Some(10) },
+            changed: TimeWindow { since: Some(100), before: None },
+            ..Selection::default()
+        };
+        assert!(changed_admits(&selection, 5, Some(150)));
+        assert!(!changed_admits(&selection, 150, Some(150)));
+        assert!(!changed_admits(&selection, 5, Some(50)));
+    }
+
     #[test]
     fn the_modified_window_is_half_open() {
         let selection = Selection {
-            modified: ModifiedWindow { since: Some(100), before: Some(200) },
+            modified: TimeWindow { since: Some(100), before: Some(200) },
             ..Selection::default()
         };
         // Inclusive start: a file at exactly the watermark re-lists, because for sync a
@@ -1090,8 +1177,8 @@ mod tests {
 
     #[test]
     fn an_unbounded_window_does_not_constrain() {
-        assert!(ModifiedWindow::default().is_unbounded());
-        assert!(ModifiedWindow::default().contains(i64::MIN));
-        assert!(ModifiedWindow::default().contains(i64::MAX));
+        assert!(TimeWindow::default().is_unbounded());
+        assert!(TimeWindow::default().contains(i64::MIN));
+        assert!(TimeWindow::default().contains(i64::MAX));
     }
 }

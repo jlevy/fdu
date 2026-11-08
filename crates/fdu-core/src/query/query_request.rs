@@ -970,6 +970,11 @@ pub struct ReadSpec<'a> {
     pub modified_since: Option<&'a str>,
     /// Exclusive upper bound on modification time.
     pub modified_before: Option<&'a str>,
+    /// Inclusive lower bound on change time, the newer of modification and status change,
+    /// in the same grammar as `modified_since`.
+    pub changed_since: Option<&'a str>,
+    /// Exclusive upper bound on change time.
+    pub changed_before: Option<&'a str>,
     /// Entry kinds: a comma list of `file`, `dir`, `symlink`, or `other`.
     pub kinds: Option<&'a str>,
     /// Selection by ignored state: `include`, `exclude`, or `only`.
@@ -982,7 +987,8 @@ pub struct ReadSpec<'a> {
     pub breadth: Option<&'a str>,
     /// Rows per view: a whole number or `all`.
     pub limit: Option<&'a str>,
-    /// Ordering key: `size`, `count`, `mtime`, or `name`.
+    /// Ordering key: `size`, `count`, `mtime`, `changed`, `name`, or a registered numeric
+    /// metric.
     pub sort: Option<&'a str>,
     /// Reverse the ordering.
     pub reverse: bool,
@@ -1002,6 +1008,8 @@ impl ReadSpec<'_> {
             min_size: None,
             modified_since: None,
             modified_before: None,
+            changed_since: None,
+            changed_before: None,
             kinds: None,
             ignored: None,
             depth: None,
@@ -1421,6 +1429,28 @@ impl Request {
                 });
             }
         }
+        // Change time is a fact of one entry, which a flat row carries. A tree node's age
+        // and a grouped row's recency are modification activity, so ordering either by
+        // change time would silently fall back to name order.
+        if self.query.selection.sort == Some(SortKey::Changed)
+            && self.query.views.iter().any(|view| {
+                self.query.tree_for(*view)
+                    || !matches!(
+                        view,
+                        ViewSpec::List
+                            | ViewSpec::Files
+                            | ViewSpec::Largest
+                            | ViewSpec::Recent
+                            | ViewSpec::Summary
+                    )
+            })
+        {
+            return Err(invalid(
+                self.query.axes.sort,
+                "changed",
+                "only flat rows carry a change time: sort files, largest, or recent, or list in a flat format, or sort by mtime",
+            ));
+        }
         let hierarchy = self.query.views.iter().any(|view| self.query.tree_for(*view));
         // Neutral bounds compose across views, including the CLI --full shorthand.
         // A finite hierarchy bound on flat output would promise filtering it cannot do.
@@ -1586,6 +1616,14 @@ fn build_query(
     if let Some(value) = spec.modified_before {
         let when = parse_when(value, now).map_err(grammar_refusal)?;
         selection.modified.before = Some(bound_nanos(value, when, axes.modified_before)?);
+    }
+    if let Some(value) = spec.changed_since {
+        let when = parse_when(value, now).map_err(grammar_refusal)?;
+        selection.changed.since = Some(bound_nanos(value, when, axes.changed_since)?);
+    }
+    if let Some(value) = spec.changed_before {
+        let when = parse_when(value, now).map_err(grammar_refusal)?;
+        selection.changed.before = Some(bound_nanos(value, when, axes.changed_before)?);
     }
     if let Some(value) = spec.kinds {
         selection.kinds = parse_kinds(value, axes.kind)?;
@@ -2161,13 +2199,14 @@ pub fn parse_sort(value: &str, axis: &'static str) -> Result<SortKey, RequestErr
         "size" => Ok(SortKey::Size),
         "count" => Ok(SortKey::Count),
         "mtime" => Ok(SortKey::Mtime),
+        "changed" => Ok(SortKey::Changed),
         "name" => Ok(SortKey::Name),
         other => crate::content::METRICS.iter().find(|metric| metric.name == other).map_or_else(
             || {
                 Err(invalid(
                     axis,
                     other,
-                    "expected size, count, mtime, name, or a registered numeric metric",
+                    "expected size, count, mtime, changed, name, or a registered numeric metric",
                 ))
             },
             |metric| Ok(SortKey::Metric(metric.name)),
@@ -2286,8 +2325,8 @@ mod tests {
                 "invalid depth \"two\": expected a whole number or `all`",
             ),
             (
-                "invalid --sort \"newest\": expected size, count, mtime, name, or a registered numeric metric",
-                "invalid sort \"newest\": expected size, count, mtime, name, or a registered numeric metric",
+                "invalid --sort \"newest\": expected size, count, mtime, changed, name, or a registered numeric metric",
+                "invalid sort \"newest\": expected size, count, mtime, changed, name, or a registered numeric metric",
             ),
             (
                 "invalid --size \"logical\": expected allocated or apparent",
@@ -2334,6 +2373,7 @@ mod tests {
             ("size", SortKey::Size),
             ("count", SortKey::Count),
             ("MTIME", SortKey::Mtime),
+            ("Changed", SortKey::Changed),
             ("name", SortKey::Name),
             ("CODE_LINES", SortKey::Metric("code_lines")),
         ] {
@@ -2918,6 +2958,8 @@ mod tests {
                 min_size: Some("1KiB"),
                 modified_since: Some("@1700000000"),
                 modified_before: Some("@1800000000"),
+                changed_since: Some("@1600000000"),
+                changed_before: Some("@1900000000"),
                 kinds: Some("file,dir"),
                 ignored: Some("include"),
                 depth: Some("all"),
@@ -2946,6 +2988,8 @@ mod tests {
         assert_eq!(selection.min_size, Some(1024));
         assert_eq!(selection.modified.since, Some(1_700_000_000_000_000_000));
         assert_eq!(selection.modified.before, Some(1_800_000_000_000_000_000));
+        assert_eq!(selection.changed.since, Some(1_600_000_000_000_000_000));
+        assert_eq!(selection.changed.before, Some(1_900_000_000_000_000_000));
         assert_eq!(selection.kinds, vec![EntryKind::File, EntryKind::Dir]);
         assert_eq!(selection.ignored, IgnoredEntries::Include);
         assert_eq!(selection.depth, Some(Bound::All));
@@ -2953,6 +2997,44 @@ mod tests {
         assert_eq!(selection.sort, Some(SortKey::Name));
         assert!(selection.reverse);
         assert_eq!(selection.size, SizeMetric::Apparent);
+    }
+
+    /// A tree node and a grouped row carry no change time, so sorting either by it would
+    /// fall back to name order without saying so; only flat rows accept the key.
+    #[test]
+    fn a_change_time_sort_is_refused_wherever_rows_render_as_a_tree_or_a_group() {
+        for (view, format, valid) in [
+            (Some("files"), None, true),
+            (Some("largest"), None, true),
+            (Some("recent"), Some("long"), true),
+            (Some("list"), Some("json"), true),
+            (Some("files,summary"), None, true),
+            (None, None, false),
+            (Some("tree"), Some("json"), false),
+            (Some("list"), None, false),
+            (Some("files"), Some("tree"), false),
+            (Some("extensions"), None, false),
+            (Some("files,types"), None, false),
+        ] {
+            let spec = RequestSpec {
+                read: ReadSpec { views: view, format, sort: Some("changed"), ..ReadSpec::new() },
+                ..RequestSpec::new(Path::new("/absent"))
+            };
+            let request =
+                Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FLAGS).expect("grammar");
+            assert_eq!(request.query.selection.sort, Some(SortKey::Changed));
+            match request.validate() {
+                Ok(()) => assert!(valid, "{view:?} {format:?} accepted"),
+                Err(error) => {
+                    assert!(!valid, "{view:?} {format:?} refused: {error}");
+                    assert_eq!(
+                        error.message(&AxisNames::FLAGS),
+                        "invalid --sort \"changed\": only flat rows carry a change time: sort \
+                         files, largest, or recent, or list in a flat format, or sort by mtime"
+                    );
+                }
+            }
+        }
     }
 
     /// Relative windows are resolved once, against the request's own instant, so the

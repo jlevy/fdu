@@ -27,7 +27,7 @@ patterns:
 ```console
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -113,7 +113,7 @@ one.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -205,7 +205,7 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a 
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -289,7 +289,7 @@ Under `auto` the report scans fresh and leaves the snapshot as it found it.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -373,7 +373,7 @@ fixture expanded
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -448,7 +448,7 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -533,7 +533,7 @@ $ fdu --watch --stale-ok project
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -618,7 +618,7 @@ A run that writes replaces the corrupt file.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -703,7 +703,7 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -773,7 +773,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
 ```console
 $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -841,7 +841,7 @@ stronger snapshot usable by a subsequent default `--stale-ok` request.
 ```console
 $ fdu --no-gitignore --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -895,7 +895,7 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
 ```console
 $ fdu --stale-ok --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -960,7 +960,7 @@ way out.
 ```console
 $ fdu --no-gitignore --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],

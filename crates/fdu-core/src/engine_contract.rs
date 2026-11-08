@@ -97,6 +97,27 @@ pub struct Attrs {
 }
 
 impl Attrs {
+    /// When the entry last changed: the newer of its modification time and its status
+    /// change time, or `None` where the status change time was not observed.
+    ///
+    /// A status change time is set by the kernel whenever data or metadata is written,
+    /// so it catches what modification time misses: a copy or an extracted archive that
+    /// restored an old modification time is still new by this clock. The maximum rather
+    /// than `ctime_ns` alone keeps an entry whose modification time was set into the
+    /// future from hiding behind an older status change. Unobserved is unknown, never
+    /// old: an entry read without a handle on Windows has no status change time, and
+    /// treating its zero as 1970 would put new data in the oldest band.
+    #[inline]
+    pub const fn change_time_ns(&self) -> Option<i64> {
+        if self.ctime_ns == 0 {
+            None
+        } else if self.ctime_ns > self.mtime_ns {
+            Some(self.ctime_ns)
+        } else {
+            Some(self.mtime_ns)
+        }
+    }
+
     /// The change-detection fingerprint for these attributes.
     #[inline]
     pub const fn fingerprint(&self) -> Fingerprint {
@@ -2138,6 +2159,18 @@ mod tests {
         // A ctime bump is, even when mtime was rolled back to look unchanged.
         let touched = Attrs { ctime_ns: 9, ..base };
         assert_ne!(base.fingerprint(), touched.fingerprint());
+    }
+
+    #[test]
+    fn change_time_is_the_newer_clock_and_unknown_when_unobserved() {
+        let base = Attrs { size: 1, allocated: 1, mtime_ns: 5, ctime_ns: 7, inode: 1, dev: 1 };
+        assert_eq!(base.change_time_ns(), Some(7));
+        // A modification time set into the future is not hidden by an older status change.
+        assert_eq!(Attrs { mtime_ns: 9, ..base }.change_time_ns(), Some(9));
+        // A copy that restored an old modification time is new by its status change.
+        assert_eq!(Attrs { mtime_ns: -40, ..base }.change_time_ns(), Some(7));
+        // Zero is the walkers' spelling of "not observed", never the epoch.
+        assert_eq!(Attrs { ctime_ns: 0, ..base }.change_time_ns(), None);
     }
 
     #[test]

@@ -280,6 +280,8 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "min_size": str(selection.min_size) if selection.min_size is not None else None,
         "modified_since": _when(selection.modified_since),
         "modified_before": _when(selection.modified_before),
+        "changed_since": _when(selection.changed_since),
+        "changed_before": _when(selection.changed_before),
         "kind": [kind.value for kind in selection.kinds],
         "depth": _bound(selection.depth),
         "limit": _bound(selection.limit),

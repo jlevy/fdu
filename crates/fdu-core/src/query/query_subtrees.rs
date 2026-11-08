@@ -14,6 +14,13 @@ pub(super) struct SubtreeValues {
     pub bytes: u64,
     pub allocated: u64,
     pub mtime_ns: i64,
+    /// The newest change time of any entry counted in `mtime_ns`, or `i64::MIN` when the
+    /// subtree counts none.
+    pub changed_ns: i64,
+    /// Whether every entry counted in `changed_ns` had an observed change time. When one
+    /// did not, `changed_ns` is a lower bound and the directory's change time is unknown,
+    /// as an incomplete subtree's age is.
+    pub changed_observed: bool,
     pub files: u64,
     pub dirs: u64,
     /// Whether every eligible directory in the subtree, this one included, was listed in
@@ -28,12 +35,32 @@ pub(super) struct SubtreeValues {
     pub complete: bool,
 }
 
+impl SubtreeValues {
+    /// The directory's change time: the newest in its eligible subtree, or `None` when an
+    /// entry in it had no observed change time or the subtree counts no entry at all.
+    ///
+    /// Completeness is the caller's to apply, as it is for `mtime_ns`, because a
+    /// lower-bound maximum still orders rows while it cannot decide a bound.
+    pub(super) fn changed(&self) -> Option<i64> {
+        (self.changed_observed && self.changed_ns != i64::MIN).then_some(self.changed_ns)
+    }
+
+    /// Fold one counted entry's change time into the subtree's newest.
+    fn count_change(&mut self, changed: Option<i64>) {
+        match changed {
+            Some(changed) => self.changed_ns = self.changed_ns.max(changed),
+            None => self.changed_observed = false,
+        }
+    }
+}
+
 /// Construct a predicate in the identity the caller uses; directory values replace
 /// inode metadata only when the report reader supplies a measured subtree.
 pub(super) fn with_candidate<T>(
     path: &Path,
     kind: EntryKind,
     attrs: Attrs,
+    changed_ns: Option<i64>,
     ignored: bool,
     identity: NameIdentity,
     evaluate: impl FnOnce(Candidate<'_>) -> T,
@@ -49,6 +76,7 @@ pub(super) fn with_candidate<T>(
         bytes: attrs.size,
         allocated: attrs.allocated,
         mtime_ns: attrs.mtime_ns,
+        changed_ns,
         ignored,
     })
 }
@@ -99,6 +127,8 @@ pub(super) fn measure(
                         total.bytes += subtree.bytes;
                         total.allocated += subtree.allocated;
                         total.mtime_ns = total.mtime_ns.max(subtree.mtime_ns);
+                        total.changed_ns = total.changed_ns.max(subtree.changed_ns);
+                        total.changed_observed &= subtree.changed_observed;
                         total.complete &= subtree.complete;
                     }
                 }
@@ -118,11 +148,8 @@ pub(super) fn measure(
             && (own_ignored.is_some()
                 || selection.ignored == crate::query::IgnoredEntries::Include)
             && selection.ignored.admits(own_ignored.unwrap_or(false));
-        let own_time = if own_admitted {
-            index.attrs_of(id).map_or(i64::MIN, |attrs| attrs.mtime_ns)
-        } else {
-            i64::MIN
-        };
+        let own_attrs = if own_admitted { index.attrs_of(id) } else { None };
+        let own_time = own_attrs.map_or(i64::MIN, |attrs| attrs.mtime_ns);
         // A directory at the scan-depth boundary was retained but never listed, so its
         // children are unknown whatever the index says about coverage.
         let listed = coverage_complete || index.directory_complete_of(id).unwrap_or(false);
@@ -131,10 +158,15 @@ pub(super) fn measure(
             bytes: 0,
             allocated: 0,
             mtime_ns: own_time,
+            changed_ns: i64::MIN,
+            changed_observed: true,
             files: 0,
             dirs: 0,
             complete: listed && !at_boundary,
         };
+        if let Some(attrs) = own_attrs {
+            total.count_change(attrs.change_time_ns());
+        }
         stack.push((id, path.clone(), true));
         if let Some(children) = index.children_of(id) {
             for (name, child) in children {
@@ -148,9 +180,15 @@ pub(super) fn measure(
                 let admitted = (classification.is_some()
                     || selection.ignored == crate::query::IgnoredEntries::Include)
                     && selection.ignored.admits(ignored);
-                if with_candidate(&child_path, kind, *attrs, ignored, identity, |candidate| {
-                    pruned(selection, &candidate)
-                }) {
+                if with_candidate(
+                    &child_path,
+                    kind,
+                    *attrs,
+                    attrs.change_time_ns(),
+                    ignored,
+                    identity,
+                    |candidate| pruned(selection, &candidate),
+                ) {
                     continue;
                 }
                 if kind == EntryKind::Dir {
@@ -160,6 +198,7 @@ pub(super) fn measure(
                     stack.push((child, child_path, false));
                 } else if admitted {
                     total.mtime_ns = total.mtime_ns.max(attrs.mtime_ns);
+                    total.count_change(attrs.change_time_ns());
                     if kind == EntryKind::File {
                         total.files += 1;
                         total.bytes += attrs.size;

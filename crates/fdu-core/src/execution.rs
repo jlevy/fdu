@@ -4160,14 +4160,14 @@ mod tests {
     /// A maximum size filters opened-root reads alone ([`crate::query::EntrySelection`]), so
     /// no one-shot tree has one to compare.
     fn filtered_selections() -> Vec<(&'static str, crate::query::Selection)> {
-        use crate::query::{ModifiedWindow, Selection};
+        use crate::query::{Selection, TimeWindow};
         let at = |offset: u64| {
             i64::try_from((FIXTURE_MINUTE + offset) * 60 * 1_000_000_000).expect("nanoseconds")
         };
         let globs = |sources: &[&str]| -> Vec<Pattern> {
             sources.iter().map(|source| Pattern::parse(source).expect("pattern")).collect()
         };
-        let window = |since, before| ModifiedWindow { since, before };
+        let window = |since, before| TimeWindow { since, before };
         let none = Selection::default;
         vec![
             ("a minimum size", Selection { min_size: Some(1_000), ..none() }),

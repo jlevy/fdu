@@ -176,6 +176,9 @@ class SortKey(StrEnum):
     SIZE = "size"
     COUNT = "count"
     MTIME = "mtime"
+    #: Change time: the newer of modification and status change. Flat row views only,
+    #: and an entry whose change time is unknown sorts last in either direction.
+    CHANGED = "changed"
     NAME = "name"
 
     PHYSICAL_LINES = "physical_lines"
@@ -494,6 +497,12 @@ class Selection:
     #: Entries to consider by ``.gitignore`` classification. Sizes, ordering, and
     #: ``min_size`` follow the entries selected.
     ignored: IgnoredEntries | None = None
+    #: A window over change time, the newer of modification and status change, which
+    #: catches a copy or an extracted archive that kept an older modification time. It
+    #: composes with the modified window, and never admits an entry whose change time
+    #: was not observed. Declared last so positional construction keeps its meaning.
+    changed_since: datetime | str | None = None
+    changed_before: datetime | str | None = None
 
     def __post_init__(self) -> None:
         # A bare string is iterable, so without this guard `include="*.rs"` would run
@@ -746,6 +755,13 @@ class FileRow:
     #: ``report.roots[row.root].path / row.path`` names the entry; ``None`` over one root,
     #: where ``path`` is relative to :attr:`Report.root`.
     root: int | None = None
+    #: Change time, the newer of modification and status change, in nanoseconds since the
+    #: epoch; ``None`` where it was not observed, and for a directory when any entry it
+    #: counts had none. A lower bound, like ``mtime_ns``, when ``complete`` is ``False``.
+    changed_ns: int | None = None
+    #: ``changed_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
+    #: ``None`` where it is unknown or only a lower bound.
+    changed_at: datetime | None = None
 
 
 class TreeOmissionReason(StrEnum):
@@ -1747,7 +1763,7 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             mtime_ns=_optional_int(raw["mtime_ns"]),
             complete=_optional_bool(raw["complete"]),
             age_ns=_optional_int(raw["age_ns"]),
-            modified_at=_modified_at(raw["mtime_ns"], raw["complete"]),
+            modified_at=_row_instant(raw["mtime_ns"], raw["complete"]),
         )
     return built[id(value)]
 
@@ -1771,7 +1787,7 @@ def _tree_total(value: object) -> TreeTotal | None:
         mtime_ns=_optional_int(raw["mtime_ns"]),
         complete=bool(complete),
         age_ns=_optional_int(raw["age_ns"]),
-        modified_at=_modified_at(raw["mtime_ns"], complete),
+        modified_at=_row_instant(raw["mtime_ns"], complete),
     )
 
 
@@ -1815,12 +1831,12 @@ def _report_roots(value: object) -> tuple[ReportRoot, ...] | None:
     return tuple(roots)
 
 
-def _modified_at(mtime_ns: object, complete: object) -> datetime | None:
-    """A row's ``modified_at``: its time, unless the subtree's time is only a lower bound."""
+def _row_instant(time_ns: object, complete: object) -> datetime | None:
+    """A row's ``modified_at`` or ``changed_at``: its time, unless only a lower bound."""
 
-    if mtime_ns is None or complete is False:
+    if time_ns is None or complete is False:
         return None
-    return _instant(int(cast(int, mtime_ns)))
+    return _instant(int(cast(int, time_ns)))
 
 
 def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Report:
@@ -1919,7 +1935,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             dirs=_optional_int(row["dirs"]) if "dirs" in row else None,
                             complete=_optional_bool(row["complete"]) if "complete" in row else None,
                             age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
-                            modified_at=_modified_at(
+                            modified_at=_row_instant(
                                 row["mtime_ns"],
                                 _optional_bool(row["complete"]) if "complete" in row else None,
                             ),
@@ -1927,6 +1943,13 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             sort_value=_optional_int(row["sort_value"]),
                             classification=_file_classification(row["classification"]),
                             root=_root_position(row),
+                            changed_ns=(
+                                _optional_int(row["changed_ns"]) if "changed_ns" in row else None
+                            ),
+                            changed_at=_row_instant(
+                                _optional_int(row["changed_ns"]) if "changed_ns" in row else None,
+                                _optional_bool(row["complete"]) if "complete" in row else None,
+                            ),
                         )
                         for row in rows
                     ),

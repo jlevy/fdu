@@ -71,7 +71,7 @@ fdu . --view=code,documents               # lines of code and words; reads file 
 fdu . --view=summary                      # one total for the tree
 fdu . --view=languages                    # which languages occupy space
 fdu . --view=recent --limit=10            # the ten most recently modified files
-fdu . --kind=file --modified-since=24h    # files written in the last day, by folder
+fdu . --kind=file --changed-since=24h     # files written in the last day, by folder
 fdu . --ignored=exclude                   # leave out entries .gitignore rules match
 fdu . --view=summary,types --format=json  # versioned machine output
 fdu --docs                                # the offline usage guide

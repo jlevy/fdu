@@ -111,9 +111,10 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
 ///
-/// `fdu.report/11` gives tree nodes their age (`mtime_ns`, `complete`, `age_ns`, and
+/// `fdu.report/11` gave tree nodes their age (`mtime_ns`, `complete`, `age_ns`, and
 /// `modified_at`), list rows `modified_at`, and the envelope `age_reference_at`.
-pub const REPORT_SCHEMA: &str = "fdu.report/11";
+/// `fdu.report/12` gives list rows their change time (`changed_ns` and `changed_at`).
+pub const REPORT_SCHEMA: &str = "fdu.report/12";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
@@ -958,6 +959,14 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool) {
     });
     emit_field(sink, Field::nullable("modified_at"), true, |sink| {
         emit_instant(sink, (row.complete != Some(false)).then_some(row.mtime_ns));
+    });
+    // Change time beside modification time, null where it was not observed. Its readable
+    // twin follows `modified_at`'s rule: a lower bound is no instant.
+    emit_field(sink, Field::nullable("changed_ns"), true, |sink| {
+        emit_scalar(sink, row.changed_ns.map_or(Scalar::Null, Scalar::I64));
+    });
+    emit_field(sink, Field::nullable("changed_at"), true, |sink| {
+        emit_instant(sink, row.changed_ns.filter(|_| row.complete != Some(false)));
     });
 
     emit_field(sink, Field::nullable("ignored"), true, |sink| match row.ignored {
@@ -4718,7 +4727,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/11\""));
+        assert!(json.contains("\"schema\": \"fdu.report/12\""));
         assert!(json.contains("\"request\": {"));
         assert!(json.contains("\"status\": {"));
         assert!(json.contains("\"provenance\": {"));
@@ -4733,7 +4742,7 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/11");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/12");
         assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
@@ -4989,7 +4998,8 @@ mod tests {
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
             "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \
-             \"modified_at\": \"1970-01-01T00:00:00.000000010Z\", \"ignored\": true, \"sort_value\": null, \"classification\": null}",
+             \"modified_at\": \"1970-01-01T00:00:00.000000010Z\", \"changed_ns\": null, \
+             \"changed_at\": null, \"ignored\": true, \"sort_value\": null, \"classification\": null}",
         ] {
             assert!(compact.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
@@ -5029,11 +5039,11 @@ mod tests {
     #[test]
     fn every_report_uses_one_schema_and_states_nullable_analysis() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/11\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/12\""));
         assert!(metadata.contains("\"analysis\": null"));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/11\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/12\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -6129,7 +6139,8 @@ mod tests {
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
                  \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \
-                 \"modified_at\": \"1970-01-01T00:00:00.000000000Z\", \"ignored\": false, \"sort_value\": null, \
+                 \"modified_at\": \"1970-01-01T00:00:00.000000000Z\", \"changed_ns\": null, \"changed_at\": null, \
+                 \"ignored\": false, \"sort_value\": null, \
                  \"classification\": {{\"file_type\": \"unknown\", \"family\": \"unknown\", \"source\": \"unknown\", \"confidence\": \"heuristic\", \
                  \"flags\": {{\"generated\": false, \"vendored\": false, \"documentation\": false}}}}}}"
             );

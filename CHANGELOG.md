@@ -7,14 +7,43 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Selection by change time: `--changed-since` and `--changed-before` (Python
+  `Selection(changed_since=, changed_before=)`) select entries by the newer of their
+  modification time and status change time, in the same grammar and half-open interval
+  as `--modified-since` and `--modified-before`, and compose with them.
+  Change time catches data that arrived carrying an older modification time, which a
+  modification window misses: `cp -p`, `rsync -a`, Finder and Explorer copies, `mv` from
+  another filesystem, extracted archives, and Cargo’s crate sources.
+  A directory’s change time is the newest in its eligible subtree; an incomplete subtree
+  matches no change-time bound, as it matches no modification bound.
+  An entry whose change time was not observed (on Windows, one fdu could list but not
+  open) is never admitted by a change-time bound, and a note counts such files.
+- `--sort changed` (Python `SortKey.CHANGED`) orders `files`, `largest`, `recent`, and
+  flat `list` rows by change time, newest first, with an unknown change time last in
+  either direction. A tree or grouped view refuses it, since a tree’s age is
+  modification activity.
+- Machine output: list rows carry `changed_ns` and `changed_at`, null where unknown, and
+  `changed_at` is null for an incomplete subtree as `modified_at` is. Python `FileRow`
+  gains `changed_ns` and `changed_at`.
+
 ### Changed
 
+- **Breaking:** the report schema is `fdu.report/12`, for the list-row fields above.
+- **Breaking (Rust):** `Selection` gains `changed`, `Candidate` gains `changed_ns`,
+  `FileRow` gains `changed_ns`, `SortKey` gains `Changed`, `ReadSpec` gains
+  `changed_since` and `changed_before`, and `AxisNames` gains `changed_since` and
+  `changed_before`; struct literals that name every field need the new ones.
+  `ModifiedWindow` is now `TimeWindow`, which serves both windows, and the old name
+  remains as an alias. `Attrs::change_time_ns` returns an entry’s change time.
 - The agent skill, `fdu --help`, `fdu --docs`, and the README show how to find what was
   written recently from one scan with no saved state:
-  `fdu PATH --kind file --modified-since 24h` by folder, and `--view largest` for the
+  `fdu PATH --kind file --changed-since 24h` by folder, and `--view largest` for the
   files. They say why `--kind file` is required, and that the answer is data written, not
-  net growth: modified files count in full, deleted files do not appear, and data copied
-  or extracted with an older modification time is missed.
+  net growth: modified files count in full and deleted files do not appear.
+- A tree row’s age is described as how long ago anything it counts was last modified,
+  since “changed” now names change time.
 
 ## [0.5.0] - 2026-10-11
 

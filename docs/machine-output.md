@@ -1,6 +1,6 @@
 # Machine Output and Directory Inventories
 
-All reports use `fdu.report/11`, including metadata-only and content-analyzed reports.
+All reports use `fdu.report/12`, including metadata-only and content-analyzed reports.
 Cache status uses `fdu.cache/3`, and raw watch changes use `fdu.stream/2`. Check the
 schema before decoding.
 The [schema rule](project/guides/release-process.md) requires a new version when a
@@ -57,12 +57,16 @@ projection as a `tree` object, so inspect the payload key as well as `view`.
 | `mtime_ns` | Signed epoch nanoseconds; a directory uses the newest eligible root/descendant timestamp |
 | `age_ns` | Signed age at `age_reference_ns`; negative for a future timestamp, null if the reference cannot be represented or the subtree is incomplete |
 | `modified_at` | `mtime_ns` as an RFC 3339 UTC instant to the nanosecond, or null when the subtree is incomplete and `mtime_ns` only a lower bound |
+| `changed_ns` | Change time, the newer of modification and status change, in signed epoch nanoseconds; a directory uses the newest of the entries `mtime_ns` counts; null where a change time was not observed, for a directory when any entry it counts had none, and a lower bound when the subtree is incomplete |
+| `changed_at` | `changed_ns` as an RFC 3339 UTC instant to the nanosecond, or null when `changed_ns` is null or only a lower bound |
 | `ignored` | Boolean classification, or null when rules were unobserved or governing classification is unknown |
 | `sort_value` | Value of the requested content sort metric, or null when absent/unavailable |
 | `classification` | For a regular file: stable file type, family, detection source/confidence, and generated/vendor/documentation flags; null for other kinds |
 
 The request’s nullable `sort_metric` identifies the content metric used to rank rows.
 Unavailable values sort last in either direction, with deterministic path ties.
+`--sort changed` orders rows by `changed_ns` the same way: a null change time sorts last
+in either direction.
 
 The envelope’s `age_reference_ns` is the request instant every age is measured from, in
 epoch nanoseconds, and `age_reference_at` is the same instant as RFC 3339 UTC; both are
@@ -241,8 +245,8 @@ directory an opened root has not listed yet, and for a failed subtree or an ance
 one. A partial cold scan retains completeness for successfully listed siblings; an
 unscoped failure leaves the whole tree incomplete.
 Such a row’s sizes and counts are lower bounds, its `age_ns` is null, and no
-`modified_since`/`modified_before` bound matches it, because a lower-bound maximum is
-not an age; `min_size` still can, since a lower bound at or above the minimum proves the
+`modified_since`/`modified_before` or `changed_since`/`changed_before` bound matches it,
+because a lower-bound maximum is not an age; `min_size` still can, since a lower bound at or above the minimum proves the
 true size is too. A cache-only result carries staleness in report provenance and
 preserves the snapshot’s directory completeness.
 A snapshot is published only from a complete scan, but an unlisted directory at its
@@ -268,7 +272,7 @@ require one compatible list section.
 Largest/recent retain their file ranking and support Paths and Long.
 Cache-status human aliases render its table.
 A List watch repaints snapshots.
-A Files watch first writes an ordinary report (`fdu.report/11` in machine formats), then
+A Files watch first writes an ordinary report (`fdu.report/12` in machine formats), then
 streams raw changes (`fdu.stream/2`) in Text or machine formats; explicit Tree, Paths,
 and Long repaint snapshots instead.
 Aggregate views also repaint reports.

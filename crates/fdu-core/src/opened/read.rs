@@ -438,6 +438,7 @@ fn portable_candidate<'a>(
         bytes: row.attrs.size,
         allocated: row.attrs.allocated,
         mtime_ns: row.attrs.mtime_ns,
+        changed_ns: row.attrs.change_time_ns(),
         ignored: row.ignored,
     }
 }

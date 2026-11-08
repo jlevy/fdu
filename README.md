@@ -138,8 +138,8 @@ $ fdu . --depth=1
 ░░░░░░░░░░     2%     972 KiB        … and 98 more files
 ```
 
-Beside each size is the row’s age: how long ago anything it counts last changed, a file
-or a directory, here the clone itself a minute earlier.
+Beside each size is the row’s age: how long ago anything it counts was last modified, a
+file or a directory, here the clone itself a minute earlier.
 An age reads in seconds, minutes, hours, days, months (`mo`), or years (`y`), and is
 `unknown` where part of a subtree could not be listed.
 
@@ -171,7 +171,7 @@ Only `code` and `documents` read file contents; every other view reads metadata 
 | File families, types, and extensions | `fdu . --view=families,types,extensions` |
 | Twenty largest files | `fdu . --view=largest` |
 | Ten most recently modified working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
-| Where the files written in the last day are | `fdu . --kind=file --modified-since=24h` |
+| Where the files written in the last day are | `fdu . --kind=file --changed-since=24h` |
 | Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
 | Stay on one filesystem, like `du -x` (macOS and Linux) | `fdu . --one-filesystem` |
 | Several paths as one report, with a total | `fdu docs src` |
@@ -254,19 +254,20 @@ and supported languages.
 ## Find What Was Written Recently
 
 When free space drops, find where the new data is.
-fdu keeps no history of past sizes, but every file records when it was last modified, so
-one scan with no saved state shows the files written since a given time, by folder and
+fdu keeps no history of past sizes, but every file records when it last changed, so one
+scan with no saved state shows the files written since a given time, by folder and
 largest first:
 
 ```shell
-fdu ~ --kind=file --modified-since=24h
-fdu ~ --view=largest --modified-since=24h --limit=20
+fdu ~ --kind=file --changed-since=24h
+fdu ~ --view=largest --changed-since=24h --limit=20
 ```
 
+Change time is the newer of modification and status change, so data copied or extracted
+with an older modification time still counts, where `--modified-since` would miss it.
 `--kind=file` matters: without it, a directory with any activity in the window counts at
 its full size. The total is data written, not net growth: a file written in the window
-counts in full, deleted files do not appear, and data copied or extracted with an older
-modification time is missed.
+counts in full, and deleted files do not appear.
 The [usage guide](docs/usage.md#find-what-was-written-recently) says how to read and
 check the result.
 

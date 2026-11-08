@@ -25,7 +25,7 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --limit 10 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -85,6 +85,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": true,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": true,
           "sort_value": null,
           "classification": null
@@ -100,6 +102,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": null,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": true,
           "sort_value": null,
           "classification": {
@@ -121,6 +125,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": null,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -142,6 +148,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": true,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": null
@@ -157,6 +165,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": null,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -178,6 +188,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": true,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": null
@@ -193,6 +205,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": null,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -214,6 +228,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": null,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -235,6 +251,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": null,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -256,6 +274,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
           "complete": null,
           "age_ns": [AGE_NS],
           "modified_at": "[RFC3339]",
+          "changed_ns": [MTIME_NS],
+          "changed_at": "[RFC3339]",
           "ignored": false,
           "sort_value": null,
           "classification": {
@@ -278,7 +298,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
 ```console
 $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -397,7 +417,7 @@ age.
 ```console
 $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -598,7 +618,7 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/11",
+  "schema": "fdu.report/12",
   "generator": "fdu 0.5.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],

@@ -106,6 +106,7 @@ struct EntryFacts {
     bytes: u64,
     allocated: u64,
     mtime_ns: i64,
+    changed_ns: Option<i64>,
 }
 
 /// The result of a throttled attempt to persist a live session.
@@ -693,6 +694,7 @@ impl Session {
                             bytes: attrs.size,
                             allocated: attrs.allocated,
                             mtime_ns: attrs.mtime_ns,
+                            changed_ns: attrs.change_time_ns(),
                         },
                     ))
                 })
@@ -740,6 +742,7 @@ impl Session {
                     bytes: attrs.size,
                     allocated: attrs.allocated,
                     mtime_ns: attrs.mtime_ns,
+                    changed_ns: attrs.change_time_ns(),
                     ignored: facts.is_ignored(path).unwrap_or(false),
                 };
                 self.selection().admits(&candidate).then(|| Change {
@@ -763,6 +766,7 @@ impl Session {
                     bytes: current.size,
                     allocated: current.allocated,
                     mtime_ns: current.mtime_ns,
+                    changed_ns: current.change_time_ns(),
                     ignored,
                 };
                 if self.selection().admits(&candidate) {
@@ -840,6 +844,7 @@ impl Session {
                         bytes: entry.bytes,
                         allocated: entry.allocated,
                         mtime_ns: entry.mtime_ns,
+                        changed_ns: entry.changed_ns,
                         ignored,
                     })
                 };

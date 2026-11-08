@@ -153,6 +153,8 @@ class Args:
         self.min_size: str | None = None
         self.modified_since: str | None = None
         self.modified_before: str | None = None
+        self.changed_since: str | None = None
+        self.changed_before: str | None = None
         self.kinds: list[fdu.EntryKind] = []
         self.depth: fdu.Bound | int | None = None
         self.limit: fdu.Bound | int | None = None
@@ -237,6 +239,10 @@ def parse_args(argv: list[str]) -> Args:
             args.modified_since = take()
         elif flag == "--modified-before":
             args.modified_before = take()
+        elif flag == "--changed-since":
+            args.changed_since = take()
+        elif flag == "--changed-before":
+            args.changed_before = take()
         elif flag == "--kind":
             args.kinds = [fdu.EntryKind(k.strip()) for k in take().split(",") if k.strip()]
         elif flag in ("--depth", "-d"):
@@ -343,6 +349,8 @@ def build_query(args: Args) -> fdu.Query:
         min_size=args.min_size,
         modified_since=args.modified_since,
         modified_before=args.modified_before,
+        changed_since=args.changed_since,
+        changed_before=args.changed_before,
         kinds=tuple(args.kinds),
         depth=args.depth if args.depth is not None else (fdu.Bound.ALL if args.full else None),
         limit=args.limit if args.limit is not None else (fdu.Bound.ALL if args.full else None),

@@ -267,6 +267,9 @@ def test_naive_datetimes_gain_an_explicit_local_offset() -> None:
     assert since.tzinfo is not None
     assert since == naive.astimezone()
     assert kwargs["modified_before"] == "2026-08-01T12:30:00+00:00"
+    changed = _query_kwargs(Query(selection=Selection(changed_since=naive, changed_before=aware)))
+    assert datetime.fromisoformat(str(changed["changed_since"])) == naive.astimezone()
+    assert changed["changed_before"] == "2026-08-01T12:30:00+00:00"
 
 
 def test_malformed_wire_reports_fail_loudly() -> None:
@@ -607,7 +610,7 @@ def _tree_section(tree: object) -> dict[str, object]:
 
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema": "fdu.report/11",
+        "schema": "fdu.report/12",
         "generator": "fdu 0.1.0",
         "root": "/root",
         "request": {
@@ -716,6 +719,8 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
                             "complete": False,
                             "age_ns": None,
                             "modified_at": None,
+                            "changed_ns": 4_000,
+                            "changed_at": "not consulted",
                             "ignored": None,
                             "sort_value": None,
                             "classification": None,
@@ -731,6 +736,8 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
                             "complete": None,
                             "age_ns": 1,
                             "modified_at": "1970-01-01T00:00:00.000002999Z",
+                            "changed_ns": 7_999,
+                            "changed_at": "not consulted",
                             "ignored": None,
                             "sort_value": None,
                             "classification": None,
@@ -743,6 +750,10 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
     assert isinstance(files, FilesSection)
     assert files.files[0].modified_at is None
     assert files.files[1].modified_at == datetime(1970, 1, 1, 0, 0, 0, 2, tzinfo=UTC)
+    # Change time follows the same rule: exact on the row, and no instant for a lower bound.
+    assert files.files[0].changed_ns == 4_000 and files.files[0].changed_at is None
+    assert files.files[1].changed_ns == 7_999
+    assert files.files[1].changed_at == datetime(1970, 1, 1, 0, 0, 0, 7, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("positive", [True, False])

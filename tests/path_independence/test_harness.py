@@ -32,7 +32,7 @@ from runner import (
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/11",
+        "schema": "fdu.report/12",
         "request": {
             "scope": {"read_controls": True},
             "analyze": [],

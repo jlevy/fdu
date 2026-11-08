@@ -39,7 +39,7 @@ pub(crate) use query_request::{Rejection, RootAliases};
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
     Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, ShareThreshold,
-    SizeMetric, SortKey,
+    SizeMetric, SortKey, TimeWindow,
 };
 pub use query_status::{ReportProvenance, StatusIssue, TierProvenance, TierState, TreeStatus};
 #[cfg(test)]

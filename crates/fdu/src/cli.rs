@@ -116,7 +116,7 @@ Examples:
   fdu . --view=code,documents   lines of code by language, words by document type
   fdu . --ignored=exclude       omit entries covered by .gitignore
   fdu . --view=summary          one total for the tree
-  fdu . --kind file --modified-since 24h
+  fdu . --kind file --changed-since 24h
   fdu . --kind dir --include .venv --modified-before 7d --long
   fdu . --kind dir --include node_modules --modified-before 30d --long
   fdu . --kind dir --include target --modified-before 30d --format paths
@@ -192,12 +192,12 @@ START HERE
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
     fdu . --view=recent --limit=10             ten most recently modified files
-    fdu . --kind=file --modified-since=24h     files written in the last day, by folder
+    fdu . --kind=file --changed-since=24h      files written in the last day, by folder
     fdu docs src                               several paths as one report, with a total
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size, each
-  with its age: how long ago anything it counts last changed. Hidden
+  with its age: how long ago anything it counts was last modified. Hidden
   and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 
   Several paths are what each would report, added: every size, row, share, and
@@ -274,7 +274,7 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   --breadth caps children per directory; --limit caps data rows per section.
   Both default to all. --depth all expands levels. Omission notes name each bound.
   Display bounds never change totals or limit the filesystem scan.
-  A tree row's age is its newest counted change, of files, directories, and symlinks;
+  A tree row's age is its newest counted modification, of files, directories, and symlinks;
   unknown where a subtree was not listed. Ages read s, m, h, d, mo (30.44 days), and
   y (365.25 days); time bounds take days. --sort mtime orders rows by that age.
 
@@ -302,15 +302,18 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 WHAT WAS WRITTEN RECENTLY
-  fdu PATH --kind file --modified-since 24h
-  fdu PATH --view largest --modified-since 24h --limit 20
+  fdu PATH --kind file --changed-since 24h
+  fdu PATH --view largest --changed-since 24h --limit 20
 
   Each finds what was written in the last day, by folder or by file, in one scan
-  with no saved state. Keep --kind file: without it a directory with any activity
-  in the window counts at its full size. A file written in the window counts in
-  full, deleted files do not appear, and data that kept an older modification time
-  (cp -p, rsync -a, Finder or Explorer copies, mv from another filesystem,
-  archives, some downloads, Cargo's crate sources) is missed.
+  with no saved state. Change time is the newer of modification and status change,
+  so data that kept an older modification time still counts: cp -p, rsync -a,
+  Finder or Explorer copies, mv from another filesystem, archives, some downloads,
+  and Cargo's crate sources, which --modified-since misses. Keep --kind file:
+  without it a directory with any activity in the window counts at its full size.
+  This is data written, not net growth: a file written in the window counts in
+  full, deleted files do not appear, and a chmod changes a file that did not grow.
+  --sort changed orders files, largest, and recent by change time.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
@@ -387,7 +390,7 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/12; watch changes use fdu.stream/2.
   A Files watch emits an initial ordinary report, then change records;
   aggregate views repaint reports. An invalidate change requires rebuilding
   or resynchronizing the inventory, not continuing from incomplete state.
@@ -621,6 +624,17 @@ pub struct Cli {
     #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_before: Option<String>,
 
+    /// Report only entries changed at or after this time: modified, copied, or extracted.
+    ///
+    /// Change time is the newer of modification and status change, so data that kept an
+    /// older modification time (`cp -p`, an extracted archive) is still new by it.
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
+    pub changed_since: Option<String>,
+
+    /// Report only entries changed before this time.
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
+    pub changed_before: Option<String>,
+
     /// Entry kinds to report: file, dir, symlink, other.
     #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
@@ -657,7 +671,7 @@ pub struct Cli {
     #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
     pub full: bool,
 
-    /// Order results: size, count, mtime, name, or a requested metric such as `code_lines`.
+    /// Order results: size, count, mtime, changed, name, or a requested metric such as `code_lines`.
     #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
     pub sort: Option<String>,
 
@@ -1686,6 +1700,8 @@ impl Cli {
                 min_size: self.min_size.as_deref(),
                 modified_since: self.modified_since.as_deref(),
                 modified_before: self.modified_before.as_deref(),
+                changed_since: self.changed_since.as_deref(),
+                changed_before: self.changed_before.as_deref(),
                 kinds: self.kind.as_deref(),
                 ignored: self.ignored.as_deref(),
                 depth: self.depth.as_deref().or(self.full.then_some("all")),
@@ -2755,6 +2771,8 @@ mod tests {
             min_size: None,
             modified_since: None,
             modified_before: None,
+            changed_since: None,
+            changed_before: None,
             kind: None,
             ignored: None,
             // None, as clap now leaves it: the default belongs to the view.
@@ -3173,6 +3191,21 @@ mod tests {
     }
 
     #[test]
+    fn the_changed_window_reaches_the_selection_beside_the_modified_one() {
+        let parsed = Cli {
+            modified_before: Some("@500".to_string()),
+            changed_since: Some("@1000".to_string()),
+            changed_before: Some("@2000".to_string()),
+            ..cli()
+        }
+        .resolved_query()
+        .expect("window parses");
+        assert_eq!(parsed.selection.modified.before, Some(500_000_000_000));
+        assert_eq!(parsed.selection.changed.since, Some(1_000_000_000_000));
+        assert_eq!(parsed.selection.changed.before, Some(2_000_000_000_000));
+    }
+
+    #[test]
     fn kinds_sort_and_size_translate_to_their_library_values() {
         let parsed = Cli {
             kind: Some("file,dir".to_string()),
@@ -3537,7 +3570,7 @@ mod tests {
             .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/11\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/12\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -3660,7 +3693,7 @@ mod tests {
         assert!(json_diagnostic.is_empty());
         let json = String::from_utf8(json_out).expect("UTF-8 JSON");
         assert!(json.trim().starts_with('{') && json.trim().ends_with('}'));
-        assert!(json.contains("\"schema\": \"fdu.report/11\""));
+        assert!(json.contains("\"schema\": \"fdu.report/12\""));
         assert!(json.contains("\"view\": \"summary\""));
     }
 

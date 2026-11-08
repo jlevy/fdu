@@ -193,10 +193,10 @@ Unknown quantities are labeled unknown rather than estimated.
 The default is 10 characters.
 This affects human trees only.
 
-A row’s age is how long ago anything it counts last changed: the newest modification
-among its own entry and every entry beneath it that it counts, files, directories, and
-symlinks alike, so deleting or renaming a file makes its directory young and a freshly
-installed tree reads as new even when its files keep archive times.
+A row’s age is how long ago anything it counts was last modified: the newest
+modification among its own entry and every entry beneath it that it counts, files,
+directories, and symlinks alike, so deleting or renaming a file makes its directory
+young and a freshly installed tree reads as new even when its files keep archive times.
 The scan root’s own time does not count.
 With no filter, a directory’s age in the tree is its age in `--long`; under a filter,
 each row ages only what it counts, so `--kind file --modified-before 365d` never shows a
@@ -276,14 +276,25 @@ counts everything inside those directories; `--kind file` asks only for the file
 ### Find What Was Written Recently
 
 When free space drops, look for the data written since it was last fine.
-fdu keeps no history of past sizes, but every file records when it was last modified, so
-one scan with no saved state finds what was written in a window:
+fdu keeps no history of past sizes, but every file records when it last changed, so one
+scan with no saved state finds what was written in a window:
 
 ```shell
-fdu ~ --kind=file --modified-since=24h                  # by folder, largest first
-fdu ~ --kind=file --modified-since=24h --view=summary   # their total
-fdu ~ --view=largest --modified-since=24h --limit=20    # the largest of them
+fdu ~ --kind=file --changed-since=24h                  # by folder, largest first
+fdu ~ --kind=file --changed-since=24h --view=summary   # their total
+fdu ~ --view=largest --changed-since=24h --limit=20    # the largest of them
 ```
+
+Change time is the newer of a file’s modification time and its status change time
+(`ctime`), which the operating system sets whenever the file’s data or metadata is
+written. It catches data that arrived carrying an older modification time, which
+`--modified-since` misses.
+`cp -p`, `rsync -a`, Finder and Explorer copies, `mv` from another filesystem, and
+archive extraction keep the source’s modification times, downloads can take the server’s
+(wget does by default), and Cargo stamps its extracted crate sources with a fixed 2006
+time: after a Cargo build that extracted 2,460 files (31 MiB), `--modified-since=2h`
+found only Cargo’s empty `.cargo-ok` markers, and `--changed-since=2h` found all of
+them. `--changed-since=24h --modified-before=365d` lists only such arrivals.
 
 Keep `--kind=file`, for the reason above: without it, a directory with any activity in
 the window is admitted at its full size, and at home-folder scale nearly every top-level
@@ -298,19 +309,18 @@ The result is data written in the window, not net growth:
   counts 10 GB. The total is an upper bound on the growth those files caused.
 - Deleted files are not in the walk, and a file that shrank counts at its new size, so
   space freed in the window is not subtracted and the total can exceed the space lost.
-- Data that arrived with an older modification time is missed.
-  `cp -p`, `rsync -a`, Finder and Explorer copies, `mv` from another filesystem, and
-  archive extraction keep the source’s times, downloads can take the server’s (wget does
-  by default), and Cargo stamps its extracted crate sources with a fixed 2006 time:
-  after a Cargo build that extracted 2,460 files (31 MiB), `--modified-since=2h` found
-  only Cargo’s empty `.cargo-ok` markers.
-  Their inode change time is still current, but fdu does not select by it.
-  Where the total falls short of the space lost,
-  `find ~ -type f -cmin -1440 -exec du -k {} + | sort -n | tail -20` lists the largest
-  files whose inode changed in the last day, these included.
+- A `chmod` or `chown` changes a file without growing it, so such a file counts too.
+- An entry whose change time was not observed matches no change-time bound.
+  On Windows, fdu reads change time from each entry’s own handle, so an entry it could
+  list but not open, such as a locked system file, has none; `--modified-since` still
+  selects it by modification time.
 - Space outside the scanned paths, in filesystem snapshots, or in deleted files that a
   process still holds open is in no walk.
   `df` reports the volume’s free space; fdu reports what the scanned tree holds.
+
+`--sort=changed` orders `files`, `largest`, and `recent` rows by change time, newest
+first; a tree’s age stays modification activity, so a tree refuses that sort.
+Machine rows carry `changed_ns` and `changed_at` beside `mtime_ns` and `modified_at`.
 
 The walk reads every entry’s metadata once and needs no cache.
 A home folder can hold millions of entries and take minutes, so start where growth is
@@ -330,7 +340,7 @@ for window in ("1h", "24h", "7d"):
     report = index.report(
         fdu.Query(
             views=(fdu.View.SUMMARY,),
-            selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,), modified_since=window),
+            selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,), changed_since=window),
         )
     )
     summary = report.sections[0].summary
@@ -340,8 +350,7 @@ for window in ("1h", "24h", "7d"):
 Exact net change, with deletions, needs a report saved before the window began; the
 [checkpoint design](project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md#interim-workflow)
 describes saving and comparing one.
-Selection by change time, an age profile of a tree, and the volume’s capacity beside the
-tree are planned in the
+An age profile of a tree and the volume’s capacity beside the tree are planned in the
 [recent growth design](project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md).
 
 ### Find Old Environments and Build Directories
