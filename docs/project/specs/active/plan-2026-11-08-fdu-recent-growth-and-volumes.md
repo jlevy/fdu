@@ -151,8 +151,8 @@ to detect:
 All figures below come from one uncontrolled, virtualized Linux container (about 182,600
 regular files, 9.7 GiB), on 2026-11-08, counted with `find -mmin` and `-cmin` and a
 one-pass `lstat` script except where an fdu command is named.
-The script and fdu ran minutes apart, so their file totals differ by one (182,639 and
-182,638).
+Their file totals differ by one (182,639 from the script, 182,638 from fdu); the cause
+was not investigated.
 
 - **Cargo:** a build in this session extracted 2,460 crate source files (31.2 MiB) into
   `~/.cargo/registry/src`. Cargo stamps them with a fixed 2006 modification time, so a
