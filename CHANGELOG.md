@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The agent skill, `fdu --help`, `fdu --docs`, and the README show how to find what was
+  written recently from one scan with no saved state:
+  `fdu PATH --kind file --modified-since 24h` by folder, and `--view largest` for the
+  files. They say why `--kind file` is required, and that the answer is data written, not
+  net growth: modified files count in full, deleted files do not appear, and data copied
+  or extracted with an older modification time is missed.
+
 ## [0.5.0] - 2026-10-11
 
 fdu 0.5.0 adds ages and size colors to the tree and combines several disjoint roots in

@@ -25,6 +25,11 @@ video attached; its [release notes](docs/project/release-notes/0.4.0.md) say wha
 changed, and its
 [release record](docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
 holds the stability pass and the checks after publishing.
+0.5.0 (an age column in the tree; several paths in one report) is tagged and published
+(2026-10-14); its [release notes](docs/project/release-notes/0.5.0.md) say what it
+changed, and its
+[release record](docs/project/reports/report-2026-10-14-release-0.5.0-stability-pass.md)
+holds the stability pass and the checks after publishing.
 
 | Workstream | Owner | Remaining work / governing document |
 | --- | --- | --- |
@@ -54,6 +59,7 @@ references.
 | Progress indicator | `fdu-vngp`, `fdu-2e8o` | [Progress plan](docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md): shipped indicator; remaining acceptance is recorded in the plan and linked beads. |
 | Rust quality | `fdu-dxee` | [Quality plan](docs/project/specs/active/plan-2026-08-09-fdu-rust-engineering-quality.md): parser/commit-failure state-machine coverage (`fdu-471a`). |
 | Disk checkpoints and allocation | `fdu-uwhl`, `fdu-8ybz`, `fdu-579b` | [Disk checkpoints](docs/project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md): probe and store design; unique hard-link accounting remains separate. Current allocation counts paths, not reclaimable bytes. |
+| Recent growth without a baseline | `fdu-tjsi` | [Recent growth, age profiles, and volume capacity](docs/project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md): the written-recently recipe is documented; change time, the `ages` view, and the `volumes` view await the plan’s open questions. |
 | Deferred extensions | `fdu-x746` | [Post-phase-1 roadmap](docs/project/specs/future/plan-2026-08-09-fdu-post-phase-1-roadmap.md). |
 
 ## Performance and Evidence

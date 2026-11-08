@@ -10,15 +10,18 @@ live change feed, the Rust and Python libraries, speed, and comparison with othe
 ## Use fdu
 
 - [Command-line usage](usage.md)
+- [Find what was written recently](usage.md#find-what-was-written-recently): where disk
+  space went over a window, from one scan with no saved state
 - [Performance measurements](performance-measurements.md): run times and throughput
   against pdu, diskus, dust, du, scc, and others on Linux and macOS
 - [Comparison to alternatives](../README.md#comparison-to-alternatives)
 - [Live updates](../README.md#live-updates)
 - [Rust library examples](../README.md#as-a-rust-library)
 - [Python package examples](../README.md#as-a-python-module)
-- Release notes: [0.4.0](project/release-notes/0.4.0.md),
-  [0.3.0](project/release-notes/0.3.0.md), [0.2.1](project/release-notes/0.2.1.md),
-  [0.2.0](project/release-notes/0.2.0.md), and [0.1.0](project/release-notes/0.1.0.md)
+- Release notes: [0.5.0](project/release-notes/0.5.0.md),
+  [0.4.0](project/release-notes/0.4.0.md), [0.3.0](project/release-notes/0.3.0.md),
+  [0.2.1](project/release-notes/0.2.1.md), [0.2.0](project/release-notes/0.2.0.md), and
+  [0.1.0](project/release-notes/0.1.0.md)
 
 ## Understand the Design
 

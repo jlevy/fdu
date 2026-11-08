@@ -171,6 +171,7 @@ Only `code` and `documents` read file contents; every other view reads metadata 
 | File families, types, and extensions | `fdu . --view=families,types,extensions` |
 | Twenty largest files | `fdu . --view=largest` |
 | Ten most recently changed working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
+| Where the files written in the last day are | `fdu . --kind=file --modified-since=24h` |
 | Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
 | Stay on one filesystem, like `du -x` (macOS and Linux) | `fdu . --one-filesystem` |
 | Several paths as one report, with a total | `fdu docs src` |
@@ -249,6 +250,25 @@ without walking or reading them.
 account for the rest, and `--format=json` gives structured counts and coverage.
 See [content analysis](docs/usage.md#analyze-file-contents) for the counting convention
 and supported languages.
+
+## Find What Was Written Recently
+
+When free space drops, find where the new data is.
+fdu keeps no history of past sizes, but every file records when it was last modified, so
+one scan with no saved state shows everything written since a given time, by folder and
+largest first:
+
+```shell
+fdu ~ --kind=file --modified-since=24h
+fdu ~ --view=largest --modified-since=24h --limit=20
+```
+
+`--kind=file` matters: without it, a directory with any activity in the window counts at
+its full size. The total is data written, not net growth: a file written in the window
+counts in full, deleted files do not appear, and data copied or extracted with an older
+modification time is missed.
+The [usage guide](docs/usage.md#find-what-was-written-recently) says how to read and
+check the result.
 
 ## Find Environments and Build Outputs
 
