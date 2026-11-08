@@ -301,14 +301,16 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   roots can overlap; aggregate views count the covered contents once. --size apparent
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
+WHAT WAS WRITTEN RECENTLY
   fdu PATH --kind file --modified-since 24h
   fdu PATH --view largest --modified-since 24h --limit 20
 
-  These find what was written in the last day, by folder and by file, from one scan
-  and no saved state. Keep --kind file: without it a directory with any activity in
-  the window counts at its full size. A file written in the window counts in full,
-  deleted files do not appear, and data copied or extracted with an older
-  modification time (cp -p, rsync -a, archives, Cargo's crate sources) is missed.
+  Each finds what was written in the last day, by folder or by file, in one scan
+  with no saved state. Keep --kind file: without it a directory with any activity
+  in the window counts at its full size. A file written in the window counts in
+  full, deleted files do not appear, and data that kept an older modification time
+  (cp -p, rsync -a, Finder or Explorer copies, archives, some downloads, Cargo's
+  crate sources) is missed.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached

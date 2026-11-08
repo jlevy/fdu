@@ -296,14 +296,17 @@ The result is data written in the window, not net growth:
 
 - A file written in the window counts at its full size, so a 1 MB append to a 10 GB file
   counts 10 GB. The total is an upper bound on the growth those files caused.
-- Deleted and truncated files are not in the walk, so the total can exceed the space
-  lost.
+- Deleted files are not in the walk, and a file that shrank counts at its new size, so
+  space freed in the window is not subtracted and the total can exceed the space lost.
 - Data that arrived with an older modification time is missed.
-  `cp -p`, `rsync -a`, and archive extraction keep the source’s times, and Cargo stamps
-  its extracted crate sources with a fixed 2006 time: a Cargo build that extracted 2,460
-  files (31 MiB) showed none of them under `--modified-since=2h`. Their inode change
-  time is still current, but fdu does not select by it.
-  Where the total falls short of the space lost, `find ~ -type f -cmin -1440` lists the
+  `cp -p`, `rsync -a`, Finder and Explorer copies, and archive extraction keep the
+  source’s times, downloads can take the server’s (wget does by default), and Cargo
+  stamps its extracted crate sources with a fixed 2006 time: after a Cargo build that
+  extracted 2,460 files (31 MiB), `--modified-since=2h` found only Cargo’s empty
+  `.cargo-ok` markers.
+  Their inode change time is still current, but fdu does not select by it.
+  Where the total falls short of the space lost,
+  `find ~ -type f -cmin -1440 -exec du -k {} + | sort -n | tail -20` lists the largest
   files whose inode changed in the last day, these included.
 - Space outside the scanned paths, in filesystem snapshots, or in deleted files that a
   process still holds open is in no walk.

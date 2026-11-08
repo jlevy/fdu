@@ -26,8 +26,8 @@ data. This plan:
 
 1. Documents the recipe that works now, with its limits, in the skill, `--docs`, the
    README, and the usage guide (phase 0).
-2. Adds **change time**, a second time basis that copies and extractions cannot hide
-   from, as a selection window and a sort key (phase 1).
+2. Adds **change time**, a second time basis that copies and extractions made through
+   ordinary file APIs do not hide from, as a selection window and a sort key (phase 1).
 3. Adds an **`ages` view**: the selected bytes partitioned by when they were last
    written, every window from one walk (phase 2).
 4. Adds a **`volumes` view**: the capacity of each filesystem the report touches, beside
@@ -54,7 +54,9 @@ Everything else is composition with the axes fdu already has.
 
 - An agent asked where disk space went over a window answers it with one command, one
   walk, and no prior state, and states exactly what the answer covers.
-- The answer cannot be fooled by data that arrived with an older modification time.
+- The answer is not fooled by copies and extractions that keep an older modification
+  time, on the filesystems and tools
+  [the soundness limits](#where-change-time-is-weaker) do not name.
 - One walk answers every window at once, so no question is answered by repeated scans.
 - Every new value is a projection of facts the walkers already read.
   Phases 1 and 2 add no system call on Linux or macOS.
@@ -92,7 +94,8 @@ extended attributes.
 POSIX leaves it open whether a rename updates the renamed file’s `ctime`; Linux
 filesystems do, so a file moved into the scope may or may not read as changed.
 A move allocates nothing, so this cannot hide a loss of free space.
-No ordinary call can set `ctime` to another value; only resetting the system clock can.
+No Unix file API sets `ctime` to a chosen value; [below](#where-change-time-is-weaker)
+are the cases that bypass the file API or the clock.
 
 Define an entry’s **change time** as the newer of the two.
 The consequence is the whole design:
@@ -108,9 +111,10 @@ is at or after T. One walk therefore gives:
   so appending 1 MB to a 10 GB database counts 10 GB.
 - **No shrinkage:** deleted files and the bytes a shrinking file gave back are not in
   the walk. Written bytes are gross arrivals, not net change.
-- **Over-inclusion, never omission:** a metadata-only change, such as `chmod -R`, an
+- **Over-inclusion, not omission:** a metadata-only change, such as `chmod -R`, an
   extended attribute that a desktop indexer sets, or a new hard link, makes a file count
   as changed without growing it.
+  Omission is possible only in the cases [below](#where-change-time-is-weaker).
 
 Both errors in the last two points are conservative for both common questions.
 For “what grew?”, over-inclusion can only add candidates, never hide one.
@@ -120,19 +124,40 @@ stale.
 
 Modification time alone does not have this property.
 Userspace sets it freely, and many tools set it into the past on purpose: `cp -p`,
-`rsync -a`, `tar -x`, `unzip`, and package managers that stamp files with a fixed time
-so builds are reproducible.
+`rsync -a`, Finder and Explorer copies, `tar -x`, `unzip`, downloads that take the
+server’s time (wget does by default), and package managers that stamp files with a fixed
+time so builds are reproducible.
+
+### Where change time is weaker
+
+The guarantee holds for data written through the file API on a filesystem that stores a
+real status-change time.
+It weakens in these cases, which the documentation must name and the plan does not try
+to detect:
+
+- **The clock moved.** A system clock set back makes new writes look old.
+- **Below the file API.** Replicating or restoring a whole filesystem, such as
+  `zfs receive` or restoring a disk image, keeps the source’s change times, so restored
+  data reads as old even though its space was allocated now.
+- **Settable change time.** Windows lets a caller set `ChangeTime` with
+  `SetFileInformationByHandle`; ordinary copies do not, but a tool can.
+- **No stored change time.** Filesystems that do not store a status-change time, such as
+  the FAT family, report a substitute, so change time there is no stronger than the
+  timestamp it is derived from.
+  Behavior per driver is unverified and belongs in phase 1’s platform tests.
 
 ### What modification time misses, measured
 
-All figures below come from one uncontrolled, virtualized Linux container (182,638
+All figures below come from one uncontrolled, virtualized Linux container (about 182,600
 regular files, 9.7 GiB), on 2026-11-08, counted with `find -mmin` and `-cmin` and a
 one-pass `lstat` script except where an fdu command is named.
+The script and fdu ran minutes apart, so their file totals differ by one (182,639 and
+182,638).
 
 - **Cargo:** a build in this session extracted 2,460 crate source files (31.2 MiB) into
   `~/.cargo/registry/src`. Cargo stamps them with a fixed 2006 modification time, so a
-  two-hour modification-time window found 39 files and 0.0 MiB. A two-hour change-time
-  window found all 2,460.
+  two-hour modification-time window found only Cargo’s empty `.cargo-ok` markers (39
+  files, 0.0 MiB). A two-hour change-time window found all 2,460 sources.
 - **The whole filesystem:** allocated bytes written within the last hour were 1.4 GiB in
   9,801 files by change time, and 1.2 GiB in 7,370 files by modification time.
   The 2,431-file difference arrived with older modification times.
@@ -272,39 +297,43 @@ phase 1’s documentation says so wherever it compares fdu with fd.
 ### The `ages` view
 
 `--view ages` partitions the selected regular files by how long ago they last changed,
-newest first, on the ladder the tree’s age column already uses (a month is 30.44 days, a
-year 365.25 days):
+newest first. Edges are hours and days, and a year is 365.25 days, as in the tree’s age
+column. The time grammar takes no calendar units, so each edge is spelled the way a
+window flag accepts it, and every row is one window query over the same selection and
+instant:
 
-| Band | Change time, relative to the request instant |
-| --- | --- |
-| `future` | After the instant; clock skew or a timestamp set ahead |
-| `under 1h` | Within the last hour |
-| `1h to 1d` | 1 hour to 1 day ago |
-| `1d to 7d` | 1 to 7 days ago |
-| `7d to 30d` | 7 to 30 days ago |
-| `30d to 90d` | 30 to 90 days ago |
-| `90d to 1y` | 90 days to 1 year ago |
-| `1y to 3y` | 1 to 3 years ago |
-| `over 3y` | More than 3 years ago |
-| `unknown` | Change time not observed |
+| Band | Change-time age | Window that selects exactly this row |
+| --- | --- | --- |
+| `future` | Below zero: clock skew or a timestamp set ahead | `future` and `under 1h` together are `--changed-since 1h` |
+| `under 1h` | 0 to 1 hour | (see above) |
+| `1h to 1d` | Over 1 hour, to 1 day | `--changed-since 24h --changed-before 1h` |
+| `1d to 7d` | Over 1 day, to 7 days | `--changed-since 7d --changed-before 24h` |
+| `7d to 30d` | Over 7 days, to 30 days | `--changed-since 30d --changed-before 7d` |
+| `30d to 90d` | Over 30 days, to 90 days | `--changed-since 90d --changed-before 30d` |
+| `90d to 1y` | Over 90 days, to 365.25 days | `--changed-since 365d6h --changed-before 90d` |
+| `1y to 3y` | Over 1 year, to 3 years | `--changed-since 1095d18h --changed-before 365d6h` |
+| `over 3y` | Over 3 years | `--changed-before 1095d18h` |
+| `unknown` | Change time not observed | None; no window admits it |
+
+Windows are half-open, `[since, before)`, so an entry exactly on an edge falls in the
+newer band: `--changed-since` is inclusive.
 
 Empty bands are omitted in text and kept in machine output.
-Each row is the grouped-row layout: size, share, band, file count, and one continuation
-line with the cumulative share and size of this band and every newer one.
-This is the shape the measured container would print (illustrative, not a golden):
+Each text row is the standard grouped-row layout (size, share, band, file count), so
+nothing in the output design changes.
+Cumulative tallies (this band and every newer one, which answer “how much changed within
+30 days?”) are in machine output; whether text shows them too is
+[open question 7](#open-questions).
+This is the shape the measured container would print (illustrative, not a golden; counts
+from the `lstat` script):
 
 ```text
    4.0 KiB    0.0%  future           1 file
    1.4 GiB   14.8%  under 1h         9,801 files
-                                       14.8% within 1h (1.4 GiB)
    3.9 GiB   39.8%  7d to 30d        61,113 files
-                                       54.6% within 30d (5.3 GiB)
    985 MiB    9.9%  30d to 90d       12,810 files
-                                       64.5% within 90d (6.3 GiB)
    552 MiB    5.6%  90d to 1y        7,147 files
-                                       70.1% within 1y (6.8 GiB)
    2.1 GiB   21.4%  1y to 3y         54,225 files
-                                       91.5% within 3y (8.9 GiB)
    848 MiB    8.5%  over 3y          37,542 files
 note: ages are by change time: the newer of modification and status change
 ```
@@ -314,9 +343,9 @@ The rules it obeys:
 - **It partitions.** The rows sum to the files and bytes `--view summary` reports for
   the same selection
   ([a roll-up partitions](../../architecture/fdu-design-principles.md#a-roll-up-partitions-what-it-reports-on)).
-- **Each row is a query.** The row for a band equals
-  `--kind file --changed-since <older edge> --changed-before <newer edge> --view summary`
-  over the same selection and instant, and a test pins that identity.
+- **Each row is a query.** The window in the table above, with `--kind file` and
+  `--view summary`, over the same selection and instant, gives the row’s tallies, and a
+  test pins that identity for every band.
 - **It composes.** Selection narrows what is profiled (`--include '*.log'`,
   `--ignored=only`, `--kind dir --include node_modules`, which covers each directory’s
   contents), several roots are profiled as their union, and `--view tree,ages` shares
@@ -342,14 +371,24 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   one, identified by device, which already merges bind mounts of one filesystem.
   Without `--one-filesystem` a walk can enter mounted filesystems below the root, so a
   report can have several rows.
-- **Capacity.** Observed when the report is generated: `statvfs` on Unix and
-  `GetDiskFreeSpaceExW` on Windows, one call per filesystem.
-  It is an explicit input to the report reader, like the generation instant, so
-  `report()` stays a pure reader.
-  Capacity is never stored in a snapshot or served from the cache; a watch repaint
-  observes it again. Provenance gains a `capacity` tier with its own `observed_at`.
-- **Columns.** Capacity, the share in use, the mount path where fdu entered the
-  filesystem, available bytes, and the bytes this report counted there.
+- **Capacity, observed by the serving layer, read by the reader.** The engine gains one
+  observation step, `observe_capacity(devices) -> CapacityObservation`: one `statvfs` on
+  Unix or `GetDiskFreeSpaceExW` on Windows per filesystem, with its `observed_at`. The
+  pure reader takes the observation as an explicit argument, as it takes the generation
+  instant, so `report()` and `report_roots()` never touch the filesystem
+  ([views are readers](../../architecture/fdu-design-principles.md#views-are-readers)).
+  Every serving route observes before it reads: the one-shot planner; `Index::report`
+  and Python’s `index.report`, inside their serving layer; `OpenedIndex` reads; each
+  watch repaint; and `--stale-ok`, whose tree tier is stale while its capacity tier is
+  observed now, labeled separately.
+  A request without `volumes` observes nothing.
+  Capacity is never stored in a snapshot or served from the cache, and provenance gains
+  a `capacity` tier with its own `observed_at`.
+- **Columns.** Capacity, the share in use, the path where the report entered the
+  filesystem (a root, or the directory where the walk crossed onto it), available bytes,
+  and the bytes this report counted there.
+  No mount table is read: the walk already knows where the device changes.
+  The filesystem type is shown only where the same `statfs` call names it.
   The share in use is `(capacity − available) / capacity`: the figure that matters when
   space runs out, and what `duf` shows.
   It is not the volume’s own `used` blocks, which `df` shows and which differ on APFS.
@@ -379,6 +418,8 @@ Both new views join `--view full`, which shows every view but List and Files.
 Every report whose selection predicates (kind, patterns, size or time bounds, ignored
 state) narrow the scanned set ends with one note saying what they admitted.
 Display bounds already have their own note and do not trigger this one.
+The note is omitted when the selection admitted everything scanned, and `--quiet`
+suppresses it with the other notes; the machine fields are always present.
 
 ```text
 note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB
@@ -455,29 +496,43 @@ from `fdu.report/11`.
 
 ### Phase 3: The `volumes` view (`fdu-eas0`)
 
-- [ ] A capacity observation per distinct device in the report’s scope, taken by the
-  planner and passed to the reader; a `capacity` provenance tier.
-- [ ] Mount path and filesystem type: from `statfs` on macOS, `/proc/self/mountinfo` on
-  Linux for the devices seen, and `GetVolumePathNameW` and `GetVolumeInformationW` on
-  Windows.
+- [ ] `observe_capacity` per distinct device in the report’s scope, called by every
+  serving route listed under [the `volumes` view](#the-volumes-view) and passed to the
+  reader; a `capacity` provenance tier; the Python and Rust reader signatures that carry
+  it.
+- [ ] Each row labeled by the path where the report entered the filesystem, from the
+  walk’s own device changes; the filesystem type only where `statfs` names it.
+  No mount-table parsing.
 - [ ] Rows, notes for pooled filesystems, text and machine renderers, `--view full`.
 - [ ] `make cross-lint`, since every source is behind a platform gate.
 
 ## Testing Strategy
 
+A test cannot give a file an old change time: anything it writes, `touch -d` included,
+gets a change time of now.
+Old change times come from moving the request instant instead.
+The reader already takes its generation instant explicitly
+(`report(index, request, generated_at)`), and relative windows resolve against it, so a
+fixture written at T0 and reported at T0 + 400 days reads 400 days old by both clocks,
+while a file given `touch -d` reads old by modification time and new by change time.
+Exact nanosecond edges and unknown change times use synthetic entry facts.
+
 - **Soundness:** on a fixture with an in-place append, a `cp -p` copy, a `tar -x`
   extract, and a `touch -d` into the past, a change-time window admits every file
   written in the window, and a modification-time window demonstrably does not.
   A `chmod` is admitted though nothing grew.
-  A golden pins both; it asserts nothing about a rename, which POSIX lets a filesystem
-  leave out of `ctime`.
-- **Identities:** the `ages` rows sum to `summary`; each row equals its window query;
-  cumulative tallies equal `--changed-since <edge> --view summary`; a `--changed-*`
-  window over an index equals a cold run (path independence).
+  A CLI golden pins both against now; it asserts nothing about a rename, which POSIX
+  lets a filesystem leave out of `ctime`.
+- **Aging by instant:** engine and Python tests report the same fixture at several later
+  instants and check every band and window, including entries that are old by both
+  clocks, which the CLI cannot produce.
+- **Identities:** the `ages` rows sum to `summary`; each row equals its window query in
+  the band table; cumulative tallies equal `--changed-since <edge> --view summary`; a
+  `--changed-*` window over an index equals a cold run (path independence).
 - **Unknown change time:** an index with an unobserved change time keeps that entry out
   of every change-time bound and puts it in the `unknown` band.
 - **Clock edges:** future timestamps fall in `future`; an entry exactly on a band edge
-  falls in the older band, matching the half-open windows.
+  falls in the newer band, because `--changed-since` is inclusive.
 - **Volumes:** a root on one filesystem gives one row; a fixture with a mount below the
   root gives two (Linux CI, where mounting a tmpfs is possible), and `--one-filesystem`
   gives one; capacity never appears in a snapshot.
@@ -507,13 +562,16 @@ These need the maintainer’s decision; the design above follows each recommenda
    tree but `under 1h` in `ages`. Each is labeled, and the difference is the point.
    Alternatives: modification time (consistent, but blind to the arrivals measured
    above), or both as columns (no partition per row, and wider rows).
-2. **Fixed or configurable bands.** Recommendation: fixed, on the age ladder, because a
-   fixed ladder keeps every report comparable and any other edge is one window query
-   away. Alternative: a view option such as `--age-bands 1h,6h,1d`, which needs a place
-   on the view axis like `--words-per-page`.
-3. **Flag names.** Recommendation: `--changed-since` and `--changed-before`, per POSIX.
-   Case against: an fd user expects `--changed-within` to mean modification time.
-   Alternative: `--written-since`, which names the question but no precedent.
+2. **Fixed or configurable bands.** Recommendation: fixed, as in the band table, because
+   fixed edges keep every report comparable and any other edge is one window query away.
+   Alternative: a view option such as `--age-bands 1h,6h,1d`, which needs a place on the
+   view axis like `--words-per-page`.
+3. **Names.** Recommendation: `--changed-since`, `--changed-before`, and
+   `--sort changed`, per POSIX. Case against: an fd user expects `--changed-within` to
+   mean modification time, and `--sort changed` beside `--sort mtime` names one key by
+   meaning and the other by field.
+   Alternative: `--written-since` and `--sort written`, which name the question but have
+   no precedent.
 4. **The tree’s age column.** Recommendation: keep modification activity, the meaning
    0.5.0 released. Alternative: move it to change time so one report has one basis, which
    changes released output.
@@ -526,6 +584,13 @@ These need the maintainer’s decision; the design above follows each recommenda
 6. **Selection coverage in machine output.** Recommendation: two tallies on the
    envelope, `selected` and `scanned`, because a parser should not need the note.
    Alternative: notes only.
+7. **Cumulative tallies in text `ages`.** Recommendation: machine output only, so text
+   keeps the grouped-row layout unchanged; “how much changed within 30 days?”
+   is one `--changed-since 30d --view summary` away.
+   Case against: that is the question the view exists for, and a reader has to add rows
+   to answer it. Alternative: a second share column of cumulative share, which needs the
+   output design’s grouped-row rule amended first, since a continuation line may only
+   break down its own row.
 
 ## References
 
