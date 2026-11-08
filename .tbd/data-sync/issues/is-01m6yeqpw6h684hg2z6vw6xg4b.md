@@ -3,9 +3,9 @@ type: is
 id: is-01m6yeqpw6h684hg2z6vw6xg4b
 title: "Address PR #208 review A: written-recently docs and recent-growth plan"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 15
+version: 16
 labels: []
 dependencies: []
 child_order_hints:
@@ -24,6 +24,10 @@ child_order_hints:
   - is-01m6yer3r7b0rpneh3hk55xev1
   - is-01m6yer4rm2ypvygfcb8engttw
 created_at: 2026-11-08T20:48:56.198Z
-updated_at: 2026-11-08T20:49:10.420Z
+updated_at: 2026-11-08T21:07:24.906Z
+closed_at: 2026-11-08T21:07:24.906Z
+close_reason: "Review A on PR #208 addressed: all 14 findings fixed in 5ccf8de1; marked disposition reply https://github.com/jlevy/fdu/pull/208#issuecomment-6727132317; CI green at 5ccf8de1 (run 42522561924)."
+resolution: null
+duplicate_of: null
 ---
 Review A (senior, round 1, head 0a7532f1): https://github.com/jlevy/fdu/pull/208#issuecomment-6726908449
