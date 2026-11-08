@@ -300,8 +300,8 @@ Keep `--kind=file`, for the reason above: without it, a directory with any activ
 the window is admitted at its full size, and at home-folder scale nearly every top-level
 directory has some activity in a day.
 With it, each folder counts only the files written in the window.
-The root row’s 100% is their total, not the tree’s; `fdu ~ --view=summary` gives the
-whole tree to compare.
+The root row’s 100% is their total, not the tree’s; a `note: selected … of …` line says
+how much of the scanned tree that is.
 
 The result is data written in the window, not net growth:
 

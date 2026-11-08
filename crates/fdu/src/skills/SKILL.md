@@ -412,7 +412,8 @@ with a 2006 time. `--changed-since 24h --modified-before 365d` lists only such a
 Keep `--kind file`. A time bound tests a directory’s whole subtree, so without it every
 directory with any activity in the window is admitted at its full size.
 With it, each folder counts only the files written in the window, and percentages are
-shares of their total; `fdu PATH --view summary` gives the whole tree to compare.
+shares of their total; the `note: selected … of …` line gives the whole tree to compare,
+and machine output carries both as `selected` and `scanned`.
 
 Read the result as data written, not as net growth:
 

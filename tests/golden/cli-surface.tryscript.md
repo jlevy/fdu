@@ -570,7 +570,8 @@ with a 2006 time. `--changed-since 24h --modified-before 365d` lists only such a
 Keep `--kind file`. A time bound tests a directory’s whole subtree, so without it every
 directory with any activity in the window is admitted at its full size.
 With it, each folder counts only the files written in the window, and percentages are
-shares of their total; `fdu PATH --view summary` gives the whole tree to compare.
+shares of their total; the `note: selected … of …` line gives the whole tree to compare,
+and machine output carries both as `selected` and `scanned`.
 
 Read the result as data written, not as net growth:
 
@@ -1122,6 +1123,8 @@ OUTPUT AND AUTOMATION
   or resynchronizing the inventory, not continuing from incomplete state.
   Before automating, check status.complete, errors and errors_omitted,
   provenance.freshness/source, tree truncation, and metric coverage.
+  selected and scanned give what a selection admitted beside the whole scan; a
+  filtered text report ends with `note: selected N of M files, SIZE of SIZE`.
   A multi-root report has root: null and roots; its tree section has tree: null,
   a combined total, and trees. Read the machine contract before parsing it.
   Cache status is its own document in every machine format: fdu.cache/3.

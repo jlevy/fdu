@@ -113,7 +113,8 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// `fdu.report/11` gave tree nodes their age (`mtime_ns`, `complete`, `age_ns`, and
 /// `modified_at`), list rows `modified_at`, and the envelope `age_reference_at`.
-/// `fdu.report/12` gives list rows their change time (`changed_ns` and `changed_at`).
+/// `fdu.report/12` gives list rows their change time (`changed_ns` and `changed_at`), and
+/// the envelope what the selection admitted and the scan retained (`selected`, `scanned`).
 pub const REPORT_SCHEMA: &str = "fdu.report/12";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
@@ -555,6 +556,19 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     });
     emit_field(sink, REPORT_FIELDS.request, true, |sink| emit_request(sink, report));
     emit_field(sink, REPORT_FIELDS.status, true, |sink| emit_status(sink, report));
+    for (field, totals) in [
+        (REPORT_FIELDS.selected, report.selection.selected),
+        (REPORT_FIELDS.scanned, report.selection.scanned),
+    ] {
+        emit_field(sink, field, true, |sink| {
+            sink.event(Event::BeginMap(Shape::Inline));
+            emit_u64_field(sink, "files", totals.files);
+            emit_u64_field(sink, "dirs", totals.dirs);
+            emit_u64_field(sink, "bytes", totals.bytes);
+            emit_u64_field(sink, "allocated", totals.allocated);
+            sink.event(Event::EndMap);
+        });
+    }
     emit_field(sink, REPORT_FIELDS.provenance, true, |sink| emit_provenance(sink, report));
     let several = report.roots.is_some();
     emit_field(sink, REPORT_FIELDS.ignore_rules, true, |sink| {
@@ -1389,6 +1403,8 @@ struct ReportFields {
     roots: Field,
     request: Field,
     status: Field,
+    selected: Field,
+    scanned: Field,
     provenance: Field,
     ignore_rules: Field,
     analysis: Field,
@@ -1406,6 +1422,10 @@ const REPORT_FIELDS: ReportFields = ReportFields {
     roots: Field::when_set("roots"),
     request: Field::always("request"),
     status: Field::always("status"),
+    // What the selection admitted and what the scan retained, on every report so that a
+    // parser need not read the note: a filtered root is 100% of the first, not the second.
+    selected: Field::always("selected"),
+    scanned: Field::always("scanned"),
     provenance: Field::always("provenance"),
     ignore_rules: Field::always("ignore_rules"),
     analysis: Field::nullable("analysis"),
@@ -3896,6 +3916,8 @@ mod tests {
                 fields.age_reference_at,
                 fields.request,
                 fields.status,
+                fields.selected,
+                fields.scanned,
                 fields.provenance,
                 fields.ignore_rules,
                 fields.analysis,

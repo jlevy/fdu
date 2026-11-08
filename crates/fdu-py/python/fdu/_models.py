@@ -965,6 +965,17 @@ class TreeDisplayLimits:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryTotals:
+    """Files, directories, and bytes in both metrics: a report's ``selected`` and
+    ``scanned`` tallies."""
+
+    files: int
+    dirs: int
+    bytes: int
+    allocated: int
+
+
+@dataclass(frozen=True, slots=True)
 class ReportRoot:
     """One root of a report over several: the path as the caller named it, normalized by
     its components, and the directory it is."""
@@ -1132,6 +1143,13 @@ class Report:
     #: The roots of a report over several, in the caller's order, each with its label and
     #: canonical path; ``None`` over one root.
     roots: tuple[ReportRoot, ...] | None = None
+    #: What the selection admitted or covers: the root totals a summary of the same
+    #: selection reports. A filtered root is 100% of this, not of :attr:`scanned`.
+    #: ``None`` only on a report built by hand.
+    selected: EntryTotals | None = None
+    #: Everything the scan retained, the unfiltered root totals; equal to
+    #: :attr:`selected` when the selection filters nothing.
+    scanned: EntryTotals | None = None
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
@@ -2059,6 +2077,23 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         analysis=analysis,
         sections=tuple(sections),
         _wire=cast(dict[str, JsonValue], wire),
+        selected=_entry_totals(wire.get("selected")),
+        scanned=_entry_totals(wire.get("scanned")),
+    )
+
+
+def _entry_totals(value: Any) -> EntryTotals | None:
+    """Decode a report's ``selected`` or ``scanned`` tally."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("a report's selected and scanned tallies must be objects")
+    raw = cast(dict[str, Any], value)
+    return EntryTotals(
+        files=int(raw["files"]),
+        dirs=int(raw["dirs"]),
+        bytes=int(raw["bytes"]),
+        allocated=int(raw["allocated"]),
     )
 
 

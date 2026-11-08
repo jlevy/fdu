@@ -51,6 +51,8 @@ $ fdu --cache off --format json --size apparent --limit 10 project
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -324,6 +326,8 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -443,6 +447,8 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 3, "dirs": 3, "bytes": 82, "allocated": [ALLOCATED]},
+  "scanned": {"files": 3, "dirs": 3, "bytes": 82, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -644,6 +650,8 @@ $ fdu --cache off --view types --format json --size apparent project
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",

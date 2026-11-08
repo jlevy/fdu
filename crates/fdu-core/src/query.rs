@@ -20,11 +20,12 @@ mod query_values;
 
 pub use query_glob::Pattern;
 pub use query_report::{
-    AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, FileRow,
-    IgnoredSize, IgnoredTally, MetricGroup, MetricRow, MetricShare, MetricSummary, Pages, Query,
-    Report, ReportMetricValues, ReportSource, RootTree, RootTrees, Section, ShareMetric,
-    SummaryRow, TreeDisplayLimits, TreeNode, TreeOmission, TreeOmissionReason, TreeRemainder,
-    TreeTotal, TypeRow, ViewSpec, document_words, pages, report, report_roots,
+    AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, EntryTotals,
+    FileRow, IgnoredSize, IgnoredTally, MetricGroup, MetricRow, MetricShare, MetricSummary, Pages,
+    Query, Report, ReportMetricValues, ReportSource, RootTree, RootTrees, Section,
+    SelectionCoverage, ShareMetric, SummaryRow, TreeDisplayLimits, TreeNode, TreeOmission,
+    TreeOmissionReason, TreeRemainder, TreeTotal, TypeRow, ViewSpec, document_words, pages, report,
+    report_roots,
 };
 pub(crate) use query_report::{
     SummaryPart, read_indexes, report_in, report_summary, summary_totals_fit,

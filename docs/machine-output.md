@@ -10,7 +10,13 @@ Content analysis does not select another schema.
 them or a content view implied them, so `--view=code` and `--analyze=code` serialize one
 request; `analysis.analyze` and the content sidecar identity follow it.
 `request.views` and `request.omitted_views` are the views shown and the ones `full` had
-to drop.
+to drop. `selected` and `scanned` are on every report, each
+`{files, dirs, bytes, allocated}` over every root: `selected` is what a summary of the
+same selection reports, the files the selection admits or covers, and `scanned` is
+everything the scan retained.
+They are equal when the selection filters nothing.
+A filtered tree’s root row is 100% of `selected`, not of the tree; text reports say so
+in `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB` when the two differ.
 
 ## Recursive Trees and Hidden Content
 
@@ -246,9 +252,10 @@ one. A partial cold scan retains completeness for successfully listed siblings; 
 unscoped failure leaves the whole tree incomplete.
 Such a row’s sizes and counts are lower bounds, its `age_ns` is null, and no
 `modified_since`/`modified_before` or `changed_since`/`changed_before` bound matches it,
-because a lower-bound maximum is not an age; `min_size` still can, since a lower bound at or above the minimum proves the
-true size is too. A cache-only result carries staleness in report provenance and
-preserves the snapshot’s directory completeness.
+because a lower-bound maximum is not an age; `min_size` still can, since a lower bound
+at or above the minimum proves the true size is too.
+A cache-only result carries staleness in report provenance and preserves the snapshot’s
+directory completeness.
 A snapshot is published only from a complete scan, but an unlisted directory at its
 scan-depth boundary still has `complete: false` and unknown age.
 Content metric coverage remains separate from metadata completeness.

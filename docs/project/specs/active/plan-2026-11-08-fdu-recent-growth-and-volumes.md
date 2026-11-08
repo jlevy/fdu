@@ -297,8 +297,8 @@ Machine list rows carry `changed_ns` and `changed_at` beside `mtime_ns` and
 Tree nodes and grouped rows carry no change time.
 An unfiltered tree reads each row’s activity from a maximum the index maintains, and
 maintaining a second one would put change time on the index’s hot path for every
-mutation; a tree’s age stays modification activity
-([open question 4](#open-questions)), so a tree’s order matches its column.
+mutation; a tree’s age stays modification activity ([open question 4](#open-questions)),
+so a tree’s order matches its column.
 `--sort changed` is therefore refused, naming the flat views, wherever a request’s rows
 render as a tree or a group, rather than silently falling back to name order.
 A flat row grows from 176 to 192 bytes for the field (its 16-byte alignment rounds any
@@ -507,9 +507,10 @@ from `fdu.report/11`.
   `changed_before`, and `SortKey.CHANGED`.
 - [x] `changed_ns` and `changed_at` on list rows; tree nodes carry none (see
   [change-time windows and sort](#change-time-windows-and-sort)).
-- [ ] The selection-coverage note and its machine fields.
-- [ ] The skill and docs switch the recipe to `--changed-since`.
-- [ ] Once “changed” names change time, reword the places that use it for modification
+- [x] The selection-coverage note and its machine fields (`selected` and `scanned` on
+  every envelope, each `{files, dirs, bytes, allocated}`).
+- [x] The skill and docs switch the recipe to `--changed-since`.
+- [x] Once “changed” names change time, reword the places that use it for modification
   activity, such as the tree’s age (“how long ago anything it counts last changed”) in
   the skill, `--docs`, the usage guide, and the README.
 

@@ -107,6 +107,7 @@ $ fdu --cache off --color never --size apparent --kind dir --full --sort name --
      128 B  [AGE] dist
       23 B  [AGE] docs
       36 B  [AGE] src
+! note: selected 4 of 7 files, 187 B of 269 B
 ? 0
 ```
 
@@ -207,6 +208,7 @@ the property behind piping it into `xargs`.
 $ fdu --cache off --color never --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
+! note: selected 2 of 7 files, [HUMAN_SIZE] of [HUMAN_SIZE]
 ! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -224,6 +226,7 @@ $ fdu --cache off --color never --view files,types --include "*.nomatch" project
 FILES
 
 TYPES
+! note: selected 0 of 7 files, [HUMAN_SIZE] of [HUMAN_SIZE]
 ! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -242,6 +245,7 @@ src[SEP]omega.rs
 
 SUMMARY
       36 B  2 files, 0 directories
+! note: selected 2 of 7 files, 36 B of 269 B
 ! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```

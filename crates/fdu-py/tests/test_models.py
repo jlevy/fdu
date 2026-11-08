@@ -1043,3 +1043,14 @@ def test_directory_listing_withdrawal_transition_is_typed() -> None:
     assert transition.current_freshness is None
     assert transition.previous_state is None
     assert transition.current_state is None
+
+
+def test_a_report_carries_what_its_selection_admitted_beside_what_was_scanned() -> None:
+    wire = _envelope([])
+    wire["selected"] = {"files": 3, "dirs": 1, "bytes": 350, "allocated": 1536}
+    wire["scanned"] = {"files": 5, "dirs": 3, "bytes": 657, "allocated": 2560}
+    report = report_from_dict(wire)
+    assert report.selected == fdu.EntryTotals(files=3, dirs=1, bytes=350, allocated=1536)
+    assert report.scanned == fdu.EntryTotals(files=5, dirs=3, bytes=657, allocated=2560)
+    with pytest.raises(TypeError, match="selected and scanned"):
+        report_from_dict({**wire, "selected": [3]})

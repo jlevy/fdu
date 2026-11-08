@@ -1548,6 +1548,87 @@ pub struct Report {
     pub ignore_rules: ControlCoverage,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
+    /// What the selection admitted beside what the scan retained, serialised as the
+    /// envelope's `selected` and `scanned`.
+    ///
+    /// A filtered tree's root is 100% of what was selected, which reads as the whole tree
+    /// unless the report says otherwise; these two tallies are what lets it say so, in a
+    /// note for people and in fields a parser needs no note for.
+    pub selection: SelectionCoverage,
+}
+
+/// What a report's selection admitted, beside what its scan retained.
+///
+/// Both tallies are the root totals over every root of the report: `selected` is what a
+/// summary of the same selection reports, the files the selection admits or covers, and
+/// `scanned` is the unfiltered root roll-up the index already maintains, so the pair
+/// costs nothing a report did not already compute. They are equal for a selection that
+/// filters nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SelectionCoverage {
+    /// What the selection admitted or covers.
+    pub selected: EntryTotals,
+    /// Everything the scan retained.
+    pub scanned: EntryTotals,
+}
+
+/// Files, directories, and bytes in both metrics, for [`SelectionCoverage`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EntryTotals {
+    /// Regular files.
+    pub files: u64,
+    /// Directories.
+    pub dirs: u64,
+    /// Apparent bytes of the regular files.
+    pub bytes: u64,
+    /// Allocated bytes of the regular files.
+    pub allocated: u64,
+}
+
+impl EntryTotals {
+    fn of(row: &SummaryRow) -> Self {
+        Self { files: row.files, dirs: row.dirs, bytes: row.bytes, allocated: row.allocated }
+    }
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            files: self.files + other.files,
+            dirs: self.dirs + other.dirs,
+            bytes: self.bytes + other.bytes,
+            allocated: self.allocated + other.allocated,
+        }
+    }
+
+    const fn size(self, metric: SizeMetric) -> u64 {
+        match metric {
+            SizeMetric::Apparent => self.bytes,
+            SizeMetric::Allocated => self.allocated,
+        }
+    }
+}
+
+impl SelectionCoverage {
+    /// The note a filtered report ends with, or `None` when its selection admitted every
+    /// file and byte the scan retained, where the note would say nothing.
+    ///
+    /// Files and bytes only: a `--kind file` selection admits no directory row yet every
+    /// file, and its totals are the tree's.
+    fn note(self, metric: SizeMetric) -> Option<String> {
+        let (selected, scanned) = (self.selected, self.scanned);
+        if selected.files == scanned.files && selected.size(metric) == scanned.size(metric) {
+            return None;
+        }
+        let human = crate::report_format::human_count;
+        let bytes = crate::report_format::human_bytes;
+        Some(format!(
+            "note: selected {} of {} {}, {} of {}",
+            human(selected.files),
+            human(scanned.files),
+            if scanned.files == 1 { "file" } else { "files" },
+            bytes(selected.size(metric)),
+            bytes(scanned.size(metric)),
+        ))
+    }
 }
 
 /// Remarks a report makes about itself.
@@ -2137,6 +2218,18 @@ fn read_roots(
         }
     }
     tips.extend(retained_refusals_tip(query, &ignore_rules));
+    let selection =
+        reads.iter().fold(SelectionCoverage::default(), |total, read| SelectionCoverage {
+            selected: total.selected.add(EntryTotals::of(&read.summary())),
+            scanned: total.scanned.add(EntryTotals::of(&unfiltered_summary(
+                read.index,
+                EntryId::ROOT,
+                Path::new(""),
+            ))),
+        });
+    if !query.selection.is_unfiltered() {
+        notes.extend(selection.note(query.selection.size));
+    }
     if !query.selection.changed.is_unbounded() {
         let unknown = reads
             .iter()
@@ -2198,6 +2291,7 @@ fn read_roots(
         ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
+        selection,
     })
 }
 
@@ -2356,6 +2450,11 @@ pub(crate) fn report_summary(
         analysis: None,
         ignored_entries: query.selection.ignored,
         ignore_rules,
+        // This tier filters nothing, so what was selected is what was scanned.
+        selection: SelectionCoverage {
+            selected: EntryTotals::of(&summary),
+            scanned: EntryTotals::of(&summary),
+        },
         sections: vec![Section::Summary(summary)],
     }
 }
@@ -5114,6 +5213,46 @@ mod tests {
         assert!(names(later, changed_since("365d")).is_empty());
         let changed_before = ReadSpec { changed_before: Some("365d"), ..ReadSpec::new() };
         assert_eq!(names(later, changed_before), both);
+    }
+
+    /// A filtered root is 100% of what was selected; the coverage note and the envelope's
+    /// two tallies say how much of the scanned tree that is.
+    #[test]
+    fn a_filtered_report_says_how_much_of_the_scan_it_selected() {
+        let index = sample();
+        let reported = |selection: Selection| {
+            run(
+                &index,
+                &query(&[ViewSpec::Tree], Selection { size: SizeMetric::Apparent, ..selection }),
+            )
+        };
+        let tree = EntryTotals { files: 5, dirs: 3, bytes: 657, allocated: 2560 };
+        let rust = reported(Selection { include: vec![pattern("*.rs")], ..Selection::default() });
+        assert_eq!(rust.selection.scanned, tree);
+        assert_eq!((rust.selection.selected.files, rust.selection.selected.bytes), (3, 350));
+        assert!(
+            rust.notes.iter().any(|note| note == "note: selected 3 of 5 files, 350 B of 657 B"),
+            "{:?}",
+            rust.notes
+        );
+        // Nothing filtered, or a filter that admits every file and byte: no note, and the
+        // two tallies agree.
+        for selection in [
+            Selection::default(),
+            Selection { kinds: vec![EntryKind::File], ..Selection::default() },
+        ] {
+            let report = reported(selection);
+            assert_eq!(report.selection.scanned, tree);
+            assert_eq!(report.selection.selected.files, tree.files);
+            assert!(
+                !report.notes.iter().any(|note| note.contains("selected")),
+                "{:?}",
+                report.notes
+            );
+        }
+        // A display bound is not a selection, and has its own note.
+        let bounded = reported(Selection { depth: Some(Bound::Limit(1)), ..Selection::default() });
+        assert!(!bounded.notes.iter().any(|note| note.contains("selected")));
     }
 
     #[test]
