@@ -93,7 +93,9 @@ truncation, a new link, or a change to its permissions, ownership, timestamps, o
 extended attributes.
 POSIX leaves it open whether a rename updates the renamed file’s `ctime`; Linux
 filesystems do, so a file moved into the scope may or may not read as changed.
-A move allocates nothing, so this cannot hide a loss of free space.
+A move within one filesystem allocates nothing, so this cannot hide a loss of free
+space. A move from another filesystem is a copy: it gets a new inode and change time but
+keeps the old modification time, which is exactly the case change time catches.
 No Unix file API sets `ctime` to a chosen value; [below](#where-change-time-is-weaker)
 are the cases that bypass the file API or the clock.
 
@@ -124,9 +126,9 @@ stale.
 
 Modification time alone does not have this property.
 Userspace sets it freely, and many tools set it into the past on purpose: `cp -p`,
-`rsync -a`, Finder and Explorer copies, `tar -x`, `unzip`, downloads that take the
-server’s time (wget does by default), and package managers that stamp files with a fixed
-time so builds are reproducible.
+`rsync -a`, Finder and Explorer copies, `mv` from another filesystem, `tar -x`, `unzip`,
+downloads that take the server’s time (wget does by default), and package managers that
+stamp files with a fixed time so builds are reproducible.
 
 ### Where change time is weaker
 
@@ -135,7 +137,8 @@ real status-change time.
 It weakens in these cases, which the documentation must name and the plan does not try
 to detect:
 
-- **The clock moved.** A system clock set back makes new writes look old.
+- **The clock moved.** A system clock set back makes new writes look old, and on a
+  network filesystem the server’s clock, not the client’s, stamps change times.
 - **Below the file API.** Replicating or restoring a whole filesystem, such as
   `zfs receive` or restoring a disk image, keeps the source’s change times, so restored
   data reads as old even though its space was allocated now.
@@ -304,8 +307,8 @@ instant:
 
 | Band | Change-time age | Window that selects exactly this row |
 | --- | --- | --- |
-| `future` | Below zero: clock skew or a timestamp set ahead | `future` and `under 1h` together are `--changed-since 1h` |
-| `under 1h` | 0 to 1 hour | (see above) |
+| `future` | Zero or below: clock skew or a timestamp set ahead | `--changed-since now` |
+| `under 1h` | Over 0, to 1 hour | `--changed-since 1h --changed-before now` |
 | `1h to 1d` | Over 1 hour, to 1 day | `--changed-since 24h --changed-before 1h` |
 | `1d to 7d` | Over 1 day, to 7 days | `--changed-since 7d --changed-before 24h` |
 | `7d to 30d` | Over 7 days, to 30 days | `--changed-since 30d --changed-before 7d` |
@@ -317,6 +320,8 @@ instant:
 
 Windows are half-open, `[since, before)`, so an entry exactly on an edge falls in the
 newer band: `--changed-since` is inclusive.
+That includes the zero edge, so an entry stamped at the request instant itself counts as
+`future`.
 
 Empty bands are omitted in text and kept in machine output.
 Each text row is the standard grouped-row layout (size, share, band, file count), so
@@ -372,15 +377,21 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   Without `--one-filesystem` a walk can enter mounted filesystems below the root, so a
   report can have several rows.
 - **Capacity, observed by the serving layer, read by the reader.** The engine gains one
-  observation step, `observe_capacity(devices) -> CapacityObservation`: one `statvfs` on
-  Unix or `GetDiskFreeSpaceExW` on Windows per filesystem, with its `observed_at`. The
-  pure reader takes the observation as an explicit argument, as it takes the generation
-  instant, so `report()` and `report_roots()` never touch the filesystem
+  observation step, `observe_capacity(devices) -> CapacityObservation`, with one call
+  per filesystem and an `observed_at`: `statfs` on Linux and macOS, which returns
+  capacity and the filesystem type together, and `GetDiskFreeSpaceExW` with
+  `GetVolumeInformationW` on Windows.
+  The pure readers `report(index, request, generated_at)` and `report_roots(...)` gain
+  one argument, the observation as an `Option`, so they never touch the filesystem
   ([views are readers](../../architecture/fdu-design-principles.md#views-are-readers)).
-  Every serving route observes before it reads: the one-shot planner; `Index::report`
-  and Python’s `index.report`, inside their serving layer; `OpenedIndex` reads; each
-  watch repaint; and `--stale-ok`, whose tree tier is stale while its capacity tier is
-  observed now, labeled separately.
+  That changes their public signatures, which the 0.x minor version allows.
+  Every serving route observes before it reads when the request names `volumes`:
+  `prepare_report` for one-shot reports, `OpenedIndex::read`, each watch repaint, and
+  Python’s `Index.report`, inside the native call.
+  `--stale-ok` observes now, so its capacity tier is current while its tree tier is
+  stale, and each tier is labeled.
+  A caller of the pure reader that passes no observation gets every capacity field as
+  unknown (null), with a note naming `observe_capacity`; it is never zero.
   A request without `volumes` observes nothing.
   Capacity is never stored in a snapshot or served from the cache, and provenance gains
   a `capacity` tier with its own `observed_at`.
@@ -388,7 +399,11 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   filesystem (a root, or the directory where the walk crossed onto it), available bytes,
   and the bytes this report counted there.
   No mount table is read: the walk already knows where the device changes.
-  The filesystem type is shown only where the same `statfs` call names it.
+  When the walk reaches one filesystem at several paths, the row is labeled by the
+  bytewise-first of them, and a note says how many others there are.
+  The type comes from the same call: by name on macOS and Windows, and on Linux as
+  `f_type`, a number, which a short table maps to names for the filesystems the notes
+  need (btrfs, ZFS); any other number is shown as itself.
   The share in use is `(capacity − available) / capacity`: the figure that matters when
   space runs out, and what `duf` shows.
   It is not the volume’s own `used` blocks, which `df` shows and which differ on APFS.
@@ -429,8 +444,8 @@ The scanned totals are the unfiltered root roll-up, already maintained, so the n
 costs nothing. Machine output carries the same two tallies.
 This follows the output rule that a note is added wherever the displayed facts can be
 misread
-([output design](../../architecture/fdu-output-design.md#streams-and-categories)). A
-note consolidates with the existing ones and is suppressed by `--quiet`.
+([output design](../../architecture/fdu-output-design.md#streams-and-categories)), and
+it consolidates with the existing notes.
 
 ### Relationship to checkpoints
 
@@ -497,12 +512,13 @@ from `fdu.report/11`.
 ### Phase 3: The `volumes` view (`fdu-eas0`)
 
 - [ ] `observe_capacity` per distinct device in the report’s scope, called by every
-  serving route listed under [the `volumes` view](#the-volumes-view) and passed to the
-  reader; a `capacity` provenance tier; the Python and Rust reader signatures that carry
-  it.
-- [ ] Each row labeled by the path where the report entered the filesystem, from the
-  walk’s own device changes; the filesystem type only where `statfs` names it.
-  No mount-table parsing.
+  serving route listed under [the `volumes` view](#the-volumes-view); the optional
+  observation argument on `report` and `report_roots`; unknown capacity with a note when
+  none is passed; a `capacity` provenance tier.
+- [ ] Each row labeled by the bytewise-first path where the report entered the
+  filesystem, from the walk’s own device changes, with a note when there are others; the
+  type from the same call, with Linux `f_type` mapped for btrfs and ZFS. No mount-table
+  parsing.
 - [ ] Rows, notes for pooled filesystems, text and machine renderers, `--view full`.
 - [ ] `make cross-lint`, since every source is behind a platform gate.
 
@@ -510,11 +526,13 @@ from `fdu.report/11`.
 
 A test cannot give a file an old change time: anything it writes, `touch -d` included,
 gets a change time of now.
-Old change times come from moving the request instant instead.
-The reader already takes its generation instant explicitly
-(`report(index, request, generated_at)`), and relative windows resolve against it, so a
-fixture written at T0 and reported at T0 + 400 days reads 400 days old by both clocks,
-while a file given `touch -d` reads old by modification time and new by change time.
+Old change times come from moving the request’s instant instead.
+`Request::build(spec, now, axes)` takes the instant that every relative window and age
+resolves against (`request.now`); `generated_at` only stamps provenance.
+A fixture written at T0, with its request built at T0 + 400 days, reads 400 days old by
+both clocks, while a file given `touch -d` reads old by modification time and new by
+change time. Python’s `Index.report` takes no instant, so these are Rust engine tests,
+and Python tests cover windows relative to now.
 Exact nanosecond edges and unknown change times use synthetic entry facts.
 
 - **Soundness:** on a fixture with an in-place append, a `cp -p` copy, a `tar -x`
@@ -523,9 +541,9 @@ Exact nanosecond edges and unknown change times use synthetic entry facts.
   A `chmod` is admitted though nothing grew.
   A CLI golden pins both against now; it asserts nothing about a rename, which POSIX
   lets a filesystem leave out of `ctime`.
-- **Aging by instant:** engine and Python tests report the same fixture at several later
-  instants and check every band and window, including entries that are old by both
-  clocks, which the CLI cannot produce.
+- **Aging by instant:** engine tests build requests for the same fixture at several
+  later instants and check every band and window, including entries that are old by both
+  clocks, which neither the CLI nor Python can produce.
 - **Identities:** the `ages` rows sum to `summary`; each row equals its window query in
   the band table; cumulative tallies equal `--changed-since <edge> --view summary`; a
   `--changed-*` window over an index equals a cold run (path independence).

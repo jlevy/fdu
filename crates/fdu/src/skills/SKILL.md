@@ -410,9 +410,10 @@ Read the result as data written, not as net growth:
 - Deleted files do not appear, and a file that shrank counts at its new size, so space
   freed in the window is not subtracted and the total can exceed the space lost.
 - Data that arrived with an older modification time is missed: copies made with `cp -p`,
-  `rsync -a`, Finder, or Explorer, extracted archives, downloads that take the server’s
-  time (wget does by default), and Cargo’s crate sources, which Cargo stamps with a 2006
-  time. Their inode change time is still current, but fdu does not select by it.
+  `rsync -a`, Finder, or Explorer, files moved with `mv` from another filesystem,
+  extracted archives, downloads that take the server’s time (wget does by default), and
+  Cargo’s crate sources, which Cargo stamps with a 2006 time.
+  Their inode change time is still current, but fdu does not select by it.
   Where the total falls short of the space lost,
   `find PATH -type f -cmin -1440 -exec du -k {} + | sort -n | tail -20` lists the
   largest files whose inode changed in the last day, these included.
@@ -426,9 +427,11 @@ likely: the project, `~/.cache`, `~/Library/Caches`, agent state such as `~/.cla
 Each window is one scan on the command line; to ask several windows or drill into
 folders without walking again, walk the tree once with Python’s `fdu.scan`, which writes
 no cache, and ask each `index.report` with its own `modified_since`. Exact net change,
-deletions included, needs a report saved before the window began, such as
-`fdu PATH --view tree --full --format json > before.json`, compared by path with a later
-one. With none saved, the written-data answer above is the one available.
+deletions included, needs a report saved before the window began, written outside PATH:
+`fdu PATH --one-filesystem --cache off --view tree --depth all --limit all --format json > before.json`
+keeps every directory and file at or above 1% of the root and stays small, and a later
+one is compared with it by path.
+With none saved, the written-data answer above is the one available.
 
 ## Find Environments and Build Outputs
 

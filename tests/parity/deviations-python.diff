@@ -1727,8 +1727,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  with no saved state. Keep --kind file: without it a directory with any activity
 -  in the window counts at its full size. A file written in the window counts in
 -  full, deleted files do not appear, and data that kept an older modification time
--  (cp -p, rsync -a, Finder or Explorer copies, archives, some downloads, Cargo's
--  crate sources) is missed.
+-  (cp -p, rsync -a, Finder or Explorer copies, mv from another filesystem,
+-  archives, some downloads, Cargo's crate sources) is missed.
 -
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
 -  Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached

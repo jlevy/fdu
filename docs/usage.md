@@ -299,11 +299,11 @@ The result is data written in the window, not net growth:
 - Deleted files are not in the walk, and a file that shrank counts at its new size, so
   space freed in the window is not subtracted and the total can exceed the space lost.
 - Data that arrived with an older modification time is missed.
-  `cp -p`, `rsync -a`, Finder and Explorer copies, and archive extraction keep the
-  source’s times, downloads can take the server’s (wget does by default), and Cargo
-  stamps its extracted crate sources with a fixed 2006 time: after a Cargo build that
-  extracted 2,460 files (31 MiB), `--modified-since=2h` found only Cargo’s empty
-  `.cargo-ok` markers.
+  `cp -p`, `rsync -a`, Finder and Explorer copies, `mv` from another filesystem, and
+  archive extraction keep the source’s times, downloads can take the server’s (wget does
+  by default), and Cargo stamps its extracted crate sources with a fixed 2006 time:
+  after a Cargo build that extracted 2,460 files (31 MiB), `--modified-since=2h` found
+  only Cargo’s empty `.cargo-ok` markers.
   Their inode change time is still current, but fdu does not select by it.
   Where the total falls short of the space lost,
   `find ~ -type f -cmin -1440 -exec du -k {} + | sort -n | tail -20` lists the largest
