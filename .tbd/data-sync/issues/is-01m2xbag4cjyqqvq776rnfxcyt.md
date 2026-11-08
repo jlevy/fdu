@@ -5,14 +5,21 @@ title: Add a volumes view over devices in the scan, not a duf clone
 kind: feature
 status: open
 priority: 3
-version: 4
+version: 10
 spec_path: docs/project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md
 labels:
   - design
 dependencies: []
 parent_id: is-01m6yc9x14t8x0v0j2v2dc34jv
+child_order_hints:
+  - is-01m6yn49kdb913226ab1c5td6n
+  - is-01m6yn4ae3k3zew55hvb5p2nqb
+  - is-01m6yn4b92ezxh72j5mbh9svsp
+  - is-01m6yn4c4102x1n9x7pj3ambwp
+  - is-01m6yn4cxyczxzkggvm3jfk0hp
+  - is-01m6yn4dqpp7r5hqgmfs5ap59m
 created_at: 2026-09-19T17:27:15.851Z
-updated_at: 2026-11-08T20:07:24.432Z
+updated_at: 2026-11-08T22:40:44.278Z
 ---
 Design review (2026-09-19): fdu should not grow a duf/df clone.
 
