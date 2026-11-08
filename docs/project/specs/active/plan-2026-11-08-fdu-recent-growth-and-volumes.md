@@ -4,9 +4,9 @@
 
 **Author:** fdu project, with Claude Opus 5.5
 
-**Status:** Proposed.
-Phase 0 (documentation of what works today) ships with this plan; phases 1–3 need the
-[open questions](#open-questions) answered first.
+**Status:** Approved for implementation (2026-11-08). Phase 0 (documentation of what
+works today) shipped with this plan in #208. Phases 1–3 are being implemented in one
+pull request, with the [open questions](#open-questions) decided as recommended.
 
 ## Overview
 
@@ -571,7 +571,10 @@ phase, not before.
 
 ## Open Questions
 
-These need the maintainer’s decision; the design above follows each recommendation.
+**Decided 2026-11-08:** after #208 merged, the maintainer asked for the plan to be
+implemented as written, so each question below takes its recommendation, which the
+design above already follows.
+Any of them can be reopened in the implementation pull request’s review.
 
 1. **Basis of `ages`.** Recommendation: change time, because the view’s question is when
    space arrived, and change time is conservative for both growth and staleness.
