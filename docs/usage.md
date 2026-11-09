@@ -434,6 +434,8 @@ The type is a name on macOS and Windows, and on Linux, which gives a number, `bt
 Capacity is read when the report is, with one `statfs` call per filesystem on Linux and
 macOS and `GetDiskFreeSpaceExW` on Windows, and is never stored in the cache, so
 `--stale-ok` still shows current capacity beside a stale tree.
+Under `--watch` it is read at each repaint, and a watch repaints when the tree changes,
+so free space that moves while the tree does not is shown only at the next repaint.
 Rows never add up. Available space can be shared within an APFS container, a btrfs
 filesystem, or a ZFS pool, which the row’s available line says; and the bytes a report
 counts never sum to what is in use, because snapshots, other volumes, purgeable space,
