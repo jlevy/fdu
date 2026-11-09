@@ -29,14 +29,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   had.
 - `--sort time` (Python `SortKey.TIME`, Rust `SortKey::Time`) orders tree, list, files,
   largest, recent, and code rows newest first on the report’s clock, trees included.
-  Types, extensions, families, languages, and documents carry no time, and refuse it.
+  Types, extensions, families, languages, and documents carry no time: beside a view
+  that does, as in `--view full`, they keep size order under
+  `note: type and extension rows carry no time, so they keep size order`, and requested
+  alone they refuse the sort.
 - Machine output: the request echo names its `time`; every list row, tree node, and
   total gives its time as `time_ns`, `time_at`, and `age_ns`; summary and tree rows give
   `newest_file_time_ns`; and list rows also give both raw clocks, `mtime_ns` and
   `changed_ns` (null where a file’s status change was not observed), so an arrival that
   carries old content is a row with a recent `changed_ns` and an old `mtime_ns`. Python
   `FileRow`, `TreeNode`, `TreeTotal`, `SummaryRow`, and `ReportRequest` carry the same
-  names.
+  names, and Rust `FileRow` has `status_observed` and `FileRow::changed_ns`.
+- Watch change records (`fdu.stream/2`) give an upsert’s `changed_ns` beside its
+  `mtime_ns`, absent where the status change was not observed, so a `--since --watch`
+  tail shows the time that admitted an entry.
+  Rust `Change::changed_ns`, Python `Change.changed_ns`.
 - The index maintains each directory’s newest time on both clocks, so either value of
   `--time` reads the same fast paths.
   Public `RollUp` and `RollUpSummary`, and Python `RollUp` and opened-root
@@ -116,7 +123,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `TreeTotal` carry `time` and `newest_file` as `Times`, and `SummaryRow` carries
   `newest_file`; `ReadSpec::modified_since` and `modified_before` are `since` and
   `before`, beside `time`, and `AxisNames` names the same three; `Report` gains `time`.
-  The Python decoder requires the request’s `time` and each list row’s `time_ns`.
+  `FileRow` gains `status_observed` and `Change` gains `changed_ns`, so a struct literal
+  of either needs the new field.
+  The Python decoder requires the request’s `time` and each list row’s `time_ns`, and a
+  hand-built Python `FileRow` takes `time_ns`, `mtime_ns`, and `changed_ns` after
+  `allocated`.
 - `--view full` holds `volumes` and `ages` right after `summary`, so every later section
   of a full report moves two places in machine output: read sections by their `view`,
   not their position. A full report now also opens each root, makes one `statfs` per

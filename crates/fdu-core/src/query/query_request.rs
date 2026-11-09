@@ -1425,21 +1425,18 @@ impl Request {
             }
         }
         // Every tree, list, and code row carries the time its column shows; a type,
-        // extension, family, language, or document row carries none, so ordering one by
-        // time would silently fall back to name order. A view whose rows have a fixed
-        // order (the summary, the age bands, the filesystems) is ordered by no sort, so it
-        // may sit beside one.
+        // extension, family, language, or document row carries none. Beside a view the
+        // sort can order, those keep size order and a note says so, which is how
+        // `--view full --sort time` reads; with nothing to order, the sort is refused. A
+        // view whose rows have a fixed order (the summary, the age bands, the filesystems)
+        // is ordered by no sort, so it may sit beside one either way.
         if self.query.selection.sort == Some(SortKey::Time)
-            && self.query.views.iter().any(|view| {
-                matches!(
-                    view,
-                    ViewSpec::Types
-                        | ViewSpec::Extensions
-                        | ViewSpec::Families
-                        | ViewSpec::Languages
-                        | ViewSpec::Documents
-                )
-            })
+            && self.query.views.iter().any(|view| view.timeless_rows().is_some())
+            && self
+                .query
+                .views
+                .iter()
+                .all(|view| !view.is_sorted() || view.timeless_rows().is_some())
         {
             return Err(invalid(
                 self.query.axes.sort,
@@ -3023,10 +3020,11 @@ mod tests {
 
     /// Every tree, list, and code row carries the time its column shows, on the request's
     /// clock, so each sorts by it; a type, extension, family, language, or document row
-    /// carries none, and sorting one by time would fall back to name order without saying
-    /// so. A view whose rows have a fixed order may sit beside a time sort.
+    /// carries none. Beside a view the sort orders, those keep size order under a note, so
+    /// `full` takes a time sort; a request in which the sort would order nothing is
+    /// refused. A view whose rows have a fixed order may sit beside a time sort.
     #[test]
-    fn a_time_sort_is_refused_only_where_rows_carry_no_time() {
+    fn a_time_sort_is_refused_only_where_no_sorted_row_carries_a_time() {
         for (view, format, valid) in [
             (Some("files"), None, true),
             (Some("largest"), None, true),
@@ -3040,9 +3038,12 @@ mod tests {
             (Some("list"), None, true),
             (Some("files"), Some("tree"), true),
             (Some("code"), None, true),
+            (Some("full"), None, true),
+            (Some("files,types"), None, true),
+            (Some("tree,families"), None, true),
             (Some("extensions"), None, false),
-            (Some("files,types"), None, false),
-            (Some("tree,families"), None, false),
+            (Some("types,summary"), None, false),
+            (Some("families,ages"), None, false),
             (Some("languages"), None, false),
             (Some("documents"), None, false),
         ] {

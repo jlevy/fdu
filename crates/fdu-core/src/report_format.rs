@@ -1108,10 +1108,7 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool, time: TimeB
     // modification time.
     emit_i64_field(sink, "mtime_ns", row.times.modified);
     emit_field(sink, Field::nullable("changed_ns"), true, |sink| {
-        emit_scalar(
-            sink,
-            if row.status_observed { Scalar::I64(row.times.changed) } else { Scalar::Null },
-        );
+        emit_scalar(sink, row.changed_ns().map_or(Scalar::Null, Scalar::I64));
     });
 
     emit_field(sink, Field::nullable("ignored"), true, |sink| match row.ignored {
@@ -3119,6 +3116,9 @@ fn render_change_machine(
     emit_field(&mut sink, Field::when_set("mtime_ns"), change.mtime_ns.is_some(), |sink| {
         emit_scalar(sink, Scalar::I64(change.mtime_ns.expect("presence checked")));
     });
+    emit_field(&mut sink, Field::when_set("changed_ns"), change.changed_ns.is_some(), |sink| {
+        emit_scalar(sink, Scalar::I64(change.changed_ns.expect("presence checked")));
+    });
     emit_field(&mut sink, Field::when_set("ignored"), change.ignored.is_some(), |sink| {
         emit_scalar(sink, Scalar::Bool(change.ignored.expect("presence checked")));
     });
@@ -3985,6 +3985,7 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            changed_ns: None,
             ignored: None,
             clock: 1,
         };
@@ -5392,6 +5393,7 @@ mod tests {
             bytes: Some(2_048),
             allocated: Some(4_096),
             mtime_ns: Some(1_700_000_000_000_000_000),
+            changed_ns: Some(1_700_000_000_500_000_000),
             ignored: Some(false),
             clock: 7,
         };
@@ -5403,13 +5405,15 @@ mod tests {
             format!(
                 "{{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"upsert\", \
                  \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
-                 \"allocated\": 4096, \"mtime_ns\": 1700000000000000000, \"ignored\": false}}"
+                 \"allocated\": 4096, \"mtime_ns\": 1700000000000000000, \
+                 \"changed_ns\": 1700000000500000000, \"ignored\": false}}"
             )
         );
 
         // A run that read no ignore rules classifies nothing, and the field is absent
-        // rather than false: the same distinction every report row draws.
-        let unclassified = Change { ignored: None, ..upsert.clone() };
+        // rather than false: the same distinction every report row draws. A status change
+        // that was not observed leaves the change time absent the same way.
+        let unclassified = Change { ignored: None, changed_ns: None, ..upsert.clone() };
         assert_eq!(
             render_change(&unclassified, Format::Json),
             format!(
@@ -5429,6 +5433,7 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            changed_ns: None,
             ignored: None,
             clock: 8,
         };
@@ -5457,6 +5462,7 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            changed_ns: None,
             ignored: None,
             clock: 9,
         };

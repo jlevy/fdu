@@ -40,6 +40,7 @@ from fdu._api import (
     FilesystemError,
     InvalidArgumentError,
     _call,
+    _change,
     _loads_json,
     _loads_object,
     _query_kwargs,
@@ -1175,3 +1176,16 @@ def test_fields_every_report_carries_are_required_rather_than_defaulted() -> Non
     listed = files.sections[0]
     assert isinstance(listed, fdu.FilesSection)
     assert listed.files[0].changed_ns is None
+
+
+def test_a_stream_upsert_carries_both_raw_clocks_and_renders_them() -> None:
+    """A watch upsert gives the change time that admitted it beside its modification time,
+    absent where the status change was not observed, and renders as the stream does."""
+    upsert = {"op": "upsert", "path": "a.txt", "clock": 3, "kind": "file", "mtime_ns": 10}
+    blind = _change(upsert)
+    assert (blind.mtime_ns, blind.changed_ns) == (10, None)
+    timed = _change({**upsert, "changed_ns": 20})
+    assert (timed.mtime_ns, timed.changed_ns) == (10, 20)
+    line = timed.render(fdu.Format.JSONL)
+    assert '"mtime_ns": 10, "changed_ns": 20' in line, line
+    assert "changed_ns" not in blind.render(fdu.Format.JSONL)

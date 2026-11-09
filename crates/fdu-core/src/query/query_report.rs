@@ -66,8 +66,8 @@ pub enum ViewSpec {
     Recent,
     /// One aggregate row for everything selected.
     Summary,
-    /// The selected regular files by change-time band, newest first: every window from
-    /// one walk ([`AgeProfile`](crate::query::AgeProfile)).
+    /// The selected regular files by age band on the report's clock, newest first: every
+    /// window from one walk ([`AgeProfile`](crate::query::AgeProfile)).
     Ages,
     /// Each filesystem the report touches, its capacity beside the bytes the report counted
     /// there ([`VolumesSection`](crate::query::VolumesSection)).
@@ -75,6 +75,35 @@ pub enum ViewSpec {
 }
 
 impl ViewSpec {
+    /// What this view's rows are called when they carry no time, so `--sort time` cannot
+    /// order them: they keep the order they have without it, and a note says so.
+    pub(crate) const fn timeless_rows(self) -> Option<&'static str> {
+        match self {
+            Self::Types => Some("type"),
+            Self::Extensions => Some("extension"),
+            Self::Families => Some("family"),
+            Self::Languages => Some("language"),
+            Self::Documents => Some("document"),
+            _ => None,
+        }
+    }
+
+    /// Whether a sort orders this view's rows. The summary, the age bands, and the
+    /// filesystems each have a fixed order.
+    pub(crate) const fn is_sorted(self) -> bool {
+        !matches!(self, Self::Summary | Self::Ages | Self::Volumes)
+    }
+
+    /// The key this view's rows are ordered by: the caller's, unless it is a time and
+    /// these rows carry none.
+    fn sort_key(self, requested: Option<SortKey>) -> SortKey {
+        match requested {
+            Some(SortKey::Time) if self.timeless_rows().is_some() => self.default_sort(),
+            Some(key) => key,
+            None => self.default_sort(),
+        }
+    }
+
     /// The ordering this view uses when the caller did not choose one.
     fn default_sort(self) -> SortKey {
         match self {
@@ -1325,11 +1354,11 @@ pub struct FileRow {
     /// measured directory's is the newest of each in its eligible subtree, and a lower
     /// bound when `complete` is `Some(false)`.
     pub times: Times,
-    /// Whether the entry's status change was observed; when it was not, its change time
-    /// is its modification time ([`crate::Attrs::times`]), and a report that counts it by
-    /// change time says how many files it so timed. Always true for a directory, whose
-    /// times are maxima. Not serialised.
-    pub(crate) status_observed: bool,
+    /// Whether the entry's status change was observed; when it was not, `times.changed`
+    /// is its modification time ([`crate::Attrs::times`]), [`Self::changed_ns`] is
+    /// `None`, and a report that counts it by change time says how many files it so
+    /// timed. Always true for a directory, whose times are maxima.
+    pub status_observed: bool,
     /// Descendant regular files for a directory; absent for other entry kinds.
     pub files: Option<u64>,
     /// Descendant directories, excluding the matching root; absent for other kinds.
@@ -1349,6 +1378,16 @@ pub struct FileRow {
     pub sort_value: Option<u64>,
     /// Existing type and heuristic evidence for regular files.
     pub classification: Option<ContentDetection>,
+}
+
+impl FileRow {
+    /// The entry's observed change time, or `None` when its status change was not
+    /// observed and `times.changed` stands in with its modification time; machine
+    /// output's `changed_ns`.
+    #[must_use]
+    pub const fn changed_ns(&self) -> Option<i64> {
+        if self.status_observed { Some(self.times.changed) } else { None }
+    }
 }
 
 /// The aggregate row of a summary view.
@@ -2201,6 +2240,23 @@ fn totals_fit<'a>(roots: impl Iterator<Item = (&'a Path, [u64; 4])>) -> crate::R
     Ok(())
 }
 
+/// The note for a time sort beside views whose rows carry no time, which keep size order
+/// rather than fall back silently; `None` when the sort reached every sorted view. A
+/// request in which no sorted view carries a time is refused before it is read.
+fn timeless_rows_note(query: &Query) -> Option<String> {
+    if query.selection.sort != Some(SortKey::Time) {
+        return None;
+    }
+    let rows: Vec<&str> = query.views.iter().filter_map(|view| view.timeless_rows()).collect();
+    let (last, rest) = rows.split_last()?;
+    let named = match rest {
+        [] => (*last).to_owned(),
+        [first] => format!("{first} and {last}"),
+        _ => format!("{}, and {last}", rest.join(", ")),
+    };
+    Some(format!("note: {named} rows carry no time, so they keep size order"))
+}
+
 /// The note for `files` regular files whose status change was not observed, where a
 /// change-time window or `ages` counted them: their change time is their modification
 /// time, a lower bound, and the reader is told so rather than left to take it as observed.
@@ -2341,25 +2397,31 @@ fn read_roots(
             }
         }
     }
-    // The window counts every file the rest of the selection admits, a superset of the
-    // files `ages` profiles, so the larger count is the union.
-    let windowed = reads
-        .iter()
-        .filter_map(|read| read.walked.as_ref())
-        .map(|walked| walked.timed_by_modification)
-        .sum::<u64>();
-    let profiled = sections
-        .iter()
-        .filter_map(|section| match section {
-            Section::Ages(profile) => Some(profile.timed_by_modification),
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0);
-    let timed_by_modification = windowed.max(profiled);
+    // A file the window judged and `ages` banded is counted once. A selection that
+    // filters walks every root or none: with no walk there was no window, and every file
+    // the profile banded is its own count; with one, the walk counted the files the window
+    // judged and, apart, the members it did not, which `ages` bands as well.
+    let walks: Vec<&Walked> = reads.iter().filter_map(|read| read.walked.as_ref()).collect();
+    let judged = walks.iter().map(|walked| walked.timed_by_modification).sum::<u64>();
+    let profiled = sections.iter().find_map(|section| match section {
+        Section::Ages(profile) => Some(profile.timed_by_modification),
+        _ => None,
+    });
+    let timed_by_modification = match profiled {
+        None => judged,
+        Some(profiled) if walks.is_empty() => profiled,
+        Some(_) => {
+            judged
+                + walks
+                    .iter()
+                    .map(|walked| walked.unjudged_members_timed_by_modification)
+                    .sum::<u64>()
+        }
+    };
     if timed_by_modification > 0 {
         notes.push(timed_by_modification_note(timed_by_modification));
     }
+    notes.extend(timeless_rows_note(query));
     // Completeness rises to the root, so a root is incomplete exactly when some directory
     // below it is, and the report when some root is.
     if !query.min_share_for().admits(0, 1)
@@ -2606,6 +2668,9 @@ struct Walked {
     /// Files the window counted whose status change was not observed, so the change-time
     /// clock timed them by modification.
     timed_by_modification: u64,
+    /// The [`Self::members`] so timed that the window did not count: what `ages`, which
+    /// bands every member, adds to [`Self::timed_by_modification`] for the note.
+    unjudged_members_timed_by_modification: u64,
 }
 
 impl Walked {
@@ -2790,6 +2855,7 @@ fn walk(
         visible_files: BTreeSet::new(),
         unknown_ignored: BTreeSet::new(),
         timed_by_modification: 0,
+        unjudged_members_timed_by_modification: 0,
     };
     // No entry of an index that read no rule can be shown to be ignored or not, so
     // `report_in` refuses a selection by ignored state before it reaches this walk.
@@ -2925,6 +2991,12 @@ fn walk(
                     walked.unknown_ignored.insert(id);
                 }
                 if kind == EntryKind::File {
+                    if selection.time == TimeBasis::Changed
+                        && !status_observed
+                        && !timed_by_modification
+                    {
+                        walked.unjudged_members_timed_by_modification += 1;
+                    }
                     walked.members.push(row);
                     walked.visible_files.insert(child);
                 } else if kind == EntryKind::Dir {
@@ -4729,7 +4801,7 @@ struct SortAccessors<S, C, M, N, V, R> {
     size: S,
     count: C,
     /// A row's time on both clocks, `None` when it counts nothing; a view whose rows carry
-    /// no time is refused `--sort time` before it is read.
+    /// no time ([`ViewSpec::timeless_rows`]) keeps its default order under `--sort time`.
     time: M,
     name: N,
     content_metric: V,
@@ -4782,7 +4854,7 @@ fn sort_rows_by<T>(
 ) {
     let SortAccessors { size, count, time, name, content_metric, rank } = accessors;
     let clock = query.selection.time;
-    let key = query.selection.sort.unwrap_or_else(|| view.default_sort());
+    let key = view.sort_key(query.selection.sort);
     let metric = query.selection.size;
     // A row's name is its path under its root, so the root's rank comes first wherever the
     // name decides: rows read as sorted by label and then path.
@@ -5363,6 +5435,31 @@ mod tests {
         );
     }
 
+    /// The note counts the union of what a window judged and what `ages` banded. A file a
+    /// selected directory covers is banded though the rest of the selection refuses it,
+    /// and a file the window refuses was judged though no band holds it, so neither count
+    /// contains the other.
+    #[test]
+    fn the_note_counts_a_window_and_ages_once_each_where_neither_holds_the_other() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("big", EntryKind::Dir, stamped(0, 5, 100)),
+            upsert("big/huge.bin", EntryKind::File, stamped(2_000, 300, 300)),
+            upsert("big/small.dat", EntryKind::File, stamped(10, 200, 0)),
+            upsert("far", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("far/large.dat", EntryKind::File, stamped(1_500, 20, 0)),
+        ]));
+        let selection = Selection {
+            min_size: Some(1_024),
+            window: TimeWindow { since: Some(100), before: None },
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Summary, ViewSpec::Ages], selection));
+        let counted: Vec<_> =
+            report.notes.iter().filter(|note| note.contains("status change")).collect();
+        assert_eq!(counted, [&timed_by_modification_note(2)], "{:?}", report.notes);
+    }
+
     /// A test cannot give a file an old change time, so the old side comes from moving the
     /// request's instant: every window resolves against `request.now`.
     ///
@@ -5647,6 +5744,52 @@ mod tests {
             [blind.clone(), stale.clone(), copy.clone()]
         );
         assert_eq!(sorted(TimeBasis::Modified, true), [copy, stale, blind]);
+    }
+
+    /// Beside a view a time sort orders, rows that carry no time keep size order, and a
+    /// note says so rather than leave the reader to take that order as a time's; with no
+    /// time sort, or none of those rows, there is nothing to say.
+    #[test]
+    fn rows_without_a_time_keep_size_order_under_a_time_sort_and_say_so() {
+        let index = change_time_sample();
+        let read = |views: &[ViewSpec], sort| {
+            let selection =
+                Selection { kinds: vec![EntryKind::File], sort, ..Selection::default() };
+            run(&index, &query(views, selection))
+        };
+        let both = read(&[ViewSpec::Files, ViewSpec::Extensions], Some(SortKey::Time));
+        let extensions = both
+            .sections
+            .iter()
+            .find_map(|section| match section {
+                Section::Extensions { rows, .. } => {
+                    Some(rows.iter().map(|row| row.extension.as_str()).collect::<Vec<_>>())
+                }
+                _ => None,
+            })
+            .expect("an extensions section");
+        assert_eq!(extensions, [".bin", ".dat", ".txt"]);
+        let note = "note: extension rows carry no time, so they keep size order";
+        assert!(both.notes.iter().any(|line| line == note), "{:?}", both.notes);
+        for (views, sort) in [
+            (&[ViewSpec::Files, ViewSpec::Extensions][..], Some(SortKey::Size)),
+            (&[ViewSpec::Files, ViewSpec::Summary][..], Some(SortKey::Time)),
+        ] {
+            let report = read(views, sort);
+            assert!(!report.notes.iter().any(|line| line.contains("carry no time")));
+        }
+        let timed = Selection { sort: Some(SortKey::Time), ..Selection::default() };
+        let grouped = query(&[ViewSpec::Types, ViewSpec::Extensions, ViewSpec::Families], timed);
+        assert_eq!(
+            timeless_rows_note(&grouped).as_deref(),
+            Some("note: type, extension, and family rows carry no time, so they keep size order")
+        );
+        let timed = Selection { sort: Some(SortKey::Time), ..Selection::default() };
+        let grouped = query(&[ViewSpec::Tree, ViewSpec::Languages, ViewSpec::Documents], timed);
+        assert_eq!(
+            timeless_rows_note(&grouped).as_deref(),
+            Some("note: language and document rows carry no time, so they keep size order")
+        );
     }
 
     /// A legacy unscoped partial marker carries no authoritative child-list evidence,

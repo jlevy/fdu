@@ -38,6 +38,10 @@ pub struct Change {
     pub allocated: Option<u64>,
     /// Modification time, when the entry still exists.
     pub mtime_ns: Option<i64>,
+    /// Change time, the newer of modification and status change, when the entry still
+    /// exists and its status change was observed ([`crate::Attrs::change_time_ns`]): the
+    /// time a `since`/`before` window on the default clock admitted it by.
+    pub changed_ns: Option<i64>,
     /// Whether `.gitignore` rules ignore this entry after the commit.
     ///
     /// Set on an upsert, and on a removal a rule edit caused, where the new classification
@@ -106,6 +110,7 @@ struct EntryFacts {
     bytes: u64,
     allocated: u64,
     times: crate::Times,
+    changed_ns: Option<i64>,
 }
 
 /// The result of a throttled attempt to persist a live session.
@@ -723,6 +728,7 @@ impl Session {
                             bytes: attrs.size,
                             allocated: attrs.allocated,
                             times: attrs.times(),
+                            changed_ns: attrs.change_time_ns(),
                         },
                     ))
                 })
@@ -779,6 +785,7 @@ impl Session {
                     bytes: Some(attrs.size),
                     allocated: Some(attrs.allocated),
                     mtime_ns: Some(attrs.mtime_ns),
+                    changed_ns: attrs.change_time_ns(),
                     ignored: facts.is_ignored(path),
                     clock,
                 })
@@ -803,6 +810,7 @@ impl Session {
                         bytes: Some(current.size),
                         allocated: Some(current.allocated),
                         mtime_ns: Some(current.mtime_ns),
+                        changed_ns: current.change_time_ns(),
                         ignored: facts.is_ignored(path),
                         clock,
                     })
@@ -814,6 +822,7 @@ impl Session {
                         bytes: None,
                         allocated: None,
                         mtime_ns: None,
+                        changed_ns: None,
                         ignored: None,
                         clock,
                     })
@@ -835,6 +844,7 @@ impl Session {
                     bytes: None,
                     allocated: None,
                     mtime_ns: None,
+                    changed_ns: None,
                     ignored: facts.is_ignored(path),
                     clock,
                 })
@@ -848,6 +858,7 @@ impl Session {
                 bytes: None,
                 allocated: None,
                 mtime_ns: None,
+                changed_ns: None,
                 ignored: None,
                 clock,
             }),
@@ -881,6 +892,7 @@ impl Session {
                         bytes: None,
                         allocated: None,
                         mtime_ns: None,
+                        changed_ns: None,
                         ignored: Some(*current_ignored),
                         clock,
                     }),
@@ -891,6 +903,7 @@ impl Session {
                         bytes: Some(entry.bytes),
                         allocated: Some(entry.allocated),
                         mtime_ns: Some(entry.times.modified),
+                        changed_ns: entry.changed_ns,
                         ignored: Some(*current_ignored),
                         clock,
                     }),

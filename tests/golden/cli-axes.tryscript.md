@@ -910,8 +910,29 @@ c[SEP]target[SEP]payload
 ```
 
 Every tree, list, and code row carries the time its column shows, so a tree sorts by it;
-a type, extension, family, language, or document row carries none, and the sort is
-refused there rather than falling back to name order.
+a type, extension, family, language, or document row carries none.
+Beside a view the sort orders, as in `--view full`, those rows keep size order and a
+note says so; asked for alone, the sort is refused rather than falling back to name
+order.
+
+```console
+$ fdu --cache off --view tree,extensions --depth 0 --size apparent --sort time project
+TREE
+██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+██████████   100%       269 B  [AGE_BLANK]    … and 7 more files
+
+EXTENSIONS
+     128 B  .tar.gz      1 file (128 B gitignored)
+      71 B  .md          2 files
+      36 B  .rs          2 files
+      34 B  (none)       2 files
+! note: totals include gitignored sizes and descendants
+! note: display limits: depth 0
+! note: extension rows carry no time, so they keep size order
+! tip: show more: --depth=all
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
 
 ```console
 $ fdu --cache off --view types --sort time builds

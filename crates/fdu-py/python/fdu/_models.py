@@ -137,7 +137,7 @@ class View(StrEnum):
     #: Each filesystem the report touches: capacity, available space, and what the report
     #: counted there, observed when the report is read.
     VOLUMES = "volumes"
-    #: The selected regular files by change-time band, newest first.
+    #: The selected regular files by age band on the report's clock, newest first.
     AGES = "ages"
     TREE = "tree"
     FAMILIES = "families"
@@ -180,8 +180,9 @@ class SortKey(StrEnum):
 
     SIZE = "size"
     COUNT = "count"
-    #: Newest first, on the clock :attr:`Selection.time` names; refused for types,
-    #: extensions, families, languages, and documents, whose rows carry no time.
+    #: Newest first, on the clock :attr:`Selection.time` names. Types, extensions,
+    #: families, languages, and documents carry no time and keep size order beside a view
+    #: that does; requested alone, they refuse it.
     TIME = "time"
     NAME = "name"
 
@@ -756,9 +757,15 @@ class FileRow:
     kind: EntryKind
     bytes: int
     allocated: int
-    #: The entry's time on the report's clock (:attr:`Report.time`), in nanoseconds since
-    #: the epoch; a directory's is the newest in its eligible subtree.
+    #: The entry's time on the report's clock (:attr:`ReportRequest.time`), in nanoseconds
+    #: since the epoch; a directory's is the newest in its eligible subtree.
     time_ns: int
+    #: Both clocks, whatever the report's: the modification time, and the change time,
+    #: the newer of modification and status change. An arrival carrying old content has a
+    #: recent ``changed_ns`` and an old ``mtime_ns``. ``changed_ns`` is ``None`` for a file
+    #: whose status change was not observed; a directory's are its subtree's newest.
+    mtime_ns: int
+    changed_ns: int | None
     #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.
     ignored: bool | None = None
     sort_value: int | None = None
@@ -781,12 +788,6 @@ class FileRow:
     #: ``report.roots[row.root].path / row.path`` names the entry; ``None`` over one root,
     #: where ``path`` is relative to :attr:`Report.root`.
     root: int | None = None
-    #: Both clocks, whatever the report's: the modification time, and the change time,
-    #: the newer of modification and status change. An arrival carrying old content has a
-    #: recent ``changed_ns`` and an old ``mtime_ns``. ``changed_ns`` is ``None`` for a file
-    #: whose status change was not observed; a directory's are its subtree's newest.
-    mtime_ns: int = 0
-    changed_ns: int | None = None
 
 
 class TreeOmissionReason(StrEnum):
@@ -1332,6 +1333,10 @@ class Change:
     bytes: int | None = None
     allocated: int | None = None
     mtime_ns: int | None = None
+    #: The change time, the newer of modification and status change, or ``None`` when the
+    #: entry is gone or its status change was not observed: the time a ``since`` or
+    #: ``before`` window on the default clock admitted it by.
+    changed_ns: int | None = None
     #: Whether rules ignore the entry, or ``None`` when classification is unavailable.
     ignored: bool | None = None
     reason: str | None = None
@@ -1361,6 +1366,7 @@ class Change:
                 bytes=self.bytes,
                 allocated=self.allocated,
                 mtime_ns=self.mtime_ns,
+                changed_ns=self.changed_ns,
                 ignored=self.ignored,
                 format=str(format),
             ),

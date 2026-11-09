@@ -392,10 +392,13 @@ presets. A `note: display limits:` line names each bound that hid rows, and one
 
 Use `--full`, or `--min-share=0% --depth=all --breadth=all --limit=all`, to remove every
 display bound. Numeric content sorts such as `--sort=code_lines` require their analyzer.
-Extensions supports metadata sorts only; use a metric-capable view for content ranking.
-`--sort time` orders tree, list, and code rows by their time; types, extensions,
-families, languages, and documents carry none, so it is refused there.
-`--scan-depth` changes what is scanned and retained; display bounds only shorten output.
+Extensions sorts by size, count, and name only; use a metric-capable view for content
+ranking. `--sort time` orders tree, list, and code rows by their time.
+Types, extensions, families, languages, and documents carry none: beside a view that
+does, as in `--view full`, they keep size order and a note says so; requested alone, the
+sort is refused.
+`--scan-depth` changes what is scanned and retained; display bounds only
+shorten output.
 
 ## Find What Was Written Recently
 

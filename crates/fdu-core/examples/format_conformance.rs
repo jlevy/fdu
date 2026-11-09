@@ -123,6 +123,7 @@ fn main() {
         bytes: upsert.then_some(u64::MAX),
         allocated: upsert.then_some(u64::MAX),
         mtime_ns: upsert.then_some(i64::MIN),
+        changed_ns: upsert.then_some(i64::MAX),
         ignored: upsert.then_some(false),
         clock: u64::MAX,
     };

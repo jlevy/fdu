@@ -323,10 +323,10 @@ condemns when asked what is old.
 half-open interval the `--modified-*` flags had.
 `--sort time` orders rows newest first wherever a row carries a time, trees included,
 since each carries the same clock its column shows: tree, list, files, largest, recent,
-and code rows.
-Type, extension, family, language, and document rows carry no time, so the
-sort is refused for them rather than falling back to name order.
-`--time` takes `changed` or `modified`.
+and code rows. Type, extension, family, language, and document rows carry no time.
+Beside a view the sort orders, as in `--view full`, they keep size order and a note says
+so; a request in which the sort would order nothing is refused rather than falling back
+to name order. `--time` takes `changed` or `modified`.
 
 The index maintains a directory’s newest time on both clocks, for its regular files and
 for every entry beneath it, beside its other roll-ups, so either value of `--time` reads
@@ -670,9 +670,16 @@ The design is [one time](#one-time).
 
 Decided in implementation:
 
-- `--sort time` is refused for type, extension, family, language, and document rows,
-  which carry no time, rather than silently keeping name order there; tree, list, and
-  code rows sort by it.
+- Type, extension, family, language, and document rows carry no time, so under
+  `--sort time` they keep size order beside a view the sort orders, with a note, and a
+  request of only those views is refused rather than silently keeping name order; tree,
+  list, and code rows sort by it.
+  Review E found that refusing them outright refused `--view full --sort time`.
+- Rust `FileRow::status_observed` is public, with `FileRow::changed_ns` beside it, so a
+  library caller can tell an observed change time from the modification-time stand-in as
+  machine output and Python can.
+- Watch upserts carry `changed_ns` beside `mtime_ns`, so a stream under the default
+  clock shows the time that admitted each entry.
 - `ages` is refused for a request whose instant cannot be represented, where no age can
   be measured, rather than keeping an `unknown` band for that case alone.
 - A list row’s raw `changed_ns` is null for a file whose status change was not observed,

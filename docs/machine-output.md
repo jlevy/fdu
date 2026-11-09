@@ -329,6 +329,9 @@ A Files watch first writes an ordinary report (`fdu.report/12` in machine format
 streams raw changes (`fdu.stream/2`) in Text or machine formats; explicit Tree, Paths,
 and Long repaint snapshots instead.
 Aggregate views also repaint reports.
+An `upsert` gives both raw clocks, `mtime_ns` and, where the entry’s status change was
+observed, `changed_ns`, the time a window on the default clock admitted it by; a
+`remove` or `invalidate` gives neither.
 An `invalidate` change means incremental state is no longer sufficient: rebuild or
 resynchronize the inventory before relying on subsequent changes.
 A consumer must handle the initial report and the change-record schema separately.

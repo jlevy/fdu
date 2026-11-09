@@ -2732,6 +2732,7 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            changed_ns: None,
             ignored: None,
         }];
         for format in [report_format::Format::Paths, report_format::Format::Long] {

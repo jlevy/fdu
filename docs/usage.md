@@ -156,8 +156,9 @@ Numeric content sorts such as `--sort=code_lines` require their analyzer.
 Use `files`, `list`, `tree`, or a metric grouping such as `languages` or `code` for
 these rankings. `extensions` groups metadata only and rejects content-metric sorts.
 `--sort=time` orders tree, list, `files`, `largest`, `recent`, and `code` rows newest
-first; `types`, `extensions`, `families`, `languages`, and `documents` rows carry no
-time, so it is refused there.
+first. `types`, `extensions`, `families`, `languages`, and `documents` rows carry no
+time: beside a view that has one, as in `--view full`, they keep size order and a note
+says so; requested alone, the sort is refused.
 The Code overview shows combined language totals; each row’s gitignored contribution
 follows in gray parentheses, such as `(0 gitignored)`, with an unknown contribution
 added only when some `.gitignore` could not be read or applied.
