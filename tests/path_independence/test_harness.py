@@ -188,7 +188,9 @@ class CompareTests(unittest.TestCase):
         def timed(reference: int, age: int) -> dict[str, Any]:
             return answer(
                 age_reference_ns=reference,
-                reports=[{"files": [{"path": "env", "time_ns": -10, "mtime_ns": -10, "age_ns": age}]}],
+                reports=[
+                    {"files": [{"path": "env", "time_ns": -10, "mtime_ns": -10, "age_ns": age}]}
+                ],
             )
 
         earlier = timed(100, 110)
@@ -277,6 +279,20 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(
             modified.paths, ("reports[].tree.newest_file_time_ns", "reports[].tree.time_ns")
         )
+
+    def test_recent_order_is_compared_only_on_the_clock_a_copy_keeps(self) -> None:
+        def read(clock: str, order: list[str]) -> dict[str, Any]:
+            rows = [{"path": path, "time_ns": 5, "mtime_ns": 5} for path in order]
+            return answer(request={"time": clock}, reports=[{"view": "recent", "files": rows}])
+
+        changed = compare(
+            cli(read("changed", ["a", "b"])), cli(read("changed", ["b", "a"])), policy="auto"
+        )
+        self.assertEqual(changed.kind, "same")
+        modified = compare(
+            cli(read("modified", ["a", "b"])), cli(read("modified", ["b", "a"])), policy="auto"
+        )
+        self.assertEqual(modified.kind, "differs")
 
     def test_tree_node_ages_are_compared_as_residuals_at_every_depth(self) -> None:
         def timed(reference: int, root_age: int | None, leaf_age: int) -> dict[str, Any]:
@@ -596,7 +612,9 @@ class MergeOracleTests(unittest.TestCase):
         merged = merged_facts(
             "r_summary", [single(known), single({**known, "newest_file_time_ns": 9})]
         )
-        self.assertEqual((merged["files"], merged["bytes"], merged["newest_file_time_ns"]), (4, 60, 9))
+        self.assertEqual(
+            (merged["files"], merged["bytes"], merged["newest_file_time_ns"]), (4, 60, 9)
+        )
         self.assertEqual(merged["ignored"], {"files": 2, "dirs": 0, "bytes": 10, "allocated": 1024})
         unknown = merged_facts("r_summary", [single(known), single({**row, "ignored": None})])
         self.assertIsNone(unknown["ignored"])

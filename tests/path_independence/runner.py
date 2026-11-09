@@ -42,6 +42,7 @@ if str(REPO) not in sys.path:
 import matrix  # noqa: E402
 import registry  # noqa: E402
 from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
+
 from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 Outcome = Literal["complete", "partial", "failure"]
@@ -210,6 +211,15 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         summary = section.get("summary")
         if isinstance(summary, dict):
             residual(summary)
+        # `recent` orders its rows by time. On the change clock each copy's order follows
+        # the instants it was written at, which two copies split differently at a clock
+        # tick, so the rows are compared as a set; every fixture file is one of them, as
+        # the fixture holds fewer than the view's twenty. On the modification clock, which
+        # a copy keeps, the order is compared as it is.
+        if clock == "changed" and section.get("view") == "recent":
+            section["files"] = sorted(
+                section.get("files", []), key=lambda row: str(row.get("path"))
+            )
         for row in section.get("files", []):
             residual(row)
         # Every tree node carries the activity it counts and its age, so the folded tier a
@@ -451,9 +461,7 @@ def several_facts(request_id: str, answer: dict[str, Any]) -> Any:
             "tree": section.get("tree"),
             "total": None
             if total is None
-            else {
-                key: value for key, value in total.items() if key not in ("age_ns", "time_at")
-            },
+            else {key: value for key, value in total.items() if key not in ("age_ns", "time_at")},
         }
         if request_id == "r_full_tree":
             facts["trees"] = {str(entry["root"]): entry["tree"] for entry in section["trees"]}

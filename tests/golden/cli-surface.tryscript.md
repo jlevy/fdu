@@ -316,9 +316,9 @@ A parenthetical amount such as `(73 MiB gitignored)` is included in the row tota
 Directories get a `/` suffix, except `.` and `..`; file names and structured paths do
 not change.
 Between size and name each row shows its age: how long ago anything it counts
-last changed, files, directories, and symlinks alike, never the scanned root’s own
-time. Ages read `42s`, `59m`, `23h`, `30d`, `11mo` (months of 30.44 days), and `3y`
-(years of 365.25 days), floored.
+last changed, files, directories, and symlinks alike, never the scanned root’s own time.
+Ages read `42s`, `59m`, `23h`, `30d`, `11mo` (months of 30.44 days), and `3y` (years of
+365.25 days), floored.
 An age is `unknown` where part of the subtree was not listed, and `—` on a row that
 counts nothing.
 With no filter a directory’s age matches its `--long` age; under a filter
@@ -326,11 +326,12 @@ each row ages only what it counts.
 `--sort time` orders tree rows by this age.
 Time bounds take days: `--before 60d`, not `2mo`.
 
-Every time fdu reads is on one clock. By default it is **change time**, the newer of
-modification and status change, which the operating system sets whenever a file’s data
-or metadata is written, so a copy or an extracted archive that kept an old modification
-time is still new. `--time modified` reads **modification time** instead, content age as
-`ls -l` shows, for every age, window, sort, `recent`, and `ages` in the report at once.
+Every time fdu reads is on one clock.
+By default it is **change time**, the newer of modification and status change, which the
+operating system sets whenever a file’s data or metadata is written, so a copy or an
+extracted archive that kept an old modification time is still new.
+`--time modified` reads **modification time** instead, content age as `ls -l` shows, for
+every age, window, sort, `recent`, and `ages` in the report at once.
 Use it when a bulk `chmod`, `chown`, SELinux relabel, or sync client moved every status
 change at once, or to compare with `ls -l`.
 
@@ -563,12 +564,12 @@ fdu PATH --view largest --since 24h --limit 20    # the largest of them
 ```
 
 The window reads change time, so it catches data that arrived carrying an older
-modification time, which modification time misses: copies made with `cp -p`,
-`rsync -a`, Finder, or Explorer, files moved with `mv` from another filesystem,
-extracted archives, downloads that take the server’s time (wget does by default), and
-Cargo’s crate sources, which Cargo stamps with a 2006 time. Machine list rows carry both
-clocks, `mtime_ns` and `changed_ns`, so such arrivals are the rows whose `changed_ns` is
-recent and whose `mtime_ns` is old.
+modification time, which modification time misses: copies made with `cp -p`, `rsync -a`,
+Finder, or Explorer, files moved with `mv` from another filesystem, extracted archives,
+downloads that take the server’s time (wget does by default), and Cargo’s crate sources,
+which Cargo stamps with a 2006 time.
+Machine list rows carry both clocks, `mtime_ns` and `changed_ns`, so such arrivals are
+the rows whose `changed_ns` is recent and whose `mtime_ns` is old.
 
 Keep `--kind file`. A time bound tests a directory’s whole subtree, so without it every
 directory with any activity in the window is admitted at its full size.
@@ -595,8 +596,8 @@ likely: the project, `~/.cache`, `~/Library/Caches`, agent state such as `~/.cla
 `~/.codex`, and the temporary directory.
 Each window is one scan on the command line; to ask several windows or drill into
 folders without walking again, walk the tree once with Python’s `fdu.scan`, which writes
-no cache, and ask each `index.report` with its own `since`. Exact net change,
-deletions included, needs a report saved before the window began, written outside PATH:
+no cache, and ask each `index.report` with its own `since`. Exact net change, deletions
+included, needs a report saved before the window began, written outside PATH:
 `fdu PATH --one-filesystem --cache off --view tree --depth all --limit all --format json > before.json`
 keeps every directory and file at or above 1% of the root and stays small, and a later
 one is compared with it by path.
@@ -676,12 +677,13 @@ None changes measured totals.
 Paths escapes control characters only and keeps stdout to paths; bound and rule notices
 go to stderr. Long adds size and signed age.
 Machine rows retain exact `time_ns`, `age_ns`, directory `files`/`dirs`, and the
-report’s `age_reference_ns`; unknown ages are null. The request’s `time` names the clock.
-List rows also carry both raw clocks, `mtime_ns` and `changed_ns`.
-Tree nodes carry the same `time_ns`, `complete`, and `age_ns` as the text column,
-beside `newest_file_time_ns`, the newest regular file alone.
-`time_at` and the envelope’s `age_reference_at` are the same instants in RFC 3339
-UTC; `time_at` is null wherever the time is only a lower bound.
+report’s `age_reference_ns`; unknown ages are null.
+The request’s `time` names the clock.
+List rows also carry both raw clocks, `mtime_ns` and `changed_ns`. Tree nodes carry the
+same `time_ns`, `complete`, and `age_ns` as the text column, beside
+`newest_file_time_ns`, the newest regular file alone.
+`time_at` and the envelope’s `age_reference_at` are the same instants in RFC 3339 UTC;
+`time_at` is null wherever the time is only a lower bound.
 A `--watch` repaint measures its ages from its own instant.
 
 Tree/Paths/Long require one compatible list view.
@@ -754,9 +756,9 @@ fdu --view files --kind file --format jsonl --since <that> PATH
 
 Use the scan’s *start*, not its end: a file changed mid-scan may have been observed
 before the change, so only the start bound is conservative.
-By change time this catches copied and restored files that kept older modification
-times too; it cannot detect deletions. Use a retained index and reconciliation when
-maintaining an inventory.
+By change time this catches copied and restored files that kept older modification times
+too; it cannot detect deletions.
+Use a retained index and reconciliation when maintaining an inventory.
 
 ## Validate Every Automated Result
 
