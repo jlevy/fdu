@@ -29,7 +29,7 @@ use crate::engine_contract::{EntryKind, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars, newer};
 use crate::query::query_request::{Basis, NamedRoot, Request, RequestError, Roots};
 use crate::query::query_selection::{
-    Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey,
+    Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey, TimeWindow,
 };
 use crate::query::{Rejection, ReportProvenance, TreeStatus, query_subtrees, query_volumes};
 
@@ -2785,6 +2785,12 @@ fn walk(
         "a selection by ignored state over an unobserving index is refused before the walk"
     );
 
+    // A file with no observed change time is one a change-time bound could not judge only
+    // when the rest of the selection admits it; one a size, kind, or pattern refuses
+    // anyway was judged, and is no part of the note.
+    let unwindowed = (!selection.changed.is_unbounded())
+        .then(|| Selection { changed: TimeWindow::default(), ..selection.clone() });
+
     // (id, path, post-order, covered by a selected ancestor, own time when counted)
     //
     // A directory's own time rides on its frame rather than being folded into its entry
@@ -2847,7 +2853,7 @@ fn walk(
                 measured.mtime_ns = subtree.mtime_ns;
                 changed = subtree.changed();
             }
-            let (pruned, matches) = query_subtrees::with_candidate(
+            let (pruned, matches, unjudged) = query_subtrees::with_candidate(
                 &child_path,
                 kind,
                 measured,
@@ -2855,17 +2861,19 @@ fn walk(
                 ignored,
                 identity,
                 |candidate| {
-                    (query_subtrees::pruned(selection, &candidate), selection.admits(&candidate))
+                    (
+                        query_subtrees::pruned(selection, &candidate),
+                        selection.admits(&candidate),
+                        candidate.kind == EntryKind::File
+                            && candidate.changed_ns.is_none()
+                            && unwindowed.as_ref().is_some_and(|rest| rest.admits(&candidate)),
+                    )
                 },
             );
             if pruned {
                 continue;
             }
-            if kind == EntryKind::File
-                && changed.is_none()
-                && classification_admitted
-                && selection.ignored.admits(ignored)
-            {
+            if unjudged && classification_admitted {
                 walked.unknown_changed += 1;
             }
             // An incomplete subtree's newest activity is a lower bound, not an age, so no
@@ -5309,6 +5317,13 @@ mod tests {
         assert!(
             notes(bounded(TimeWindow { since: None, before: Some(50) })).iter().any(|n| n == note)
         );
+        // A file the rest of the selection refuses was judged by that, whatever its change
+        // time: no file in the sample holds a kibibyte, so that minimum leaves none unjudged.
+        let larger = Selection {
+            min_size: Some(1024),
+            ..bounded(TimeWindow { since: Some(50), before: None })
+        };
+        assert!(!notes(larger).iter().any(|n| n.contains("change time")));
         // A modification bound judges that file by its own clock, so it needs no note.
         let modified = Selection {
             modified: TimeWindow { since: Some(50), before: None },
