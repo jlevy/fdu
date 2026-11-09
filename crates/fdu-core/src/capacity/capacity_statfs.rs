@@ -15,10 +15,15 @@ fn width<T: TryInto<u64>>(value: T) -> u64 {
     value.try_into().unwrap_or(0)
 }
 
-/// A `statfs` type field widened to `i64`, as [`width`] widens a count.
+/// A `statfs` type field as the 32-bit magic number the kernel headers define.
+///
+/// The field is signed and its width differs by target, so a magic with the high bit set,
+/// btrfs's among them, reads as negative where it is 32 bits wide; keeping its low 32 bits
+/// gives the same number on every target.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-fn signed<T: TryInto<i64>>(value: T) -> i64 {
-    value.try_into().unwrap_or(-1)
+fn magic<T: TryInto<i64>>(value: T) -> u32 {
+    let value: i64 = value.try_into().unwrap_or(0);
+    u32::try_from(value & 0xFFFF_FFFF).unwrap_or(0)
 }
 
 fn c_path(path: &Path) -> io::Result<CString> {
@@ -30,9 +35,9 @@ fn c_path(path: &Path) -> io::Result<CString> {
 /// space is shared across volumes, which a report must say; any other is shown as the
 /// number the kernel gave, in the hexadecimal its headers use.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-fn linux_type_name(magic: i64) -> String {
-    const BTRFS: i64 = 0x9123_683E;
-    const ZFS: i64 = 0x2FC1_2FC1;
+fn linux_type_name(magic: u32) -> String {
+    const BTRFS: u32 = 0x9123_683E;
+    const ZFS: u32 = 0x2FC1_2FC1;
     match magic {
         BTRFS => "btrfs".to_owned(),
         ZFS => "zfs".to_owned(),
@@ -43,6 +48,9 @@ fn linux_type_name(magic: i64) -> String {
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub(super) fn observe(path: &Path) -> io::Result<VolumeCapacity> {
     let path = c_path(path)?;
+    // On 32-bit glibc the block counts are 32 bits wide, and a filesystem too large for
+    // them fails with `EOVERFLOW`, which the report shows as capacity unknown with that
+    // reason rather than as a truncated size.
     let mut stats = std::mem::MaybeUninit::<libc::statfs>::uninit();
     // SAFETY: `path` is NUL-terminated and outlives the call, and `stats` is a valid
     // out-pointer the call fully writes on success; it is read only after success.
@@ -61,7 +69,7 @@ pub(super) fn observe(path: &Path) -> io::Result<VolumeCapacity> {
     Ok(VolumeCapacity {
         capacity_bytes: width(stats.f_blocks).saturating_mul(unit),
         available_bytes: width(stats.f_bavail).saturating_mul(unit),
-        filesystem: Some(linux_type_name(signed(stats.f_type))),
+        filesystem: Some(linux_type_name(magic(stats.f_type))),
     })
 }
 
@@ -123,5 +131,15 @@ mod tests {
         assert_eq!(linux_type_name(0x9123_683E), "btrfs");
         assert_eq!(linux_type_name(0x2FC1_2FC1), "zfs");
         assert_eq!(linux_type_name(0xEF53), "0xef53");
+    }
+
+    #[test]
+    fn a_magic_reads_the_same_whatever_the_width_of_its_field() {
+        // btrfs's magic has its high bit set: a 32-bit field holds it as negative.
+        let narrow = i32::from_ne_bytes(0x9123_683E_u32.to_ne_bytes());
+        assert!(narrow < 0);
+        assert_eq!(magic(narrow), 0x9123_683E);
+        assert_eq!(magic(0x9123_683E_i64), 0x9123_683E);
+        assert_eq!(magic(0xEF53_i64), 0xEF53);
     }
 }
