@@ -10,10 +10,11 @@ Content analysis does not select another schema.
 them or a content view implied them, so `--view=code` and `--analyze=code` serialize one
 request; `analysis.analyze` and the content sidecar identity follow it.
 `request.views` and `request.omitted_views` are the views shown and the ones `full` had
-to drop. `selected` and `scanned` are on every report, each
-`{files, dirs, bytes, allocated}` over every root: `selected` is what a summary of the
-same selection reports, the files the selection admits or covers, and `scanned` is
-everything the scan retained.
+to drop. `request.time` names the one clock every time in the report reads: `changed`,
+the default, the newer of modification and status change, or `modified`. `selected` and
+`scanned` are on every report, each `{files, dirs, bytes, allocated}` over every root:
+`selected` is what a summary of the same selection reports, the files the selection
+admits or covers, and `scanned` is everything the scan retained.
 They are equal when the selection filters nothing.
 Under `--ignored=exclude` or `--ignored=only` the scan itself keeps only that part of
 the tree, so `scanned` is what that scan retained, not the whole tree, and the note
@@ -46,7 +47,7 @@ See the [output design system](project/architecture/fdu-output-design.md).
 ## List Rows
 
 ```shell
-fdu ~/projects --kind dir --include node_modules --modified-before 30d --format json
+fdu ~/projects --kind dir --include node_modules --before 30d --format json
 ```
 
 The default List in JSON, JSONL, or YAML exposes complete matching rows unless an
@@ -63,26 +64,29 @@ projection as a `tree` object, so inspect the payload key as well as `view`.
 | `kind` | `file`, `dir`, `symlink`, or `other` |
 | `bytes` | Apparent bytes; a directory sums eligible regular-file contents |
 | `allocated` | Allocated bytes under the same accounting |
+| `time_ns` | The entry’s time on the report’s clock (`request.time`), in signed epoch nanoseconds; a directory uses the newest eligible root/descendant time |
 | `files`, `dirs` | Directory descendant counts, excluding the matching root; null for other kinds |
-| `complete` | Whether a directory’s eligible subtree was listed in full; false makes `bytes`, `allocated`, `files`, `dirs`, and `mtime_ns` lower bounds and `age_ns` null; null for other kinds |
-| `mtime_ns` | Signed epoch nanoseconds; a directory uses the newest eligible root/descendant timestamp |
-| `age_ns` | Signed age at `age_reference_ns`; negative for a future timestamp, null if the reference cannot be represented or the subtree is incomplete |
-| `modified_at` | `mtime_ns` as an RFC 3339 UTC instant to the nanosecond, or null when the subtree is incomplete and `mtime_ns` only a lower bound |
-| `changed_ns` | Change time, the newer of modification and status change, in signed epoch nanoseconds; a directory uses the newest of the entries `mtime_ns` counts; null where a change time was not observed, for a directory when any entry it counts had none, and a lower bound when the subtree is incomplete |
-| `changed_at` | `changed_ns` as an RFC 3339 UTC instant to the nanosecond, or null when `changed_ns` is null or only a lower bound |
+| `complete` | Whether a directory’s eligible subtree was listed in full; false makes `bytes`, `allocated`, `files`, `dirs`, and its times lower bounds and `age_ns` null; null for other kinds |
+| `age_ns` | Signed age of `time_ns` at `age_reference_ns`; negative for a future time, null if the reference cannot be represented or the subtree is incomplete |
+| `time_at` | `time_ns` as an RFC 3339 UTC instant to the nanosecond, or null when the subtree is incomplete and `time_ns` only a lower bound |
+| `mtime_ns` | Modification time in signed epoch nanoseconds, whatever the report’s clock; a directory uses the newest of the entries `time_ns` counts |
+| `changed_ns` | Change time, the newer of modification and status change, in signed epoch nanoseconds, whatever the report’s clock; a directory uses the newest of the entries `time_ns` counts; null for a regular file whose status change was not observed |
 | `ignored` | Boolean classification, or null when rules were unobserved or governing classification is unknown |
 | `sort_value` | Value of the requested content sort metric, or null when absent/unavailable |
 | `classification` | For a regular file: stable file type, family, detection source/confidence, and generated/vendor/documentation flags; null for other kinds |
 
 The request’s nullable `sort_metric` identifies the content metric used to rank rows.
 Unavailable values sort last in either direction, with deterministic path ties.
-`--sort changed` orders rows by `changed_ns` the same way: a null change time sorts last
-in either direction.
+`--sort time` orders rows by `time_ns`, newest first.
+On the change clock, a file whose status change was not observed is timed by its
+modification time, a lower bound of its change time, while its `changed_ns` stays null.
+With both raw clocks, one listing finds what no window can: an arrival that kept old
+content times is a row whose `changed_ns` is recent and whose `mtime_ns` is old.
 
 The envelope’s `age_reference_ns` is the request instant every age is measured from, in
 epoch nanoseconds, and `age_reference_at` is the same instant as RFC 3339 UTC; both are
 null when it cannot be represented.
-When representable, `age_ns = age_reference_ns - mtime_ns`. Re-rendering a Report never
+When representable, `age_ns = age_reference_ns - time_ns`. Re-rendering a Report never
 samples another clock.
 A one-shot report samples the instant before its walk, so a file written during the walk
 can show a small negative age.
@@ -90,8 +94,9 @@ A watch measures each repaint from that repaint’s own instant, so ages stay cu
 a long session, while the time windows it selects by stay the absolute bounds its
 request resolved when it was built.
 `provenance.generated_at` describes report generation and `provenance.scan_started_at`
-is a conservative lower bound for later mtime-based selection, not a complete change
-log: deletions and files copied or restored with older mtimes are not selected.
+is a conservative lower bound for a later `--since` selection, not a complete change
+log: deletions are not selected, and under `--time modified` neither are files copied or
+restored with older modification times.
 Neither should be substituted for the age reference.
 Signed age can exceed an i64 even though each timestamp fits one.
 Use an integer-preserving parser; nanosecond values exceed JavaScript’s exact binary64
@@ -103,8 +108,8 @@ Directory metrics apply exclusions throughout the subtree before positive name/k
 size, and time predicates.
 They include directory and symlink activity but no directory inode or symlink bytes.
 Nested matching roots may overlap; summary/grouped totals count the covered union once.
-These are modification times and counted bytes, not last-use or uniquely
-reclaimable-space claims.
+These are activity times on the report’s clock and counted bytes, not last-use or
+uniquely reclaimable-space claims.
 Native entry/lookup APIs retain inode metadata.
 
 Summary, tree, and extension rows report `ignored` as null when their contributing scope
@@ -126,11 +131,11 @@ section’s sort order.
 | `bytes`, `allocated` | Apparent and allocated bytes of the regular files the row counts |
 | `files`, `dirs` | Regular files and directories the row counts beneath it; a file counts itself |
 | `ignored` | The part of those tallies `.gitignore` rules ignore, or null when governing rules were unobserved or unverified |
-| `newest_mtime_ns` | Newest modification among the regular files the row counts, or null when it counts none |
-| `mtime_ns` | Newest modification among every entry the row counts, of any kind; null when it counts none |
-| `complete` | Whether a directory’s subtree was listed in full; false makes its tallies and `mtime_ns` lower bounds; null for a file |
-| `age_ns` | Signed age of `mtime_ns` at `age_reference_ns`; null when the row counts nothing, its subtree is incomplete, or the reference cannot be represented |
-| `modified_at` | `mtime_ns` as an RFC 3339 UTC instant to the nanosecond; null when `mtime_ns` is null or only a lower bound |
+| `newest_file_time_ns` | Newest time, on the report’s clock, among the regular files the row counts, or null when it counts none |
+| `time_ns` | Newest time, on the report’s clock, among every entry the row counts, of any kind; null when it counts none |
+| `complete` | Whether a directory’s subtree was listed in full; false makes its tallies and `time_ns` lower bounds; null for a file |
+| `age_ns` | Signed age of `time_ns` at `age_reference_ns`; null when the row counts nothing, its subtree is incomplete, or the reference cannot be represented |
+| `time_at` | `time_ns` as an RFC 3339 UTC instant to the nanosecond; null when `time_ns` is null or only a lower bound |
 | `truncated` | Whether display bounds withheld any child |
 | `omissions` | First-exclusion records for the children display bounds withheld ([below](#tree-bounds)) |
 | `children` | The rows displayed beneath this one |
@@ -138,13 +143,13 @@ section’s sort order.
 A row counts its own entry when the selection admits it, and every entry beneath it that
 its tallies count. The report root is a traversal boundary, never an admitted entry, so
 its own time never counts.
-`mtime_ns` includes directory and symlink activity: deleting or renaming a file changes
-no surviving file’s time but is a modification of the subtree, and an install that
-preserves archive times, as npm and `tar` do, is dated by its directories.
-Under a selection that admits everything, a directory’s `mtime_ns` is its list row’s, so
-`--long` and the tree agree; under a filter each follows its own row’s population.
-`newest_mtime_ns` keeps its files-only meaning, which a summary reports too.
-`--sort mtime` orders tree rows by `mtime_ns`, the age the text column shows.
+`time_ns` includes directory and symlink activity: deleting or renaming a file changes
+no surviving file’s time but does change its directory, and an install that preserves
+archive times, as npm and `tar` do, is dated by its directories even under
+`--time modified`. Under a selection that admits everything, a directory’s `time_ns` is
+its list row’s, so `--long` and the tree agree; under a filter each follows its own
+row’s population. `newest_file_time_ns` keeps its files-only meaning, which a summary
+reports too. `--sort time` orders tree rows by `time_ns`, the age the text column shows.
 An omission or remainder carries no time.
 
 ## Tree Bounds
@@ -178,9 +183,9 @@ same schema, with these differences; a report over one root has none of them.
   `roots[root].path` joined with `path` names the entry, and an absolute label never
   makes a relative path absolute.
 - A tree section has `tree: null`, then `total`, then `trees`. `total` is the merged
-  root row: the tree node fields from `bytes` through `modified_at`, with no `name`,
-  `path`, or `kind`, since no entry is the total; it is null when the row limit is zero.
-  Its `mtime_ns` is the newest of the roots’ and `complete` holds when every root is.
+  root row: the tree node fields from `bytes` through `time_at`, with no `name`, `path`,
+  or `kind`, since no entry is the total; it is null when the row limit is zero.
+  Its `time_ns` is the newest of the roots’ and `complete` holds when every root is.
   `trees` holds, in display order, `{root, tree, remainder}` for each root the row limit
   kept: `tree` is that root’s ordinary tree, its root node named by the label with an
   empty `path`, and `remainder` what its own bounds hid.
@@ -189,9 +194,8 @@ same schema, with these differences; a report over one root has none of them.
   limit counts the total as the first row.
 
 A root node never counts its root’s own time, as a single report’s root does not, so its
-sizes, counts, `mtime_ns`, and `complete` equal those of the root node of that root’s
-own report.
-Its `name` is the root’s label, and its children are those whose share of the
+sizes, counts, `time_ns`, and `complete` equal those of the root node of that root’s own
+report. Its `name` is the root’s label, and its children are those whose share of the
 combined total reaches the threshold, so it can show fewer rows than that report does.
 
 ## Code Overview
@@ -246,19 +250,19 @@ control state and do not imply every rule file was reread on a cache-only run.
 
 ## Age Profiles
 
-An `ages` section has `basis` (`changed`: the newer of modification and status change),
-`bands`, and `total`. `bands` always holds all ten bands, newest first, empty ones
-included: `future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`,
-`90d to 1y`, `1y to 3y`, `over 3y`, and `unknown`.
+An `ages` section has `bands` and `total`, by age on the clock `request.time` names.
+`bands` always holds all nine bands, newest first, empty ones included: `future`,
+`under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`,
+and `over 3y`.
 
 | Field | Meaning |
 | --- | --- |
 | `band` | The band’s label |
-| `since_age_ns`, `before_age_ns` | The band’s window as ages at `age_reference_ns`: the files `--kind file --changed-since <since_age> --changed-before <before_age>` selects; null where the window is open, and both null for `unknown` |
+| `since_age_ns`, `before_age_ns` | The band’s window as ages at `age_reference_ns`: the files `--kind file --since <since_age> --before <before_age>` selects; null where the window is open |
 | `since_ns`, `before_ns`, `since_at`, `before_at` | The same edges as epoch nanoseconds and RFC 3339 instants |
 | `files`, `bytes`, `allocated` | The regular files in the band |
 | `ignored` | The band’s gitignored files, bytes, and allocated bytes, or null when rules were unobserved or a counted file’s classification is unknown |
-| `cumulative` | The same tallies for this band and every newer one; null for `unknown` |
+| `cumulative` | The same tallies for this band and every newer one |
 
 `total` holds the same tallies over every band: what `summary` reports for the same
 selection.
@@ -293,12 +297,11 @@ A directory row says so itself: `complete` is false at a `--scan-depth` boundary
 directory an opened root has not listed yet, and for a failed subtree or an ancestor of
 one. A partial cold scan retains completeness for successfully listed siblings; an
 unscoped failure leaves the whole tree incomplete.
-Such a row’s sizes and counts are lower bounds, its `age_ns` is null, and no
-`modified_since`/`modified_before` or `changed_since`/`changed_before` bound matches it,
-because a lower-bound maximum is not an age; `min_size` still can, since a lower bound
-at or above the minimum proves the true size is too.
-A cache-only result carries staleness in report provenance and preserves the snapshot’s
-directory completeness.
+Such a row’s sizes and counts are lower bounds, its `age_ns` is null, and no `since` or
+`before` bound matches it on either clock, because a lower-bound maximum is not an age;
+`min_size` still can, since a lower bound at or above the minimum proves the true size
+is too. A cache-only result carries staleness in report provenance and preserves the
+snapshot’s directory completeness.
 A snapshot is published only from a complete scan, but an unlisted directory at its
 scan-depth boundary still has `complete: false` and unknown age.
 Content metric coverage remains separate from metadata completeness.

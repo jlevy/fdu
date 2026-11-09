@@ -9,32 +9,46 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Selection by change time: `--changed-since` and `--changed-before` (Python
-  `Selection(changed_since=, changed_before=)`) select entries by the newer of their
-  modification time and status change time, in the same grammar and half-open interval
-  as `--modified-since` and `--modified-before`, and compose with them.
-  Change time catches data that arrived carrying an older modification time, which a
-  modification window misses: `cp -p`, `rsync -a`, Finder and Explorer copies, `mv` from
-  another filesystem, extracted archives, and Cargo’s crate sources.
-  A directory’s change time is the newest in its eligible subtree; an incomplete subtree
-  matches no change-time bound, as it matches no modification bound.
-  An entry whose change time was not observed (on Windows, one fdu could list but not
-  open) is never admitted by a change-time bound, and a note counts such files.
-- `--sort changed` (Python `SortKey.CHANGED`) orders `files`, `largest`, `recent`, and
-  flat `list` rows by change time, newest first, with an unknown change time last in
-  either direction. A tree or grouped view refuses it, since a tree’s age is modification
-  activity; `summary`, `ages`, and `volumes`, whose rows have a fixed order, may sit
-  beside it.
-- Machine output: list rows carry `changed_ns` and `changed_at`, null where unknown, and
-  `changed_at` is null for an incomplete subtree as `modified_at` is.
-  Python `FileRow` gains `changed_ns` and `changed_at`.
+- One time for every report: `--time changed|modified` (Python
+  `Selection(time=TimeBasis.MODIFIED)`, Rust `Selection::time`) chooses the clock that
+  every time window, `--sort time`, the tree’s age column, `recent`, `ages`, and every
+  row’s age reads, so one report never mixes two.
+  The default is **change time**, the newer of modification and status change, which
+  catches data that arrived carrying an older modification time: `cp -p`, `rsync -a`,
+  Finder and Explorer copies, `mv` from another filesystem, extracted archives, and
+  Cargo’s crate sources.
+  Asked what is new, it over-includes (a `chmod` looks new) rather than omits; asked
+  what is old, it does not call a just-restored backup stale.
+  `modified` is content age, as `ls -l` shows, and the clock to use after a bulk
+  `chmod`, `chown`, or relabel moved every status change.
+  A file whose status change was not observed (on Windows, one fdu could list but not
+  open) is timed by its modification time, a lower bound, and a note counts such files
+  wherever a window or `ages` counted one.
+- `--since` and `--before` (Python `Selection(since=, before=)`) select entries by their
+  time on that clock, inclusive and exclusive, in the grammar the `--modified-*` flags
+  had.
+- `--sort time` (Python `SortKey.TIME`, Rust `SortKey::Time`) orders tree, list, files,
+  largest, recent, and code rows newest first on the report’s clock, trees included.
+  Types, extensions, families, languages, and documents carry no time, and refuse it.
+- Machine output: the request echo names its `time`; every list row, tree node, and
+  total gives its time as `time_ns`, `time_at`, and `age_ns`; summary and tree rows give
+  `newest_file_time_ns`; and list rows also give both raw clocks, `mtime_ns` and
+  `changed_ns` (null where a file’s status change was not observed), so an arrival that
+  carries old content is a row with a recent `changed_ns` and an old `mtime_ns`. Python
+  `FileRow`, `TreeNode`, `TreeTotal`, `SummaryRow`, and `ReportRequest` carry the same
+  names.
+- The index maintains each directory’s newest time on both clocks, so either value of
+  `--time` reads the same fast paths.
+  Public `RollUp` and `RollUpSummary`, and Python `RollUp` and opened-root
+  `RollUpSummary`, gain `newest_changed_ns` beside `newest_mtime_ns`. Rust: `TimeBasis`,
+  `Times`, `Attrs::times`, and `query::parse_time_basis`.
 - `--view ages` (Python `View.AGES`, Rust `ViewSpec::Ages`) profiles the selected
-  regular files by change time in fixed bands, newest first: `future`, `under 1h`,
-  `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`, `over 3y`,
-  and `unknown`. Each band is what `--kind file` with the
-  `--changed-since`/`--changed-before` window it names selects over the same selection
-  and instant, the bands add up to `--view summary`, and text keeps the grouped-row
-  layout, leaving empty bands out.
+  regular files by age on the report’s clock in nine fixed bands, newest first:
+  `future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`,
+  `1y to 3y`, and `over 3y`. Each band is what `--kind file` with the
+  `--since`/`--before` window it names selects over the same selection, clock, and
+  instant, the bands add up to `--view summary`, and text keeps the grouped-row layout,
+  leaving empty bands out.
   Machine output keeps every band, with its edges as ages and as instants, its tallies
   and ignored part, and a `cumulative` tally of it and every newer band.
   The view is metadata only, composes with every selection and several roots, shares one
@@ -58,10 +72,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `fdu_core::capacity`; `query::observe_volumes` observes what a request needs, and
   `report_with_capacity` and `report_roots_with_capacity` read with it.
   `report` and `report_roots` keep their signatures and report capacity as unknown, with
-  a note. The sections and their parts are `AgeProfile`, `AgeBand`, `AgeTally`, and
-  `AGE_BASIS`, and `VolumesSection`, `VolumeRow`, and `VolumeCounted`; `observe_volumes`
-  returns a `VolumesObservation`, `volume_entries` lists the `VolumeEntry` values it
-  observes, and `CapacityObservation` holds one `ObservedVolume` per filesystem.
+  a note. The sections and their parts are `AgeProfile`, `AgeBand`, and `AgeTally`, and
+  `VolumesSection`, `VolumeRow`, and `VolumeCounted`; `observe_volumes` returns a
+  `VolumesObservation`, `volume_entries` lists the `VolumeEntry` values it observes, and
+  `CapacityObservation` holds one `ObservedVolume` per filesystem.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
   is not read as the whole tree.
@@ -80,25 +94,41 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking (Rust):** `ViewSpec` gains `Ages` and `Volumes` and `Section` gains `Ages`
   and `Volumes`, so an exhaustive match over either needs the new arms; `ViewSpec::ALL`
   has 14 views. `Report` gains `selection`.
-- **Breaking (Rust):** `Selection` gains `changed`, `Candidate` gains `changed_ns`,
-  `FileRow` gains `changed_ns`, `SortKey` gains `Changed`, `ReadSpec` gains
-  `changed_since` and `changed_before`, and `AxisNames` gains `changed_since` and
-  `changed_before`; struct literals that name every field need the new ones.
-  `ModifiedWindow` is now `TimeWindow`, which serves both windows, and the old name
-  remains as an alias.
-  `Attrs::change_time_ns` returns an entry’s change time.
+- **Breaking:** every time is change time unless `--time modified` is given, so the
+  tree’s age column, `--view recent`, and every age read change time: a tree copied in
+  yesterday reads `1d` however old its files.
+  `--time modified` gives the released modification-time answers.
+- **Breaking:** `--modified-since` and `--modified-before` are `--since` and `--before`,
+  and `--sort mtime` is `--sort time`; Python
+  `Selection(modified_since=, modified_before=)` is `Selection(since=, before=)` and
+  `SortKey.MTIME` is `SortKey.TIME`.
+- **Breaking:** machine output names every time by the report’s clock: a tree node’s and
+  total’s `mtime_ns`, `newest_mtime_ns`, and `modified_at` are `time_ns`,
+  `newest_file_time_ns`, and `time_at`, a summary’s `newest_mtime_ns` is
+  `newest_file_time_ns`, and a list row’s `modified_at` is `time_at`, beside its new
+  `time_ns` (its `mtime_ns` stays, as one of the two raw clocks).
+  The Python models follow: `FileRow.modified_at`, `TreeNode.mtime_ns`,
+  `TreeNode.newest_mtime_ns`, `TreeNode.modified_at`, the same `TreeTotal` fields, and
+  `SummaryRow.newest_mtime_ns`.
+- **Breaking (Rust):** `Selection::modified` is `Selection::window`, beside the new
+  `Selection::time`; `ModifiedWindow` is gone; `SortKey::Mtime` is `SortKey::Time`;
+  `Candidate::mtime_ns` and `FileRow::mtime_ns` are `times: Times`; `TreeNode` and
+  `TreeTotal` carry `time` and `newest_file` as `Times`, and `SummaryRow` carries
+  `newest_file`; `ReadSpec::modified_since` and `modified_before` are `since` and
+  `before`, beside `time`, and `AxisNames` names the same three; `Report` gains `time`.
+  The Python decoder requires the request’s `time` and each list row’s `time_ns`.
 - `--view full` holds `volumes` and `ages` right after `summary`, so every later section
   of a full report moves two places in machine output: read sections by their `view`,
   not their position. A full report now also opens each root, makes one `statfs` per
   filesystem it touches, and takes two more passes over the index, one to find where the
   walk changed filesystem and one to count each filesystem’s files.
 - The agent skill, `fdu --help`, `fdu --docs`, and the README show how to find what was
-  written recently from one scan with no saved state:
-  `fdu PATH --kind file --changed-since 24h` by folder, and `--view largest` for the
-  files. They say why `--kind file` is required, and that the answer is data written, not
-  net growth: modified files count in full and deleted files do not appear.
-- A tree row’s age is described as how long ago anything it counts was last modified,
-  since “changed” now names change time.
+  written recently from one scan with no saved state: `fdu PATH --kind file --since 24h`
+  by folder, and `--view largest` for the files.
+  They say why `--kind file` is required, and that the answer is data written, not net
+  growth: modified files count in full and deleted files do not appear.
+- A tree row’s age is described as how long ago anything it counts last changed, on the
+  report’s clock.
 
 ## [0.5.0] - 2026-10-11
 

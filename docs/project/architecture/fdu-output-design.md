@@ -54,9 +54,9 @@ Keep these columns aligned across directory, file, and remainder rows.
 The age column sits between size and name, as `--long` puts age between size and path.
 It is right-aligned to the widest age cell in its section, with two-space gutters on
 either side, and its width is measured on visible text, so a gray cell pads like a plain
-one. A row’s age is the newest modification among the entries it counts, of any kind,
-never the report root’s own time; [machine output](../../machine-output.md#tree-nodes)
-states the definition.
+one. A row’s age is the newest time, on the report’s one clock (change time unless
+`--time modified`), among the entries it counts, of any kind, never the report root’s
+own time; [machine output](../../machine-output.md#tree-nodes) states the definition.
 A known age is colored by recency, after kash’s file listings, on the same ladder that
 picks its unit: under a minute bold bright red, under an hour bold yellow, under a day
 bold bright green, under a display month bold cyan, under a display year blue, and older

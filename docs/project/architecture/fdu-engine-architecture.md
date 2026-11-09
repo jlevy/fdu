@@ -398,11 +398,12 @@ Opened report budgets charge the subtree-measurement pass as well as selection a
 shaping.
 The default unfiltered tree still reads maintained roll-ups without constructing
 a flat inventory. Its age column reads each row’s newest activity from a maximum the
-index maintains per directory beside the roll-up, so a retained index’s repeated reports
-cost their rows, not a pass: it counts directories and symlinks, which the roll-up’s
-files-only recency leaves out, and in a folded index, which kept only the largest files
-as entries, the times of the files it folded.
-That read serves a complete index with no scan depth, where every subtree is complete.
+index maintains per directory beside the roll-up, on both clocks, so either `--time`
+reads the same path and a retained index’s repeated reports cost their rows, not a pass:
+it counts directories and symlinks, which the roll-up’s files-only recency leaves out,
+and in a folded index, which kept only the largest files as entries, the times of the
+files it folded. That read serves a complete index with no scan depth, where every
+subtree is complete.
 An index that may hold an unlisted subtree takes one pass over the index by entry id
 instead, without paths, which also proves which subtrees are complete.
 A filtered tree folds the same maximum in its selection walk.

@@ -70,8 +70,8 @@ fdu .                                     # directory tree: allocated sizes, lar
 fdu . --view=code,documents               # lines of code and words; reads file contents
 fdu . --view=summary                      # one total for the tree
 fdu . --view=languages                    # which languages occupy space
-fdu . --view=recent --limit=10            # the ten most recently modified files
-fdu . --kind=file --changed-since=24h     # files written in the last day, by folder
+fdu . --view=recent --limit=10            # the ten most recently changed files
+fdu . --kind=file --since=24h             # files written in the last day, by folder
 fdu . --view=ages                         # when the space arrived, in age bands
 fdu . --view=volumes                      # how full the disk is
 fdu . --ignored=exclude                   # leave out entries .gitignore rules match

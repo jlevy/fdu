@@ -138,8 +138,8 @@ $ fdu . --depth=1
 ░░░░░░░░░░     2%     972 KiB        … and 98 more files
 ```
 
-Beside each size is the row’s age: how long ago anything it counts was last modified, a
-file or a directory, here the clone itself a minute earlier.
+Beside each size is the row’s age: how long ago anything it counts last changed, a file
+or a directory, here the clone itself a minute earlier.
 An age reads in seconds, minutes, hours, days, months (`mo`), or years (`y`), and is
 `unknown` where part of a subtree could not be listed.
 
@@ -170,8 +170,8 @@ Only `code` and `documents` read file contents; every other view reads metadata 
 | Languages by space | `fdu . --view=languages` |
 | File families, types, and extensions | `fdu . --view=families,types,extensions` |
 | Twenty largest files | `fdu . --view=largest` |
-| Ten most recently modified working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
-| Where the files written in the last day are | `fdu . --kind=file --changed-since=24h` |
+| Ten most recently changed working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
+| Where the files written in the last day are | `fdu . --kind=file --since=24h` |
 | When the space arrived, in fixed age bands | `fdu . --view=ages` |
 | How full the disk is, beside what the tree holds | `fdu . --view=volumes` |
 | Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
@@ -261,12 +261,14 @@ scan with no saved state shows the files written since a given time, by folder a
 largest first:
 
 ```shell
-fdu ~ --kind=file --changed-since=24h
-fdu ~ --view=largest --changed-since=24h --limit=20
+fdu ~ --kind=file --since=24h
+fdu ~ --view=largest --since=24h --limit=20
 ```
 
-Change time is the newer of modification and status change, so data copied or extracted
-with an older modification time still counts, where `--modified-since` would miss it.
+fdu reads change time by default, the newer of modification and status change, so data
+copied or extracted with an older modification time still counts.
+`--time=modified` reads modification time instead, as `ls -l` shows, for every window,
+sort, and age in the report.
 `--kind=file` matters: without it, a directory with any activity in the window counts at
 its full size. The total is data written, not net growth: a file written in the window
 counts in full, and deleted files do not appear.
@@ -282,15 +284,16 @@ largest first, with its allocated size and the age of its newest change:
 fdu ~/work --kind=dir --include=.venv --include=node_modules --include=target --full --long
 ```
 
-Add `--modified-before=30d` for the ones untouched in a month, or
-`--sort=mtime --reverse` for oldest first; replace `--long` with `--format=paths` for
-paths alone. `--view=summary` gives their combined usage and counts nested matches once;
+Add `--before=30d` for the ones untouched in a month, or `--sort=time --reverse` for
+oldest first; replace `--long` with `--format=paths` for paths alone.
+`--view=summary` gives their combined usage and counts nested matches once;
 `--view=files,summary --format=json` gives exact rows and the total in one report.
 Add `--cache=on` to keep the scan, and a later run with `--stale-ok` answers from it
 without walking again.
 
-A directory’s size counts the regular files below it, and its age is the newest
-modification of the directory or anything in it, which measures activity, not last use.
+A directory’s size counts the regular files below it, and its age is the newest change
+to the directory or anything in it, which measures activity, not last use: one copied in
+yesterday is a day old however old its files are.
 Ignored directories are included, and symlinks are not followed.
 Sizes are per path, not space freed by deletion: hard links and copy-on-write clones, as
 uv environments use, can share storage.

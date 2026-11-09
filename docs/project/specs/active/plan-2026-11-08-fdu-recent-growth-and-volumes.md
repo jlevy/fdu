@@ -321,8 +321,10 @@ condemns when asked what is old.
 
 `--since T` and `--before T` select by the report’s time, with the value grammar and
 half-open interval the `--modified-*` flags had.
-`--sort time` orders rows newest first in every view, trees and grouped rows included,
-since every row carries the same clock its column shows.
+`--sort time` orders rows newest first wherever a row carries a time, trees included,
+since each carries the same clock its column shows: tree, list, files, largest, recent,
+and code rows. Type, extension, family, language, and document rows carry no time, so
+the sort is refused for them rather than falling back to name order.
 `--time` takes `changed` or `modified`.
 
 The index maintains a directory’s newest time on both clocks, for its regular files and
@@ -602,68 +604,81 @@ The design is [one time](#one-time).
 
 **Engine: both clocks, one maintained shape (`fdu-hw1m`).**
 
-- [ ] `TimeBasis` (`Changed`, the default, and `Modified`) and `Times` (`modified`,
+- [x] `TimeBasis` (`Changed`, the default, and `Modified`) and `Times` (`modified`,
   `changed`, nanoseconds) in `engine_contract`, re-exported from `query`.
   `Attrs::times()` times an unobserved status change by modification, and
   `Attrs::change_time_ns` keeps reporting whether one was observed.
-- [ ] `InternedRollUp`’s newest regular file and `InternedPartitionRollUp`’s newest
+- [x] `InternedRollUp`’s newest regular file and `InternedPartitionRollUp`’s newest
   activity become `Times`; `merge`, `recompute_newest_upward`, `raise_activity_upward`,
   the folded scan, the summary fold in `execution.rs`, and every snapshot load maintain
   both. Roll-ups are rebuilt from entry attributes on load, so the snapshot format is
   unchanged.
-- [ ] Public `RollUp` and `RollUpSummary` gain `newest_changed_ns` beside
+- [x] Public `RollUp` and `RollUpSummary` gain `newest_changed_ns` beside
   `newest_mtime_ns`; the index-level API keeps raw clocks, since it answers no request.
-- [ ] The size tests record the larger directory roll-up.
+- [x] The size tests record the larger directory roll-up.
 
 **Query: one window, one basis (`fdu-h3t9`).**
 
-- [ ] `Selection::window` and `Selection::time` replace `modified` and `changed`;
+- [x] `Selection::window` and `Selection::time` replace `modified` and `changed`;
   `ModifiedWindow` goes.
   `Candidate`, `SubtreeValues`, the `ActivityTable`, and the maintained activity carry
   `Times`, and every predicate and row reads the request’s basis.
-- [ ] `SortKey::Time` replaces `Mtime` and `Changed` and is valid in every view, so the
+- [x] `SortKey::Time` replaces `Mtime` and `Changed` and is valid in every view, so the
   tree refusal goes; with no unknown time, `--reverse` reverses it as it does every
   other key.
-- [ ] `recent`, `ages`, the tree, grouped rows, list rows, and the summary read the
+- [x] `recent`, `ages`, the tree, grouped rows, list rows, and the summary read the
   basis. `ages` loses its `unknown` band and its basis note.
-- [ ] The note for files timed by modification replaces the unknown-change-time note:
+- [x] The note for files timed by modification replaces the unknown-change-time note:
   counted where a window or `ages` counted such a file, and only under `changed`.
-- [ ] `ReadSpec::since`, `before`, and `time`; `AxisNames` names them per surface;
+- [x] `ReadSpec::since`, `before`, and `time`; `AxisNames` names them per surface;
   `parse_time_basis`; `parse_sort` takes `time` and no longer `mtime` or `changed`.
 
 **Report schema (`fdu-wtoc`).**
 
-- [ ] Every row and node gives `time_ns`, `time_at`, and `age_ns`; summary and tree rows
+- [x] Every row and node gives `time_ns`, `time_at`, and `age_ns`; summary and tree rows
   give `newest_file_time_ns`; list rows also give raw `mtime_ns` and `changed_ns`.
   `modified_at`, `changed_at`, and a node’s `mtime_ns` and `newest_mtime_ns` go.
-- [ ] The request echo gives `time`, and `Report` carries it for renderers.
-- [ ] The `ages` section drops `basis`; it has nine bands.
-- [ ] The schema stays `fdu.report/12`, which is unreleased.
+- [x] The request echo gives `time`, and `Report` carries it for renderers.
+- [x] The `ages` section drops `basis`; it has nine bands.
+- [x] The schema stays `fdu.report/12`, which is unreleased.
 
 **Surfaces (`fdu-0ace`).**
 
-- [ ] Command line: `--since`, `--before`, `--time changed|modified`, `--sort time`.
-- [ ] Python: `Selection(since=, before=, time=)`, `TimeBasis`, `SortKey.TIME`, model
+- [x] Command line: `--since`, `--before`, `--time changed|modified`, `--sort time`.
+- [x] Python: `Selection(since=, before=, time=)`, `TimeBasis`, `SortKey.TIME`, model
   fields renamed with the schema, and `RollUp.newest_changed_ns`.
 
 **Docs (`fdu-khwo`).**
 
-- [ ] The skill, `--help`, `--docs`, both READMEs, `docs/usage.md`,
+- [x] The skill, `--help`, `--docs`, both READMEs, `docs/usage.md`,
   `docs/machine-output.md`, the architecture docs that name the age column or the old
   flags, and the CHANGELOG, which states every rename and the age column’s new default.
 
 **Tests (`fdu-xff5`).**
 
-- [ ] Goldens move to `--since`, `--before`, and `--sort time`. A session over a
+- [x] Goldens move to `--since`, `--before`, and `--sort time`. A session over a
   backdated fixture passes `--time modified`, since `touch -d` cannot backdate a change
   time.
-- [ ] Engine tests: both clocks in maintained and walked roll-ups agree; the fallback
+- [x] Engine tests: both clocks in maintained and walked roll-ups agree; the fallback
   timing and its note; `--sort time` over trees and grouped rows; `--time modified`
   reproduces the released modification-time answers.
-- [ ] Path independence compares a change-time answer by each row’s age residual and
+- [x] Path independence compares a change-time answer by each row’s age residual and
   masks the clocks a fixture copy cannot carry, and adds `--time modified` requests that
   compare exactly.
-- [ ] Parity re-recorded; the `--time` and window flags are surface-label deviations.
+- [x] Parity re-recorded; the `--time` and window flags are surface-label deviations.
+
+Decided in implementation:
+
+- `--sort time` is refused for type, extension, family, language, and document rows,
+  which carry no time, rather than silently keeping name order there; tree, list, and
+  code rows sort by it.
+- `ages` is refused for a request whose instant cannot be represented, where no age can
+  be measured, rather than keeping an `unknown` band for that case alone.
+- A list row's raw `changed_ns` is null for a file whose status change was not observed,
+  though its time on the change clock is its modification time, so the substitution is
+  visible per row as well as in the note.
+- `FileRow` stays at 192 bytes: `times` and a crate-private `status_observed` flag
+  replace `mtime_ns` and `changed_ns`.
 
 ## Testing Strategy
 

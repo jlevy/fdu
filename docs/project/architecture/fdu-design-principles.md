@@ -512,7 +512,7 @@ directory, which may contain millions of entries, was meant to be scanned.
 The concrete test for “no more complexity”: before adding a view or a flag, show it
 cannot be expressed as a composition of what exists.
 `largest` and `recent` pass that test only as named presets over `files`
-(`files --sort size --limit 20` and `files --sort mtime --limit 20`, restricted to
+(`files --sort size --limit 20` and `files --sort time --limit 20`, restricted to
 regular files), never as separate machinery.
 
 ### Six Axes, No One-Off Flags
@@ -523,7 +523,7 @@ Every option belongs to exactly one axis:
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH...`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read beyond what the views imply, and which metrics are measured? | `--analyze` |
-| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
+| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--since`, `--before`, `--time`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color`, `--progress` |
 | Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--workers`, `--allow-partial` |
@@ -753,7 +753,8 @@ Each of these must be one invocation:
 | `du -a --max-depth 3` | `fdu --depth 3 -n all PATH` |
 | `fd -e rs`, `find -name` | `fdu --view files --include '*.rs' PATH` |
 | biggest files | `fdu --view files --sort size -n 100 PATH` |
-| `find -mmin -60` | `fdu --view files --kind file --modified-since 1h PATH` |
+| `find -cmin -60` | `fdu --view files --kind file --since 1h PATH` |
+| `find -mmin -60` | `fdu --view files --kind file --since 1h --time modified PATH` |
 | `du` by type | `fdu --view types PATH` |
 | two reports, one scan | `fdu --view types,tree PATH` |
 | `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` |
@@ -833,8 +834,8 @@ notes, tips, and warnings written beside it, and the exact activity of every row
 age the format shows.
 So an idle tree repaints nothing while its ages roll over; a touch repaints a tree,
 whose rows show activity, even when the age it shows stays in the same unit, and
-repaints no text summary, which shows only sizes, while machine output that carries the
-modification time repaints; and a change of status or freshness, or a new note, repaints
+repaints no text summary, which shows only sizes, while machine output carrying each
+row’s exact time repaints; and a change of status or freshness, or a new note, repaints
 on every format. Overflow and subtree invalidation appear explicitly in the stream and
 are never dropped, because they say the consumer’s own view may have gaps; change
 records are never deduplicated, only repaints.
