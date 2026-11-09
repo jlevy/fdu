@@ -209,6 +209,30 @@ fn write_activity(
     identity.write_all(&record)
 }
 
+/// Take when each volumes section's capacity was observed out of `report`, for a repaint's
+/// identity: it is a generation instant, like the one the identity already pins, so a
+/// repaint follows what the filesystems hold and have free, never the clock alone.
+fn take_observation_instants(report: &mut Report) -> Vec<Option<i64>> {
+    report
+        .sections
+        .iter_mut()
+        .filter_map(|section| match section {
+            crate::query::Section::Volumes(volumes) => Some(volumes.observed_at_ns.take()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Put back what [`take_observation_instants`] took, in the same sections.
+fn restore_observation_instants(report: &mut Report, instants: Vec<Option<i64>>) {
+    let mut instants = instants.into_iter();
+    for section in &mut report.sections {
+        if let crate::query::Section::Volumes(volumes) = section {
+            volumes.observed_at_ns = instants.next().flatten();
+        }
+    }
+}
+
 fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
     pending && since_last_save >= interval
 }
@@ -502,8 +526,8 @@ impl Session {
     pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
         let request = self.request_at(generated_at);
-        // Each repaint observes capacity anew when it shows `volumes`: free space is the
-        // one fact here that moves without the tree.
+        // Each answer observes capacity anew when it shows `volumes`. A watch answers when
+        // its tree changes, so free space is read then, not as it moves.
         let capacity = crate::query::observe_volumes(&[&index], &request);
         crate::query::report_with_capacity(&index, &request, generated_at, capacity.as_ref())
     }
@@ -560,16 +584,7 @@ impl Session {
         let mut report = self.report(generated_at)?;
         let pinned = std::time::SystemTime::UNIX_EPOCH;
         let stamped = std::mem::replace(&mut report.provenance.generated_at, pinned);
-        // When capacity was observed is a generation instant too: a repaint follows what
-        // the filesystems hold and have free, never the clock alone.
-        let observed: Vec<Option<i64>> = report
-            .sections
-            .iter_mut()
-            .filter_map(|section| match section {
-                crate::query::Section::Volumes(volumes) => Some(volumes.observed_at_ns.take()),
-                _ => None,
-            })
-            .collect();
+        let observed = take_observation_instants(&mut report);
         let measured_from = report.age_reference_ns;
         report.measure_ages_from(crate::query::system_time_to_nanos(self.request.now));
         let mut identity = RepaintDigest::new();
@@ -593,12 +608,7 @@ impl Session {
                 });
         report.measure_ages_from(measured_from);
         report.provenance.generated_at = stamped;
-        let mut observed = observed.into_iter();
-        for section in &mut report.sections {
-            if let crate::query::Section::Volumes(volumes) = section {
-                volumes.observed_at_ns = observed.next().flatten();
-            }
-        }
+        restore_observation_instants(&mut report, observed);
         rendered.map_err(|error| Error::io(&self.request.basis.root, error))?;
         let identity = identity.finish();
         if self.presented == Some(identity) {
@@ -1956,6 +1966,69 @@ mod tests {
         );
         assert!(at(&mut session, later).is_some(), "a change in activity repaints");
         assert!(at(&mut session, later).is_none(), "and only once");
+    }
+
+    /// An age band is measured from each repaint's own instant, but its edges as instants
+    /// are not part of the repaint's identity: an idle watch repaints when a file crosses
+    /// into an older band, not merely because the clock moved (review D4 on #209).
+    #[test]
+    fn an_age_band_repaints_when_a_file_crosses_an_edge_and_not_before() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("a.txt"), b"alpha").expect("a");
+        // A change time cannot be set, so the session starts now, beside the file's.
+        let built = std::time::SystemTime::now() + Duration::from_secs(1);
+        let query = Query { views: vec![crate::query::ViewSpec::Ages], ..Query::default() };
+        let (mut session, _sender) =
+            scripted_session_built(root.path(), query, ScanConfig::default(), built);
+        let at = |session: &mut Session, instant| {
+            session.changed_report(instant, Format::Json, RenderOptions::default()).expect("report")
+        };
+        assert!(at(&mut session, built).is_some(), "the first answer is always given");
+        assert!(
+            at(&mut session, built + Duration::from_secs(60)).is_none(),
+            "every band edge moved a minute, and the file is still under an hour old"
+        );
+        let crossed = at(&mut session, built + Duration::from_secs(2 * 3_600))
+            .expect("the file crossed into 1h to 1d");
+        let crate::query::Section::Ages(profile) = &crossed.sections[0] else { panic!("ages") };
+        let held: Vec<_> = profile
+            .bands
+            .iter()
+            .filter(|band| band.tally.files > 0)
+            .map(|band| band.band)
+            .collect();
+        assert_eq!(held, ["1h to 1d"]);
+    }
+
+    /// When capacity was observed is left out of a repaint's identity and put back on the
+    /// answer, so free space, not the instant it was read, decides a repaint.
+    #[test]
+    fn a_capacity_observation_instant_is_pinned_for_the_identity_and_restored() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("a.txt"), b"alpha").expect("a");
+        let query = Query {
+            views: vec![crate::query::ViewSpec::Summary, crate::query::ViewSpec::Volumes],
+            ..Query::default()
+        };
+        let (session, _sender) = scripted_session_built(
+            root.path(),
+            query,
+            ScanConfig::default(),
+            std::time::SystemTime::now(),
+        );
+        let mut report = session.report(std::time::SystemTime::now()).expect("report");
+        let observed = |report: &Report| match &report.sections[1] {
+            crate::query::Section::Volumes(volumes) => volumes.observed_at_ns,
+            other => panic!("expected volumes, got {other:?}"),
+        };
+        let when = observed(&report);
+        assert!(when.is_some(), "a watch's repaint observes capacity");
+        let taken = take_observation_instants(&mut report);
+        assert_eq!((taken.clone(), observed(&report)), (vec![when], None));
+        restore_observation_instants(&mut report, taken);
+        assert_eq!(observed(&report), when);
     }
 
     /// The repaint digest is FNV-1a at 128 bits, and a section boundary is part of what

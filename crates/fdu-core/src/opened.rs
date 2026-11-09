@@ -5196,6 +5196,46 @@ mod tests {
         opened.close().expect("close");
     }
 
+    /// An opened root is a serving route: a report projection that names `volumes`
+    /// observes the filesystem its root is on before it reads (review D4 on #209).
+    #[test]
+    fn an_opened_report_naming_volumes_observes_capacity() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        apply_and_notify(
+            &opened,
+            &Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("a.bin"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 300, allocated: 512, ..crate::Attrs::default() },
+            }]),
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
+                    query: crate::query::Query {
+                        views: vec![crate::query::ViewSpec::Volumes],
+                        ..crate::query::Query::default()
+                    },
+                    now: std::time::SystemTime::now(),
+                    max_work: crate::MAX_PAGE_WORK,
+                })],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        let crate::ProjectionResult::Report(report) = &response.results[0] else {
+            panic!("expected a report, got {:?}", response.results[0]);
+        };
+        let crate::query::Section::Volumes(volumes) = &report.sections[0] else {
+            panic!("expected volumes")
+        };
+        assert!(volumes.observed_at_ns.is_some(), "capacity was observed");
+        assert_eq!(volumes.rows.len(), 1);
+        let row = &volumes.rows[0];
+        assert!(row.capacity.as_ref().is_some_and(|capacity| capacity.capacity_bytes > 0));
+        assert_eq!(row.counted.files, 1);
+        opened.close().expect("close");
+    }
+
     #[test]
     fn a_coherent_read_cannot_straddle_a_commit() {
         let (_root, opened) = opened(Arc::new(TestControls::default()));
