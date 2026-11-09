@@ -296,6 +296,7 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
                         "allocated": 1,
                         "mtime_ns": 0,
                         "sort_value": None,
+                        "changed_ns": None,
                         "classification": None,
                         "ignored": None,
                     }
@@ -327,6 +328,7 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
                         "allocated": 1,
                         "mtime_ns": 0,
                         "sort_value": None,
+                        "changed_ns": None,
                         "classification": None,
                         "ignored": False,
                     }
@@ -446,6 +448,7 @@ def test_a_report_over_several_roots_decodes_its_roots_total_and_trees() -> None
                 "modified_at": None,
                 "ignored": False,
                 "sort_value": None,
+                "changed_ns": None,
                 "classification": None,
             }
         ],
@@ -650,6 +653,8 @@ def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
         },
         "ignore_rules": None,
         "analysis": None,
+        "selected": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+        "scanned": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
         "reports": sections,
     }
 
@@ -774,6 +779,7 @@ def test_directory_age_extremes_preserve_exact_signed_integers(positive: bool) -
                         "allocated": 0,
                         "mtime_ns": modified,
                         "sort_value": None,
+                        "changed_ns": None,
                         "classification": None,
                         "age_ns": age,
                         "ignored": None,
@@ -860,6 +866,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
                             "allocated": 0,
                             "mtime_ns": 0,
                             "sort_value": None,
+                            "changed_ns": None,
                             "classification": None,
                             "ignored": True,
                         },
@@ -870,6 +877,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
                             "allocated": 0,
                             "mtime_ns": 0,
                             "sort_value": None,
+                            "changed_ns": None,
                             "classification": None,
                             "ignored": None,
                         },
@@ -1121,3 +1129,36 @@ def test_a_volumes_section_decodes_capacity_and_what_the_report_counted() -> Non
     assert (known.capacity_bytes, known.available_bytes, known.shares_pool) == (1000, 250, True)
     assert known.counted.files == 3 and known.root is None
     assert (missing.capacity_bytes, missing.unknown_reason) == (None, "capacity was not observed")
+    # What a report counted is always known, even where capacity is not.
+    with pytest.raises(TypeError, match="counted tally"):
+        report_from_dict(_envelope([{**section, "volumes": [{**row, "counted": None}]}]))
+
+
+def test_fields_every_report_carries_are_required_rather_than_defaulted() -> None:
+    # A missing field is a wire from another schema, not an unknown value: decoding it as
+    # `None` would read an old report's rows as change times never observed.
+    wire = _envelope([])
+    for field in ("selected", "scanned"):
+        with pytest.raises(KeyError, match=field):
+            report_from_dict({key: value for key, value in wire.items() if key != field})
+    row = {
+        "path": "a",
+        "kind": "file",
+        "bytes": 1,
+        "allocated": 1,
+        "mtime_ns": 0,
+        "files": None,
+        "dirs": None,
+        "complete": None,
+        "age_ns": 0,
+        "ignored": None,
+        "sort_value": None,
+        "classification": None,
+    }
+    section = {"view": "files", "files": [row]}
+    with pytest.raises(KeyError, match="changed_ns"):
+        report_from_dict(_envelope([section]))
+    files = report_from_dict(_envelope([{**section, "files": [{**row, "changed_ns": None}]}]))
+    listed = files.sections[0]
+    assert isinstance(listed, fdu.FilesSection)
+    assert listed.files[0].changed_ns is None

@@ -1804,7 +1804,7 @@ def _volumes_section(view: View, raw: dict[str, Any]) -> VolumesSection:
                 available_bytes=_optional_int(row["available_bytes"]),
                 shares_pool=_optional_bool(row["shares_pool"]),
                 unknown_reason=_optional_str(row["unknown_reason"]),
-                counted=cast(ExtensionTally, _ignored_files(row["counted"])),
+                counted=_volume_counted(row["counted"]),
                 root=_root_position(row),
             )
             for row in cast(list[dict[str, Any]], rows)
@@ -1849,6 +1849,13 @@ def _ages_section(view: View, raw: dict[str, Any]) -> AgesSection:
         ),
         total=_age_tally(raw["total"]),
     )
+
+
+def _volume_counted(value: object) -> ExtensionTally:
+    """Decode what a report counted on one filesystem, which every volume row carries."""
+    if not isinstance(value, dict):
+        raise TypeError("a volume row's counted tally must be an object")
+    return cast(ExtensionTally, _ignored_files(value))
 
 
 def _ignored_files(value: object) -> ExtensionTally | None:
@@ -2132,11 +2139,9 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             sort_value=_optional_int(row["sort_value"]),
                             classification=_file_classification(row["classification"]),
                             root=_root_position(row),
-                            changed_ns=(
-                                _optional_int(row["changed_ns"]) if "changed_ns" in row else None
-                            ),
+                            changed_ns=_optional_int(row["changed_ns"]),
                             changed_at=_row_instant(
-                                _optional_int(row["changed_ns"]) if "changed_ns" in row else None,
+                                _optional_int(row["changed_ns"]),
                                 _optional_bool(row["complete"]) if "complete" in row else None,
                             ),
                         )
@@ -2248,15 +2253,13 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         analysis=analysis,
         sections=tuple(sections),
         _wire=cast(dict[str, JsonValue], wire),
-        selected=_entry_totals(wire.get("selected")),
-        scanned=_entry_totals(wire.get("scanned")),
+        selected=_entry_totals(wire["selected"]),
+        scanned=_entry_totals(wire["scanned"]),
     )
 
 
-def _entry_totals(value: Any) -> EntryTotals | None:
-    """Decode a report's ``selected`` or ``scanned`` tally."""
-    if value is None:
-        return None
+def _entry_totals(value: Any) -> EntryTotals:
+    """Decode a report's ``selected`` or ``scanned`` tally, which every report carries."""
     if not isinstance(value, dict):
         raise TypeError("a report's selected and scanned tallies must be objects")
     raw = cast(dict[str, Any], value)
