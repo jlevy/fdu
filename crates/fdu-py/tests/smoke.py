@@ -439,7 +439,7 @@ def main() -> None:
     # Value grammars are shared, so a bad value is rejected the same way everywhere.
     for bad in [
         {"min_size": "10X"},
-        {"modified_since": "1.5h"},
+        {"since": "1.5h"},
         {"views": ["bogus"]},
         {"views": ["documents"]},
         {"sort": "sideways"},

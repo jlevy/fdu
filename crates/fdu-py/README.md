@@ -268,8 +268,8 @@ for name in (".venv", "venv", "node_modules", "target"):
             selection=fdu.Selection(
                 kinds=(fdu.EntryKind.DIR,),
                 include=(name,),
-                modified_before="30d",
-                sort=fdu.SortKey.MTIME,
+                before="30d",
+                sort=fdu.SortKey.TIME,
                 reverse=True,
             ),
         )
@@ -281,30 +281,37 @@ for name in (".venv", "venv", "node_modules", "target"):
 All four reads use one retained index without rescanning.
 `View.LIST` is the metadata default.
 `Format.TREE` explicitly requests the current tree; `PATHS` lists matching paths, `LONG`
-adds size and signed modification age, and JSON/JSONL/YAML carry exact metrics.
+adds size and signed age, and JSON/JSONL/YAML carry exact metrics.
 `TEXT` selects automatic human presentation.
 The `View.FILES` preset uses flat name ordering, and `View.TREE` presents structured
 directory output. Largest/recent remain regular-file presets, with optional Paths/Long
 output.
 
+Every time a report reads is on one clock, `Selection.time`: `TimeBasis.CHANGED` by
+default, the newer of modification and status change, so a copy or an extracted archive
+that kept an older modification time is still new, or `TimeBasis.MODIFIED`, content age
+as `ls -l` shows. The `since`/`before` window, `SortKey.TIME`, every age, `recent`, and
+`ages` read it, and `Report.request.time` names it.
+
 Directory `FileRow` values carry subtree `bytes`, `allocated`, `files`, `dirs`,
-`complete`, `mtime_ns`, `age_ns`, and `modified_at`; non-directory counts are `None`. A
+`complete`, `time_ns`, `age_ns`, and `time_at`; non-directory counts are `None`. A
 directory whose subtree was not listed in full has `complete=False`, lower-bound sizes,
-`age_ns=None`, and `modified_at=None`. Each `TreeNode` carries the same `mtime_ns`,
-`complete` (`None` for a file), `age_ns`, and `modified_at`: the newest modification
-among the entries the row counts, of any kind, never the report root’s own time, and
-`None` when it counts nothing.
-Its `newest_mtime_ns` keeps the newest regular file alone.
+`age_ns=None`, and `time_at=None`. Every `FileRow` also carries both raw clocks,
+`mtime_ns` and `changed_ns`, so an arrival carrying old content is a row with a recent
+`changed_ns` and an old `mtime_ns`. Each `TreeNode` carries the same `time_ns`,
+`complete` (`None` for a file), `age_ns`, and `time_at`: the newest time among the
+entries the row counts, of any kind, never the report root’s own time, and `None` when
+it counts nothing. Its `newest_file_time_ns` keeps the newest regular file alone.
 `Report.age_reference_ns` is the instant every age is measured from, including negative
 future ages and pre-epoch mtime, and `Report.age_reference_at` is that instant as a
 `datetime`. A `Watch.report()` measures from the instant it is called; the windows its
 query selects by stay as the query resolved them.
-`modified_at` and `age_reference_at` are timezone-aware UTC `datetime` values derived
-from the exact nanoseconds, floored to the microsecond.
+`time_at` and `age_reference_at` are timezone-aware UTC `datetime` values derived from
+the exact nanoseconds, floored to the microsecond.
 An unrepresentable reference yields `None` age.
 Exclusions win throughout the subtree; nested roots may overlap, while grouped totals
 count their union once.
-Age describes modification, not access or last use.
+Age describes change, not access or last use.
 Native entry/lookup projections retain inode attributes; these report rows deliberately
 carry subtree metrics instead.
 

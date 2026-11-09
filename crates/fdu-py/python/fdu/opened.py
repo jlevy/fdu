@@ -430,7 +430,11 @@ class RollUpSummary:
     dirs: int
     bytes: int
     allocated: int
+    #: The newest descendant file's modification time, or ``None`` with none.
     newest_mtime_ns: int | None
+    #: The newest descendant file's change time, the newer of modification and status
+    #: change, or ``None`` with none.
+    newest_changed_ns: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -956,6 +960,9 @@ def _rollup(value: object) -> RollUpSummary:
         allocated=int(raw["allocated"]),
         newest_mtime_ns=(
             int(raw["newest_mtime_ns"]) if raw["newest_mtime_ns"] is not None else None
+        ),
+        newest_changed_ns=(
+            int(raw["newest_changed_ns"]) if raw["newest_changed_ns"] is not None else None
         ),
     )
 

@@ -963,7 +963,7 @@ def main() -> None:
     recent = index.report(
         fdu.Query(
             views=(fdu.View.FILES,),
-            selection=fdu.Selection(modified_since=datetime.now() - timedelta(hours=1)),
+            selection=fdu.Selection(since=datetime.now() - timedelta(hours=1)),
         )
     )
     recent_files = recent.sections[0]

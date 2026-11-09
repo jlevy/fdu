@@ -262,14 +262,14 @@ def test_bare_strings_are_rejected_for_sequence_fields() -> None:
 def test_naive_datetimes_gain_an_explicit_local_offset() -> None:
     naive = datetime(2026, 8, 1, 12, 30)
     aware = datetime(2026, 8, 1, 12, 30, tzinfo=UTC)
-    kwargs = _query_kwargs(Query(selection=Selection(modified_since=naive, modified_before=aware)))
-    since = datetime.fromisoformat(str(kwargs["modified_since"]))
+    kwargs = _query_kwargs(Query(selection=Selection(since=naive, before=aware)))
+    since = datetime.fromisoformat(str(kwargs["since"]))
     assert since.tzinfo is not None
     assert since == naive.astimezone()
-    assert kwargs["modified_before"] == "2026-08-01T12:30:00+00:00"
-    changed = _query_kwargs(Query(selection=Selection(changed_since=naive, changed_before=aware)))
-    assert datetime.fromisoformat(str(changed["changed_since"])) == naive.astimezone()
-    assert changed["changed_before"] == "2026-08-01T12:30:00+00:00"
+    assert kwargs["before"] == "2026-08-01T12:30:00+00:00"
+    assert kwargs["time"] is None, "the library's default clock unless one is named"
+    modified = _query_kwargs(Query(selection=Selection(time=fdu.TimeBasis.MODIFIED)))
+    assert modified["time"] == "modified"
 
 
 def test_malformed_wire_reports_fail_loudly() -> None:
@@ -294,6 +294,7 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
                         "kind": "file",
                         "bytes": 1,
                         "allocated": 1,
+                        "time_ns": 0,
                         "mtime_ns": 0,
                         "sort_value": None,
                         "changed_ns": None,
@@ -326,6 +327,7 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
                         "kind": "file",
                         "bytes": 1,
                         "allocated": 1,
+                        "time_ns": 0,
                         "mtime_ns": 0,
                         "sort_value": None,
                         "changed_ns": None,
@@ -407,11 +409,11 @@ def test_a_report_over_several_roots_decodes_its_roots_total_and_trees() -> None
         "files": 2,
         "dirs": 0,
         "ignored": None,
-        "newest_mtime_ns": 5,
-        "mtime_ns": 7,
+        "newest_file_time_ns": 5,
+        "time_ns": 7,
         "complete": True,
         "age_ns": 3,
-        "modified_at": None,
+        "time_at": None,
         "truncated": False,
         "omissions": [],
         "children": [],
@@ -423,11 +425,11 @@ def test_a_report_over_several_roots_decodes_its_roots_total_and_trees() -> None
         "files": 3,
         "dirs": 0,
         "ignored": None,
-        "newest_mtime_ns": 5,
-        "mtime_ns": 7,
+        "newest_file_time_ns": 5,
+        "time_ns": 7,
         "complete": True,
         "age_ns": 3,
-        "modified_at": "1970-01-01T00:00:00.000000007Z",
+        "time_at": "1970-01-01T00:00:00.000000007Z",
     }
     tree["trees"] = [{"root": 1, "tree": node, "remainder": None}]
     files = {
@@ -440,12 +442,13 @@ def test_a_report_over_several_roots_decodes_its_roots_total_and_trees() -> None
                 "kind": "file",
                 "bytes": 30,
                 "allocated": 4096,
+                "time_ns": 7,
                 "mtime_ns": 7,
                 "files": None,
                 "dirs": None,
                 "complete": None,
                 "age_ns": 3,
-                "modified_at": None,
+                "time_at": None,
                 "ignored": False,
                 "sort_value": None,
                 "changed_ns": None,
@@ -475,7 +478,7 @@ def test_a_report_over_several_roots_decodes_its_roots_total_and_trees() -> None
     assert isinstance(section, TreeSection)
     assert section.tree is None
     assert section.total is not None and section.total.files == 3 and section.total.complete
-    assert section.total.modified_at == datetime(1970, 1, 1, tzinfo=UTC)
+    assert section.total.time_at == datetime(1970, 1, 1, tzinfo=UTC)
     assert [(tree.root, tree.tree.name) for tree in section.trees] == [(1, "src")]
     files = report.sections[1]
     assert isinstance(files, fdu.FilesSection)
@@ -500,11 +503,11 @@ def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
         "files": 0,
         "dirs": 0,
         "ignored": None,
-        "newest_mtime_ns": None,
-        "mtime_ns": None,
+        "newest_file_time_ns": None,
+        "time_ns": None,
         "complete": True,
         "age_ns": None,
-        "modified_at": None,
+        "time_at": None,
         "truncated": False,
         "omissions": [],
         "children": [],
@@ -540,11 +543,11 @@ def test_native_json_fallback_parses_a_deep_rendered_report_end_to_end() -> None
         "files": 0,
         "dirs": 0,
         "ignored": None,
-        "newest_mtime_ns": None,
-        "mtime_ns": None,
+        "newest_file_time_ns": None,
+        "time_ns": None,
         "complete": True,
         "age_ns": None,
-        "modified_at": None,
+        "time_at": None,
         "truncated": False,
         "omissions": [],
         "children": [],
@@ -628,6 +631,7 @@ def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
             },
             "analyze": [],
             "size": "allocated",
+            "time": "changed",
             "views": [str(section["view"]) for section in sections],
             "omitted_views": [],
         },
@@ -659,8 +663,8 @@ def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
-def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
-    """``modified_at`` comes from ``mtime_ns``, floored to the microsecond toward the past,
+def test_time_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
+    """``time_at`` comes from ``time_ns``, floored to the microsecond toward the past,
     and is absent wherever the time is only a lower bound or the row counts nothing."""
 
     def node(name: str, mtime_ns: int | None, complete: bool | None) -> dict[str, object]:
@@ -674,12 +678,12 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
             "files": 0,
             "dirs": 0,
             "ignored": None,
-            "newest_mtime_ns": None,
-            "mtime_ns": mtime_ns,
+            "newest_file_time_ns": None,
+            "time_ns": mtime_ns,
             "complete": complete,
             "age_ns": None,
             # Deliberately not what the value is derived from.
-            "modified_at": "not consulted",
+            "time_at": "not consulted",
             "truncated": False,
             "omissions": [],
             "children": [],
@@ -698,10 +702,10 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
     section = report.sections[0]
     assert isinstance(section, TreeSection) and section.tree is not None
     rows = {child.name: child for child in section.tree.children}
-    assert rows["before"].modified_at == datetime(1969, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)
-    assert rows["partial"].modified_at is None and rows["partial"].mtime_ns == 5_000
-    assert rows["empty"].modified_at is None and rows["empty"].complete is True
-    stamp = rows["after"].modified_at
+    assert rows["before"].time_at == datetime(1969, 12, 31, 23, 59, 59, 999999, tzinfo=UTC)
+    assert rows["partial"].time_at is None and rows["partial"].time_ns == 5_000
+    assert rows["empty"].time_at is None and rows["empty"].complete is True
+    stamp = rows["after"].time_at
     assert stamp == datetime(2026, 8, 10, 18, 22, 31, 123456, tzinfo=UTC)
     assert stamp is not None and stamp.utcoffset() is not None
     assert rows["after"].complete is None
@@ -718,14 +722,14 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
                             "kind": "dir",
                             "bytes": 0,
                             "allocated": 0,
+                            "time_ns": 4_000,
                             "mtime_ns": 1_000,
                             "files": 0,
                             "dirs": 0,
                             "complete": False,
                             "age_ns": None,
-                            "modified_at": None,
+                            "time_at": None,
                             "changed_ns": 4_000,
-                            "changed_at": "not consulted",
                             "ignored": None,
                             "sort_value": None,
                             "classification": None,
@@ -735,14 +739,14 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
                             "kind": "file",
                             "bytes": 0,
                             "allocated": 0,
+                            "time_ns": 7_999,
                             "mtime_ns": 2_999,
                             "files": None,
                             "dirs": None,
                             "complete": None,
                             "age_ns": 1,
-                            "modified_at": "1970-01-01T00:00:00.000002999Z",
+                            "time_at": "not consulted",
                             "changed_ns": 7_999,
-                            "changed_at": "not consulted",
                             "ignored": None,
                             "sort_value": None,
                             "classification": None,
@@ -753,12 +757,12 @@ def test_modified_at_is_a_utc_datetime_derived_from_the_exact_time() -> None:
         )
     ).sections[0]
     assert isinstance(files, FilesSection)
-    assert files.files[0].modified_at is None
-    assert files.files[1].modified_at == datetime(1970, 1, 1, 0, 0, 0, 2, tzinfo=UTC)
-    # Change time follows the same rule: exact on the row, and no instant for a lower bound.
-    assert files.files[0].changed_ns == 4_000 and files.files[0].changed_at is None
-    assert files.files[1].changed_ns == 7_999
-    assert files.files[1].changed_at == datetime(1970, 1, 1, 0, 0, 0, 7, tzinfo=UTC)
+    assert files.files[0].time_at is None
+    assert files.files[1].time_at == datetime(1970, 1, 1, 0, 0, 0, 7, tzinfo=UTC)
+    # Both raw clocks ride on every row whatever the report's, exact even where the row's
+    # time is only a lower bound.
+    assert (files.files[0].mtime_ns, files.files[0].changed_ns) == (1_000, 4_000)
+    assert (files.files[1].mtime_ns, files.files[1].changed_ns) == (2_999, 7_999)
 
 
 @pytest.mark.parametrize("positive", [True, False])
@@ -777,6 +781,7 @@ def test_directory_age_extremes_preserve_exact_signed_integers(positive: bool) -
                         "kind": "file",
                         "bytes": 0,
                         "allocated": 0,
+                        "time_ns": modified,
                         "mtime_ns": modified,
                         "sort_value": None,
                         "changed_ns": None,
@@ -810,11 +815,11 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
         "files": 1,
         "dirs": 0,
         "ignored": {**share, "dirs": 0},
-        "newest_mtime_ns": 1,
-        "mtime_ns": 1,
+        "newest_file_time_ns": 1,
+        "time_ns": 1,
         "complete": True,
         "age_ns": 9,
-        "modified_at": "1970-01-01T00:00:00.000000001Z",
+        "time_at": "1970-01-01T00:00:00.000000001Z",
         "truncated": False,
         "omissions": [],
         "children": [],
@@ -832,7 +837,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
     report = report_from_dict(
         _envelope(
             [
-                {"view": "summary", "summary": {**summary, "newest_mtime_ns": 2}},
+                {"view": "summary", "summary": {**summary, "newest_file_time_ns": 2}},
                 _tree_section(root),
                 {
                     "view": "extensions",
@@ -864,6 +869,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
                             "kind": "dir",
                             "bytes": 0,
                             "allocated": 0,
+                            "time_ns": 0,
                             "mtime_ns": 0,
                             "sort_value": None,
                             "changed_ns": None,
@@ -875,6 +881,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
                             "kind": "dir",
                             "bytes": 0,
                             "allocated": 0,
+                            "time_ns": 0,
                             "mtime_ns": 0,
                             "sort_value": None,
                             "changed_ns": None,
@@ -903,7 +910,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
     assert isinstance(files_section, FilesSection)
     assert [row.ignored for row in files_section.files] == [True, None]
 
-    malformed = {**summary, "newest_mtime_ns": 2, "ignored": 1}
+    malformed = {**summary, "newest_file_time_ns": 2, "ignored": 1}
     with pytest.raises(TypeError, match="ignored"):
         report_from_dict(_envelope([{"view": "summary", "summary": malformed}]))
 
@@ -1076,23 +1083,28 @@ def test_an_ages_section_decodes_every_band_with_its_window_and_cumulative_tally
             "since_at": "not consulted",
             "before_at": "not consulted",
             **tally,
-            "cumulative": None if name == "unknown" else tally,
+            "cumulative": tally,
         }
 
     section = {
         "view": "ages",
-        "basis": "changed",
-        "bands": [band("future", 0, None, 1), band("unknown", None, None, 2)],
+        "bands": [band("future", 0, None, 1), band("over 3y", None, 94_672_800_000_000_000, 2)],
         "total": {"files": 3, "bytes": 30, "allocated": 1536, "ignored": None},
     }
-    ages = report_from_dict(_envelope([section])).sections[0]
+    wire = _envelope([section])
+    report = report_from_dict(wire)
+    ages = report.sections[0]
     assert isinstance(ages, fdu.AgesSection)
-    assert (ages.view, ages.basis, ages.total.files) == (fdu.View.AGES, "changed", 3)
-    future, unknown = ages.bands
+    assert (ages.view, ages.total.files) == (fdu.View.AGES, 3)
+    # The clock is the request's, named once for the whole report.
+    assert report.request.time is fdu.TimeBasis.CHANGED
+    future, oldest = ages.bands
     assert (future.band, future.since_age_ns, future.before_age_ns) == ("future", 0, None)
     assert future.since_at == datetime(1970, 1, 1, 0, 0, 0, 1000, tzinfo=UTC)
     assert future.cumulative == future.tally
-    assert (unknown.cumulative, unknown.since_at) == (None, None)
+    assert (oldest.since_age_ns, oldest.since_at) == (None, None)
+    modified = {**wire, "request": {**wire["request"], "time": "modified"}}  # type: ignore[dict-item]
+    assert report_from_dict(modified).request.time is fdu.TimeBasis.MODIFIED
 
 
 def test_a_volumes_section_decodes_capacity_and_what_the_report_counted() -> None:
@@ -1146,6 +1158,7 @@ def test_fields_every_report_carries_are_required_rather_than_defaulted() -> Non
         "kind": "file",
         "bytes": 1,
         "allocated": 1,
+        "time_ns": 0,
         "mtime_ns": 0,
         "files": None,
         "dirs": None,

@@ -180,10 +180,9 @@ class SortKey(StrEnum):
 
     SIZE = "size"
     COUNT = "count"
-    MTIME = "mtime"
-    #: Change time: the newer of modification and status change. Flat row views only,
-    #: and an entry whose change time is unknown sorts last in either direction.
-    CHANGED = "changed"
+    #: Newest first, on the clock :attr:`Selection.time` names; refused for types,
+    #: extensions, families, languages, and documents, whose rows carry no time.
+    TIME = "time"
     NAME = "name"
 
     PHYSICAL_LINES = "physical_lines"
@@ -479,6 +478,22 @@ class AnalysisOptions:
             raise ValueError("workers must be non-negative")
 
 
+class TimeBasis(StrEnum):
+    """Which clock a report reads every time from.
+
+    One report reads one clock everywhere: its ``since``/``before`` window, ``SortKey.TIME``,
+    the tree's ages, ``recent``, ``ages``, and every row's ``age_ns``.
+    """
+
+    #: When the entry last changed in any way: the newer of modification and status
+    #: change, so a copy or an extracted archive that kept an older modification time is
+    #: still new. The default.
+    CHANGED = "changed"
+    #: When the entry's content was last written, as ``ls -l`` shows: content age, or the
+    #: clock to use after a bulk ``chmod``, ``chown``, or relabel moved every status change.
+    MODIFIED = "modified"
+
+
 @dataclass(frozen=True, slots=True)
 class Selection:
     """Rows selected from an already-built index."""
@@ -486,8 +501,10 @@ class Selection:
     include: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     min_size: int | str | None = None
-    modified_since: datetime | str | None = None
-    modified_before: datetime | str | None = None
+    #: A window over the entry's time on :attr:`time`'s clock: inclusive ``since``,
+    #: exclusive ``before``.
+    since: datetime | str | None = None
+    before: datetime | str | None = None
     kinds: tuple[EntryKind, ...] = ()
     #: Accepts a raw token as well as an int or `Bound`, so a caller passing user input
     #: straight through gets the library's own grammar and wording rather than having to
@@ -502,12 +519,9 @@ class Selection:
     #: Entries to consider by ``.gitignore`` classification. Sizes, ordering, and
     #: ``min_size`` follow the entries selected.
     ignored: IgnoredEntries | None = None
-    #: A window over change time, the newer of modification and status change, which
-    #: catches a copy or an extracted archive that kept an older modification time. It
-    #: composes with the modified window, and never admits an entry whose change time
-    #: was not observed. Declared last so positional construction keeps its meaning.
-    changed_since: datetime | str | None = None
-    changed_before: datetime | str | None = None
+    #: Which clock every time reads; ``None`` takes the library's default,
+    #: :attr:`TimeBasis.CHANGED`.
+    time: TimeBasis | None = None
 
     def __post_init__(self) -> None:
         # A bare string is iterable, so without this guard `include="*.rs"` would run
@@ -658,7 +672,11 @@ class RollUp:
     dirs: int
     bytes: int
     allocated: int
+    #: The newest descendant file's modification time, or 0 with none.
     newest_mtime_ns: int
+    #: The newest descendant file's change time, the newer of modification and status
+    #: change, or 0 with none.
+    newest_changed_ns: int
     #: Keyed at the raw extension level, as ``fdu_core::classify::ext_bucket`` names it:
     #: ``file.c++`` is ``.c++``, ``release.v2.zip`` is ``.zip``, and ``Makefile`` is
     #: ``(none)``. The levels are tabulated under "Classification and Extension Levels" in
@@ -700,7 +718,8 @@ class SummaryRow:
     dirs: int
     bytes: int
     allocated: int
-    newest_mtime_ns: int | None
+    #: The newest regular file's time on the report's clock, or ``None`` with none.
+    newest_file_time_ns: int | None
     #: The ignored share, zero when nothing is ignored, or ``None`` when no ``.gitignore``
     #: was read.
     ignored: IgnoredTally | None = None
@@ -737,7 +756,9 @@ class FileRow:
     kind: EntryKind
     bytes: int
     allocated: int
-    mtime_ns: int
+    #: The entry's time on the report's clock (:attr:`Report.time`), in nanoseconds since
+    #: the epoch; a directory's is the newest in its eligible subtree.
+    time_ns: int
     #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.
     ignored: bool | None = None
     sort_value: int | None = None
@@ -746,27 +767,26 @@ class FileRow:
     files: int | None = None
     dirs: int | None = None
     #: Whether a directory's eligible subtree was listed in full. ``False`` makes its
-    #: bytes, counts, and ``mtime_ns`` lower bounds and its ``age_ns`` ``None``: a
-    #: scan-depth boundary, a partial scan, or a directory discovery has not listed yet.
-    #: Absent for other entry kinds.
+    #: bytes, counts, and times lower bounds and its ``age_ns`` ``None``: a scan-depth
+    #: boundary, a partial scan, or a directory discovery has not listed yet. Absent for
+    #: other entry kinds.
     complete: bool | None = None
-    #: Signed modification age relative to Report.age_reference_ns; future is negative,
+    #: Signed age of ``time_ns`` relative to Report.age_reference_ns; future is negative,
     #: and ``None`` when the reference is unrepresentable or the subtree is incomplete.
     age_ns: int | None = None
-    #: ``mtime_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
-    #: ``None`` when the subtree is incomplete and ``mtime_ns`` only a lower bound.
-    modified_at: datetime | None = None
+    #: ``time_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
+    #: ``None`` when the subtree is incomplete and ``time_ns`` only a lower bound.
+    time_at: datetime | None = None
     #: Position of the row's root in :attr:`Report.roots` over several roots, so
     #: ``report.roots[row.root].path / row.path`` names the entry; ``None`` over one root,
     #: where ``path`` is relative to :attr:`Report.root`.
     root: int | None = None
-    #: Change time, the newer of modification and status change, in nanoseconds since the
-    #: epoch; ``None`` where it was not observed, and for a directory when any entry it
-    #: counts had none. A lower bound, like ``mtime_ns``, when ``complete`` is ``False``.
+    #: Both clocks, whatever the report's: the modification time, and the change time,
+    #: the newer of modification and status change. An arrival carrying old content has a
+    #: recent ``changed_ns`` and an old ``mtime_ns``. ``changed_ns`` is ``None`` for a file
+    #: whose status change was not observed; a directory's are its subtree's newest.
+    mtime_ns: int = 0
     changed_ns: int | None = None
-    #: ``changed_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
-    #: ``None`` where it is unknown or only a lower bound.
-    changed_at: datetime | None = None
 
 
 class TreeOmissionReason(StrEnum):
@@ -805,8 +825,9 @@ class TreeNode:
     allocated: int
     files: int
     dirs: int
-    #: The newest regular file's modification time in this subtree, or ``None`` with none.
-    newest_mtime_ns: int | None
+    #: The newest regular file's time in this subtree on the report's clock, or ``None``
+    #: with none.
+    newest_file_time_ns: int | None
     truncated: bool
     children: tuple[TreeNode, ...]
     omissions: tuple[TreeOmission, ...] = ()
@@ -814,20 +835,20 @@ class TreeNode:
     ignored: IgnoredTally | None = None
     #: Whether this entry itself is gitignored, or ``None`` when classification is unknown.
     entry_ignored: bool | None = None
-    #: The newest modification time among the entries this row counts, of any kind: its
-    #: own entry when the selection admits it and every counted entry beneath it, never
-    #: the report root's own time. ``None`` when the row counts nothing; a lower bound
-    #: when ``complete`` is false. The age the text tree shows.
-    mtime_ns: int | None = None
+    #: The newest time on the report's clock among the entries this row counts, of any
+    #: kind: its own entry when the selection admits it and every counted entry beneath
+    #: it, never the report root's own time. ``None`` when the row counts nothing; a lower
+    #: bound when ``complete`` is false. The age the text tree shows.
+    time_ns: int | None = None
     #: Whether the directory's subtree was listed in full; ``None`` for a file.
     complete: bool | None = None
     #: Signed age relative to Report.age_reference_ns; future is negative, and ``None``
     #: when the row counts nothing, the subtree is incomplete, or the reference is
     #: unrepresentable.
     age_ns: int | None = None
-    #: ``mtime_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
+    #: ``time_ns`` as a timezone-aware UTC ``datetime``, floored to the microsecond, or
     #: ``None`` when the row counts nothing or its subtree is incomplete.
-    modified_at: datetime | None = None
+    time_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -916,6 +937,9 @@ class ReportRequest:
     size: SizeMetric
     views: tuple[View, ...]
     omitted_views: tuple[View, ...]
+    #: Which clock every time in the report reads: each row's ``time_ns`` and ``age_ns``,
+    #: the tree's ages, and ``ages``.
+    time: TimeBasis = TimeBasis.CHANGED
 
 
 @dataclass(frozen=True, slots=True)
@@ -938,37 +962,34 @@ class AgeTally:
 
 @dataclass(frozen=True, slots=True)
 class AgeBand:
-    """One band of an age profile: the files one change-time window selects.
+    """One band of an age profile: the files one time window selects.
 
     The band is what ``kinds=(EntryKind.FILE,)`` with the window
-    ``changed_since=since_age, changed_before=before_age`` selects over the same selection
-    and instant; without the kind, a window admits whole directories. ``since_ns`` and
+    ``since=since_age, before=before_age`` selects over the same selection, clock, and
+    instant; without the kind, a window admits whole directories. ``since_ns`` and
     ``before_ns`` are those edges as instants.
     """
 
-    #: ``future``, ``under 1h``, … ``over 3y``, or ``unknown``.
+    #: ``future``, ``under 1h``, … ``over 3y``.
     band: str
-    #: The oldest age the band holds, inclusive, in nanoseconds; ``None`` for ``over 3y``
-    #: and ``unknown``.
+    #: The oldest age the band holds, inclusive, in nanoseconds; ``None`` for ``over 3y``.
     since_age_ns: int | None
-    #: The newest age it excludes; ``None`` for ``future`` and ``unknown``.
+    #: The newest age it excludes; ``None`` for ``future``.
     before_age_ns: int | None
     since_ns: int | None
     before_ns: int | None
     since_at: datetime | None
     before_at: datetime | None
     tally: AgeTally
-    #: This band and every newer one; ``None`` for ``unknown``.
-    cumulative: AgeTally | None
+    #: This band and every newer one.
+    cumulative: AgeTally
 
 
 @dataclass(frozen=True, slots=True)
 class AgesSection:
-    """The selected regular files by change-time band, every band included."""
+    """The selected regular files by age band on the report's clock, every band included."""
 
     view: View
-    #: What the bands count by: ``changed``, the newer of modification and status change.
-    basis: str
     bands: tuple[AgeBand, ...]
     #: Every band together: the files and bytes a summary of the same selection reports.
     total: AgeTally
@@ -1090,14 +1111,14 @@ class TreeTotal:
     dirs: int
     #: The ignored share, or ``None`` when any root's is unknown.
     ignored: IgnoredTally | None
-    #: The newest regular file under any root.
-    newest_mtime_ns: int | None
-    #: The newest activity any root's row counts.
-    mtime_ns: int | None
+    #: The newest regular file under any root, on the report's clock.
+    newest_file_time_ns: int | None
+    #: The newest activity any root's row counts, on the report's clock.
+    time_ns: int | None
     #: Whether every root was listed in full.
     complete: bool
     age_ns: int | None = None
-    modified_at: datetime | None = None
+    time_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1671,6 +1692,7 @@ def rollup_from_dict(value: dict[str, Any], provenance: Provenance | None = None
         bytes=int(value["bytes"]),
         allocated=int(value["allocated"]),
         newest_mtime_ns=int(value["newest_mtime_ns"]),
+        newest_changed_ns=int(value["newest_changed_ns"]),
         by_extension=MappingProxyType(tallies),
         provenance=provenance,
     )
@@ -1830,7 +1852,6 @@ def _ages_section(view: View, raw: dict[str, Any]) -> AgesSection:
         raise TypeError("an ages section's bands must be a list")
     return AgesSection(
         view,
-        basis=str(raw["basis"]),
         bands=tuple(
             AgeBand(
                 band=str(band["band"]),
@@ -1841,9 +1862,7 @@ def _ages_section(view: View, raw: dict[str, Any]) -> AgesSection:
                 since_at=_instant(_optional_int(band["since_ns"])),
                 before_at=_instant(_optional_int(band["before_ns"])),
                 tally=_age_tally(band),
-                cumulative=_age_tally(band["cumulative"])
-                if band["cumulative"] is not None
-                else None,
+                cumulative=_age_tally(band["cumulative"]),
             )
             for band in cast(list[dict[str, Any]], bands)
         ),
@@ -1945,17 +1964,15 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             allocated=int(raw["allocated"]),
             files=int(raw["files"]),
             dirs=int(raw["dirs"]),
-            newest_mtime_ns=(
-                int(raw["newest_mtime_ns"]) if raw.get("newest_mtime_ns") is not None else None
-            ),
+            newest_file_time_ns=_optional_int(raw["newest_file_time_ns"]),
             truncated=bool(raw["truncated"]),
             children=tuple(built[id(child)] for child in children),
             omissions=_tree_omissions(raw["omissions"]),
             ignored=_ignored_tally(raw["ignored"]),
-            mtime_ns=_optional_int(raw["mtime_ns"]),
+            time_ns=_optional_int(raw["time_ns"]),
             complete=_optional_bool(raw["complete"]),
             age_ns=_optional_int(raw["age_ns"]),
-            modified_at=_row_instant(raw["mtime_ns"], raw["complete"]),
+            time_at=_row_instant(raw["time_ns"], raw["complete"]),
         )
     return built[id(value)]
 
@@ -1975,11 +1992,11 @@ def _tree_total(value: object) -> TreeTotal | None:
         files=int(raw["files"]),
         dirs=int(raw["dirs"]),
         ignored=_ignored_tally(raw["ignored"]),
-        newest_mtime_ns=_optional_int(raw["newest_mtime_ns"]),
-        mtime_ns=_optional_int(raw["mtime_ns"]),
+        newest_file_time_ns=_optional_int(raw["newest_file_time_ns"]),
+        time_ns=_optional_int(raw["time_ns"]),
         complete=bool(complete),
         age_ns=_optional_int(raw["age_ns"]),
-        modified_at=_row_instant(raw["mtime_ns"], complete),
+        time_at=_row_instant(raw["time_ns"], complete),
     )
 
 
@@ -2024,7 +2041,7 @@ def _report_roots(value: object) -> tuple[ReportRoot, ...] | None:
 
 
 def _row_instant(time_ns: object, complete: object) -> datetime | None:
-    """A row's ``modified_at`` or ``changed_at``: its time, unless only a lower bound."""
+    """A row's ``time_at``: its time, unless only a lower bound."""
 
     if time_ns is None or complete is False:
         return None
@@ -2071,11 +2088,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                         dirs=int(row["dirs"]),
                         bytes=int(row["bytes"]),
                         allocated=int(row["allocated"]),
-                        newest_mtime_ns=(
-                            int(row["newest_mtime_ns"])
-                            if row["newest_mtime_ns"] is not None
-                            else None
-                        ),
+                        newest_file_time_ns=_optional_int(row["newest_file_time_ns"]),
                         ignored=_ignored_tally(row["ignored"]),
                     ),
                 )
@@ -2126,24 +2139,21 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             kind=EntryKind(str(row["kind"])),
                             bytes=int(row["bytes"]),
                             allocated=int(row["allocated"]),
-                            mtime_ns=int(row["mtime_ns"]),
+                            time_ns=int(row["time_ns"]),
                             files=_optional_int(row["files"]) if "files" in row else None,
                             dirs=_optional_int(row["dirs"]) if "dirs" in row else None,
                             complete=_optional_bool(row["complete"]) if "complete" in row else None,
                             age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
-                            modified_at=_row_instant(
-                                row["mtime_ns"],
+                            time_at=_row_instant(
+                                row["time_ns"],
                                 _optional_bool(row["complete"]) if "complete" in row else None,
                             ),
                             ignored=_ignored_flag(row["ignored"]),
                             sort_value=_optional_int(row["sort_value"]),
                             classification=_file_classification(row["classification"]),
                             root=_root_position(row),
+                            mtime_ns=int(row["mtime_ns"]),
                             changed_ns=_optional_int(row["changed_ns"]),
-                            changed_at=_row_instant(
-                                _optional_int(row["changed_ns"]),
-                                _optional_bool(row["complete"]) if "complete" in row else None,
-                            ),
                         )
                         for row in rows
                     ),
@@ -2222,6 +2232,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         ),
         analyze=tuple(Analysis(str(name)) for name in raw_request["analyze"]),
         size=SizeMetric(str(raw_request["size"])),
+        time=TimeBasis(str(raw_request["time"])),
         views=tuple(View(str(name)) for name in raw_request["views"]),
         omitted_views=tuple(View(str(name)) for name in raw_request["omitted_views"]),
     )

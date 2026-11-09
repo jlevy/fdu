@@ -36,7 +36,10 @@ def inventory(format: fdu.Format = fdu.Format.LONG) -> fdu.Query:
         selection=fdu.Selection(
             kinds=(fdu.EntryKind.DIR,),
             include=(".venv", "node_modules", "target"),
-            modified_before="30d",
+            # The fixture is backdated with `os.utime`, which sets modification time; no
+            # test can backdate a change time, so this staleness query reads content age.
+            before="30d",
+            time=fdu.TimeBasis.MODIFIED,
             size=fdu.SizeMetric.APPARENT,
             sort=fdu.SortKey.NAME,
         ),
@@ -66,7 +69,7 @@ def test_retained_directory_metrics_and_formats_need_no_filesystem(builds: Path)
     assert report.age_reference_ns is not None
     for row in section.files:
         assert (row.files, row.dirs, row.complete) == (1, 0, True)
-        assert row.age_ns == report.age_reference_ns - row.mtime_ns
+        assert row.age_ns == report.age_reference_ns - row.time_ns
     paths = report.render(fdu.Format.PATHS).splitlines()
     assert len(paths) == 3
     long = report.render()
@@ -97,9 +100,7 @@ def test_a_directory_at_the_scan_depth_boundary_has_an_unknown_age(builds: Path)
     assert isinstance(bounded.sections[0], fdu.FilesSection)
     assert bounded.sections[0].files == ()
     query = inventory()
-    unbounded = index.report(
-        replace(query, selection=replace(query.selection, modified_before=None))
-    )
+    unbounded = index.report(replace(query, selection=replace(query.selection, before=None)))
     section = unbounded.sections[0]
     assert isinstance(section, fdu.FilesSection)
     assert [row.path.as_posix() for row in section.files] == [
@@ -175,9 +176,7 @@ def test_opened_reports_use_the_same_directory_query_contract(builds: Path) -> N
             assert isinstance(section, fdu.FilesSection)
             assert [row.bytes for row in section.files] == [31, 47, 59]
             assert report.age_reference_ns is not None
-            assert all(
-                row.age_ns == report.age_reference_ns - row.mtime_ns for row in section.files
-            )
+            assert all(row.age_ns == report.age_reference_ns - row.time_ns for row in section.files)
         result = response.results[2]
         assert result.kind == "report"
         assert isinstance(result.value.sections[0], fdu.TreeSection)
