@@ -34,7 +34,8 @@ patterns:
   # and device are matched; its layout and what the report counted are not.
   CAPACITY: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (?:B|KiB|MiB|GiB|TiB|PiB)'
   IN_USE: '\s*(?:<1%|[0-9]{1,3}%|—) in use'
-  VOLUME: '[^\r\n]+'
+  # The root's own row is `.`, as every view names it, then its type, if the host has one.
+  FS_TYPE: '(?:  \([^)\r\n]+\))?'
   POOL: '(?:, shared with the other volumes of its pool)?'
   FS_NAME: '(?:"[^"]*"|null)'
   BOOL: 'true|false'
@@ -944,7 +945,7 @@ and the counted bytes are pinned.
 
 ```console
 $ fdu --cache off --size apparent --view volumes builds
-[CAPACITY]  [IN_USE]  [VOLUME]
+[CAPACITY]  [IN_USE]  .[FS_TYPE]
                          [CAPACITY] available[POOL]
                          240 B counted by this report
 ! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
@@ -953,7 +954,7 @@ $ fdu --cache off --size apparent --view volumes builds
 
 ```console
 $ fdu --cache off --size apparent --view volumes --scan-depth 0 builds
-[CAPACITY]  [IN_USE]  [VOLUME]
+[CAPACITY]  [IN_USE]  .[FS_TYPE]
                          [CAPACITY] available[POOL]
                          0 B counted by this report
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan

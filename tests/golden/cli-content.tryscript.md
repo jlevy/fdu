@@ -33,7 +33,8 @@ patterns:
   # type are matched; its three-line layout and what the report counted are not.
   CAPACITY: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (?:B|KiB|MiB|GiB|TiB|PiB)'
   IN_USE: '\s*(?:<1%|[0-9]{1,3}%|—) in use'
-  VOLUME: '[^\r\n]+'
+  # The root's own row is `.`, as every view names it, then its type, if the host has one.
+  FS_TYPE: '(?:  \([^)\r\n]+\))?'
   POOL: '(?:, shared with the other volumes of its pool)?'
 ---
 # Content Metrics CLI Contract
@@ -1119,7 +1120,7 @@ SUMMARY
      256 B  7 files, 4 directories
 
 VOLUMES
-[CAPACITY]  [IN_USE]  [VOLUME]
+[CAPACITY]  [IN_USE]  .[FS_TYPE]
                          [CAPACITY] available[POOL]
                          256 B counted by this report
 
@@ -1174,7 +1175,7 @@ SUMMARY
      256 B  7 files, 4 directories
 
 VOLUMES
-[CAPACITY]  [IN_USE]  [VOLUME]
+[CAPACITY]  [IN_USE]  .[FS_TYPE]
                          [CAPACITY] available[POOL]
                          256 B counted by this report
 
@@ -1235,7 +1236,7 @@ SUMMARY
      256 B  7 files, 4 directories
 
 VOLUMES
-[CAPACITY]  [IN_USE]  [VOLUME]
+[CAPACITY]  [IN_USE]  .[FS_TYPE]
                          [CAPACITY] available[POOL]
                          256 B counted by this report
 

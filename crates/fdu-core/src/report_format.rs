@@ -5765,6 +5765,62 @@ mod tests {
         assert!(unmeasured.lines().all(|line| line.trim_end() == line), "{unmeasured:?}");
     }
 
+    /// The three volume rows no golden can produce on demand, each three lines: a pooled
+    /// filesystem, one whose capacity is unknown, and a pseudo-filesystem of no capacity.
+    #[test]
+    fn every_volume_row_is_three_lines_whatever_its_capacity() {
+        use crate::capacity::VolumeCapacity;
+        use crate::query::{VolumeCounted, VolumeRow, VolumesSection};
+        let row = |path: &str, capacity: Option<VolumeCapacity>, reason: Option<&str>| VolumeRow {
+            device: 1,
+            root: 0,
+            path: PathBuf::from(path),
+            absolute: PathBuf::from("/canonical").join(path),
+            other_paths: 0,
+            capacity,
+            unknown_reason: reason.map(str::to_owned),
+            counted: VolumeCounted { files: 2, bytes: 2048, allocated: 4096 },
+        };
+        let volumes = VolumesSection {
+            observed_at_ns: Some(0),
+            rows: vec![
+                row(
+                    "",
+                    Some(VolumeCapacity {
+                        capacity_bytes: 4 << 30,
+                        available_bytes: 1 << 30,
+                        filesystem: Some("btrfs".into()),
+                    }),
+                    None,
+                ),
+                row("mnt", None, Some("capacity was not observed")),
+                row(
+                    "proc",
+                    Some(VolumeCapacity {
+                        capacity_bytes: 0,
+                        available_bytes: 0,
+                        filesystem: None,
+                    }),
+                    None,
+                ),
+            ],
+        };
+        let mut out = String::new();
+        render_text_volumes(&mut out, &volumes, None, SizeMetric::Apparent, false);
+        assert_eq!(
+            out,
+            "   4.0 GiB   75% in use  .  (btrfs)\n\
+             \x20                        1.0 GiB available, shared with the other volumes of its pool\n\
+             \x20                        2.0 KiB counted by this report\n\
+             \x20  unknown               mnt\n\
+             \x20                        capacity unknown: capacity was not observed\n\
+             \x20                        2.0 KiB counted by this report\n\
+             \x20      0 B     — in use  proc\n\
+             \x20                        0 B available\n\
+             \x20                        2.0 KiB counted by this report\n"
+        );
+    }
+
     #[test]
     fn percentage_and_unicode_width_keep_small_values_visible() {
         assert_eq!(human_percentage(1, 10_000, 1), "<0.1%");

@@ -23,19 +23,19 @@
 const sameSeparator = (line) => line.replace(/\[(?:JSON_)?SEP\]/g, '/');
 
 // A volume row reads the host's filesystem when the report is read, so the goldens name its
-// capacity, share in use, path, type, and pooled-space wording as patterns. These are the
+// capacity, share in use, type, and pooled-space wording as patterns; the path is pinned. These are the
 // goldens' own regexes, applied to an already escaped golden line.
 const VOLUME_PATTERNS = [
   ['\\[CAPACITY\\]', '\\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)? (?:B|KiB|MiB|GiB|TiB|PiB)'],
   ['\\[IN_USE\\]', '\\s*(?:<1%|[0-9]{1,3}%|—) in use'],
-  ['\\[VOLUME\\]', '[^\\r\\n]+'],
+  ['\\[FS_TYPE\\]', '(?:  \\([^)\\r\\n]+\\))?'],
   ['\\[POOL\\]', '(?:, shared with the other volumes of its pool)?'],
   ['\\[FS_NAME\\]', '(?:"[^"]*"|null)'],
   ['\\[BOOL\\]', '(?:true|false)'],
 ];
 const volumePatterns = (escaped) =>
   VOLUME_PATTERNS.reduce((pattern, [name, regex]) => pattern.replaceAll(name, regex), escaped);
-const VOLUME_NAMES = /\[(?:CAPACITY|IN_USE|VOLUME|POOL|FS_NAME|BOOL)\]/;
+const VOLUME_NAMES = /\[(?:CAPACITY|IN_USE|FS_TYPE|POOL|FS_NAME|BOOL)\]/;
 // An observed volume line that its golden pattern accepts is recorded as the golden line:
 // the free space at recording time is not parity, and an artifact holding it would differ
 // on every run.

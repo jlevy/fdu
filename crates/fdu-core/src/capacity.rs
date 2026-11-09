@@ -125,6 +125,13 @@ mod tests {
         let capacity = volume.capacity.as_ref().expect("a temporary directory can be queried");
         assert!(capacity.capacity_bytes > 0);
         assert!(capacity.available_bytes <= capacity.capacity_bytes);
+        // Every platform with a type names one: Linux by number, macOS and Windows by
+        // name, so a failing `GetVolumeInformationW` or an empty `f_fstypename` shows here.
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+        assert!(
+            capacity.filesystem.as_deref().is_some_and(|name| !name.is_empty()),
+            "{capacity:?}"
+        );
         assert!(observation.volume(8).is_none());
     }
 
