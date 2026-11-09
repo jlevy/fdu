@@ -59,9 +59,7 @@ def age_problems(out: str) -> list[str]:
             if "age_ns" in node:
                 time = node.get("time_ns")
                 known = reference is not None and time is not None
-                expected = (
-                    reference - time if known and node.get("complete") is not False else None
-                )
+                expected = reference - time if known and node.get("complete") is not False else None
                 if node["age_ns"] != expected:
                     problems.append(f"{node.get('path')}: age {node['age_ns']} != {expected}")
             for value in node.values():

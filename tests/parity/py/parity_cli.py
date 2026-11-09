@@ -118,9 +118,7 @@ def parse_time(value: str) -> fdu.TimeBasis:
     try:
         return fdu.TimeBasis(value)
     except ValueError:
-        raise UsageError(
-            f'invalid --time "{value}": expected one of changed, modified'
-        ) from None
+        raise UsageError(f'invalid --time "{value}": expected one of changed, modified') from None
 
 
 def parse_sort(value: str) -> fdu.SortKey:

@@ -323,8 +323,9 @@ condemns when asked what is old.
 half-open interval the `--modified-*` flags had.
 `--sort time` orders rows newest first wherever a row carries a time, trees included,
 since each carries the same clock its column shows: tree, list, files, largest, recent,
-and code rows. Type, extension, family, language, and document rows carry no time, so
-the sort is refused for them rather than falling back to name order.
+and code rows.
+Type, extension, family, language, and document rows carry no time, so the
+sort is refused for them rather than falling back to name order.
 `--time` takes `changed` or `modified`.
 
 The index maintains a directory’s newest time on both clocks, for its regular files and
@@ -674,7 +675,7 @@ Decided in implementation:
   code rows sort by it.
 - `ages` is refused for a request whose instant cannot be represented, where no age can
   be measured, rather than keeping an `unknown` band for that case alone.
-- A list row's raw `changed_ns` is null for a file whose status change was not observed,
+- A list row’s raw `changed_ns` is null for a file whose status change was not observed,
   though its time on the change clock is its modification time, so the substitution is
   visible per row as well as in the note.
 - `FileRow` stays at 192 bytes: `times` and a crate-private `status_observed` flag

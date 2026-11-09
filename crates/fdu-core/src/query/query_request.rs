@@ -839,7 +839,7 @@ pub struct Request {
     /// The instant relative time windows were resolved against, and the reference every
     /// age in the answer is measured from.
     ///
-    /// The windows are resolved when the request is built, so [`Selection::modified`] is
+    /// The window is resolved when the request is built, so [`Selection::window`] is
     /// absolute and a watch that builds its request once at start never slides its window.
     /// After that this field is only the age reference: a watch session reads each repaint
     /// with a copy whose `now` is that repaint's instant, so ages stay current over a long
