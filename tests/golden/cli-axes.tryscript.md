@@ -378,7 +378,6 @@ TREE
 ██████████   100%       128 B  [AGE]  . 1 file
 ██████████   100%       128 B  [AGE]    dist/ 1 file
 ██████████   100%       128 B  [AGE]      acorn-0.1.0.tar.gz
-! note: selected 1 of 2 files, 128 B of 134 B
 ! perf: took [PERF_TIME] to walk 2 files (134 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -393,7 +392,7 @@ Under `--no-gitignore` no rule is read, and every share is `null` rather than a 
 $ fdu --cache off --view files --ignored only --kind file --format jsonl --size apparent project
 {"schema": "fdu.report/12", "generator": "fdu 0.5.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "only"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["files"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "selected": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "scanned": {"files": 2, "dirs": 3, "bytes": 134, "allocated": [ALLOCATED]}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "files", "bound": null, "files": [{"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "modified_at": "[RFC3339]", "changed_ns": [MTIME_NS], "changed_at": "[RFC3339]", "ignored": true, "sort_value": null, "classification": {"file_type": "archive", "family": "binary", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
-! note: selected 1 of 2 files, 128 B of 134 B
+! note: selected 1 of the 2 files an --ignored=only scan retained, 128 B of 134 B
 ? 0
 ```
 

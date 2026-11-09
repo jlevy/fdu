@@ -1640,18 +1640,43 @@ impl SelectionCoverage {
     ///
     /// Files and bytes only: a `--kind file` selection admits no directory row yet every
     /// file, and its totals are the tree's.
-    fn note(self, metric: SizeMetric) -> Option<String> {
+    ///
+    /// Under a scan that already kept only part of the population (`population` is not
+    /// [`IgnoredEntries::Include`]), what it retained is not the tree, so the note names
+    /// the scan rather than let its total read as the whole tree's (review D2 on #209).
+    fn note(
+        self,
+        metric: SizeMetric,
+        population: IgnoredEntries,
+        axes: &AxisNames,
+    ) -> Option<String> {
         let (selected, scanned) = (self.selected, self.scanned);
         if selected.files == scanned.files && selected.size(metric) == scanned.size(metric) {
             return None;
         }
         let human = crate::report_format::human_count;
         let bytes = crate::report_format::human_bytes;
+        let files = if scanned.files == 1 { "file" } else { "files" };
+        let of = match population {
+            IgnoredEntries::Include => format!("{} {files}", human(scanned.files)),
+            IgnoredEntries::Exclude => {
+                format!(
+                    "the {} {files} an {} scan retained",
+                    human(scanned.files),
+                    axes.exclude_ignored
+                )
+            }
+            IgnoredEntries::Only => {
+                format!(
+                    "the {} {files} an {} scan retained",
+                    human(scanned.files),
+                    axes.only_ignored
+                )
+            }
+        };
         Some(format!(
-            "note: selected {} of {} {}, {} of {}",
+            "note: selected {} of {of}, {} of {}",
             human(selected.files),
-            human(scanned.files),
-            if scanned.files == 1 { "file" } else { "files" },
             bytes(selected.size(metric)),
             bytes(scanned.size(metric)),
         ))
@@ -2285,8 +2310,10 @@ fn read_roots(
                 Path::new(""),
             ))),
         });
-    if !query.selection.is_unfiltered() {
-        notes.extend(selection.note(query.selection.size));
+    // A selection by the ignored state the scan already kept narrows nothing it retained.
+    let population = request.basis.scope.population;
+    if query.selection.narrows(population) {
+        notes.extend(selection.note(query.selection.size, population, query.axes));
     }
     for section in &sections {
         if let Section::Volumes(volumes) = section {
@@ -5488,6 +5515,36 @@ mod tests {
         let files: Vec<_> =
             profile(Selection::default()).bands.iter().map(|band| band.tally.files).collect();
         assert_eq!(files, [2, 2, 3, 1, 1, 1, 1, 1, 1, 1], "future .. over 3y, unknown");
+    }
+
+    /// A scan that kept only part of the population retained less than the tree, so a
+    /// selection that repeats its population narrows nothing, and a note over it names
+    /// the scan (review D2 on #209).
+    #[test]
+    fn coverage_under_a_narrowed_population_names_the_scan() {
+        let exclude = Selection { ignored: IgnoredEntries::Exclude, ..Selection::default() };
+        assert!(!exclude.narrows(IgnoredEntries::Exclude));
+        assert!(exclude.narrows(IgnoredEntries::Include));
+        let files = Selection { kinds: vec![EntryKind::File], ..exclude.clone() };
+        assert!(files.narrows(IgnoredEntries::Exclude));
+        let coverage = SelectionCoverage {
+            selected: EntryTotals { files: 1, dirs: 0, bytes: 10, allocated: 512 },
+            scanned: EntryTotals { files: 4, dirs: 1, bytes: 40, allocated: 2048 },
+        };
+        let note = |population| {
+            coverage.note(SizeMetric::Apparent, population, &AxisNames::FLAGS).expect("narrowed")
+        };
+        assert_eq!(note(IgnoredEntries::Include), "note: selected 1 of 4 files, 10 B of 40 B");
+        assert_eq!(
+            note(IgnoredEntries::Exclude),
+            "note: selected 1 of the 4 files an --ignored=exclude scan retained, 10 B of 40 B"
+        );
+        assert_eq!(
+            coverage
+                .note(SizeMetric::Apparent, IgnoredEntries::Only, &AxisNames::FIELDS)
+                .expect("narrowed"),
+            "note: selected 1 of the 4 files an ignored=only scan retained, 10 B of 40 B"
+        );
     }
 
     #[test]

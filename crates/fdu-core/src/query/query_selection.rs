@@ -481,6 +481,15 @@ impl Selection {
             && self.ignored == IgnoredEntries::Include
     }
 
+    /// Whether this selection narrows what a scan retaining `population` kept:
+    /// [`Self::is_unfiltered`]'s test, except that selecting by the ignored state the scan
+    /// already applied narrows nothing.
+    pub(crate) fn narrows(&self, population: IgnoredEntries) -> bool {
+        let ignored_narrows = self.ignored != IgnoredEntries::Include && self.ignored != population;
+        ignored_narrows
+            || !Self { ignored: IgnoredEntries::Include, ..self.clone() }.is_unfiltered()
+    }
+
     /// Whether an entry passes every filter.
     pub fn admits(&self, candidate: &Candidate<'_>) -> bool {
         if !self.kinds.is_empty() && !self.kinds.contains(&candidate.kind) {
