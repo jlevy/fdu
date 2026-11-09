@@ -42,7 +42,6 @@ if str(REPO) not in sys.path:
 import matrix  # noqa: E402
 import registry  # noqa: E402
 from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
-
 from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 Outcome = Literal["complete", "partial", "failure"]
