@@ -174,6 +174,15 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         # residual preserves age bugs while allowing different read times.
         if "age_ns" in row and reference is not None and row["age_ns"] is not None:
             row["age_ns"] = row["age_ns"] - (reference - row["mtime_ns"])
+        # A change time is when the kernel last wrote the entry's inode, which no copy
+        # carries: the oracle's tree and the measured one were each copied and mutated at
+        # their own instants. What must agree is whether a change time is known and that
+        # it is never older than the modification time it includes; its rendering follows.
+        if "changed_ns" in row:
+            changed = row["changed_ns"]
+            if changed is not None and changed >= row["mtime_ns"]:
+                row["changed_ns"] = "at or after mtime_ns"
+            row.pop("changed_at", None)
 
     for section in content.get("reports", []):
         for row in section.get("files", []):

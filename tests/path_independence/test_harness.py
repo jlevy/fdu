@@ -200,6 +200,23 @@ class CompareTests(unittest.TestCase):
             compare(cli(earlier), cli(wrong), policy="auto").paths, ("reports[].files[].age_ns",)
         )
 
+    def test_a_change_time_is_compared_by_what_a_copy_can_keep(self) -> None:
+        # Two copies of one tree have their own change times; what must agree is whether
+        # one is known and that it is never older than the modification time.
+        def changed(value: int | None) -> dict[str, Any]:
+            row = {"path": "a", "mtime_ns": 50, "changed_ns": value, "changed_at": str(value)}
+            return answer(reports=[{"files": [row]}])
+
+        self.assertEqual(compare(cli(changed(60)), cli(changed(90)), policy="auto").kind, "same")
+        self.assertEqual(
+            compare(cli(changed(60)), cli(changed(None)), policy="auto").paths,
+            ("reports[].files[].changed_ns",),
+        )
+        self.assertEqual(
+            compare(cli(changed(60)), cli(changed(40)), policy="auto").paths,
+            ("reports[].files[].changed_ns",),
+        )
+
     def test_tree_node_ages_are_compared_as_residuals_at_every_depth(self) -> None:
         def timed(reference: int, root_age: int | None, leaf_age: int) -> dict[str, Any]:
             leaf = {"name": "f", "mtime_ns": 30, "age_ns": leaf_age, "children": []}
