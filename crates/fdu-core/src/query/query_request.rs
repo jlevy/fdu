@@ -1431,7 +1431,9 @@ impl Request {
         }
         // Change time is a fact of one entry, which a flat row carries. A tree node's age
         // and a grouped row's recency are modification activity, so ordering either by
-        // change time would silently fall back to name order.
+        // change time would silently fall back to name order. A view whose rows have a
+        // fixed order (the summary, the age bands, the filesystems) is ordered by no sort,
+        // so it may sit beside one.
         if self.query.selection.sort == Some(SortKey::Changed)
             && self.query.views.iter().any(|view| {
                 self.query.tree_for(*view)
@@ -1442,6 +1444,8 @@ impl Request {
                             | ViewSpec::Largest
                             | ViewSpec::Recent
                             | ViewSpec::Summary
+                            | ViewSpec::Ages
+                            | ViewSpec::Volumes
                     )
             })
         {
@@ -3009,6 +3013,8 @@ mod tests {
             (Some("recent"), Some("long"), true),
             (Some("list"), Some("json"), true),
             (Some("files,summary"), None, true),
+            (Some("files,ages,volumes"), None, true),
+            (Some("ages"), Some("json"), true),
             (None, None, false),
             (Some("tree"), Some("json"), false),
             (Some("list"), None, false),
