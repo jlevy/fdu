@@ -118,6 +118,8 @@ if TYPE_CHECKING:
         TreeTotal,
         ValueSource,
         View,
+        VolumeRow,
+        VolumesSection,
         WatchOptions,
     )
 else:
@@ -269,6 +271,8 @@ __all__ = [
     "TreeTotal",
     "ValueSource",
     "View",
+    "VolumeRow",
+    "VolumesSection",
     "Watch",
     "WatchOptions",
     "__version__",

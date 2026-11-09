@@ -324,6 +324,17 @@ WHAT WAS WRITTEN RECENTLY
   window it names, the rows add up to --view summary, and machine output adds each
   band's edges and the cumulative total of it and every newer band.
 
+HOW FULL THE DISK IS
+  fdu PATH --view volumes
+  fdu PATH --view volumes --scan-depth 0     capacity alone, walking nothing
+
+  volumes shows each filesystem the report touches: its capacity, the share in use,
+  what is available, and what this report counted there. A walk without
+  --one-filesystem can cross mounts below PATH, one row each. Capacity is read when
+  the report is, never cached. Rows never add up: available space can be shared
+  within an APFS container, btrfs filesystem, or ZFS pool, which the row says, and
+  snapshots, other volumes, and deleted files still open use space no walk sees.
+
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
@@ -331,8 +342,8 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
                                                         beyond what the views imply
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --breadth, --min-share
-  View       list,summary,ages,tree,families,types,extensions,languages,code,documents,
-             largest,recent,files,full
+  View       list,summary,volumes,ages,tree,families,types,extensions,languages,code,
+             documents,largest,recent,files,full
   Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
              --color, --progress
   Mode       ",
@@ -696,7 +707,7 @@ pub struct Cli {
 
     // ---- view: which roll-ups are reported ----
     /// Views: list, tree, files, extensions, types, families, languages, code, documents,
-    /// largest, recent, summary, ages, or full. Defaults to list with no analysis, otherwise to
+    /// largest, recent, summary, ages, volumes, or full. Defaults to list with no analysis, otherwise to
     /// a view that displays the requested analysis. code and documents read file contents:
     /// each runs its analyzer.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]

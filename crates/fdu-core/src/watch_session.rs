@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
-use crate::query::{Basis, Delivery, Query, Report, Request, Selection, WatchDelivery, report};
+use crate::query::{Basis, Delivery, Query, Report, Request, Selection, WatchDelivery};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
 
@@ -501,7 +501,11 @@ impl Session {
     /// absolute bounds when it was built, and only the age reference is re-read.
     pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
-        report(&index, &self.request_at(generated_at), generated_at)
+        let request = self.request_at(generated_at);
+        // Each repaint observes capacity anew when it shows `volumes`: free space is the
+        // one fact here that moves without the tree.
+        let capacity = crate::query::observe_volumes(&[&index], &request);
+        crate::query::report_with_capacity(&index, &request, generated_at, capacity.as_ref())
     }
 
     /// The session's request, read at `at`: the same question, with its ages measured
@@ -556,6 +560,16 @@ impl Session {
         let mut report = self.report(generated_at)?;
         let pinned = std::time::SystemTime::UNIX_EPOCH;
         let stamped = std::mem::replace(&mut report.provenance.generated_at, pinned);
+        // When capacity was observed is a generation instant too: a repaint follows what
+        // the filesystems hold and have free, never the clock alone.
+        let observed: Vec<Option<i64>> = report
+            .sections
+            .iter_mut()
+            .filter_map(|section| match section {
+                crate::query::Section::Volumes(volumes) => Some(volumes.observed_at_ns.take()),
+                _ => None,
+            })
+            .collect();
         let measured_from = report.age_reference_ns;
         report.measure_ages_from(crate::query::system_time_to_nanos(self.request.now));
         let mut identity = RepaintDigest::new();
@@ -579,6 +593,12 @@ impl Session {
                 });
         report.measure_ages_from(measured_from);
         report.provenance.generated_at = stamped;
+        let mut observed = observed.into_iter();
+        for section in &mut report.sections {
+            if let crate::query::Section::Volumes(volumes) = section {
+                volumes.observed_at_ns = observed.next().flatten();
+            }
+        }
         rendered.map_err(|error| Error::io(&self.request.basis.root, error))?;
         let identity = identity.finish();
         if self.presented == Some(identity) {

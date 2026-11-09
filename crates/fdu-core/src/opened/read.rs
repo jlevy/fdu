@@ -253,11 +253,16 @@ fn report_projection(
 
     // The same identity rule as every other projection: a report's selection inside an
     // opened read matches portable names, where a one-shot report matches native ones.
+    // Capacity is observed here, as every serving route observes it before it reads, and
+    // only when the report names `volumes`.
+    let read = read_request(request);
+    let capacity = crate::query::observe_volumes(&[index], &read);
     let report = crate::query::report_in(
         index,
-        &read_request(request),
+        &read,
         request.now,
         crate::query::NameIdentity::Portable,
+        capacity.as_ref(),
     )?;
     work.rows_visited = work.rows_visited.saturating_add(charge.rows);
     work.maintained_index_work = work.maintained_index_work.saturating_add(charge.maintained);
@@ -327,7 +332,8 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 | crate::query::ViewSpec::Files
                 | crate::query::ViewSpec::Largest
                 | crate::query::ViewSpec::Recent
-                | crate::query::ViewSpec::Ages => entries,
+                | crate::query::ViewSpec::Ages
+                | crate::query::ViewSpec::Volumes => entries,
             };
             total.saturating_add(rows)
         });
@@ -365,7 +371,8 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
             | crate::query::ViewSpec::Files
             | crate::query::ViewSpec::Largest
             | crate::query::ViewSpec::Recent
-            | crate::query::ViewSpec::Ages => {
+            | crate::query::ViewSpec::Ages
+            | crate::query::ViewSpec::Volumes => {
                 work.rows = work.rows.saturating_add(entries);
             }
         }
@@ -383,6 +390,7 @@ fn report_rows(report: &crate::query::Report) -> u64 {
             crate::query::Section::Files { rows, .. } => rows.len() as u64,
             crate::query::Section::Summary(_) => 1,
             crate::query::Section::Ages(profile) => profile.bands.len() as u64,
+            crate::query::Section::Volumes(volumes) => volumes.rows.len() as u64,
         };
         total.saturating_add(rows)
     })

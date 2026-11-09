@@ -350,8 +350,10 @@ for window in ("1h", "24h", "7d"):
 Exact net change, with deletions, needs a report saved before the window began; the
 [checkpoint design](project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md#interim-workflow)
 describes saving and comparing one.
-The volume’s capacity beside the tree is planned in the
-[recent growth design](project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md).
+`--view ages` and `--view volumes`, below, profile every window at once and put the
+disk’s free space beside the tree; the
+[recent growth design](project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md)
+records how they were chosen.
 
 ### See When the Space Arrived
 
@@ -396,6 +398,43 @@ profiles the logs, `--ignored=only` the gitignored files, and
 the tree’s age column stays modification activity while the bands are change time, and
 each is labeled. A `--watch` repaint measures the bands from its own instant, so a file
 moves to an older band with no filesystem change.
+
+### See How Full the Disk Is
+
+`--view volumes` puts the disk beside the tree: each filesystem the report touches, its
+capacity, the share in use, what is available, and what this report counted there.
+
+```shell
+fdu ~ --view=volumes
+fdu ~ --view=volumes --scan-depth=0     # capacity alone, walking nothing
+fdu ~ --view=tree,volumes               # where the space is, and how much is left
+```
+
+On a Linux build container, `fdu ~/.cargo --view=volumes` printed:
+
+```text
+   251 GiB   96% in use  /root/.cargo  (0xef53)
+                         10 GiB available
+                         318 MiB counted by this report
+```
+
+Each filesystem is three lines, on every platform: capacity, share in use, the path
+where the report entered it, and its type; what is available; and what the report
+counted there. The share in use is `(capacity − available) / capacity`, the figure that
+matters when space runs out and what `duf` shows, not the volume’s own used count, which
+`df` shows and which differs on APFS. A walk without `--one-filesystem` can cross mounts
+below the path, and each is a row; a filesystem reached at several paths is named by the
+first, with a note counting the others.
+The type is a name on macOS and Windows, and on Linux, which gives a number, `btrfs` and
+`zfs` by name and any other as its number (`0xef53` is the ext family’s).
+
+Capacity is read when the report is, with one `statfs` call per filesystem on Linux and
+macOS and `GetDiskFreeSpaceExW` on Windows, and is never stored in the cache, so
+`--stale-ok` still shows current capacity beside a stale tree.
+Rows never add up. Available space can be shared within an APFS container, a btrfs
+filesystem, or a ZFS pool, which the row’s available line says; and the bytes a report
+counts never sum to what is in use, because snapshots, other volumes, purgeable space,
+and deleted files still held open use space no walk sees.
 
 ### Find Old Environments and Build Directories
 

@@ -233,7 +233,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                 }
                 code_coverage(&mut coverage, overview);
             }
-            Section::Files { .. } => {}
+            Section::Files { .. } | Section::Volumes(_) => {}
             Section::Ages(_) => ages_shown = true,
         }
     }

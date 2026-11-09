@@ -239,6 +239,44 @@ A refusal names its rule file by the path git opens, `<dir>/.gitignore`, even wh
 case-insensitive volume stores that file as `.GITIGNORE`. These counts describe retained
 control state and do not imply every rule file was reread on a cache-only run.
 
+## Age Profiles
+
+An `ages` section has `basis` (`changed`: the newer of modification and status change),
+`bands`, and `total`. `bands` always holds all ten bands, newest first, empty ones
+included: `future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`,
+`90d to 1y`, `1y to 3y`, `over 3y`, and `unknown`.
+
+| Field | Meaning |
+| --- | --- |
+| `band` | The band’s label |
+| `since_age_ns`, `before_age_ns` | The band’s window as ages at `age_reference_ns`: `--changed-since <since_age> --changed-before <before_age>`; null where the window is open, and both null for `unknown` |
+| `since_ns`, `before_ns`, `since_at`, `before_at` | The same edges as epoch nanoseconds and RFC 3339 instants |
+| `files`, `bytes`, `allocated` | The regular files in the band |
+| `ignored` | The band’s gitignored files, bytes, and allocated bytes, or null when rules were unobserved or a counted file’s classification is unknown |
+| `cumulative` | The same tallies for this band and every newer one; null for `unknown` |
+
+`total` holds the same tallies over every band: what `summary` reports for the same
+selection.
+
+## Volumes
+
+A `volumes` section has `observed_at_ns` and `observed_at`, when capacity was read, and
+`volumes`, one row per filesystem the report touches, ordered by its path.
+
+| Field | Meaning |
+| --- | --- |
+| `device` | The device the walk identified the filesystem by |
+| `root`, `path`, optional `path_raw` | Where the report entered the filesystem, relative to its root; the root itself is an empty path |
+| `other_paths` | How many other paths the report entered it at |
+| `filesystem` | The type by name, or on Linux any type but `btrfs` and `zfs` as its number |
+| `capacity_bytes`, `available_bytes` | Size and the bytes an unprivileged writer can still use; null when unknown |
+| `shares_pool` | Whether available space is shared with other volumes of an APFS container, btrfs filesystem, or ZFS pool |
+| `unknown_reason` | Why capacity is unknown, or null |
+| `counted` | The regular files this report counted on the filesystem: `files`, `bytes`, `allocated` |
+
+Capacity is observed when the report is read and never stored.
+No row adds to another, and `counted` never sums to what is in use.
+
 ## Coverage and Formats
 
 Inspect `status.complete`, `status.coverage`, `status.errors`, and

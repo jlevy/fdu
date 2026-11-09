@@ -134,6 +134,9 @@ class View(StrEnum):
 
     LIST = "list"
     SUMMARY = "summary"
+    #: Each filesystem the report touches: capacity, available space, and what the report
+    #: counted there, observed when the report is read.
+    VOLUMES = "volumes"
     #: The selected regular files by change-time band, newest first.
     AGES = "ages"
     TREE = "tree"
@@ -970,6 +973,42 @@ class AgesSection:
 
 
 @dataclass(frozen=True, slots=True)
+class VolumeRow:
+    """One filesystem a report touches.
+
+    Capacity is observed when the report is read, never stored; ``None`` with an
+    ``unknown_reason`` where it could not be. No row is summed with another: available
+    space can be shared within a pool, which ``shares_pool`` says.
+    """
+
+    device: int
+    #: Where the report entered the filesystem, relative to its root; the root itself is
+    #: an empty path.
+    path: Path
+    #: How many other paths the report entered this filesystem at.
+    other_paths: int
+    filesystem: str | None
+    capacity_bytes: int | None
+    available_bytes: int | None
+    shares_pool: bool | None
+    unknown_reason: str | None
+    #: The regular files this report counted on the filesystem.
+    counted: ExtensionTally
+    #: Position of the row's root in :attr:`Report.roots` over several roots.
+    root: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VolumesSection:
+    """The filesystems a report touches, with capacity observed at one instant."""
+
+    view: View
+    observed_at_ns: int | None
+    observed_at: datetime | None
+    volumes: tuple[VolumeRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SectionBound:
     """What a section dropped when a limit applied.
 
@@ -1144,6 +1183,7 @@ class CodeSection:
 
 type ReportSection = (
     SummarySection
+    | VolumesSection
     | AgesSection
     | ExtensionsSection
     | FilesSection
@@ -1740,6 +1780,36 @@ def _ignored_tally(value: object) -> IgnoredTally | None:
     )
 
 
+def _optional_str(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+def _volumes_section(view: View, raw: dict[str, Any]) -> VolumesSection:
+    rows = raw["volumes"]
+    if not isinstance(rows, list):
+        raise TypeError("a volumes section's volumes must be a list")
+    return VolumesSection(
+        view,
+        observed_at_ns=_optional_int(raw["observed_at_ns"]),
+        observed_at=_instant(_optional_int(raw["observed_at_ns"])),
+        volumes=tuple(
+            VolumeRow(
+                device=int(row["device"]),
+                path=_wire_path(row),
+                other_paths=int(row["other_paths"]),
+                filesystem=_optional_str(row["filesystem"]),
+                capacity_bytes=_optional_int(row["capacity_bytes"]),
+                available_bytes=_optional_int(row["available_bytes"]),
+                shares_pool=_optional_bool(row["shares_pool"]),
+                unknown_reason=_optional_str(row["unknown_reason"]),
+                counted=cast(ExtensionTally, _ignored_files(row["counted"])),
+                root=_root_position(row),
+            )
+            for row in cast(list[dict[str, Any]], rows)
+        ),
+    )
+
+
 def _age_tally(value: object) -> AgeTally:
     if not isinstance(value, dict):
         raise TypeError("an age tally must be an object")
@@ -2003,6 +2073,8 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
             )
         elif view is View.AGES:
             sections.append(_ages_section(view, raw))
+        elif view is View.VOLUMES:
+            sections.append(_volumes_section(view, raw))
         elif view is View.CODE:
             sections.append(CodeSection(view, _code_overview(raw["code"])))
         elif view is View.EXTENSIONS:

@@ -1085,3 +1085,39 @@ def test_an_ages_section_decodes_every_band_with_its_window_and_cumulative_tally
     assert future.since_at == datetime(1970, 1, 1, 0, 0, 0, 1000, tzinfo=UTC)
     assert future.cumulative == future.tally
     assert (unknown.cumulative, unknown.since_at) == (None, None)
+
+
+def test_a_volumes_section_decodes_capacity_and_what_the_report_counted() -> None:
+    row = {
+        "device": 2049,
+        "path": "",
+        "other_paths": 0,
+        "filesystem": "apfs",
+        "capacity_bytes": 1000,
+        "available_bytes": 250,
+        "shares_pool": True,
+        "unknown_reason": None,
+        "counted": {"files": 3, "bytes": 30, "allocated": 4096},
+    }
+    unknown = {
+        **row,
+        "path": "mnt",
+        "filesystem": None,
+        "capacity_bytes": None,
+        "available_bytes": None,
+        "shares_pool": None,
+        "unknown_reason": "capacity was not observed",
+    }
+    section = {
+        "view": "volumes",
+        "observed_at_ns": 1_000,
+        "observed_at": "not consulted",
+        "volumes": [row, unknown],
+    }
+    volumes = report_from_dict(_envelope([section])).sections[0]
+    assert isinstance(volumes, fdu.VolumesSection)
+    assert volumes.observed_at == datetime(1970, 1, 1, 0, 0, 0, 1, tzinfo=UTC)
+    known, missing = volumes.volumes
+    assert (known.capacity_bytes, known.available_bytes, known.shares_pool) == (1000, 250, True)
+    assert known.counted.files == 3 and known.root is None
+    assert (missing.capacity_bytes, missing.unknown_reason) == (None, "capacity was not observed")

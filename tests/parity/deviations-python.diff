@@ -189,12 +189,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
--fdu: invalid --view "bogus": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
-+fdu: invalid view "bogus": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+-fdu: invalid --view "bogus": expected one of list, summary, volumes, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "bogus": expected one of list, summary, volumes, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ The Unreleased View Alias Is Rejected
 @@ -1,1 +1,1 @@
--fdu: invalid --view "docs": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
-+fdu: invalid view "docs": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+-fdu: invalid --view "docs": expected one of list, summary, volumes, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "docs": expected one of list, summary, volumes, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
@@ -250,6 +250,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Ages Profile the Selection by Change Time
   ✓ Ages Profile the Selection by Change Time
   ✓ Ages Profile the Selection by Change Time
+  ✓ Volumes Put the Disk Beside the Tree
+  ✓ Volumes Put the Disk Beside the Tree
+  ✓ Volumes Put the Disk Beside the Tree
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
@@ -1243,7 +1246,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -fdu: --view code needs code analysis, which --watch cannot keep current; use a one-shot report
 +fdu: view code needs code analysis; this index was opened with analyze none
   ✗ Every View One Walk Can Answer
-@@ -4,11 +4,11 @@
+@@ -1,19 +1,19 @@
+ SUMMARY
+      256 B  7 files, 4 directories
+ VOLUMES
+-[CAPACITY]  [IN_USE]  [VOLUME]
+-                         [CAPACITY] available[POOL]
++[CAPACITY]  [IN_USE]  [VOLUME]
++                         [CAPACITY] available[POOL]
+                          256 B counted by this report
  AGES
       256 B  100.0%  under 1h     7 files
  TREE
@@ -1256,7 +1267,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
        77 B   30.1%  code               2 files
-@@ -25,10 +25,10 @@
+@@ -30,10 +30,10 @@
        39 B   50.6%  Python  1 file
        38 B   49.4%  Rust    1 file
  LARGEST  (2 of 7)
@@ -1280,7 +1291,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -4,11 +4,11 @@
+@@ -1,19 +1,19 @@
+ SUMMARY
+      256 B  7 files, 4 directories
+ VOLUMES
+-[CAPACITY]  [IN_USE]  [VOLUME]
+-                         [CAPACITY] available[POOL]
++[CAPACITY]  [IN_USE]  [VOLUME]
++                         [CAPACITY] available[POOL]
+                          256 B counted by this report
  AGES
       256 B  100.0%  under 1h     7 files
  TREE
@@ -1293,7 +1312,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
-@@ -31,10 +31,10 @@
+@@ -36,10 +36,10 @@
           1   25.0%         1      1             1/1  Python   (0 gitignored)
           4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
  LARGEST  (2 of 7)
@@ -1317,7 +1336,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -4,11 +4,11 @@
+@@ -1,19 +1,19 @@
+ SUMMARY
+      256 B  7 files, 4 directories
+ VOLUMES
+-[CAPACITY]  [IN_USE]  [VOLUME]
+-                         [CAPACITY] available[POOL]
++[CAPACITY]  [IN_USE]  [VOLUME]
++                         [CAPACITY] available[POOL]
+                          256 B counted by this report
  AGES
       256 B  100.0%  under 1h     7 files
  TREE
@@ -1330,7 +1357,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
-@@ -42,10 +42,10 @@
+@@ -47,10 +47,10 @@
                                           3 words (0.0 pages)
                                           1 binary
  LARGEST  (2 of 7)
@@ -1660,7 +1687,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,301 +1,1 @@
+@@ -1,312 +1,1 @@
 -fdu — a fast du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1851,6 +1878,17 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  window it names, the rows add up to --view summary, and machine output adds each
 -  band's edges and the cumulative total of it and every newer band.
 -
+-HOW FULL THE DISK IS
+-  fdu PATH --view volumes
+-  fdu PATH --view volumes --scan-depth 0     capacity alone, walking nothing
+-
+-  volumes shows each filesystem the report touches: its capacity, the share in use,
+-  what is available, and what this report counted there. A walk without
+-  --one-filesystem can cross mounts below PATH, one row each. Capacity is read when
+-  the report is, never cached. Rows never add up: available space can be shared
+-  within an APFS container, btrfs filesystem, or ZFS pool, which the row says, and
+-  snapshots, other volumes, and deleted files still open use space no walk sees.
+-
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
 -  Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
 -             --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
@@ -1858,8 +1896,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -                                                        beyond what the views imply
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
 -             --breadth, --min-share
--  View       list,summary,ages,tree,families,types,extensions,languages,code,documents,
--             largest,recent,files,full
+-  View       list,summary,volumes,ages,tree,families,types,extensions,languages,code,
+-             documents,largest,recent,files,full
 -  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
 -             --color, --progress
 -  Mode       --cache, --watch, --workers

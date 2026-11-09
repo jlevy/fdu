@@ -393,20 +393,22 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   per filesystem and an `observed_at`: `statfs` on Linux and macOS, which returns
   capacity and the filesystem type together, and `GetDiskFreeSpaceExW` with
   `GetVolumeInformationW` on Windows.
-  The pure readers `report(index, request, generated_at)` and `report_roots(...)` gain
-  one argument, the observation as an `Option`, so they never touch the filesystem
-  ([views are readers](../../architecture/fdu-design-principles.md#views-are-readers)).
-  That changes their public signatures, which the 0.x minor version allows.
-  Every serving route observes before it reads when the request names `volumes`:
-  `prepare_report` for one-shot reports, `OpenedIndex::read`, each watch repaint, and
-  Python’s `Index.report`, inside the native call.
-  `--stale-ok` observes now, so its capacity tier is current while its tree tier is
-  stale, and each tier is labeled.
+  The pure readers take the observation as an argument, so they never touch the
+  filesystem
+  ([views are readers](../../architecture/fdu-design-principles.md#views-are-readers)):
+  `report_with_capacity` and `report_roots_with_capacity` beside `report` and
+  `report_roots`, which keep their signatures and pass none.
+  Every serving route observes before it reads when the request names `volumes`, through
+  `query::observe_volumes`: `prepare_report` for one-shot reports, `OpenedIndex::read`,
+  each watch repaint, and Python’s `Index.report`, inside the native call.
+  The observation carries each root’s device beside the capacity, since an index does
+  not record the root’s own attributes.
+  `--stale-ok` observes now, so its capacity is current while its tree is stale, and the
+  section’s `observed_at` says when capacity was read.
   A caller of the pure reader that passes no observation gets every capacity field as
-  unknown (null), with a note naming `observe_capacity`; it is never zero.
+  unknown (null), with a note naming `observe_volumes`; it is never zero.
   A request without `volumes` observes nothing.
-  Capacity is never stored in a snapshot or served from the cache, and provenance gains
-  a `capacity` tier with its own `observed_at`.
+  Capacity is never stored in a snapshot or served from the cache.
 - **Columns.** Capacity, the share in use, the path where the report entered the
   filesystem (a root, or the directory where the walk crossed onto it), available bytes,
   and the bytes this report counted there.
@@ -532,16 +534,31 @@ from `fdu.report/11`.
 
 ### Phase 3: The `volumes` view (`fdu-eas0`)
 
-- [ ] `observe_capacity` per distinct device in the report’s scope, called by every
-  serving route listed under [the `volumes` view](#the-volumes-view); the optional
-  observation argument on `report` and `report_roots`; unknown capacity with a note when
-  none is passed; a `capacity` provenance tier.
-- [ ] Each row labeled by the bytewise-first path where the report entered the
+- [x] `observe_capacity` per distinct device in the report’s scope, called by every
+  serving route listed under [the `volumes` view](#the-volumes-view), through
+  `query::observe_volumes`; unknown capacity with a note when none is passed.
+  Amended in implementation:
+  - `report` and `report_roots` keep their signatures, and `report_with_capacity` and
+    `report_roots_with_capacity` take the observation, so no existing caller breaks and
+    none silently gains filesystem reads.
+  - The observation carries each root’s device beside capacity (`VolumesObservation`),
+    because an index records every entry’s attributes but the root’s own; a reader given
+    none infers it from the root’s directories.
+  - When capacity was observed is the section’s `observed_at`, not a provenance tier: it
+    labels the capacity beside a stale tree just as well and leaves every other envelope
+    unchanged.
+- [x] Each row labeled by the bytewise-first path where the report entered the
   filesystem, from the walk’s own device changes, with a note when there are others; the
   type from the same call, with Linux `f_type` mapped for btrfs and ZFS. No mount-table
-  parsing.
-- [ ] Rows, notes for pooled filesystems, text and machine renderers, `--view full`.
-- [ ] `make cross-lint`, since every source is behind a platform gate.
+  parsing. Only a directory starts a filesystem: overlayfs, which containers run on,
+  reports each file’s underlying layer, which split one filesystem into a row per layer
+  until files were counted on their directory’s device.
+  A one-filesystem walk touches only its root’s filesystem, since it never enters the
+  mount points it retains.
+- [x] Rows, pooled-filesystem wording, text and machine renderers, `--view full`. Each
+  row is three lines on every platform, the pooled-space caveat on its available line
+  rather than a separate note, so goldens pin one layout with named patterns.
+- [x] `make cross-lint`, since every source is behind a platform gate.
 
 ## Testing Strategy
 

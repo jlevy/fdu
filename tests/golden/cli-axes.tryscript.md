@@ -30,6 +30,14 @@ patterns:
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   SOURCE: 'cold_scan|warm_revalidate'
   HUMAN_SIZE: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB)'
+  # A volume row reads the host's filesystem, so its capacity, share in use, path, type,
+  # and device are matched; its layout and what the report counted are not.
+  CAPACITY: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (?:B|KiB|MiB|GiB|TiB|PiB)'
+  IN_USE: '\s*(?:<1%|[0-9]{1,3}%|—) in use'
+  VOLUME: '[^\r\n]+'
+  POOL: '(?:, shared with the other volumes of its pool)?'
+  FS_NAME: '(?:"[^"]*"|null)'
+  BOOL: 'true|false'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
   PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
 ---
@@ -627,7 +635,7 @@ An agent should be able to correct a command from its rejection alone.
 
 ```console
 $ fdu --cache off --view bogus project
-fdu: invalid --view "bogus": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+fdu: invalid --view "bogus": expected one of list, summary, volumes, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
 ? 2
 ```
 
@@ -635,7 +643,7 @@ fdu: invalid --view "bogus": expected one of list, summary, ages, tree, families
 
 ```console
 $ fdu --cache off --view docs project
-fdu: invalid --view "docs": expected one of list, summary, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
+fdu: invalid --view "docs": expected one of list, summary, volumes, ages, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
 ? 2
 ```
 
@@ -922,6 +930,38 @@ $ fdu --cache off --size apparent --view ages --modified-before 30d --kind file 
 ```console
 $ fdu --cache off --size apparent --view ages --format jsonl builds 2>/dev/null | tail -n 1
 {"view": "ages", "basis": "changed", "bands": [{"band": "future", "since_age_ns": 0, "before_age_ns": null, "since_ns": [MTIME_NS], "before_ns": null, "since_at": "[RFC3339]", "before_at": null, "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "under 1h", "since_age_ns": 3600000000000, "before_age_ns": 0, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "1h to 1d", "since_age_ns": 86400000000000, "before_age_ns": 3600000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "1d to 7d", "since_age_ns": 604800000000000, "before_age_ns": 86400000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "7d to 30d", "since_age_ns": 2592000000000000, "before_age_ns": 604800000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "30d to 90d", "since_age_ns": 7776000000000000, "before_age_ns": 2592000000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "90d to 1y", "since_age_ns": 31557600000000000, "before_age_ns": 7776000000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "1y to 3y", "since_age_ns": 94672800000000000, "before_age_ns": 31557600000000000, "since_ns": [MTIME_NS], "before_ns": [MTIME_NS], "since_at": "[RFC3339]", "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "over 3y", "since_age_ns": null, "before_age_ns": 94672800000000000, "since_ns": null, "before_ns": [MTIME_NS], "since_at": null, "before_at": "[RFC3339]", "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}, {"band": "unknown", "since_age_ns": null, "before_age_ns": null, "since_ns": null, "before_ns": null, "since_at": null, "before_at": null, "files": 0, "bytes": 0, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}, "cumulative": null}], "total": {"files": 4, "bytes": 240, "allocated": [ALLOCATED], "ignored": {"files": 0, "bytes": 0, "allocated": [ALLOCATED]}}}
+? 0
+```
+
+### Volumes Put the Disk Beside the Tree
+
+`--view volumes` gives each filesystem the report touches three lines: its capacity,
+share in use, path, and type; what is available; and what this report counted there.
+Capacity is the host’s, read when the report is, so it is matched here, while the layout
+and the counted bytes are pinned.
+`--scan-depth 0` reads capacity alone.
+
+```console
+$ fdu --cache off --size apparent --view volumes builds
+[CAPACITY]  [IN_USE]  [VOLUME]
+                         [CAPACITY] available[POOL]
+                         240 B counted by this report
+! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --view volumes --scan-depth 0 builds
+[CAPACITY]  [IN_USE]  [VOLUME]
+                         [CAPACITY] available[POOL]
+                         0 B counted by this report
+! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --view volumes --format jsonl builds 2>/dev/null | tail -n 1
+{"view": "volumes", "observed_at_ns": [MTIME_NS], "observed_at": "[RFC3339]", "volumes": [{"device": [ALLOCATED], "path": "", "other_paths": 0, "filesystem": [FS_NAME], "capacity_bytes": [ALLOCATED], "available_bytes": [ALLOCATED], "shares_pool": [BOOL], "unknown_reason": null, "counted": {"files": 4, "bytes": 240, "allocated": [ALLOCATED]}}]}
 ? 0
 ```
 

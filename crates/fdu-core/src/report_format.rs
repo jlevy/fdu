@@ -920,6 +920,7 @@ fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
             });
         }
         Section::Ages(profile) => emit_age_profile(sink, profile),
+        Section::Volumes(volumes) => emit_volumes(sink, volumes, several),
         Section::Summary(row) => {
             emit_field(sink, Field::always("summary"), true, |sink| {
                 emit_summary_row(sink, row);
@@ -974,6 +975,62 @@ fn emit_age_profile(sink: &mut impl Sink, profile: &AgeProfile) {
         sink.event(Event::BeginMap(Shape::Inline));
         emit_age_tally_fields(sink, &profile.total);
         sink.event(Event::EndMap);
+    });
+}
+
+/// The filesystems a report touches: when capacity was observed, and per filesystem its
+/// device, where the report entered it, its capacity or why that is unknown, and what the
+/// report counted there.
+fn emit_volumes(sink: &mut impl Sink, volumes: &crate::query::VolumesSection, several: bool) {
+    emit_field(sink, Field::nullable("observed_at_ns"), true, |sink| {
+        emit_scalar(sink, volumes.observed_at_ns.map_or(Scalar::Null, Scalar::I64));
+    });
+    emit_field(sink, Field::nullable("observed_at"), true, |sink| {
+        emit_instant(sink, volumes.observed_at_ns);
+    });
+    emit_field(sink, Field::always("volumes"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for row in &volumes.rows {
+            sink.event(Event::BeginMap(Shape::Block));
+            emit_u64_field(sink, "device", row.device);
+            emit_root_field(sink, row.root, several);
+            emit_path_fields(sink, &row.path);
+            emit_u64_field(sink, "other_paths", row.other_paths);
+            let capacity = row.capacity.as_ref();
+            emit_field(sink, Field::nullable("filesystem"), true, |sink| {
+                match capacity.and_then(|capacity| capacity.filesystem.as_deref()) {
+                    Some(name) => emit_scalar(sink, Scalar::Str(name)),
+                    None => emit_scalar(sink, Scalar::Null),
+                }
+            });
+            for (name, value) in [
+                ("capacity_bytes", capacity.map(|capacity| capacity.capacity_bytes)),
+                ("available_bytes", capacity.map(|capacity| capacity.available_bytes)),
+            ] {
+                emit_field(sink, Field::nullable(name), true, |sink| {
+                    emit_scalar(sink, value.map_or(Scalar::Null, Scalar::U64));
+                });
+            }
+            emit_field(sink, Field::nullable("shares_pool"), true, |sink| match capacity {
+                Some(capacity) => emit_scalar(sink, Scalar::Bool(capacity.shares_pool())),
+                None => emit_scalar(sink, Scalar::Null),
+            });
+            emit_field(sink, Field::nullable("unknown_reason"), true, |sink| {
+                match row.unknown_reason.as_deref() {
+                    Some(reason) => emit_scalar(sink, Scalar::Str(reason)),
+                    None => emit_scalar(sink, Scalar::Null),
+                }
+            });
+            emit_field(sink, Field::always("counted"), true, |sink| {
+                sink.event(Event::BeginMap(Shape::Inline));
+                emit_u64_field(sink, "files", row.counted.files);
+                emit_u64_field(sink, "bytes", row.counted.bytes);
+                emit_u64_field(sink, "allocated", row.counted.allocated);
+                sink.event(Event::EndMap);
+            });
+            sink.event(Event::EndMap);
+        }
+        sink.event(Event::EndSeq);
     });
 }
 
@@ -1704,6 +1761,7 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
             Section::Ages(profile) => {
                 render_text_ages(&mut out, profile, report.size, report.ignored_entries, color);
             }
+            Section::Volumes(volumes) => render_text_volumes(&mut out, volumes, report.size, color),
         }
     }
     out
@@ -2511,7 +2569,9 @@ fn bounded_rows(section: &Section) -> Option<(usize, usize)> {
         Section::Extensions { rows, total, .. } => (rows.len(), *total),
         Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
         // Trees carry their own omission records; summary and ages cannot be bounded.
-        Section::Tree { .. } | Section::Summary(_) | Section::Ages(_) => return None,
+        Section::Tree { .. } | Section::Summary(_) | Section::Ages(_) | Section::Volumes(_) => {
+            return None;
+        }
     };
     (shown < total).then_some((shown, total))
 }
@@ -2614,6 +2674,66 @@ fn render_text_ages(
     }
 }
 
+/// The share-in-use column of a volume row: `97% in use`, at most this wide.
+const TEXT_IN_USE_WIDTH: usize = "100% in use".len();
+
+/// Three lines per filesystem, whatever its platform, so a reader and a golden alike find
+/// each measure in one place: capacity, share in use, the path where the report entered
+/// it, and its type; then what is available; then what this report counted there.
+///
+/// The share in use is `(capacity - available) / capacity`, the figure that matters when
+/// space runs out, and what `duf` shows. A pooled filesystem says so on its available
+/// line, because that space is not this volume's alone.
+fn render_text_volumes(
+    out: &mut String,
+    volumes: &crate::query::VolumesSection,
+    size: SizeMetric,
+    color: bool,
+) {
+    let indent = " ".repeat(TEXT_SIZE_WIDTH + 2 + TEXT_IN_USE_WIDTH + 2);
+    for row in &volumes.rows {
+        let path = escaped_human(&row.absolute.to_string_lossy());
+        let counted = human_bytes(pick(size, row.counted.bytes, row.counted.allocated));
+        if let Some(capacity) = &row.capacity {
+            let used = capacity.capacity_bytes.saturating_sub(capacity.available_bytes);
+            let in_use = format!("{} in use", human_percentage(used, capacity.capacity_bytes, 0));
+            let kind = capacity.filesystem.as_deref().map_or_else(String::new, |name| {
+                format!("  {}", detail(&format!("({name})"), color))
+            });
+            let _ = writeln!(
+                out,
+                "{}  {:>TEXT_IN_USE_WIDTH$}  {}{kind}",
+                styled_bytes(capacity.capacity_bytes, TEXT_SIZE_WIDTH, color, false),
+                in_use,
+                paint(&path, STYLE_NAME, color),
+            );
+            let shared = if capacity.shares_pool() {
+                detail(", shared with the other volumes of its pool", color)
+            } else {
+                String::new()
+            };
+            let _ = writeln!(
+                out,
+                "{indent}{} available{shared}",
+                human_bytes(capacity.available_bytes)
+            );
+        } else {
+            // Padded before it is painted: a width counts escape sequences.
+            let _ = writeln!(
+                out,
+                "{}  {:>TEXT_IN_USE_WIDTH$}  {}",
+                detail(&format!("{:>TEXT_SIZE_WIDTH$}", "unknown"), color),
+                "",
+                paint(&path, STYLE_NAME, color),
+            );
+            let reason = row.unknown_reason.as_deref().unwrap_or("capacity unknown");
+            let _ =
+                writeln!(out, "{indent}{}", detail(&format!("capacity unknown: {reason}"), color));
+        }
+        let _ = writeln!(out, "{indent}{counted} counted by this report");
+    }
+}
+
 fn render_text_summary(
     out: &mut String,
     row: &SummaryRow,
@@ -2679,6 +2799,7 @@ pub(super) fn view_header(view: ViewSpec) -> &'static str {
         ViewSpec::Recent => "RECENT",
         ViewSpec::Summary => "SUMMARY",
         ViewSpec::Ages => "AGES",
+        ViewSpec::Volumes => "VOLUMES",
     }
 }
 

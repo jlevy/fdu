@@ -31,7 +31,7 @@ use crate::query::query_request::{Basis, NamedRoot, Request, RequestError, Roots
 use crate::query::query_selection::{
     Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey,
 };
-use crate::query::{Rejection, ReportProvenance, TreeStatus, query_subtrees};
+use crate::query::{Rejection, ReportProvenance, TreeStatus, query_subtrees, query_volumes};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -68,6 +68,9 @@ pub enum ViewSpec {
     /// The selected regular files by change-time band, newest first: every window from
     /// one walk ([`AgeProfile`](crate::query::AgeProfile)).
     Ages,
+    /// Each filesystem the report touches, its capacity beside the bytes the report counted
+    /// there ([`VolumesSection`](crate::query::VolumesSection)).
+    Volumes,
 }
 
 impl ViewSpec {
@@ -85,6 +88,7 @@ impl ViewSpec {
             | Self::Documents
             | Self::Summary
             | Self::Ages
+            | Self::Volumes
             // `largest` lands here for its own reason: it is named for the ranking,
             // so the ranking is not a display default but the view's whole content.
             | Self::Largest => SortKey::Size,
@@ -135,9 +139,10 @@ impl ViewSpec {
     ///
     /// One list, so a front end cannot hold a stale copy: the Python binding kept its own
     /// view parser and silently rejected `largest` and `recent` for exactly that reason.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::List,
         Self::Summary,
+        Self::Volumes,
         Self::Ages,
         Self::Tree,
         Self::Families,
@@ -171,6 +176,7 @@ impl ViewSpec {
             "files" => Ok(Self::Files),
             "summary" => Ok(Self::Summary),
             "ages" => Ok(Self::Ages),
+            "volumes" => Ok(Self::Volumes),
             // The expectation only. Each front end names its own flag and quotes the
             // offending token, so neither ends up saying "invalid --view invalid view".
             _ => Err(format!("expected one of {}", Self::vocabulary())),
@@ -200,6 +206,7 @@ impl ViewSpec {
             Self::Files => "files",
             Self::Summary => "summary",
             Self::Ages => "ages",
+            Self::Volumes => "volumes",
         }
     }
 
@@ -230,7 +237,8 @@ impl ViewSpec {
             | Self::Largest
             | Self::Recent
             | Self::Summary
-            | Self::Ages => AnalysisSet::NONE,
+            | Self::Ages
+            | Self::Volumes => AnalysisSet::NONE,
         }
     }
 
@@ -257,7 +265,8 @@ impl ViewSpec {
             | Self::Largest
             | Self::Recent
             | Self::Summary
-            | Self::Ages => AnalysisSet::NONE,
+            | Self::Ages
+            | Self::Volumes => AnalysisSet::NONE,
         }
     }
 
@@ -1418,6 +1427,8 @@ pub enum Section {
     Summary(SummaryRow),
     /// An age profile.
     Ages(Box<crate::query::AgeProfile>),
+    /// The filesystems the report touches.
+    Volumes(Box<crate::query::VolumesSection>),
 }
 
 /// The rows of a tree over several roots.
@@ -1484,6 +1495,7 @@ impl Section {
             }
             Self::Summary(_) => ViewSpec::Summary,
             Self::Ages(_) => ViewSpec::Ages,
+            Self::Volumes(_) => ViewSpec::Volumes,
         }
     }
 }
@@ -1566,7 +1578,10 @@ pub struct Report {
     /// A filtered tree's root is 100% of what was selected, which reads as the whole tree
     /// unless the report says otherwise; these two tallies are what lets it say so, in a
     /// note for people and in fields a parser needs no note for.
-    pub selection: SelectionCoverage,
+    ///
+    /// Boxed because a report is carried by value in the opened-root projection results,
+    /// and it is the largest of them.
+    pub selection: Box<SelectionCoverage>,
 }
 
 /// What a report's selection admitted, beside what its scan retained.
@@ -1866,10 +1881,26 @@ pub fn report(
     request: &Request,
     generated_at: std::time::SystemTime,
 ) -> crate::Result<Report> {
-    report_in(index, request, generated_at, NameIdentity::Native)
+    report_in(index, request, generated_at, NameIdentity::Native, None)
 }
 
-/// [`report`], with the selection evaluated against the named spelling of each path.
+/// [`report`], with what [`observe_volumes`](crate::query::observe_volumes) observed of the
+/// filesystems it touches, for a request that names the `volumes` view.
+///
+/// Still pure: the observation is an argument, which a serving route makes with
+/// [`observe_volumes`](crate::query::observe_volumes) just before it reads. [`report`] is
+/// this with none, which reports every capacity as unknown, with a note, never as zero.
+pub fn report_with_capacity(
+    index: &Index,
+    request: &Request,
+    generated_at: std::time::SystemTime,
+    capacity: Option<&crate::query::VolumesObservation>,
+) -> crate::Result<Report> {
+    report_in(index, request, generated_at, NameIdentity::Native, capacity)
+}
+
+/// [`report_with_capacity`], with the selection evaluated against the named spelling of
+/// each path.
 ///
 /// A one-shot report matches native names; an opened-root read matches portable ones, so
 /// its report projection agrees with its flat and aggregate projections over one query.
@@ -1878,8 +1909,9 @@ pub(crate) fn report_in(
     request: &Request,
     generated_at: std::time::SystemTime,
     identity: NameIdentity,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> crate::Result<Report> {
-    read_roots(&[index], None, request, generated_at, identity)
+    read_roots(&[index], None, request, generated_at, identity, capacity)
 }
 
 /// Build one report over several roots from one index per root, in the roots' order.
@@ -1920,6 +1952,18 @@ pub fn report_roots(
     request: &Request,
     generated_at: std::time::SystemTime,
 ) -> crate::Result<Report> {
+    report_roots_with_capacity(indexes, roots, request, generated_at, None)
+}
+
+/// [`report_roots`], with the capacity of the filesystems the roots touch, as
+/// [`report_with_capacity`] is to [`report`].
+pub fn report_roots_with_capacity(
+    indexes: &[&Index],
+    roots: &Roots,
+    request: &Request,
+    generated_at: std::time::SystemTime,
+    capacity: Option<&crate::query::VolumesObservation>,
+) -> crate::Result<Report> {
     let named = roots.as_slice();
     for position in 0..indexes.len().max(named.len()) {
         let held = indexes.get(position).map(|index| index.root_path().to_path_buf());
@@ -1956,7 +2000,7 @@ pub fn report_roots(
         }
     }
     let labels = roots.is_several().then_some(roots);
-    read_roots(indexes, labels, request, generated_at, NameIdentity::Native)
+    read_roots(indexes, labels, request, generated_at, NameIdentity::Native, capacity)
 }
 
 /// [`report_roots`] for the engine's own runs, which built each index from its root and
@@ -1967,7 +2011,8 @@ pub(crate) fn read_indexes(
     request: &Request,
     generated_at: std::time::SystemTime,
 ) -> crate::Result<Report> {
-    read_roots(indexes, roots, request, generated_at, NameIdentity::Native)
+    let capacity = crate::query::observe_volumes(indexes, request);
+    read_roots(indexes, roots, request, generated_at, NameIdentity::Native, capacity.as_ref())
 }
 
 /// One root's part of a read: its index, and everything the reader derives from that index
@@ -2154,6 +2199,7 @@ fn read_roots(
     request: &Request,
     generated_at: std::time::SystemTime,
     identity: NameIdentity,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> crate::Result<Report> {
     debug_assert!(
         roots.map_or(indexes.len() == 1, |roots| roots.as_slice().len() == indexes.len()),
@@ -2193,7 +2239,7 @@ fn read_roots(
             if let Some(summary) = shared_metric_summary {
                 return Section::Metrics { view: *view, summary: Box::new(summary) };
             }
-            build_section(*view, &reads, labels, query, content, age_reference_ns)
+            build_section(*view, &reads, labels, query, content, age_reference_ns, capacity)
         })
         .collect();
 
@@ -2241,6 +2287,29 @@ fn read_roots(
         });
     if !query.selection.is_unfiltered() {
         notes.extend(selection.note(query.selection.size));
+    }
+    for section in &sections {
+        if let Section::Volumes(volumes) = section {
+            if volumes
+                .rows
+                .iter()
+                .any(|row| row.unknown_reason.as_deref() == Some(query_volumes::NOT_OBSERVED))
+            {
+                notes.push(
+                    "note: capacity unknown: this read was given no capacity observation \
+                     (observe_volumes, then report_with_capacity)"
+                        .to_owned(),
+                );
+            }
+            for row in volumes.rows.iter().filter(|row| row.other_paths > 0) {
+                notes.push(format!(
+                    "note: {} was also entered at {} other {}",
+                    row.absolute.display(),
+                    crate::report_format::human_count(row.other_paths),
+                    if row.other_paths == 1 { "path" } else { "paths" }
+                ));
+            }
+        }
     }
     if !query.selection.changed.is_unbounded() {
         let unknown = reads
@@ -2303,7 +2372,7 @@ fn read_roots(
         ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
-        selection,
+        selection: Box::new(selection),
     })
 }
 
@@ -2463,10 +2532,10 @@ pub(crate) fn report_summary(
         ignored_entries: query.selection.ignored,
         ignore_rules,
         // This tier filters nothing, so what was selected is what was scanned.
-        selection: SelectionCoverage {
+        selection: Box::new(SelectionCoverage {
             selected: EntryTotals::of(&summary),
             scanned: EntryTotals::of(&summary),
-        },
+        }),
         sections: vec![Section::Summary(summary)],
     }
 }
@@ -2931,6 +3000,7 @@ fn build_section(
     query: &Query,
     content: AnalysisSet,
     now_ns: Option<i64>,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> Section {
     if query.tree_for(view) {
         let limits = TreeDisplayLimits {
@@ -2964,6 +3034,25 @@ fn build_section(
                 now_ns,
                 observed,
             )))
+        }
+        ViewSpec::Volumes => {
+            // What the selection counted on each device: every regular file when it filters
+            // nothing, and otherwise exactly the files its walk counted.
+            let parts = reads
+                .iter()
+                .map(|read| {
+                    let root_device =
+                        capacity.and_then(|seen| seen.root_devices.get(read.root).copied());
+                    let (entries, tallies) =
+                        query_volumes::devices(read.index, root_device, |id| {
+                            read.walked
+                                .as_ref()
+                                .is_none_or(|walked| walked.visible_files.contains(&id))
+                        });
+                    (read.root, read.index.root_path(), entries, tallies)
+                })
+                .collect();
+            Section::Volumes(Box::new(query_volumes::volumes_section(parts, capacity)))
         }
         ViewSpec::Extensions => {
             let (rows, total, share_omitted) = extension_rows(reads, query);
@@ -3262,7 +3351,8 @@ impl MetricAccumulator {
             | ViewSpec::Largest
             | ViewSpec::Recent
             | ViewSpec::Summary
-            | ViewSpec::Ages => false,
+            | ViewSpec::Ages
+            | ViewSpec::Volumes => false,
         };
         if !included {
             return;
@@ -3457,7 +3547,8 @@ impl MetricAccumulator {
             | ViewSpec::Largest
             | ViewSpec::Recent
             | ViewSpec::Summary
-            | ViewSpec::Ages => {
+            | ViewSpec::Ages
+            | ViewSpec::Volumes => {
                 unreachable!("only grouped views reach metric_summary")
             }
         };

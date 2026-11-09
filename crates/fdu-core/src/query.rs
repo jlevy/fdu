@@ -18,6 +18,7 @@ mod query_selection;
 mod query_status;
 mod query_subtrees;
 mod query_values;
+mod query_volumes;
 
 pub use query_ages::{AGE_BASIS, AgeBand, AgeProfile, AgeTally};
 pub use query_glob::Pattern;
@@ -27,7 +28,7 @@ pub use query_report::{
     Query, Report, ReportMetricValues, ReportSource, RootTree, RootTrees, Section,
     SelectionCoverage, ShareMetric, SummaryRow, TreeDisplayLimits, TreeNode, TreeOmission,
     TreeOmissionReason, TreeRemainder, TreeTotal, TypeRow, ViewSpec, document_words, pages, report,
-    report_roots,
+    report_roots, report_roots_with_capacity, report_with_capacity,
 };
 pub(crate) use query_report::{
     SummaryPart, read_indexes, report_in, report_summary, summary_totals_fit,
@@ -53,4 +54,8 @@ pub(crate) use query_values::{
 pub use query_values::{
     format_rfc3339, parse_control_budget, parse_control_line_limit, parse_size, parse_when,
     system_time_to_nanos,
+};
+pub use query_volumes::{
+    VolumeCounted, VolumeEntry, VolumeRow, VolumesObservation, VolumesSection, observe_volumes,
+    volume_entries,
 };

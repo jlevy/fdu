@@ -38,6 +38,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The view is metadata only, composes with every selection and several roots, shares one
   walk with other views, and is part of `--view full`. A watch repaints when a file
   crosses a band edge.
+- `--view volumes` (Python `View.VOLUMES`, Rust `ViewSpec::Volumes`) puts the disk
+  beside the tree: each filesystem the report touches, its capacity, the share in use,
+  what is available, and what the report counted there, in three lines per filesystem.
+  Rows come from the walk’s own device changes, so a walk without `--one-filesystem`
+  shows each mount below the root; no mount table is read.
+  Capacity is observed when the report is read, by one `statfs` per filesystem on Linux
+  and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so `--stale-ok`
+  shows current capacity.
+  An APFS, btrfs, or ZFS row says its available space is shared within its pool.
+  `fdu PATH --view volumes --scan-depth 0` reads capacity alone.
+  The view is part of `--view full`.
+- Rust: `observe_capacity`, `CapacityObservation`, and `VolumeCapacity` in
+  `fdu_core::capacity`; `query::observe_volumes` observes what a request needs, and
+  `report_with_capacity` and `report_roots_with_capacity` read with it.
+  `report` and `report_roots` keep their signatures and report capacity as unknown, with
+  a note.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
   is not read as the whole tree.
@@ -48,9 +64,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Breaking:** the report schema is `fdu.report/12`, for the list-row and envelope
-  fields above and the `ages` section.
-- **Breaking (Rust):** `ViewSpec` gains `Ages` and `Section` gains `Ages`, so an
-  exhaustive match over either needs the new arm; `ViewSpec::ALL` has 13 views.
+  fields above and the `ages` and `volumes` sections.
+- **Breaking (Rust):** `ViewSpec` gains `Ages` and `Volumes` and `Section` gains `Ages`
+  and `Volumes`, so an exhaustive match over either needs the new arms; `ViewSpec::ALL`
+  has 14 views. `Report` gains `selection`.
 - **Breaking (Rust):** `Selection` gains `changed`, `Candidate` gains `changed_ns`,
   `FileRow` gains `changed_ns`, `SortKey` gains `Changed`, `ReadSpec` gains
   `changed_since` and `changed_before`, and `AxisNames` gains `changed_since` and

@@ -553,7 +553,11 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        fdu_core::query::report(&self.inner, &request, now).map_err(to_py_err)
+        // A serving route: capacity is observed here, inside the native call, when the
+        // request names `volumes`, and passed to the pure reader.
+        let capacity = fdu_core::query::observe_volumes(&[&self.inner], &request);
+        fdu_core::query::report_with_capacity(&self.inner, &request, now, capacity.as_ref())
+            .map_err(to_py_err)
     }
 }
 

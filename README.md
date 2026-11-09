@@ -172,6 +172,8 @@ Only `code` and `documents` read file contents; every other view reads metadata 
 | Twenty largest files | `fdu . --view=largest` |
 | Ten most recently modified working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
 | Where the files written in the last day are | `fdu . --kind=file --changed-since=24h` |
+| When the space arrived, in fixed age bands | `fdu . --view=ages` |
+| How full the disk is, beside what the tree holds | `fdu . --view=volumes` |
 | Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
 | Stay on one filesystem, like `du -x` (macOS and Linux) | `fdu . --one-filesystem` |
 | Several paths as one report, with a total | `fdu docs src` |

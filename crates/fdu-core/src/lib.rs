@@ -61,6 +61,7 @@
 
 pub mod admission;
 pub mod cache;
+pub mod capacity;
 pub mod classify;
 pub mod content;
 pub mod control;
@@ -109,6 +110,7 @@ pub use crate::cache::{
     ContentStatus, LeftoverKind, SnapshotInfo, StaleReason, cache_status, clear_all_caches,
     clear_cache, list_caches,
 };
+pub use crate::capacity::{CapacityObservation, ObservedVolume, VolumeCapacity, observe_capacity};
 pub use crate::control::{
     CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlLimits,
     ControlMatcher, ControlObservation, ControlRefusalReason, ControlTable, DEFAULT_CONTROL_BUDGET,

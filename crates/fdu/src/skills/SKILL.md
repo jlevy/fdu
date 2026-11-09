@@ -234,7 +234,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Scope | What is scanned and cached? | `PATH...`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
 | Content | Which file bodies are read beyond what the views imply? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--changed-since`, `--changed-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view list,summary,ages,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
+| View | Which roll-up is reported? | `--view list,summary,volumes,ages,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
 | Mode | How is work performed? | `--cache auto\|on\|off`, `--stale-ok`, `--cache-dir DIR`, `--watch`, `--workers N` |
 
@@ -452,8 +452,15 @@ fdu PATH --view tree,ages --kind file --changed-since 7d # where this week's dat
 
 Each row is the `--changed-since`/`--changed-before` window it names, the rows add up to
 `--view summary`, and JSON adds each band’s edges and a `cumulative` total of it and
-every newer band, which answers “how much changed within 30 days?”
-directly.
+every newer band: the answer to “how much changed within 30 days?”
+without adding rows.
+
+`--view volumes` puts the disk beside the tree: each filesystem the report touches, its
+capacity, the share in use, what is available, and what this report counted there.
+`fdu PATH --view volumes --scan-depth 0` reads capacity alone, walking nothing.
+Rows never add up: available space can be shared within an APFS container, btrfs
+filesystem, or ZFS pool, and snapshots or deleted files still open use space no walk
+sees, so a gap between the volume’s use and the tree’s total is expected.
 
 ## Find Environments and Build Outputs
 
