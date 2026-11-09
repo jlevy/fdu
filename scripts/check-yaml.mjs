@@ -58,7 +58,7 @@ try {
 
 const views = [
   'list', 'tree', 'types', 'extensions', 'families', 'languages', 'documents', 'code',
-  'files', 'largest', 'recent', 'summary',
+  'files', 'largest', 'recent', 'summary', 'ages', 'volumes',
 ];
 
 const treeBounds = (view) => ['tree', 'full'].includes(view)
@@ -150,6 +150,10 @@ const stripVolatile = (value) => {
       .filter(([key]) => ![
         'scan_started_at', 'generated_at', 'observed_at_ns', 'age_reference_ns',
         'age_reference_at', 'age_ns',
+        // An age band's edges are ages, fixed; as instants they follow each run's own.
+        'since_ns', 'before_ns', 'since_at', 'before_at',
+        // Capacity is read when each run reports, and free space moves between two runs.
+        'observed_at', 'available_bytes',
       ].includes(key))
       .map(([key, inner]) => [key, stripVolatile(inner)]));
   }
