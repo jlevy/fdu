@@ -127,6 +127,10 @@ def case_key(phase: str, route: str, policy: str, history: str, mutation: str, r
 
 ROOT_PLACEHOLDER = "<root>"
 
+# What a list row's `time_ns` becomes when it is not the time on the clock its request
+# reads. No correct answer carries it, so the row differs from a cold run's.
+CLOCK_MISMATCH = "time_ns disagrees with its clock"
+
 
 def root_placeholder(position: int) -> str:
     """The placeholder for the root at `position` of a report over several roots."""
@@ -177,16 +181,26 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         time = row.get("time_ns")
         if "age_ns" in row and reference is not None and row["age_ns"] is not None:
             row["age_ns"] = row["age_ns"] - (reference - time)
+        mtime = row.get("mtime_ns")
+        # A list row carries both raw clocks beside its time, which must be the one its
+        # request reads: on the change clock `changed_ns`, or `mtime_ns` where no status
+        # change was observed, and on the modification clock `mtime_ns`. The masking below
+        # cannot tell a route that read the wrong clock, as a modification time is never
+        # older than itself, so this is checked first, against the row's own clocks.
+        if "time_ns" in row and "mtime_ns" in row and "changed_ns" in row:
+            changed = row["changed_ns"]
+            wanted = {"changed": mtime if changed is None else changed, "modified": mtime}
+            if clock in wanted and row["time_ns"] != wanted[clock]:
+                row["time_ns"] = CLOCK_MISMATCH
         # A change time is when the kernel last wrote the entry's inode, which no copy
         # carries: the oracle's tree and the measured one were each copied and mutated at
         # their own instants. What must agree is whether a time is known and that a change
         # time is never older than the modification time it includes; its rendering
         # follows. On the modification clock the report's own times compare exactly.
-        mtime = row.get("mtime_ns")
         if clock == "changed":
             for name in ("time_ns", "newest_file_time_ns"):
                 value = row.get(name)
-                if value is not None and (mtime is None or value >= mtime):
+                if isinstance(value, int) and (mtime is None or value >= mtime):
                     row[name] = "a change time"
             row.pop("time_at", None)
         changed = row.get("changed_ns")

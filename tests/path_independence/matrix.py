@@ -96,6 +96,11 @@ def cli_args(request: Spec) -> list[str]:
     return args
 
 
+# Where the change-clock windows are bounded: after every modification time the fixture
+# sets (the newest is 2023-10) and before any copy of it is written, which is when each
+# copy's change times are taken.
+CHANGE_WINDOW_BOUND = "2024-01-01T00:00:00Z"
+
 REQUESTS: dict[str, Spec] = {
     # scope
     "default": spec(),
@@ -116,10 +121,13 @@ REQUESTS: dict[str, Spec] = {
     # compare exactly; a change time is each copy's, so they read modification time.
     "modsince": spec(since="2023-03-15T00:00:00Z", time="modified", views=["files"]),
     "time_mod": spec(time="modified"),
-    # A copy cannot carry a change time, so these bound it where every copy agrees: each
-    # is written after 2000, and a route that drops the window selects everything.
-    "chgsince": spec(since="2000-01-01T00:00:00Z", views=["files"]),
-    "chgbefore": spec(before="2000-01-01T00:00:00Z", views=["files"]),
+    # A copy cannot carry a change time, so these bound it where every copy agrees. On
+    # the change clock `--since` selects every file and `--before` none; on the
+    # modification clock each does the reverse for every file no mutation stamped, so a
+    # route that reads the wrong clock answers differently, and so does one that drops
+    # the window under `--before`.
+    "chgsince": spec(since=CHANGE_WINDOW_BOUND, views=["files"]),
+    "chgbefore": spec(before=CHANGE_WINDOW_BOUND, views=["files"]),
     "kind_file": spec(kind=["file"]),
     "kind_dirsym": spec(kind=["dir", "symlink"], views=["files"]),
     "limit2": spec(limit=2),

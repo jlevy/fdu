@@ -1151,11 +1151,11 @@ def _run_one(
             reasons.append("fdu reported unexpected stderr outside the policy trace")
 
     if tool.contract.name in FDU_SUMMARY_CONTRACTS:
-        semantic_sha256, summary, semantic_error = _summary_semantics(result["stdout"])
+        semantic_sha256, summary, clock, semantic_error = _summary_semantics(result["stdout"])
         if semantic_error is not None:
             reasons.append(semantic_error)
         elif summary is not None:
-            summary_oracle_error = _summary_oracle_error(summary, summary_oracle)
+            summary_oracle_error = _summary_oracle_error(summary, summary_oracle, clock)
             if summary_oracle_error is not None:
                 reasons.append(summary_oracle_error)
     elif tool.contract.name == "dust":
@@ -1270,25 +1270,31 @@ def _dust_semantics(
 
 def _summary_semantic_digest(stdout: bytes) -> Tuple[Optional[str], Optional[str]]:
     """Hash stable report semantics while excluding timestamps and the absolute root."""
-    digest, _summary, error = _summary_semantics(stdout)
+    digest, _summary, _clock, error = _summary_semantics(stdout)
     return digest, error
 
 
 def _summary_semantics(
     stdout: bytes,
-) -> Tuple[Optional[str], Optional[Mapping[str, Any]], Optional[str]]:
-    """Return stable report identity and independently checkable summary values."""
+) -> Tuple[Optional[str], Optional[Mapping[str, Any]], Any, Optional[str]]:
+    """Return stable report identity, independently checkable summary values, and the
+    clock the report reads its times on.
+
+    The clock is the request echo's ``time``, or ``None`` where the report echoes none
+    (every report before it had one clock). It is read for the oracle only: the request
+    echo never enters the digest.
+    """
     try:
         document = json.loads(stdout)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        return None, None, f"summary output was not JSON: {error}"
+        return None, None, None, f"summary output was not JSON: {error}"
     if not isinstance(document, dict):
-        return None, None, "summary output was not a JSON object"
+        return None, None, None, "summary output was not a JSON object"
     envelope = _report_envelope(document)
     if envelope["source"] != "cold_scan" or envelope["freshness"] != "fresh":
-        return None, None, "cache-off summary was not a fresh cold scan"
+        return None, None, None, "cache-off summary was not a fresh cold scan"
     if envelope["complete"] is not True or envelope["errors"] != []:
-        return None, None, "summary output was partial or reported errors"
+        return None, None, None, "summary output was partial or reported errors"
     reports = document.get("reports")
     if (
         not isinstance(reports, list)
@@ -1296,13 +1302,15 @@ def _summary_semantics(
         or not isinstance(reports[0], dict)
         or reports[0].get("view") != "summary"
     ):
-        return None, None, "summary output did not contain exactly one summary report"
+        return None, None, None, "summary output did not contain exactly one summary report"
     summary = reports[0].get("summary")
     if not isinstance(summary, dict):
-        return None, None, "summary report did not contain a summary object"
+        return None, None, None, "summary report did not contain a summary object"
+    request = document.get("request")
+    clock = request.get("time") if isinstance(request, dict) else None
     stable = {"schema": document.get("schema"), **envelope, "reports": reports}
     encoded = json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest(), summary, None
+    return hashlib.sha256(encoded).hexdigest(), summary, clock, None
 
 
 def _report_envelope(document: Mapping[str, Any]) -> Dict[str, Any]:
@@ -1324,8 +1332,26 @@ def _report_envelope(document: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _summary_oracle_error(summary: Mapping[str, Any], oracle: Mapping[str, Any]) -> Optional[str]:
-    """Return why an fdu summary disagrees with the independent Python walk."""
+#: The clock an fdu report reads when its request echo names none.
+DEFAULT_REPORT_CLOCK = "changed"
+
+
+def _summary_oracle_error(
+    summary: Mapping[str, Any], oracle: Mapping[str, Any], clock: Any = None
+) -> Optional[str]:
+    """Return why an fdu summary disagrees with the independent Python walk.
+
+    The newest file time is held to the clock the report read, which is ``clock``, the
+    request echo's ``time``. A summary from a binary that had one clock names it
+    ``newest_mtime_ns``, a modification time, and is held to the fingerprint's
+    ``newest_file_mtime_ns``. One that names it ``newest_file_time_ns`` is held to
+    ``newest_file_mtime_ns`` under ``modified`` and to ``newest_file_changed_ns`` under
+    ``changed``, the default where the echo names no clock.
+
+    A fingerprint recorded before it carried ``newest_file_changed_ns``, or taken where
+    no status change time is observable, cannot check a change-clock time, so that one
+    comparison is skipped rather than failed; every tally is still compared.
+    """
     counts = oracle["counts"]
     sizes = oracle["sizes"]
     expected = {
@@ -1334,8 +1360,17 @@ def _summary_oracle_error(summary: Mapping[str, Any], oracle: Mapping[str, Any])
         "dirs": counts["directories"] - 1,
         "bytes": sizes["apparent_bytes"],
         "allocated": sizes["allocated_bytes"],
-        "newest_mtime_ns": oracle["newest_file_mtime_ns"],
     }
+    if "newest_mtime_ns" in summary:
+        expected["newest_mtime_ns"] = oracle["newest_file_mtime_ns"]
+    else:
+        clock = DEFAULT_REPORT_CLOCK if clock is None else clock
+        if clock == "modified":
+            expected["newest_file_time_ns"] = oracle["newest_file_mtime_ns"]
+        elif clock != "changed":
+            return f"summary reads its times on clock {clock!r}, which the oracle cannot check"
+        elif "newest_file_changed_ns" in oracle:
+            expected["newest_file_time_ns"] = oracle["newest_file_changed_ns"]
     for field, wanted in expected.items():
         observed = summary.get(field)
         if observed != wanted:

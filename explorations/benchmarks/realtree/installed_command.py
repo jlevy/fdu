@@ -70,7 +70,7 @@ def capture(
             str(root.resolve(strict=True)),
         ]
     )
-    semantic_sha256, summary, semantic_error = compare_tools._summary_semantics(stdout)
+    semantic_sha256, summary, clock, semantic_error = compare_tools._summary_semantics(stdout)
     reasons = []
     if provenance_document.get("claim_grade") is not True:
         provenance_reasons = provenance_document.get("invalidation_reasons") or [
@@ -84,7 +84,7 @@ def capture(
     if semantic_error is not None:
         reasons.append(semantic_error)
     elif summary is not None:
-        oracle_error = compare_tools._summary_oracle_error(summary, before)
+        oracle_error = compare_tools._summary_oracle_error(summary, before, clock)
         if oracle_error is not None:
             reasons.append(oracle_error)
     after = tree.fingerprint(root, label="installed-command-smoke")

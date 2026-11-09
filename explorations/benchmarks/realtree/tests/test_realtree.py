@@ -54,6 +54,33 @@ class ReferenceTreeTests(unittest.TestCase):
         )
         self.assertEqual(document["max_depth"], 3)
 
+    @unittest.skipUnless(os.name == "posix", "st_ctime_ns is a status change time on POSIX")
+    def test_fingerprint_reads_the_newest_file_on_the_change_clock_too(self) -> None:
+        # A backdated modification time is what a copy or an extracted archive leaves; the
+        # change clock an fdu report reads by default still sees the file as new.
+        files = [path for path in self.root.rglob("*") if path.is_file()]
+        for path in files:
+            os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+        newest_ctime = max(os.lstat(path).st_ctime_ns for path in files)
+
+        document = tree.fingerprint(self.root, label="fixture")
+
+        self.assertEqual(document["newest_file_mtime_ns"], 1_000_000_000)
+        self.assertGreaterEqual(document["newest_file_changed_ns"], newest_ctime)
+        self.assertGreater(document["newest_file_changed_ns"], document["newest_file_mtime_ns"])
+        self.assertEqual(document["schema"], tree.FINGERPRINT_SCHEMA)
+
+    def test_the_change_clock_is_the_newer_time_and_mtime_where_unobserved(self) -> None:
+        def changed(mtime_ns: int, ctime_ns: int) -> int:
+            metadata = SimpleNamespace(st_mtime_ns=mtime_ns, st_ctime_ns=ctime_ns)
+            return tree._change_time_ns(metadata)
+
+        self.assertEqual(changed(10, 30), 30)
+        # A modification time set into the future is not hidden by an older status change.
+        self.assertEqual(changed(50, 30), 50)
+        # A zero status change time was not observed; it is never 1970.
+        self.assertEqual(changed(-5, 0), -5)
+
     def test_fingerprint_keeps_directory_blocks_apart_from_file_blocks(self) -> None:
         document = tree.fingerprint(self.root, label="fixture")
         directories = [self.root, self.root / "nested", self.root / "nested" / "deeper"]

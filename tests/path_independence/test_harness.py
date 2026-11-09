@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import registry
 from fixture import build_fixture, copy_fixture
 from runner import (
+    CLOCK_MISMATCH,
     Invocation,
     _read_jsonl_report,
     case_key,
@@ -204,9 +206,12 @@ class CompareTests(unittest.TestCase):
 
     def test_a_change_time_is_compared_by_what_a_copy_can_keep(self) -> None:
         # Two copies of one tree have their own change times; what must agree is whether
-        # one is known and that it is never older than the modification time.
+        # one is known and that it is never older than the modification time. The row's
+        # time is on the change clock, so it is its change time, or its modification time
+        # where none was observed.
         def changed(value: int | None) -> dict[str, Any]:
-            row = {"path": "a", "time_ns": 50, "mtime_ns": 50, "changed_ns": value}
+            time = 50 if value is None else value
+            row = {"path": "a", "time_ns": time, "mtime_ns": 50, "changed_ns": value}
             return answer(reports=[{"files": [row]}])
 
         self.assertEqual(compare(cli(changed(60)), cli(changed(90)), policy="auto").kind, "same")
@@ -214,10 +219,55 @@ class CompareTests(unittest.TestCase):
             compare(cli(changed(60)), cli(changed(None)), policy="auto").paths,
             ("reports[].files[].changed_ns",),
         )
+        # Older than its modification time, the change time is wrong as the row's time too.
         self.assertEqual(
             compare(cli(changed(60)), cli(changed(40)), policy="auto").paths,
-            ("reports[].files[].changed_ns",),
+            ("reports[].files[].changed_ns", "reports[].files[].time_ns"),
         )
+
+    def test_a_row_read_on_the_wrong_clock_differs_where_masking_would_accept_it(self) -> None:
+        # A route that answers the change clock with modification times gives each time
+        # that is never older than the modification time, which the masking accepts; the
+        # row's own raw clocks show its time is not the one its request reads.
+        def read(time: int) -> dict[str, Any]:
+            row = {"path": "a", "time_ns": time, "mtime_ns": 1000, "changed_ns": 9000}
+            tree = {"name": ".", "time_ns": time, "newest_file_time_ns": time, "children": []}
+            return answer(
+                request={"time": "changed"},
+                reports=[{"view": "files", "files": [row]}, {"view": "tree", "tree": tree}],
+            )
+
+        verdict = compare(cli(read(9000)), cli(read(1000)), policy="auto")
+        self.assertEqual(verdict.kind, "differs")
+        # A tree node carries no raw clock to hold its time to; the change-clock windows,
+        # bounded between the fixture's modification times and its copies, cover it.
+        self.assertEqual(verdict.paths, ("reports[].files[].time_ns",))
+        measured, _ = normalize(read(1000))
+        self.assertEqual(measured["reports"][0]["files"][0]["time_ns"], CLOCK_MISMATCH)
+
+    def test_correct_change_clock_rows_agree_across_copies_with_their_own_change_times(
+        self,
+    ) -> None:
+        def copy(change: int) -> dict[str, Any]:
+            rows = [
+                {"path": "a", "time_ns": change, "mtime_ns": 1000, "changed_ns": change},
+                # A status change that was not observed is timed by modification time.
+                {"path": "b", "time_ns": 2000, "mtime_ns": 2000, "changed_ns": None},
+            ]
+            return answer(request={"time": "changed"}, reports=[{"view": "files", "files": rows}])
+
+        self.assertEqual(compare(cli(copy(9000)), cli(copy(7000)), policy="auto").kind, "same")
+
+    def test_a_modification_clock_row_whose_time_is_not_its_mtime_differs(self) -> None:
+        def read(time: int) -> dict[str, Any]:
+            row = {"path": "a", "time_ns": time, "mtime_ns": 1000, "changed_ns": 9000}
+            return answer(request={"time": "modified"}, reports=[{"view": "files", "files": [row]}])
+
+        self.assertEqual(compare(cli(read(1000)), cli(read(1000)), policy="auto").kind, "same")
+        verdict = compare(cli(read(1000)), cli(read(9000)), policy="auto")
+        self.assertEqual(verdict.paths, ("reports[].files[].time_ns",))
+        measured, _ = normalize(read(9000))
+        self.assertEqual(measured["reports"][0]["files"][0]["time_ns"], CLOCK_MISMATCH)
 
     def test_band_edges_and_free_space_are_read_time_facts_and_counts_are_content(self) -> None:
         # A band's instants move with the reference and free space with the host; the
@@ -838,6 +888,25 @@ class FixtureTests(unittest.TestCase):
             facts = build_fixture(Path(scratch) / "fixture")
             copy_fixture(facts, Path(scratch) / "copy")
             self.assertEqual(self.snapshot(facts.root), self.snapshot(Path(scratch) / "copy"))
+
+    def test_the_change_windows_fall_between_every_mtime_and_any_copy(self) -> None:
+        # Only there do the two clocks select different files, so only there can a window
+        # catch a route that read the modification clock where the change clock was asked.
+        import matrix
+
+        bound = int(datetime.fromisoformat(matrix.CHANGE_WINDOW_BOUND).timestamp()) * 10**9
+        for name in ("chgsince", "chgbefore"):
+            selection = matrix.REQUESTS[name]["sel"]
+            self.assertNotIn("time", selection, f"{name} reads the default change clock")
+            self.assertIn(matrix.CHANGE_WINDOW_BOUND, selection.values())
+        with tempfile.TemporaryDirectory() as scratch:
+            facts = build_fixture(Path(scratch) / "fixture")
+            copy = Path(scratch) / "copy"
+            copy_fixture(facts, copy)
+            for path in [copy, *copy.rglob("*")]:
+                stat = path.lstat()
+                self.assertLess(stat.st_mtime_ns, bound, path)
+                self.assertGreater(stat.st_ctime_ns, bound, path)
 
 
 if __name__ == "__main__":
