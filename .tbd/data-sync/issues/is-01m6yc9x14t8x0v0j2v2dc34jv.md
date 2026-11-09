@@ -5,7 +5,7 @@ title: "Recent growth without a baseline: change time, age profiles, and volume 
 kind: epic
 status: open
 priority: 2
-version: 10
+version: 11
 spec_path: docs/project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md
 labels: []
 dependencies: []
@@ -19,7 +19,8 @@ child_order_hints:
   - is-01m2xbag4cjyqqvq776rnfxcyt
   - is-01m6yn4ejvcq7bxw43fd0em0cq
   - is-01m6z186j8bw9e8najpz11kf5d
+  - is-01m70h1y3e66qv3grdtmfcr72b
 created_at: 2026-11-08T20:06:26.596Z
-updated_at: 2026-11-09T02:12:30.920Z
+updated_at: 2026-11-09T16:07:57.294Z
 ---
 Answer 'where did disk space go over a window?' from one metadata walk with no saved state, as the spec describes: phase 0 documents the recipe that works today; phase 1 adds change time (max of mtime and ctime) as a selection window and sort key plus a selection-coverage note; phase 2 adds the ages view (selected bytes partitioned by change-time band, every window from one walk); phase 3 adds the volumes view (capacity of each filesystem the report touches beside the bytes it counted; promotes fdu-eas0). Net change with deletions stays with checkpoints (fdu-8ybz).
