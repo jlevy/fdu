@@ -435,7 +435,8 @@ mod tests {
         let Section::Volumes(volumes) = &report.sections[0] else { panic!("volumes") };
         assert_eq!(volumes.rows.len(), 1, "a temporary directory is one filesystem");
         let row = &volumes.rows[0];
-        assert_eq!(row.absolute, root.path());
+        // The index's root, which a walk canonicalizes: on macOS `/var` is `/private/var`.
+        assert_eq!(row.absolute, index.root_path());
         assert!(row.capacity.as_ref().is_some_and(|capacity| capacity.capacity_bytes > 0));
         assert_eq!(row.counted.files, 1);
         assert!(volumes.observed_at_ns.is_some());
