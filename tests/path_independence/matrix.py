@@ -65,6 +65,10 @@ def cli_args(request: Spec) -> list[str]:
         args += ["--min-size", str(selection["min_size"])]
     if "modified_since" in selection:
         args += ["--modified-since", selection["modified_since"]]
+    if "changed_since" in selection:
+        args += ["--changed-since", selection["changed_since"]]
+    if "changed_before" in selection:
+        args += ["--changed-before", selection["changed_before"]]
     if "kind" in selection:
         args += ["--kind", ",".join(selection["kind"])]
     if selection.get("ignored") == "exclude":
@@ -109,6 +113,10 @@ REQUESTS: dict[str, Spec] = {
     "excl_src": spec(exclude=["src/**"]),
     "minsize100": spec(min_size="100"),
     "modsince": spec(modified_since="2023-03-15T00:00:00Z", views=["files"]),
+    # A copy cannot carry a change time, so these bound it where every copy agrees: each
+    # is written after 2000, and a route that drops the window selects everything.
+    "chgsince": spec(changed_since="2000-01-01T00:00:00Z", views=["files"]),
+    "chgbefore": spec(changed_before="2000-01-01T00:00:00Z", views=["files"]),
     "kind_file": spec(kind=["file"]),
     "kind_dirsym": spec(kind=["dir", "symlink"], views=["files"]),
     "limit2": spec(limit=2),
@@ -129,6 +137,8 @@ REQUESTS: dict[str, Spec] = {
     "v_files": spec(views=["files"]),
     "v_full": spec(views=["full"]),
     "v_summary_types": spec(views=["summary", "types"]),
+    "v_ages": spec(views=["ages"]),
+    "v_volumes": spec(views=["volumes"]),
     # content views, which imply the analysis they show
     "v_code": spec(views=["code"]),
     "v_documents": spec(views=["documents"]),
@@ -406,6 +416,10 @@ SUBSET = Tier(
         "v_tree_bounds",
         "a_all_nogi",
         "onefs",
+        "chgsince",
+        "chgbefore",
+        "v_ages",
+        "v_volumes",
     ),
     warmers=("W_default", "W_nogi", "W_all", "W_code", "W_words", "W_view_code"),
     selfwarm=False,

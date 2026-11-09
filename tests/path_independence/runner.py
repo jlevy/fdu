@@ -185,6 +185,19 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
             row.pop("changed_at", None)
 
     for section in content.get("reports", []):
+        # A band's edges are instants measured back from the reference, which is when the
+        # answer was read; its counts and its edges as ages are compared.
+        for band in section.get("bands", []) if section.get("view") == "ages" else []:
+            for edge in ("since_ns", "before_ns", "since_at", "before_at"):
+                band.pop(edge, None)
+        # Free space is a fact about the host at the instant it was observed, which another
+        # writer on the machine moves between two reads; capacity, type, and what the report
+        # counted on each filesystem are compared.
+        if section.get("view") == "volumes":
+            section.pop("observed_at_ns", None)
+            section.pop("observed_at", None)
+            for volume in section.get("volumes", []):
+                volume.pop("available_bytes", None)
         for row in section.get("files", []):
             residual(row)
         # Every tree node carries the activity it counts and its age, so the folded tier a

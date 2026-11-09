@@ -36,7 +36,17 @@ def _build(spec: dict[str, Any]) -> tuple[Any, Any, Any]:
     for name in ("include", "exclude"):
         if name in selection:
             fields[name] = tuple(selection[name])
-    for name in ("min_size", "modified_since", "depth", "limit", "breadth", "min_share", "reverse"):
+    for name in (
+        "min_size",
+        "modified_since",
+        "changed_since",
+        "changed_before",
+        "depth",
+        "limit",
+        "breadth",
+        "min_share",
+        "reverse",
+    ):
         if name in selection:
             fields[name] = selection[name]
     if "kind" in selection:

@@ -217,6 +217,52 @@ class CompareTests(unittest.TestCase):
             ("reports[].files[].changed_ns",),
         )
 
+    def test_band_edges_and_free_space_are_read_time_facts_and_counts_are_content(self) -> None:
+        # A band's instants move with the reference and free space with the host; the
+        # files a band counts, and what each filesystem holds and the report counted on
+        # it, are what the tree decides.
+        def read(instant: int, files: int, available: int, counted: int) -> dict[str, Any]:
+            band = {
+                "band": "under 1h",
+                "since_age_ns": 3600,
+                "before_age_ns": 0,
+                "since_ns": instant - 3600,
+                "before_ns": instant,
+                "since_at": str(instant - 3600),
+                "before_at": str(instant),
+                "files": files,
+            }
+            volume = {
+                "device": 1,
+                "capacity_bytes": 100,
+                "available_bytes": available,
+                "counted": {"files": counted},
+            }
+            return answer(
+                reports=[
+                    {"view": "ages", "bands": [band]},
+                    {
+                        "view": "volumes",
+                        "observed_at_ns": instant,
+                        "observed_at": str(instant),
+                        "volumes": [volume],
+                    },
+                ]
+            )
+
+        self.assertEqual(
+            compare(cli(read(100, 2, 40, 2)), cli(read(900, 2, 30, 2)), policy="auto").kind,
+            "same",
+        )
+        self.assertEqual(
+            compare(cli(read(100, 2, 40, 2)), cli(read(100, 3, 40, 2)), policy="auto").paths,
+            ("reports[].bands[].files",),
+        )
+        self.assertEqual(
+            compare(cli(read(100, 2, 40, 2)), cli(read(100, 2, 40, 1)), policy="auto").paths,
+            ("reports[].volumes[].counted.files",),
+        )
+
     def test_tree_node_ages_are_compared_as_residuals_at_every_depth(self) -> None:
         def timed(reference: int, root_age: int | None, leaf_age: int) -> dict[str, Any]:
             leaf = {"name": "f", "mtime_ns": 30, "age_ns": leaf_age, "children": []}
