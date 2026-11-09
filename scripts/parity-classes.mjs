@@ -205,14 +205,14 @@ const portablePatternMatches = (line, actual, file) => {
     )
     .replaceAll('\\[AGE_BLANK\\]', '(?:\\[AGE_BLANK_VALUE\\]| +)')
     .replaceAll('\\[AGE_NS\\]', '(?:\\[AGE_NS_VALUE\\]|-?\\d+)')
-    // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
+    // normalise() already masks the clock fields (`time_ns` and the rest), but leaves `observed_at_ns`
     // numeric. The same named golden pattern appears in both fields.
     .replaceAll('\\[MTIME_NS\\]', '(?:\\[MTIME_NS\\]|\\[MTIME_NS_VALUE\\]|-?\\d+)')
     .replaceAll('\\[ALLOCATED\\]', '(?:\\[ALLOCATED_VALUE\\]|\\d+)');
   return new RegExp(`^${volumePatterns(pattern)}$`).test(sameSeparator(actual));
 };
 
-/** Flags and parameters name the same thing: --modified-since is modified_since. */
+/** Flags and parameters name the same thing: --min-size is min_size. */
 const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').replace(/[-_]/g, '');
 
 // The two surfaces have different NAMES for the same knob, not merely different
@@ -226,7 +226,7 @@ const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').repla
 // its refusals have always said `invalid cache policy`, which `AxisNames::FIELDS` kept
 // rather than changing the wording when the rule moved into the request model.
 const KNOBS =
-  /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
+  /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
 // A report's one bound suggestion names the same setters differently on each surface: a

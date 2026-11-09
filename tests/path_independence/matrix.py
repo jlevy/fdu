@@ -63,12 +63,12 @@ def cli_args(request: Spec) -> list[str]:
         args += ["--exclude", glob]
     if "min_size" in selection:
         args += ["--min-size", str(selection["min_size"])]
-    if "modified_since" in selection:
-        args += ["--modified-since", selection["modified_since"]]
-    if "changed_since" in selection:
-        args += ["--changed-since", selection["changed_since"]]
-    if "changed_before" in selection:
-        args += ["--changed-before", selection["changed_before"]]
+    if "since" in selection:
+        args += ["--since", selection["since"]]
+    if "before" in selection:
+        args += ["--before", selection["before"]]
+    if "time" in selection:
+        args += ["--time", selection["time"]]
     if "kind" in selection:
         args += ["--kind", ",".join(selection["kind"])]
     if selection.get("ignored") == "exclude":
@@ -112,16 +112,21 @@ REQUESTS: dict[str, Spec] = {
     "incl_rs": spec(include=["*.rs"]),
     "excl_src": spec(exclude=["src/**"]),
     "minsize100": spec(min_size="100"),
-    "modsince": spec(modified_since="2023-03-15T00:00:00Z", views=["files"]),
+    # The fixture's modification times are its own, which every copy keeps, so these
+    # compare exactly; a change time is each copy's, so they read modification time.
+    "modsince": spec(since="2023-03-15T00:00:00Z", time="modified", views=["files"]),
+    "time_mod": spec(time="modified"),
     # A copy cannot carry a change time, so these bound it where every copy agrees: each
     # is written after 2000, and a route that drops the window selects everything.
-    "chgsince": spec(changed_since="2000-01-01T00:00:00Z", views=["files"]),
-    "chgbefore": spec(changed_before="2000-01-01T00:00:00Z", views=["files"]),
+    "chgsince": spec(since="2000-01-01T00:00:00Z", views=["files"]),
+    "chgbefore": spec(before="2000-01-01T00:00:00Z", views=["files"]),
     "kind_file": spec(kind=["file"]),
     "kind_dirsym": spec(kind=["dir", "symlink"], views=["files"]),
     "limit2": spec(limit=2),
     "sort_name": spec(sort="name"),
-    "sort_mtime_rev": spec(sort="mtime", reverse=True, views=["files"]),
+    # Change times follow each copy's write order, so a time sort compares on the clock
+    # every copy keeps.
+    "sort_mtime_rev": spec(sort="time", time="modified", reverse=True, views=["files"]),
     "depth1": spec(views=["tree"], depth=1),
     "depthall": spec(views=["tree"], depth="all"),
     "sizeapp": spec(size="apparent"),
@@ -138,6 +143,7 @@ REQUESTS: dict[str, Spec] = {
     "v_full": spec(views=["full"]),
     "v_summary_types": spec(views=["summary", "types"]),
     "v_ages": spec(views=["ages"]),
+    "v_ages_mod": spec(views=["ages"], time="modified"),
     "v_volumes": spec(views=["volumes"]),
     # content views, which imply the analysis they show
     "v_code": spec(views=["code"]),
@@ -418,6 +424,8 @@ SUBSET = Tier(
         "onefs",
         "chgsince",
         "chgbefore",
+        "time_mod",
+        "v_ages_mod",
         "v_ages",
         "v_volumes",
     ),

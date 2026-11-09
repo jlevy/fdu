@@ -43,6 +43,7 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -131,6 +132,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -225,6 +227,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -311,6 +314,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -397,6 +401,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -474,6 +479,7 @@ $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -561,6 +567,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -648,6 +655,7 @@ $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --dept
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -735,6 +743,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -807,6 +816,7 @@ $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --dept
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -877,6 +887,7 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["list"],
     "omitted_views": []
@@ -933,6 +944,7 @@ $ fdu --stale-ok --format json --size apparent --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["list"],
     "omitted_views": []
@@ -1000,6 +1012,7 @@ $ fdu --no-gitignore --cache on --view tree --format json --size apparent --dept
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []

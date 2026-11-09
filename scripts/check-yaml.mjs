@@ -120,17 +120,17 @@ const assertAges = (report, label) => {
   // A list row always has a time; a tree node has none when it counts nothing.
   const assertAge = (row) => {
     assert.ok(Object.hasOwn(row, 'age_ns'), `${label}: row age missing`);
-    assert.ok(Object.hasOwn(row, 'modified_at'), `${label}: row instant missing`);
+    assert.ok(Object.hasOwn(row, 'time_at'), `${label}: row instant missing`);
     if (row.age_ns == null) {
-      assert.ok(reference == null || row.complete === false || row.mtime_ns == null,
+      assert.ok(reference == null || row.complete === false || row.time_ns == null,
         `${label}: complete row has null age with a reference`);
       return;
     }
     assert.equal(typeof reference, 'bigint', `${label}: missing exact age reference`);
-    assert.equal(typeof row.mtime_ns, 'bigint', `${label}: missing exact mtime`);
+    assert.equal(typeof row.time_ns, 'bigint', `${label}: missing exact time`);
     assert.notEqual(row.complete, false, `${label}: incomplete row has an age`);
-    assert.equal(row.age_ns, reference - row.mtime_ns,
-      `${label}: age differs from reference minus mtime`);
+    assert.equal(row.age_ns, reference - row.time_ns,
+      `${label}: age differs from reference minus time`);
   };
   for (const section of report.reports ?? []) {
     for (const row of section.files ?? []) assertAge(row);
@@ -283,6 +283,6 @@ const directories = parse(execFileSync(
 const [directory] = directories.reports[0].files;
 assert.equal(directory.files, 2n);
 assert.equal(directory.dirs, 0n);
-assert.equal(directory.age_ns, directories.age_reference_ns - directory.mtime_ns);
+assert.equal(directory.age_ns, directories.age_reference_ns - directory.time_ns);
 
 console.log(`yaml self-check passed: ${checked} views parsed, ${compared} cross-format cases`);

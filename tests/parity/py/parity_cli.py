@@ -114,6 +114,15 @@ def parse_size(value: str) -> fdu.SizeMetric:
         raise UsageError(f'invalid --size "{value}": expected one of {known}') from None
 
 
+def parse_time(value: str) -> fdu.TimeBasis:
+    try:
+        return fdu.TimeBasis(value)
+    except ValueError:
+        raise UsageError(
+            f'invalid --time "{value}": expected one of changed, modified'
+        ) from None
+
+
 def parse_sort(value: str) -> fdu.SortKey:
     try:
         return fdu.SortKey(value)
@@ -151,10 +160,9 @@ class Args:
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
-        self.modified_since: str | None = None
-        self.modified_before: str | None = None
-        self.changed_since: str | None = None
-        self.changed_before: str | None = None
+        self.since: str | None = None
+        self.before: str | None = None
+        self.time: fdu.TimeBasis | None = None
         self.kinds: list[fdu.EntryKind] = []
         self.depth: fdu.Bound | int | None = None
         self.limit: fdu.Bound | int | None = None
@@ -235,14 +243,12 @@ def parse_args(argv: list[str]) -> Args:
             args.exclude.append(take())
         elif flag == "--min-size":
             args.min_size = take()
-        elif flag == "--modified-since":
-            args.modified_since = take()
-        elif flag == "--modified-before":
-            args.modified_before = take()
-        elif flag == "--changed-since":
-            args.changed_since = take()
-        elif flag == "--changed-before":
-            args.changed_before = take()
+        elif flag == "--since":
+            args.since = take()
+        elif flag == "--before":
+            args.before = take()
+        elif flag == "--time":
+            args.time = parse_time(take())
         elif flag == "--kind":
             args.kinds = [fdu.EntryKind(k.strip()) for k in take().split(",") if k.strip()]
         elif flag in ("--depth", "-d"):
@@ -347,10 +353,9 @@ def build_query(args: Args) -> fdu.Query:
         include=tuple(args.include),
         exclude=tuple(args.exclude),
         min_size=args.min_size,
-        modified_since=args.modified_since,
-        modified_before=args.modified_before,
-        changed_since=args.changed_since,
-        changed_before=args.changed_before,
+        since=args.since,
+        before=args.before,
+        time=args.time,
         kinds=tuple(args.kinds),
         depth=args.depth if args.depth is not None else (fdu.Bound.ALL if args.full else None),
         limit=args.limit if args.limit is not None else (fdu.Bound.ALL if args.full else None),

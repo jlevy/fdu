@@ -41,11 +41,11 @@ def answer(out: str) -> object:
 
 
 def age_problems(out: str) -> list[str]:
-    """Rows whose `age_ns` is not their reference instant minus their `mtime_ns`.
+    """Rows whose `age_ns` is not their reference instant minus their `time_ns`.
 
     Every object carrying an `age_ns` is checked, a flat row or a tree node at any depth.
     An age is unknown (null) when the report has no reference instant, when the row's
-    subtree was not listed in full (`complete: false`), or when the row has no mtime, as
+    subtree was not listed in full (`complete: false`), or when the row has no time, as
     a tree node that counts no entry has none.
     """
     doc = parse(out)
@@ -57,10 +57,10 @@ def age_problems(out: str) -> list[str]:
     def visit(node: object) -> None:
         if isinstance(node, dict):
             if "age_ns" in node:
-                mtime = node.get("mtime_ns")
-                known = reference is not None and mtime is not None
+                time = node.get("time_ns")
+                known = reference is not None and time is not None
                 expected = (
-                    reference - mtime if known and node.get("complete") is not False else None
+                    reference - time if known and node.get("complete") is not False else None
                 )
                 if node["age_ns"] != expected:
                     problems.append(f"{node.get('path')}: age {node['age_ns']} != {expected}")

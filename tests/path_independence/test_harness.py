@@ -188,7 +188,7 @@ class CompareTests(unittest.TestCase):
         def timed(reference: int, age: int) -> dict[str, Any]:
             return answer(
                 age_reference_ns=reference,
-                reports=[{"files": [{"path": "env", "mtime_ns": -10, "age_ns": age}]}],
+                reports=[{"files": [{"path": "env", "time_ns": -10, "mtime_ns": -10, "age_ns": age}]}],
             )
 
         earlier = timed(100, 110)
@@ -204,7 +204,7 @@ class CompareTests(unittest.TestCase):
         # Two copies of one tree have their own change times; what must agree is whether
         # one is known and that it is never older than the modification time.
         def changed(value: int | None) -> dict[str, Any]:
-            row = {"path": "a", "mtime_ns": 50, "changed_ns": value, "changed_at": str(value)}
+            row = {"path": "a", "time_ns": 50, "mtime_ns": 50, "changed_ns": value}
             return answer(reports=[{"files": [row]}])
 
         self.assertEqual(compare(cli(changed(60)), cli(changed(90)), policy="auto").kind, "same")
@@ -263,10 +263,25 @@ class CompareTests(unittest.TestCase):
             ("reports[].volumes[].counted.files",),
         )
 
+    def test_a_change_time_differs_by_copy_and_a_modification_time_never_does(self) -> None:
+        # Each copy of the fixture is written at its own instant, so a tree read by change
+        # time differs between two copies in its times alone; read by modification time,
+        # which a copy keeps, the same difference is a real one.
+        def read(clock: str, newest: int) -> dict[str, Any]:
+            tree = {"name": ".", "time_ns": newest, "newest_file_time_ns": newest, "children": []}
+            return answer(request={"time": clock}, reports=[{"tree": tree}])
+
+        changed = compare(cli(read("changed", 100)), cli(read("changed", 900)), policy="auto")
+        self.assertEqual(changed.kind, "same")
+        modified = compare(cli(read("modified", 100)), cli(read("modified", 900)), policy="auto")
+        self.assertEqual(
+            modified.paths, ("reports[].tree.newest_file_time_ns", "reports[].tree.time_ns")
+        )
+
     def test_tree_node_ages_are_compared_as_residuals_at_every_depth(self) -> None:
         def timed(reference: int, root_age: int | None, leaf_age: int) -> dict[str, Any]:
-            leaf = {"name": "f", "mtime_ns": 30, "age_ns": leaf_age, "children": []}
-            tree = {"name": ".", "mtime_ns": 40, "age_ns": root_age, "children": [leaf]}
+            leaf = {"name": "f", "time_ns": 30, "age_ns": leaf_age, "children": []}
+            tree = {"name": ".", "time_ns": 40, "age_ns": root_age, "children": [leaf]}
             return answer(
                 age_reference_ns=reference,
                 age_reference_at=f"read at {reference}",
@@ -561,8 +576,8 @@ def node(name: str, **fields: Any) -> dict[str, Any]:
         "files": 1,
         "dirs": 0,
         "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
-        "newest_mtime_ns": 5,
-        "mtime_ns": 7,
+        "newest_file_time_ns": 5,
+        "time_ns": 7,
         "complete": True,
         "age_ns": 0,
         "children": [],
@@ -575,11 +590,13 @@ class MergeOracleTests(unittest.TestCase):
     """The merge a report over several roots is held to, from single-root answers."""
 
     def test_a_summary_sums_and_an_unknown_ignored_share_stays_unknown(self) -> None:
-        row = {"files": 2, "dirs": 1, "bytes": 30, "allocated": 1024, "newest_mtime_ns": 4}
+        row = {"files": 2, "dirs": 1, "bytes": 30, "allocated": 1024, "newest_file_time_ns": 4}
         known = {**row, "ignored": {"files": 1, "dirs": 0, "bytes": 5, "allocated": 512}}
         single = lambda summary: {"reports": [{"summary": summary}]}  # noqa: E731
-        merged = merged_facts("r_summary", [single(known), single({**known, "newest_mtime_ns": 9})])
-        self.assertEqual((merged["files"], merged["bytes"], merged["newest_mtime_ns"]), (4, 60, 9))
+        merged = merged_facts(
+            "r_summary", [single(known), single({**known, "newest_file_time_ns": 9})]
+        )
+        self.assertEqual((merged["files"], merged["bytes"], merged["newest_file_time_ns"]), (4, 60, 9))
         self.assertEqual(merged["ignored"], {"files": 2, "dirs": 0, "bytes": 10, "allocated": 1024})
         unknown = merged_facts("r_summary", [single(known), single({**row, "ignored": None})])
         self.assertIsNone(unknown["ignored"])
@@ -594,23 +611,23 @@ class MergeOracleTests(unittest.TestCase):
             [{"root": 0, "path": "a"}, {"root": 0, "path": "b"}, {"root": 1, "path": "a"}],
         )
         trees = [
-            {"reports": [{"tree": node(".", mtime_ns=3)}]},
+            {"reports": [{"tree": node(".", time_ns=3)}]},
             {"reports": [{"tree": node(".", complete=False)}]},
         ]
         merged = merged_facts("r_full_tree", trees)
         self.assertIsNone(merged["tree"])
         self.assertEqual(merged["total"]["bytes"], 20)
-        self.assertEqual(merged["total"]["mtime_ns"], 7, "the newest under any root")
+        self.assertEqual(merged["total"]["time_ns"], 7, "the newest under any root")
         self.assertFalse(merged["total"]["complete"], "complete only when every root is")
         self.assertEqual(merged["trees"]["1"]["name"], "<root:1>")
         several = {
             "reports": [
                 {
                     "tree": None,
-                    "total": {**merged["total"], "age_ns": 4, "modified_at": "x"},
+                    "total": {**merged["total"], "age_ns": 4, "time_at": "x"},
                     "trees": [
                         {"root": 1, "tree": node("<root:1>", complete=False)},
-                        {"root": 0, "tree": node("<root:0>", mtime_ns=3)},
+                        {"root": 0, "tree": node("<root:0>", time_ns=3)},
                     ],
                 }
             ]

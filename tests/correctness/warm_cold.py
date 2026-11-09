@@ -52,7 +52,7 @@ CASES: list[tuple[str, list[str]]] = [
     ("files", ["--view", "files"]),
     ("size-apparent", ["--size", "apparent"]),
     ("size-allocated", ["--size", "allocated"]),
-    ("sort-mtime", ["--sort", "mtime"]),
+    ("sort-time", ["--sort", "time"]),
     ("sort-name", ["--sort", "name"]),
     ("depth-1", ["--view", "tree", "-d", "1"]),
     ("scan-depth-2", ["--scan-depth", "2"]),
