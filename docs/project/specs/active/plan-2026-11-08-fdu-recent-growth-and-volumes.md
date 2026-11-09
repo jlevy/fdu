@@ -7,6 +7,10 @@
 **Status:** Approved for implementation (2026-11-08). Phase 0 (documentation of what
 works today) shipped with this plan in #208. Phases 1–3 are being implemented in one
 pull request, with the [open questions](#open-questions) decided as recommended.
+Phase 4 (2026-11-09) replaces phase 1’s second time basis with one time that every
+report reasons in, before any of it is released; [the design](#one-time) below is phase
+4’s, and phase 1’s two-window design is recorded under
+[alternatives](#alternatives-considered).
 
 ## Overview
 
@@ -26,8 +30,9 @@ data. This plan:
 
 1. Documents the recipe that works now, with its limits, in the skill, `--docs`, the
    README, and the usage guide (phase 0).
-2. Adds **change time**, a second time basis that copies and extractions made through
-   ordinary file APIs do not hide from, as a selection window and a sort key (phase 1).
+2. Makes **change time**, which copies and extractions made through ordinary file APIs
+   do not hide from, the time every report reasons in: windows, sort, the tree’s age
+   column, `recent`, and `ages`, with modification time one flag away (phases 1 and 4).
 3. Adds an **`ages` view**: the selected bytes partitioned by when they were last
    written, every window from one walk (phase 2).
 4. Adds a **`volumes` view**: the capacity of each filesystem the report touches, beside
@@ -41,11 +46,11 @@ Everything else is composition with the axes fdu already has.
 
 | Question | Today | After this plan |
 | --- | --- | --- |
-| Where are the files written in the last day, by folder? | `fdu PATH --kind file --modified-since 24h` (misses copies that kept older times) | `fdu PATH --kind file --changed-since 24h` |
+| Where are the files written in the last day, by folder? | `fdu PATH --kind file --modified-since 24h` (misses copies that kept older times) | `fdu PATH --kind file --since 24h` |
 | How much was written in the last day? | Add `--view summary` | The same, or one row of `--view ages` |
-| Which files are they? | `fdu PATH --view largest --modified-since 24h` | `--view largest --changed-since 24h` |
+| Which files are they? | `fdu PATH --view largest --modified-since 24h` | `--view largest --since 24h` |
 | How is this tree’s space spread over time? | One run per window, or one Python index queried per window | `fdu PATH --view ages` |
-| Which folders account for one window, and what does that window hold? | Two runs | `fdu PATH --kind file --changed-since 7d --view tree,ages` |
+| Which folders account for one window, and what does that window hold? | Two runs | `fdu PATH --kind file --since 7d --view tree,ages` |
 | How full is the volume, and how much of it does this tree account for? | `df` beside fdu | `fdu PATH --view summary,volumes` |
 | How full is the volume, quickly? | `df PATH` | `fdu PATH --view volumes --scan-depth 0` |
 | What changed between two moments, deletions included? | Two saved JSON reports, diffed by hand | Unchanged: checkpoints (`fdu-8ybz`) |
@@ -237,7 +242,7 @@ retained index.
 
 | Concept | Model | Command line | Python |
 | --- | --- | --- | --- |
-| Change time | `Selection::changed`, a `TimeWindow` beside `Selection::modified`; an entry’s change time is `max(mtime, ctime)` (`Attrs::change_time_ns`) | `--changed-since`, `--changed-before`, `--sort changed` | `Selection(changed_since=, changed_before=)`, `SortKey.CHANGED` |
+| One time | `TimeBasis` (`Changed` by default, or `Modified`) on `Selection`, with one `Selection::window`; an entry’s `Times` holds both clocks (`Attrs::times`), and the index maintains both | `--since`, `--before`, `--time changed\|modified`, `--sort time` | `Selection(since=, before=, time=TimeBasis.MODIFIED)`, `SortKey.TIME` |
 | Age profile | `ViewSpec::Ages`: a partition of selected regular files by change-time band | `--view ages` | `View.AGES` |
 | Volume capacity | `ViewSpec::Volumes`: a join of the bytes counted per filesystem with capacity observed at report time | `--view volumes` | `View.VOLUMES` |
 
@@ -246,11 +251,23 @@ tree it admitted ([Selection coverage](#selection-coverage)).
 
 #### Alternatives considered
 
-- **A global time-basis switch (`--time changed`).** One flag would move the age column,
-  `--modified-*`, `--sort mtime`, and `recent` together.
-  It was rejected because every existing time flag says “modified”, so under the switch
-  `--modified-since` would mean something its name denies.
-  A second window composes with the first and reads literally.
+- **A second window beside the first (phase 1’s design).** `--changed-since` and
+  `--changed-before` beside `--modified-*`, `--sort changed` beside `--sort mtime`, and
+  `ages` by change time while the tree’s age column and `recent` stayed modification
+  time. It was chosen to keep released flags meaning what their names say, and replaced
+  before release (phase 4), because the cost was a report in two clocks:
+  `--view tree,ages` showed a copied Cargo crate as `20y` in the tree and `under 1h` in
+  `ages`; `--sort changed` had to be refused wherever rows render as a tree; four window
+  flags and two sort keys named near-synonyms, and fd’s `--changed-within` already means
+  modification time. What it offered alone, composing the two windows to list arrivals
+  carrying old content, remains in every list row, which carries both clocks.
+- **Modification time as the one time.** The released meaning, but it misses exactly the
+  arrivals measured above, and its errors point the unsafe way for both questions this
+  plan answers ([one time](#one-time)).
+- **One time with no opt-out.** A bulk `chmod -R`, `chown -R`, or SELinux relabel, or a
+  sync client writing extended attributes, moves every status-change time at once, and
+  then only modification time still tells content age; `--time modified` is that escape,
+  and the same axis takes birth or access time later as a value, not a flag family.
 - **ctime alone.** On Unix, `max(mtime, ctime)` equals `ctime` except for an entry whose
   modification time was set into the future.
   The maximum keeps that entry visible rather than letting a future modification time
@@ -271,67 +288,80 @@ retain it in the validity fingerprint:
 | macOS | `getattrlistbulk` with `ATTR_CMN_CHGTIME`, in `REQUIRED_COMMON` | None today; if `fdu-f6n7` narrows the attribute set, the plan must keep it whenever change time is requested |
 | Windows | `FILE_BASIC_INFO.ChangeTime` on the handle each entry is opened with | None; an entry that cannot be opened (`observe_listed`) has no change time |
 
-An entry whose change time was not observed has an **unknown** change time.
-It is never admitted by a change-time bound, it is counted in an `unknown` band in
-`ages`, and a note counts such entries, so a Windows `hiberfil.sys` is never silently
-treated as old. This follows the rule that an unmeasured value is unknown, never zero.
+An entry whose status-change time was not observed (on Windows, one fdu could list but
+not open, such as `pagefile.sys`) is timed by its modification time on the change-time
+clock, which is a lower bound of its change time, never a zero.
+A note counts the files so timed whenever a window or `ages` counted one, so the
+substitution is never silent.
+Treating them as unknown instead, as phase 1 did, would blank the age of every ancestor
+of such a file, the root of `C:\` included, while a directory’s time is the newest of
+everything beneath it, which one lower bound almost never moves.
 
-A directory’s change time is the newest change time in its eligible subtree, matching
-how its modification time is defined for `--modified-*` today.
+A directory’s time on either clock is the newest of that clock in its eligible subtree,
+its own included unless it is the report root, as the tree’s age column has always been
+defined.
 
-### Change-time windows and sort
+### One time
 
-`--changed-since T` and `--changed-before T` select by change time with the same value
-grammar and the same half-open interval as `--modified-since` and `--modified-before`.
-Both windows may be given, and an entry must satisfy both.
-That composition has a use of its own: `--changed-since 1d --modified-before 365d` lists
-data that arrived today carrying an old modification time, which is usually a copy or an
-extracted archive.
+Every report reasons in one time: an entry’s **change time** by default, or its
+**modification time** under `--time modified`. Windows, `--sort time`, the tree’s age
+column, `recent`, `ages`, and every row’s `age_ns` read the same clock, so one report
+never mixes two.
 
-`--sort changed` orders rows by change time, newest first, as `--sort mtime` orders by
-modification time; an unknown change time sorts last in either direction.
-Machine list rows carry `changed_ns` and `changed_at` beside `mtime_ns` and
-`modified_at`, null where unknown, and `changed_at` is null for an incomplete subtree as
-`modified_at` is.
+|  | Change time (default) | Modification time (`--time modified`) |
+| --- | --- | --- |
+| Is | `max(mtime, ctime)`: when the entry last changed in any way, its content or its metadata, arriving by copy or extraction included | `mtime`: when its content was last written, as `ls -l` shows |
+| “What is new since yesterday?” | Can over-include: a `chmod` looks new | Omits copies, extractions, and restores that keep old times |
+| “What is old enough to delete?” | Errs safe: a just-restored backup is not called stale | Calls a just-arrived copy of old content stale |
+| Fails when | A bulk `chmod`/`chown`/relabel moved every status change | Content arrived carrying old times |
 
-Tree nodes and grouped rows carry no change time.
-An unfiltered tree reads each row’s activity from a maximum the index maintains, and
-maintaining a second one would put change time on the index’s hot path for every
-mutation; a tree’s age stays modification activity ([open question 4](#open-questions)),
-so a tree’s order matches its column.
-`--sort changed` is therefore refused, naming the flat views, wherever a request’s rows
-render as a tree or a group, rather than silently falling back to name order.
-A flat row grows from 176 to 192 bytes for the field (its 16-byte alignment rounds any
-8-byte field up), and the size test records that decision.
+Change time is the default because its errors point the safe way for both questions: it
+over-includes rather than omits when asked what is new, and it holds back rather than
+condemns when asked what is old.
 
-The name follows POSIX: `stat` labels `ctime` “Change”, and `find -ctime` and
-`du --time=ctime` use the same word.
-fd’s `--changed-within` tests modification time; fdu already calls that “modified”, and
-phase 1’s documentation says so wherever it compares fdu with fd.
+`--since T` and `--before T` select by the report’s time, with the value grammar and
+half-open interval the `--modified-*` flags had.
+`--sort time` orders rows newest first in every view, trees and grouped rows included,
+since every row carries the same clock its column shows.
+`--time` takes `changed` or `modified`.
+
+The index maintains a directory’s newest time on both clocks, for its regular files and
+for every entry beneath it, beside its other roll-ups, so either value of `--time` reads
+the same fast paths; a directory grows by 24 bytes.
+Both clocks come from the same `stat` result, so maintaining the second adds no system
+call to any walk or mutation.
+
+Machine output names the request’s `time`, and every row and node gives its time as
+`time_ns`, `time_at`, and `age_ns`; a summary or tree row’s newest regular file is
+`newest_file_time_ns`. List rows also carry both raw clocks, `mtime_ns` and
+`changed_ns`, so a caller can still find arrivals that carry old content (`changed_ns`
+recent, `mtime_ns` old) in one listing.
+
+The name `changed` follows POSIX, where `stat` labels `ctime` “Change”; the value names
+the clock, not the query, and `--since` reads the same under either.
 
 ### The `ages` view
 
-`--view ages` partitions the selected regular files by how long ago they last changed,
+`--view ages` partitions the selected regular files by their age in the report’s time,
 newest first. Edges are hours and days, and a year is 365.25 days, as in the tree’s age
 column. The time grammar takes no calendar units, so each edge is spelled the way a
 window flag accepts it, and every row is one window query over the same selection and
 instant:
 
-| Band | Change-time age | Window that selects exactly this row |
+| Band | Age | Window that selects exactly this row |
 | --- | --- | --- |
-| `future` | Zero or below: clock skew or a timestamp set ahead | `--changed-since now` |
-| `under 1h` | Over 0, to 1 hour | `--changed-since 1h --changed-before now` |
-| `1h to 1d` | Over 1 hour, to 1 day | `--changed-since 24h --changed-before 1h` |
-| `1d to 7d` | Over 1 day, to 7 days | `--changed-since 7d --changed-before 24h` |
-| `7d to 30d` | Over 7 days, to 30 days | `--changed-since 30d --changed-before 7d` |
-| `30d to 90d` | Over 30 days, to 90 days | `--changed-since 90d --changed-before 30d` |
-| `90d to 1y` | Over 90 days, to 365.25 days | `--changed-since 365d6h --changed-before 90d` |
-| `1y to 3y` | Over 1 year, to 3 years | `--changed-since 1095d18h --changed-before 365d6h` |
-| `over 3y` | Over 3 years | `--changed-before 1095d18h` |
-| `unknown` | Change time not observed | None; no window admits it |
+| `future` | Zero or below: clock skew or a timestamp set ahead | `--since now` |
+| `under 1h` | Over 0, to 1 hour | `--since 1h --before now` |
+| `1h to 1d` | Over 1 hour, to 1 day | `--since 24h --before 1h` |
+| `1d to 7d` | Over 1 day, to 7 days | `--since 7d --before 24h` |
+| `7d to 30d` | Over 7 days, to 30 days | `--since 30d --before 7d` |
+| `30d to 90d` | Over 30 days, to 90 days | `--since 90d --before 30d` |
+| `90d to 1y` | Over 90 days, to 365.25 days | `--since 365d6h --before 90d` |
+| `1y to 3y` | Over 1 year, to 3 years | `--since 1095d18h --before 365d6h` |
+| `over 3y` | Over 3 years | `--before 1095d18h` |
 
 Windows are half-open, `[since, before)`, so an entry exactly on an edge falls in the
-newer band: `--changed-since` is inclusive.
+newer band: `--since` is inclusive.
 That includes the zero edge, so an entry stamped at the request instant itself counts as
 `future`.
 
@@ -352,7 +382,6 @@ from the `lstat` script):
    552 MiB    5.6%  90d to 1y        7,147 files
    2.1 GiB   21.4%  1y to 3y         54,225 files
    848 MiB    8.5%  over 3y          37,542 files
-note: ages are by change time: the newer of modification and status change
 ```
 
 The rules it obeys:
@@ -376,7 +405,7 @@ The rules it obeys:
 
 Machine output gives each band its exact edges as ages and as instants, its `files`,
 `bytes`, `allocated`, and `ignored` tallies, and a `cumulative` object with the same
-tallies. The section names its `basis`: `changed`.
+tallies; the request’s `time` names the clock.
 
 ### The `volumes` view
 
@@ -507,14 +536,17 @@ from `fdu.report/11`.
   is below.
 - [x] `--changed-since`, `--changed-before`, `--sort changed`; Python `changed_since`,
   `changed_before`, and `SortKey.CHANGED`.
-- [x] `changed_ns` and `changed_at` on list rows; tree nodes carry none (see
-  [change-time windows and sort](#change-time-windows-and-sort)).
+- [x] `changed_ns` and `changed_at` on list rows; tree nodes carry none (see phase 1’s
+  change-time windows, superseded by [one time](#one-time)).
 - [x] The selection-coverage note and its machine fields (`selected` and `scanned` on
   every envelope, each `{files, dirs, bytes, allocated}`).
 - [x] The skill and docs switch the recipe to `--changed-since`.
 - [x] Once “changed” names change time, reword the places that use it for modification
   activity, such as the tree’s age (“how long ago anything it counts last changed”) in
   the skill, `--docs`, the usage guide, and the README.
+
+Phase 4 replaces this phase’s second window, its sort key, and its unknown change time
+before release; the items above record what was built and then superseded.
 
 ### Phase 2: The `ages` view (`fdu-5079`, `fdu-alw7`)
 
@@ -560,6 +592,79 @@ from `fdu.report/11`.
   rather than a separate note, so goldens pin one layout with named patterns.
 - [x] `make cross-lint`, since every source is behind a platform gate.
 
+### Phase 4: One time basis (`fdu-14k4`)
+
+Decided 2026-11-09 by the maintainer, after phases 1–3 were built and before any of it
+was released: one time that every report reasons in, replacing phase 1’s second window.
+The release is a minor version, so names change where the design is better for it, not
+where compatibility alone would keep them.
+The design is [one time](#one-time).
+
+**Engine: both clocks, one maintained shape (`fdu-hw1m`).**
+
+- [ ] `TimeBasis` (`Changed`, the default, and `Modified`) and `Times` (`modified`,
+  `changed`, nanoseconds) in `engine_contract`, re-exported from `query`.
+  `Attrs::times()` times an unobserved status change by modification, and
+  `Attrs::change_time_ns` keeps reporting whether one was observed.
+- [ ] `InternedRollUp`’s newest regular file and `InternedPartitionRollUp`’s newest
+  activity become `Times`; `merge`, `recompute_newest_upward`, `raise_activity_upward`,
+  the folded scan, the summary fold in `execution.rs`, and every snapshot load maintain
+  both. Roll-ups are rebuilt from entry attributes on load, so the snapshot format is
+  unchanged.
+- [ ] Public `RollUp` and `RollUpSummary` gain `newest_changed_ns` beside
+  `newest_mtime_ns`; the index-level API keeps raw clocks, since it answers no request.
+- [ ] The size tests record the larger directory roll-up.
+
+**Query: one window, one basis (`fdu-h3t9`).**
+
+- [ ] `Selection::window` and `Selection::time` replace `modified` and `changed`;
+  `ModifiedWindow` goes.
+  `Candidate`, `SubtreeValues`, the `ActivityTable`, and the maintained activity carry
+  `Times`, and every predicate and row reads the request’s basis.
+- [ ] `SortKey::Time` replaces `Mtime` and `Changed` and is valid in every view, so the
+  tree refusal goes; with no unknown time, `--reverse` reverses it as it does every
+  other key.
+- [ ] `recent`, `ages`, the tree, grouped rows, list rows, and the summary read the
+  basis. `ages` loses its `unknown` band and its basis note.
+- [ ] The note for files timed by modification replaces the unknown-change-time note:
+  counted where a window or `ages` counted such a file, and only under `changed`.
+- [ ] `ReadSpec::since`, `before`, and `time`; `AxisNames` names them per surface;
+  `parse_time_basis`; `parse_sort` takes `time` and no longer `mtime` or `changed`.
+
+**Report schema (`fdu-wtoc`).**
+
+- [ ] Every row and node gives `time_ns`, `time_at`, and `age_ns`; summary and tree rows
+  give `newest_file_time_ns`; list rows also give raw `mtime_ns` and `changed_ns`.
+  `modified_at`, `changed_at`, and a node’s `mtime_ns` and `newest_mtime_ns` go.
+- [ ] The request echo gives `time`, and `Report` carries it for renderers.
+- [ ] The `ages` section drops `basis`; it has nine bands.
+- [ ] The schema stays `fdu.report/12`, which is unreleased.
+
+**Surfaces (`fdu-0ace`).**
+
+- [ ] Command line: `--since`, `--before`, `--time changed|modified`, `--sort time`.
+- [ ] Python: `Selection(since=, before=, time=)`, `TimeBasis`, `SortKey.TIME`, model
+  fields renamed with the schema, and `RollUp.newest_changed_ns`.
+
+**Docs (`fdu-khwo`).**
+
+- [ ] The skill, `--help`, `--docs`, both READMEs, `docs/usage.md`,
+  `docs/machine-output.md`, the architecture docs that name the age column or the old
+  flags, and the CHANGELOG, which states every rename and the age column’s new default.
+
+**Tests (`fdu-xff5`).**
+
+- [ ] Goldens move to `--since`, `--before`, and `--sort time`. A session over a
+  backdated fixture passes `--time modified`, since `touch -d` cannot backdate a change
+  time.
+- [ ] Engine tests: both clocks in maintained and walked roll-ups agree; the fallback
+  timing and its note; `--sort time` over trees and grouped rows; `--time modified`
+  reproduces the released modification-time answers.
+- [ ] Path independence compares a change-time answer by each row’s age residual and
+  masks the clocks a fixture copy cannot carry, and adds `--time modified` requests that
+  compare exactly.
+- [ ] Parity re-recorded; the `--time` and window flags are surface-label deviations.
+
 ## Testing Strategy
 
 A test cannot give a file an old change time: anything it writes, `touch -d` included,
@@ -583,12 +688,12 @@ Exact nanosecond edges and unknown change times use synthetic entry facts.
   later instants and check every band and window, including entries that are old by both
   clocks, which neither the CLI nor Python can produce.
 - **Identities:** the `ages` rows sum to `summary`; each row equals its window query in
-  the band table; cumulative tallies equal `--changed-since <edge> --view summary`; a
-  `--changed-*` window over an index equals a cold run (path independence).
-- **Unknown change time:** an index with an unobserved change time keeps that entry out
-  of every change-time bound and puts it in the `unknown` band.
+  the band table; cumulative tallies equal `--since <edge> --view summary`; a window
+  over an index equals a cold run (path independence).
+- **Unobserved status change:** an entry with none is timed by modification on the
+  change-time clock, and the note counts it when a window or `ages` counted it.
 - **Clock edges:** future timestamps fall in `future`; an entry exactly on a band edge
-  falls in the newer band, because `--changed-since` is inclusive.
+  falls in the newer band, because `--since` is inclusive.
 - **Volumes:** a root on one filesystem gives one row; a fixture with a mount below the
   root gives two (Linux CI, where mounting a tmpfs is possible), and `--one-filesystem`
   gives one; capacity never appears in a snapshot.
@@ -613,6 +718,9 @@ phase, not before.
 implemented as written, so each question below takes its recommendation, which the
 design above already follows.
 Any of them can be reopened in the implementation pull request’s review.
+**Reopened 2026-11-09:** phase 4 settles questions 1, 3, and 4 differently: one time,
+change time by default, named `--since`, `--before`, `--time`, and `--sort time`, and
+the tree’s age column follows it.
 
 1. **Basis of `ages`.** Recommendation: change time, because the view’s question is when
    space arrived, and change time is conservative for both growth and staleness.
@@ -645,7 +753,7 @@ Any of them can be reopened in the implementation pull request’s review.
    Alternative: notes only.
 7. **Cumulative tallies in text `ages`.** Recommendation: machine output only, so text
    keeps the grouped-row layout unchanged; “how much changed within 30 days?”
-   is one `--changed-since 30d --view summary` away.
+   is one `--since 30d --view summary` away.
    Case against: that is the question the view exists for, and a reader has to add rows
    to answer it. Alternative: a second share column of cumulative share, which needs the
    output design’s grouped-row rule amended first, since a continuation line may only
