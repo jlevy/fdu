@@ -1581,7 +1581,7 @@ pub struct Report {
     ///
     /// Boxed because a report is carried by value in the opened-root projection results,
     /// and it is the largest of them.
-    pub selection: Box<SelectionCoverage>,
+    pub selection: SelectionCoverage,
 }
 
 /// What a report's selection admitted, beside what its scan retained.
@@ -2399,7 +2399,7 @@ fn read_roots(
         ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
-        selection: Box::new(selection),
+        selection,
     })
 }
 
@@ -2559,10 +2559,10 @@ pub(crate) fn report_summary(
         ignored_entries: query.selection.ignored,
         ignore_rules,
         // This tier filters nothing, so what was selected is what was scanned.
-        selection: Box::new(SelectionCoverage {
+        selection: SelectionCoverage {
             selected: EntryTotals::of(&summary),
             scanned: EntryTotals::of(&summary),
-        }),
+        },
         sections: vec![Section::Summary(summary)],
     }
 }
@@ -3076,8 +3076,8 @@ fn build_section(
             let parts = reads
                 .iter()
                 .map(|read| {
-                    let root_device =
-                        capacity.and_then(|seen| seen.root_devices.get(read.root).copied());
+                    let root_device = capacity
+                        .and_then(|seen| seen.root_devices.get(read.root).copied().flatten());
                     let (entries, tallies) =
                         query_volumes::devices(read.index, root_device, |id| {
                             read.walked

@@ -27,8 +27,9 @@ use crate::index::{EntryId, Index};
 /// report is, never stored.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VolumesObservation {
-    /// One device per root, in the roots' order; zero where the root could not be read.
-    pub root_devices: Vec<u64>,
+    /// One device per root, in the roots' order; `None` where the root could not be read,
+    /// which the reader then infers from the devices beneath it.
+    pub root_devices: Vec<Option<u64>>,
     /// The capacity of each filesystem, by device.
     pub capacity: CapacityObservation,
 }
@@ -182,12 +183,12 @@ fn absolute(root: &Path, relative: &Path) -> PathBuf {
 ///
 /// `root_devices` names the device each root is on, in the roots' order, as
 /// [`VolumesObservation::root_devices`] does; a root it leaves out is inferred.
-pub fn volume_entries(indexes: &[&Index], root_devices: &[u64]) -> Vec<VolumeEntry> {
+pub fn volume_entries(indexes: &[&Index], root_devices: &[Option<u64>]) -> Vec<VolumeEntry> {
     indexes
         .iter()
         .enumerate()
         .flat_map(|(root, index)| {
-            let (entries, _) = devices(index, root_devices.get(root).copied(), |_| false);
+            let (entries, _) = devices(index, root_devices.get(root).copied().flatten(), |_| false);
             entries.into_iter().map(move |(device, path)| VolumeEntry {
                 root,
                 device,
@@ -209,13 +210,11 @@ pub fn observe_volumes(
 ) -> Option<VolumesObservation> {
     request.query.views.contains(&crate::query::ViewSpec::Volumes).then(|| {
         // Read as the walk reads a root's device for `--one-filesystem`, so the two agree.
-        let root_devices: Vec<u64> = indexes
+        let root_devices: Vec<Option<u64>> = indexes
             .iter()
             .map(|index| {
                 let root = index.root_path();
-                std::fs::metadata(root)
-                    .and_then(|meta| crate::scan::root_device(root, &meta))
-                    .unwrap_or(0)
+                std::fs::metadata(root).and_then(|meta| crate::scan::root_device(root, &meta)).ok()
             })
             .collect();
         let entries = volume_entries(indexes, &root_devices);
@@ -424,7 +423,7 @@ mod tests {
         );
         let observed = observe_volumes(&[&index], &request).expect("the request names volumes");
         assert_eq!(observed.root_devices.len(), 1);
-        assert_ne!(observed.root_devices[0], 0);
+        assert!(observed.root_devices[0].is_some_and(|device| device != 0));
         let report = crate::query::report_with_capacity(
             &index,
             &request,

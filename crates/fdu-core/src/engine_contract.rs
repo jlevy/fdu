@@ -1043,6 +1043,9 @@ pub enum ProjectionRefusal {
 }
 
 /// One projection result, in the same position as its request.
+// One result per projection, built once and matched once; boxing the report would change
+// the payload of a public variant every caller matches on.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum ProjectionResult {
     /// Three-valued retained-entry lookup.
