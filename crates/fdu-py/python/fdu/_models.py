@@ -940,8 +940,10 @@ class AgeTally:
 class AgeBand:
     """One band of an age profile: the files one change-time window selects.
 
-    The band is the window ``changed_since=since_age, changed_before=before_age`` over the
-    same selection and instant, and ``since_ns``/``before_ns`` are those edges as instants.
+    The band is what ``kinds=(EntryKind.FILE,)`` with the window
+    ``changed_since=since_age, changed_before=before_age`` selects over the same selection
+    and instant; without the kind, a window admits whole directories. ``since_ns`` and
+    ``before_ns`` are those edges as instants.
     """
 
     #: ``future``, ``under 1h``, … ``over 3y``, or ``unknown``.

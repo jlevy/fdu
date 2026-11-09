@@ -6,8 +6,10 @@
 //! kept an older one: a copy, an extracted archive, Cargo's crate sources.
 //!
 //! The bands are fixed, so every report is comparable with every other, and each is one
-//! window query: the files `--changed-since <since_age> --changed-before <before_age>`
-//! selects over the same selection and instant. Windows are half-open, `[since, before)`,
+//! window query: the files `--kind file --changed-since <since_age> --changed-before
+//! <before_age>` selects over the same selection and instant. `--kind file` is part of
+//! the identity: without it a window admits a whole directory with activity in it, and
+//! a band only ever holds files. Windows are half-open, `[since, before)`,
 //! so an entry exactly on an edge falls in the newer band, and one stamped at the request
 //! instant itself is `future`. A file whose change time was not observed is `unknown`,
 //! which no window admits. The bands therefore partition the selection: their files and

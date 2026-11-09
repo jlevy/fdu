@@ -383,9 +383,11 @@ The bands are fixed: `future` (a timestamp at or after now), `under 1h`, `1h to 
 `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`, `over 3y`, and
 `unknown`, where a change time was not observed.
 A year is 365.25 days, as in the tree’s age column.
-Each row is the window it names, `--changed-since 24h --changed-before 1h` for
-`1h to 1d`, over the same selection and instant; an entry exactly on an edge falls in
-the newer band. The rows add up to what `--view=summary` reports for the selection.
+Each row is what `--kind=file` with the window it names selects, over the same selection
+and instant: `--kind=file --changed-since=24h --changed-before=1h` for `1h to 1d`.
+Without `--kind=file`, a window admits whole directories with activity in it, which the
+bands never do. An entry exactly on an edge falls in the newer band.
+The rows add up to what `--view=summary` reports for the selection.
 Text leaves empty bands out; JSON keeps every band, with its edges as ages
 (`since_age_ns`, `before_age_ns`) and as instants (`since_ns`, `before_ns`, `since_at`,
 `before_at`), its `files`, `bytes`, `allocated`, and `ignored` tallies, and a

@@ -608,10 +608,11 @@ fdu PATH --view ages                                     # how much arrived when
 fdu PATH --view tree,ages --kind file --changed-since 7d # where this week's data is
 ```
 
-Each row is the `--changed-since`/`--changed-before` window it names, the rows add up to
-`--view summary`, and JSON adds each band’s edges and a `cumulative` total of it and
-every newer band: the answer to “how much changed within 30 days?”
-without adding rows.
+Each row is what `--kind file` with the `--changed-since`/`--changed-before` window it
+names selects (without `--kind file` a window admits whole directories, which the bands
+never do), the rows add up to `--view summary`, and JSON adds each band’s edges and a
+`cumulative` total of it and every newer band: the answer to “how much changed within 30
+days?” without adding rows.
 
 `--view volumes` puts the disk beside the tree: each filesystem the report touches, its
 capacity, the share in use, what is available, and what this report counted there.
@@ -1070,9 +1071,11 @@ WHAT WAS WRITTEN RECENTLY
 
   ages shows the selected files by when they last changed, every window from one
   scan: future, under 1h, 1h to 1d, 1d to 7d, 7d to 30d, 30d to 90d, 90d to 1y,
-  1y to 3y, over 3y, and unknown. Each row is the --changed-since/--changed-before
-  window it names, the rows add up to --view summary, and machine output adds each
-  band's edges and the cumulative total of it and every newer band.
+  1y to 3y, over 3y, and unknown. Each row is what --kind file with the
+  --changed-since/--changed-before window it names selects, the rows add up to
+  --view summary, and machine output adds each band's edges and the cumulative
+  total of it and every newer band. Without --kind file a window admits whole
+  directories, which the bands never do.
 
 HOW FULL THE DISK IS
   fdu PATH --view volumes

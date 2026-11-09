@@ -249,7 +249,7 @@ included: `future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d
 | Field | Meaning |
 | --- | --- |
 | `band` | The band’s label |
-| `since_age_ns`, `before_age_ns` | The band’s window as ages at `age_reference_ns`: `--changed-since <since_age> --changed-before <before_age>`; null where the window is open, and both null for `unknown` |
+| `since_age_ns`, `before_age_ns` | The band’s window as ages at `age_reference_ns`: the files `--kind file --changed-since <since_age> --changed-before <before_age>` selects; null where the window is open, and both null for `unknown` |
 | `since_ns`, `before_ns`, `since_at`, `before_at` | The same edges as epoch nanoseconds and RFC 3339 instants |
 | `files`, `bytes`, `allocated` | The regular files in the band |
 | `ignored` | The band’s gitignored files, bytes, and allocated bytes, or null when rules were unobserved or a counted file’s classification is unknown |
