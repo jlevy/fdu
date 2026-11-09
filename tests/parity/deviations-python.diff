@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 73 sessions differ, and every one of them has a named cause.
+# 74 sessions differ, and every one of them has a named cause.
 #
-#  30  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  31  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
 #      platform separator, and [AGE] for an age measured from the run's own instant.
 #      The Python replay prints the sandbox root, a literal separator, and the age, whose
@@ -253,6 +253,23 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Change Time Finds What Kept an Old Modification Time
   ✓ Change Time Finds What Kept an Old Modification Time
   ✓ Change Time Finds What Kept an Old Modification Time
+  ✗ Change Time Finds What Kept an Old Modification Time
+@@ -1,7 +1,7 @@
+ TREE
+-██████████   100%       269 B  [AGE]  . 7 files (128 B gitignored)
+-██████████   100%       269 B  [AGE_BLANK]    … and 7 more files
++██████████   100%       269 B  [AGE_VALUE]  . 7 files (128 B gitignored)
++██████████   100%       269 B  [AGE_BLANK_VALUE]    … and 7 more files
+ EXTENSIONS
+      128 B  .tar.gz      1 file (128 B gitignored)
+       71 B  .md          2 files
+    stderr:
+@@ -1,4 +1,4 @@
+ note: totals include gitignored sizes and descendants
+ note: display limits: depth 0
+ note: extension rows carry no time, so they keep size order
+-tip: show more: --depth=all
++tip: show more: depth=all
   ✗ Change Time Finds What Kept an Old Modification Time
 @@ -1,1 +1,1 @@
 -fdu: invalid --sort "time": type, extension, family, language, and document rows carry no time: sort tree, list, files, largest, recent, or code rows by time

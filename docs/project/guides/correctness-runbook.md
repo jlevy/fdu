@@ -242,6 +242,20 @@ Every case is retained in the
 `fdu-579b` has not decided hard-link attribution; these checks establish warm/cold
 agreement, not that counting policy’s correctness.
 
+### Branch Run: One Report Time on Linux
+
+On 2026-11-09, the change that gave every report one clock and kept each directory’s
+newest time on both was checked by hand at its pull request’s build, before release.
+The regime was the 0.5.0 release pass’s: a 4-vCPU Firecracker VM, ext4, root, and a
+fresh cache per case.
+The served tree held all 16 kinds.
+`warm_cold.py` served 26 of 26 cases `cache_only`, with 0 answer mismatches, 0 mechanism
+failures, and 0 stale reference instants.
+`cross_warm.py` held 17 pairs to serving with 0 violations.
+The refusal pass and the deliberate breaks were not run.
+This sandbox gives even `nobody` read access to a mode-000 file, so no user there can
+experience a refusal; the next release’s `make release-stability` runs both.
+
 ### Previous Run: 0.5.0 Candidate on macOS
 
 On 2026-10-12, against the 0.5.0 preparation tree `67e3ca0f` (commit `d08624879`), all
