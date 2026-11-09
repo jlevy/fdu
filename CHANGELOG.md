@@ -23,16 +23,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--sort changed` (Python `SortKey.CHANGED`) orders `files`, `largest`, `recent`, and
   flat `list` rows by change time, newest first, with an unknown change time last in
   either direction. A tree or grouped view refuses it, since a tree’s age is modification
-  activity.
+  activity; `summary`, `ages`, and `volumes`, whose rows have a fixed order, may sit
+  beside it.
 - Machine output: list rows carry `changed_ns` and `changed_at`, null where unknown, and
   `changed_at` is null for an incomplete subtree as `modified_at` is.
   Python `FileRow` gains `changed_ns` and `changed_at`.
 - `--view ages` (Python `View.AGES`, Rust `ViewSpec::Ages`) profiles the selected
   regular files by change time in fixed bands, newest first: `future`, `under 1h`,
   `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`, `over 3y`,
-  and `unknown`. Each band is the `--changed-since`/`--changed-before` window it names
-  over the same selection and instant, the bands add up to `--view summary`, and text
-  keeps the grouped-row layout, leaving empty bands out.
+  and `unknown`. Each band is what `--kind file` with the
+  `--changed-since`/`--changed-before` window it names selects over the same selection
+  and instant, the bands add up to `--view summary`, and text keeps the grouped-row
+  layout, leaving empty bands out.
   Machine output keeps every band, with its edges as ages and as instants, its tallies
   and ignored part, and a `cumulative` tally of it and every newer band.
   The view is metadata only, composes with every selection and several roots, shares one
@@ -47,19 +49,29 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so `--stale-ok`
   shows current capacity.
   An APFS, btrfs, or ZFS row says its available space is shared within its pool.
+  A row names where the report entered the filesystem as every other row is named,
+  relative to its root and `.` for the root itself, never by the canonical path the
+  capacity call used (`\\?\C:\…` on Windows, `/private/var` for `/var` on macOS).
   `fdu PATH --view volumes --scan-depth 0` reads capacity alone.
   The view is part of `--view full`.
 - Rust: `observe_capacity`, `CapacityObservation`, and `VolumeCapacity` in
   `fdu_core::capacity`; `query::observe_volumes` observes what a request needs, and
   `report_with_capacity` and `report_roots_with_capacity` read with it.
   `report` and `report_roots` keep their signatures and report capacity as unknown, with
-  a note.
+  a note. The sections and their parts are `AgeProfile`, `AgeBand`, `AgeTally`, and
+  `AGE_BASIS`, and `VolumesSection`, `VolumeRow`, and `VolumeCounted`; `observe_volumes`
+  returns a `VolumesObservation`, `volume_entries` lists the `VolumeEntry` values it
+  observes, and `CapacityObservation` holds one `ObservedVolume` per filesystem.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
   is not read as the whole tree.
   Every report’s envelope carries `selected` and `scanned`, each
   `{files, dirs, bytes, allocated}`; Python `Report.selected` and `Report.scanned` are
-  `EntryTotals`, and Rust `Report::selection` is a `SelectionCoverage`.
+  `EntryTotals`, and Rust `Report::selection` is a `SelectionCoverage` of two
+  `EntryTotals`. Under `--ignored=exclude` or `--ignored=only` the population is the
+  scan’s scope: `scanned` is what that scan retained, selecting by the same ignored
+  state narrows nothing, and a narrower selection’s note names the scope, as in
+  `note: selected 12 of the 4,296 files an --ignored=exclude scan retained, …`.
 
 ### Changed
 
@@ -75,6 +87,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ModifiedWindow` is now `TimeWindow`, which serves both windows, and the old name
   remains as an alias.
   `Attrs::change_time_ns` returns an entry’s change time.
+- `--view full` holds `volumes` and `ages` right after `summary`, so every later section
+  of a full report moves two places in machine output: read sections by their `view`,
+  not their position. A full report now also opens each root, makes one `statfs` per
+  filesystem it touches, and takes two more passes over the index, one to find where the
+  walk changed filesystem and one to count each filesystem’s files.
 - The agent skill, `fdu --help`, `fdu --docs`, and the README show how to find what was
   written recently from one scan with no saved state:
   `fdu PATH --kind file --changed-since 24h` by folder, and `--view largest` for the
