@@ -276,7 +276,9 @@ function normalise(text) {
     // it became `797 metadata bytes`, so the mask had to follow the text it masks.
     .replace(/\b\d+ metadata bytes\b/g, '[N] metadata bytes')
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/g, '[RFC3339]')
-    .replace(/("(?:newest_)?mtime_ns":\s*)\d+/g, '$1[MTIME_NS]');
+    // A change time is a clock reading like a modification time, and goldens name both
+    // with the one pattern.
+    .replace(/("(?:(?:newest_)?mtime|changed)_ns":\s*)\d+/g, '$1[MTIME_NS]');
   // A tree row's age cell and its padding, where the golden names the cell, before the
   // duration mask below can turn an age in seconds into [TIME] and leave padding the clock
   // sized (review E1 on #192); maskAgeCells says why.

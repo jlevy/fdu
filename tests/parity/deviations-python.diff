@@ -42,7 +42,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 72 sessions differ, and every one of them has a named cause.
+# 73 sessions differ, and every one of them has a named cause.
 #
 #  30  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
@@ -58,7 +58,7 @@
 #      Only the four setter and value pairs the shared report renderer emits, in its
 #      fixed order, are accepted; every other line remains identical.
 #
-#  26  Each surface names its own parameter  [surface-label]
+#  27  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -160,7 +160,16 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Every Row Says How Much of It .gitignore Ignores
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
-  ✓ Machine Rows Mark Each Entry, and Null Means No Rule Was Read
+  ✗ Machine Rows Mark Each Entry, and Null Means No Rule Was Read
+@@ -1,2 +1,2 @@
+-{"schema": "fdu.report/12", "generator": "fdu 0.5.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "only"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["files"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "selected": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "scanned": {"files": 2, "dirs": 3, "bytes": 134, "allocated": [ALLOCATED]}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+-{"view": "files", "bound": null, "files": [{"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "modified_at": "[RFC3339]", "changed_ns": [MTIME_NS], "changed_at": "[RFC3339]", "ignored": true, "sort_value": null, "classification": {"file_type": "archive", "family": "binary", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
++{"schema": "fdu.report/12", "generator": "fdu 0.5.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "only"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["files"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "selected": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "scanned": {"files": 2, "dirs": 3, "bytes": 134, "allocated": [ALLOCATED_VALUE]}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
++{"view": "files", "bound": null, "files": [{"path": "dist/acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED_VALUE], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS_VALUE], "modified_at": "[RFC3339]", "changed_ns": [MTIME_NS], "changed_at": "[RFC3339]", "ignored": true, "sort_value": null, "classification": {"file_type": "archive", "family": "binary", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
+    stderr:
+@@ -1,1 +1,1 @@
+-note: selected 1 of the 2 files an --ignored=only scan retained, 128 B of 134 B
++note: selected 1 of the 2 files an ignored=only scan retained, 128 B of 134 B
   ✓ Machine Rows Mark Each Entry, and Null Means No Rule Was Read
   ✗ A Selection by Ignored State Needs the Rules
 @@ -1,1 +1,1 @@
@@ -1250,9 +1259,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  SUMMARY
       256 B  7 files, 4 directories
  VOLUMES
--[CAPACITY]  [IN_USE]  [VOLUME]
+-[CAPACITY]  [IN_USE]  .[FS_TYPE]
 -                         [CAPACITY] available[POOL]
-+[CAPACITY]  [IN_USE]  [VOLUME]
++[CAPACITY]  [IN_USE]  .[FS_TYPE]
 +                         [CAPACITY] available[POOL]
                           256 B counted by this report
  AGES
@@ -1295,9 +1304,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  SUMMARY
       256 B  7 files, 4 directories
  VOLUMES
--[CAPACITY]  [IN_USE]  [VOLUME]
+-[CAPACITY]  [IN_USE]  .[FS_TYPE]
 -                         [CAPACITY] available[POOL]
-+[CAPACITY]  [IN_USE]  [VOLUME]
++[CAPACITY]  [IN_USE]  .[FS_TYPE]
 +                         [CAPACITY] available[POOL]
                           256 B counted by this report
  AGES
@@ -1340,9 +1349,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  SUMMARY
       256 B  7 files, 4 directories
  VOLUMES
--[CAPACITY]  [IN_USE]  [VOLUME]
+-[CAPACITY]  [IN_USE]  .[FS_TYPE]
 -                         [CAPACITY] available[POOL]
-+[CAPACITY]  [IN_USE]  [VOLUME]
++[CAPACITY]  [IN_USE]  .[FS_TYPE]
 +                         [CAPACITY] available[POOL]
                           256 B counted by this report
  AGES
@@ -1687,7 +1696,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,312 +1,1 @@
+@@ -1,314 +1,1 @@
 -fdu — a fast du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1874,9 +1883,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -  ages shows the selected files by when they last changed, every window from one
 -  scan: future, under 1h, 1h to 1d, 1d to 7d, 7d to 30d, 30d to 90d, 90d to 1y,
--  1y to 3y, over 3y, and unknown. Each row is the --changed-since/--changed-before
--  window it names, the rows add up to --view summary, and machine output adds each
--  band's edges and the cumulative total of it and every newer band.
+-  1y to 3y, over 3y, and unknown. Each row is what --kind file with the
+-  --changed-since/--changed-before window it names selects, the rows add up to
+-  --view summary, and machine output adds each band's edges and the cumulative
+-  total of it and every newer band. Without --kind file a window admits whole
+-  directories, which the bands never do.
 -
 -HOW FULL THE DISK IS
 -  fdu PATH --view volumes
