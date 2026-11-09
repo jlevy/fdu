@@ -78,6 +78,86 @@ impl EntryKind {
     }
 }
 
+/// Which clock a report reads an entry's time from.
+///
+/// One report reads one clock everywhere: its time windows, its time sort, the tree's age
+/// column, `recent`, `ages`, and every row's age.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub enum TimeBasis {
+    /// When the entry last changed in any way, its content or its metadata, arriving by
+    /// copy or extraction included: the newer of its modification and status-change times
+    /// ([`Attrs::times`]).
+    ///
+    /// The default, because its errors point the safe way for both questions a time
+    /// answers: asked what is new, it over-includes (a `chmod` looks new) rather than
+    /// omits a copy that kept old times; asked what is old, it holds back a just-restored
+    /// backup rather than calling it stale.
+    #[default]
+    Changed,
+    /// When the entry's content was last written, as `ls -l` shows: for content age, or
+    /// when a bulk `chmod`, `chown`, or relabel moved every status-change time at once.
+    Modified,
+}
+
+impl TimeBasis {
+    /// Parse the library's spelling: `changed` or `modified`.
+    ///
+    /// The expectation only, as [`crate::query::ViewSpec::parse`] returns it, so each
+    /// surface names its own knob in front of it.
+    pub fn parse(value: &str) -> std::result::Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "changed" => Ok(Self::Changed),
+            "modified" => Ok(Self::Modified),
+            _ => Err("expected one of changed, modified".to_owned()),
+        }
+    }
+
+    /// Stable label, the inverse of [`Self::parse`].
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Changed => "changed",
+            Self::Modified => "modified",
+        }
+    }
+}
+
+/// An entry's time on both clocks, in nanoseconds since the Unix epoch.
+///
+/// A directory's is the newest of each clock beneath it, so the index maintains both and
+/// a report reads either without another pass.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct Times {
+    /// Modification time.
+    pub modified: i64,
+    /// Change time: the newer of modification and status change.
+    pub changed: i64,
+}
+
+impl Times {
+    /// Below every time on both clocks, so a maximum absorbs it: a subtree with nothing in
+    /// it.
+    pub const NONE: Self = Self { modified: i64::MIN, changed: i64::MIN };
+
+    /// The time on `basis`'s clock.
+    #[inline]
+    pub const fn get(self, basis: TimeBasis) -> i64 {
+        match basis {
+            TimeBasis::Changed => self.changed,
+            TimeBasis::Modified => self.modified,
+        }
+    }
+
+    /// The newer of two times on each clock separately.
+    #[inline]
+    #[must_use]
+    pub const fn max(self, other: Self) -> Self {
+        Self {
+            modified: if other.modified > self.modified { other.modified } else { self.modified },
+            changed: if other.changed > self.changed { other.changed } else { self.changed },
+        }
+    }
+}
+
 /// The stat fields an entry contributes to roll-ups, plus the ones that identify it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 pub struct Attrs {
@@ -116,6 +196,23 @@ impl Attrs {
         } else {
             Some(self.mtime_ns)
         }
+    }
+
+    /// The entry's time on both clocks.
+    ///
+    /// An entry whose status change was not observed is timed by its modification time
+    /// on the change-time clock: a lower bound of its change time, never a zero. One such
+    /// entry almost never moves a directory's time, which is the newest of everything
+    /// beneath it, while leaving it unknown would blank the age of every ancestor; a
+    /// report counts the files so timed where a window or `ages` counted one
+    /// ([`Self::change_time_ns`] still says whether a status change was observed).
+    #[inline]
+    pub const fn times(&self) -> Times {
+        let changed = match self.change_time_ns() {
+            Some(changed) => changed,
+            None => self.mtime_ns,
+        };
+        Times { modified: self.mtime_ns, changed }
     }
 
     /// The change-detection fingerprint for these attributes.

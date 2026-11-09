@@ -15,7 +15,7 @@ use fdu_core::query::{
 use fdu_core::{
     ApplyOutcome, ApplyStats, Attrs, Clock, Commit, Coverage, EffectiveChange, EntryKind, ExtTally,
     Freshness, Impact, ImpactDomain, Index, IndexState, InvalidateReason, Observation,
-    ObservationOp, Op, PathExpectation, PathState, RollUp, StateTransition,
+    ObservationOp, Op, PathExpectation, PathState, RollUp, StateTransition, Times,
 };
 
 /// Contractual journal budget in bytes, checked independently of the production default.
@@ -475,7 +475,7 @@ impl Model {
     fn rollup(&self, path: &Path) -> Option<RollUp> {
         self.nodes.get(path)?.kind.is_dir().then(|| {
             let mut result = RollUp::default();
-            let mut newest = None;
+            let mut newest: Option<Times> = None;
             for (candidate, node) in &self.nodes {
                 if candidate == path || !candidate.starts_with(path) {
                     continue;
@@ -486,10 +486,11 @@ impl Model {
                         result.files += 1;
                         result.bytes += node.attrs.size;
                         result.allocated += node.attrs.allocated;
-                        newest =
-                            Some(newest.map_or(node.attrs.mtime_ns, |old: i64| {
-                                old.max(node.attrs.mtime_ns)
-                            }));
+                        let own = times_of(&node.attrs);
+                        newest = Some(newest.map_or(own, |old| Times {
+                            modified: old.modified.max(own.modified),
+                            changed: old.changed.max(own.changed),
+                        }));
                         let ext = extension_bucket(candidate.file_name().expect("non-root file"));
                         let tally = result.by_ext.entry(ext).or_insert_with(ExtTally::default);
                         tally.files += 1;
@@ -499,22 +500,28 @@ impl Model {
                     EntryKind::Symlink | EntryKind::Other => {}
                 }
             }
-            result.newest_mtime_ns = newest.unwrap_or(0);
+            result.newest_mtime_ns = newest.map_or(0, |newest| newest.modified);
+            result.newest_changed_ns = newest.map_or(0, |newest| newest.changed);
             result
         })
     }
 
-    /// A tree row's activity for directory `path`, from facts: the newest modification time
-    /// among every node beneath it, of any kind, and its own unless it is the root, whose
-    /// own time is never activity.
-    fn activity(&self, path: &Path) -> Option<i64> {
-        let own = (!path.as_os_str().is_empty()).then(|| self.nodes[path].attrs.mtime_ns);
-        self.nodes
+    /// A tree row's activity for directory `path`, from facts: on each clock apart, the
+    /// newest time among every node beneath it, of any kind, and its own unless it is the
+    /// root, whose own time is never activity.
+    fn activity(&self, path: &Path) -> Option<Times> {
+        let own = (!path.as_os_str().is_empty()).then(|| times_of(&self.nodes[path].attrs));
+        let counted: Vec<Times> = self
+            .nodes
             .iter()
             .filter(|(candidate, _)| candidate.as_path() != path && candidate.starts_with(path))
-            .map(|(_, node)| node.attrs.mtime_ns)
+            .map(|(_, node)| times_of(&node.attrs))
             .chain(own)
-            .max()
+            .collect();
+        Some(Times {
+            modified: counted.iter().map(|times| times.modified).max()?,
+            changed: counted.iter().map(|times| times.changed).max()?,
+        })
     }
 
     fn children(&self, path: &Path) -> Option<Vec<OsString>> {
@@ -715,6 +722,17 @@ fn extension_bucket(name: &OsStr) -> String {
     extension.to_ascii_lowercase()
 }
 
+/// An entry's time on both clocks, from the definition rather than the engine's
+/// helper: change time is the newer of modification and status change, and an
+/// unobserved status change (`ctime_ns == 0`) leaves modification time to stand for it.
+fn times_of(attrs: &Attrs) -> Times {
+    let changed =
+        if attrs.ctime_ns == 0 { attrs.mtime_ns } else { attrs.ctime_ns.max(attrs.mtime_ns) };
+    Times { modified: attrs.mtime_ns, changed }
+}
+
+/// Status-change times both before and after the modification time, and zero, the
+/// unobserved one, so the two clocks' maxima land on different entries.
 fn attrs(value: u64) -> Attrs {
     let signed = i64::try_from(value % 41).expect("bounded") - 20;
     Attrs {
@@ -731,7 +749,7 @@ fn attrs(value: u64) -> Attrs {
 ///
 /// Over a complete index the tree reads each row's activity from the roll-up the index
 /// maintains, so this holds that maintenance to the model's from-scratch definition.
-fn tree_activity(index: &Index) -> BTreeMap<PathBuf, Option<i64>> {
+fn tree_activity(index: &Index) -> BTreeMap<PathBuf, Option<Times>> {
     let selection = Selection {
         depth: Some(Bound::All),
         breadth: Some(Bound::All),
@@ -750,7 +768,7 @@ fn tree_activity(index: &Index) -> BTreeMap<PathBuf, Option<i64>> {
     let mut stack: Vec<&TreeNode> = vec![root];
     while let Some(node) = stack.pop() {
         if node.kind == EntryKind::Dir {
-            rows.insert(node.path.clone(), node.mtime_ns);
+            rows.insert(node.path.clone(), node.time);
         }
         stack.extend(node.children.iter());
     }

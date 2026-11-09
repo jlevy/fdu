@@ -71,7 +71,7 @@ use crate::classify::human_language_name;
 use crate::content::{CoverageReason, METRICS};
 use crate::control::ControlCoverage;
 use crate::emit::{Event, IoFmt, JsonSink, Scalar, Shape, Sink, YamlSink};
-use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source};
+use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source, TimeBasis, Times};
 use crate::query::{
     AgeProfile, AgeTally, CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally,
     MONTH_SECONDS, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section,
@@ -113,8 +113,11 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// `fdu.report/11` gave tree nodes their age (`mtime_ns`, `complete`, `age_ns`, and
 /// `modified_at`), list rows `modified_at`, and the envelope `age_reference_at`.
-/// `fdu.report/12` gives list rows their change time (`changed_ns` and `changed_at`), and
-/// the envelope what the selection admitted and the scan retained (`selected`, `scanned`).
+/// `fdu.report/12` names every time by the report's one clock: the request's `time`, each
+/// row's and node's `time_ns`, `time_at`, and `age_ns`, `newest_file_time_ns` on summary
+/// and tree rows, and both raw clocks (`mtime_ns`, `changed_ns`) on list rows; and the
+/// envelope gives what the selection admitted and the scan retained (`selected`,
+/// `scanned`).
 pub const REPORT_SCHEMA: &str = "fdu.report/12";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
@@ -477,7 +480,7 @@ fn render_report_jsonl(report: &Report) -> String {
     out.push('\n');
     for section in &report.sections {
         let mut sink = JsonSink::line();
-        emit_section(&mut sink, section, report.roots.is_some());
+        emit_section(&mut sink, section, report.roots.is_some(), report.time);
         out.push_str(&sink.finish());
         out.push('\n');
     }
@@ -491,7 +494,7 @@ fn write_report_jsonl(report: &Report, out: &mut dyn io::Write) -> io::Result<()
     out.write_all(b"\n")?;
     for section in &report.sections {
         let mut sink = JsonSink::line_to(out);
-        emit_section(&mut sink, section, report.roots.is_some());
+        emit_section(&mut sink, section, report.roots.is_some(), report.time);
         sink.finish().finish()?;
         out.write_all(b"\n")?;
     }
@@ -593,7 +596,7 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     emit_field(sink, REPORT_FIELDS.reports, with_sections, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
         for section in &report.sections {
-            emit_section(sink, section, several);
+            emit_section(sink, section, several, report.time);
         }
         sink.event(Event::EndSeq);
     });
@@ -622,6 +625,7 @@ fn emit_request(sink: &mut impl Sink, report: &Report) {
         sink.event(Event::EndSeq);
     });
     emit_str_field(sink, "size", report.size.label());
+    emit_str_field(sink, "time", report.time.label());
     emit_field(sink, Field::nullable("sort_metric"), true, |sink| match report.sort_metric {
         Some(name) => emit_scalar(sink, Scalar::Str(name)),
         None => emit_scalar(sink, Scalar::Null),
@@ -844,7 +848,7 @@ fn emit_path_fields(sink: &mut impl Sink, path: &Path) {
     emit_raw_identity(sink, "path_raw", path);
 }
 
-fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
+fn emit_section(sink: &mut impl Sink, section: &Section, several: bool, time: TimeBasis) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_str_field(sink, "view", section.view().label());
     match section {
@@ -862,14 +866,14 @@ fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
             emit_bound_value(sink, "rows", limits.rows);
             sink.event(Event::EndMap);
             emit_field(sink, Field::always("tree"), true, |sink| match root {
-                Some(root) => emit_tree(sink, root),
+                Some(root) => emit_tree(sink, root, time),
                 None => emit_scalar(sink, Scalar::Null),
             });
             // Several roots have no single root node: a total row and a tree per root,
             // each tree carrying its own remainder as one root's section does.
             if let Some(roots) = roots {
                 emit_field(sink, Field::when_set("total"), true, |sink| match &roots.total {
-                    Some(total) => emit_tree_total(sink, total),
+                    Some(total) => emit_tree_total(sink, total, time),
                     None => emit_scalar(sink, Scalar::Null),
                 });
                 emit_field(sink, Field::when_set("trees"), true, |sink| {
@@ -878,7 +882,7 @@ fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
                         sink.event(Event::BeginMap(Shape::Block));
                         emit_u64_field(sink, "root", tree.root as u64);
                         emit_field(sink, Field::always("tree"), true, |sink| {
-                            emit_tree(sink, &tree.tree);
+                            emit_tree(sink, &tree.tree, time);
                         });
                         emit_field(sink, Field::nullable("remainder"), true, |sink| {
                             emit_tree_remainder(
@@ -927,7 +931,7 @@ fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
             emit_field(sink, Field::always("files"), true, |sink| {
                 sink.event(Event::BeginSeq(Shape::Block));
                 for row in rows {
-                    emit_file_row(sink, row, several);
+                    emit_file_row(sink, row, several, time);
                 }
                 sink.event(Event::EndSeq);
             });
@@ -936,20 +940,19 @@ fn emit_section(sink: &mut impl Sink, section: &Section, several: bool) {
         Section::Volumes(volumes) => emit_volumes(sink, volumes, several),
         Section::Summary(row) => {
             emit_field(sink, Field::always("summary"), true, |sink| {
-                emit_summary_row(sink, row);
+                emit_summary_row(sink, row, time);
             });
         }
     }
     sink.event(Event::EndMap);
 }
 
-/// An age profile: its basis, every band with its window as ages and as instants, and the
-/// total the bands partition.
+/// An age profile: every band with its window as ages and as instants, and the total the
+/// bands partition; the request's `time` names the clock.
 ///
 /// Empty bands are kept, unlike in text, so a consumer indexes bands by label and never
 /// has to tell an empty band from one the report forgot.
 fn emit_age_profile(sink: &mut impl Sink, profile: &AgeProfile) {
-    emit_str_field(sink, "basis", profile.basis);
     emit_field(sink, Field::always("bands"), true, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
         for band in &profile.bands {
@@ -972,13 +975,10 @@ fn emit_age_profile(sink: &mut impl Sink, profile: &AgeProfile) {
                 emit_instant(sink, band.before_ns);
             });
             emit_age_tally_fields(sink, &band.tally);
-            emit_field(sink, Field::nullable("cumulative"), true, |sink| match &band.cumulative {
-                Some(tally) => {
-                    sink.event(Event::BeginMap(Shape::Inline));
-                    emit_age_tally_fields(sink, tally);
-                    sink.event(Event::EndMap);
-                }
-                None => emit_scalar(sink, Scalar::Null),
+            emit_field(sink, Field::always("cumulative"), true, |sink| {
+                sink.event(Event::BeginMap(Shape::Inline));
+                emit_age_tally_fields(sink, &band.cumulative);
+                sink.event(Event::EndMap);
             });
             sink.event(Event::EndMap);
         }
@@ -1077,14 +1077,14 @@ fn emit_bound_field(sink: &mut impl Sink, shown: usize, total: usize) {
     });
 }
 
-fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool) {
+fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool, time: TimeBasis) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_root_field(sink, row.root, several);
     emit_path_fields(sink, &row.path);
     emit_str_field(sink, "kind", kind_label(row.kind));
     emit_u64_field(sink, "bytes", row.bytes);
     emit_u64_field(sink, "allocated", row.allocated);
-    emit_i64_field(sink, "mtime_ns", row.mtime_ns);
+    emit_i64_field(sink, "time_ns", row.times.get(time));
     for (name, value) in [("files", row.files), ("dirs", row.dirs)] {
         emit_field(sink, Field::nullable(name), true, |sink| match value {
             Some(value) => emit_scalar(sink, Scalar::U64(value)),
@@ -1099,16 +1099,19 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool) {
         Some(value) => emit_scalar(sink, Scalar::I128(value)),
         None => emit_scalar(sink, Scalar::Null),
     });
-    emit_field(sink, Field::nullable("modified_at"), true, |sink| {
-        emit_instant(sink, (row.complete != Some(false)).then_some(row.mtime_ns));
+    emit_field(sink, Field::nullable("time_at"), true, |sink| {
+        emit_instant(sink, (row.complete != Some(false)).then_some(row.times.get(time)));
     });
-    // Change time beside modification time, null where it was not observed. Its readable
-    // twin follows `modified_at`'s rule: a lower bound is no instant.
+    // Both clocks, whatever the report's: an arrival carrying old content is a row whose
+    // change time is recent and whose modification time is old. A file's status change
+    // that was not observed is null here, though its time on the change clock is its
+    // modification time.
+    emit_i64_field(sink, "mtime_ns", row.times.modified);
     emit_field(sink, Field::nullable("changed_ns"), true, |sink| {
-        emit_scalar(sink, row.changed_ns.map_or(Scalar::Null, Scalar::I64));
-    });
-    emit_field(sink, Field::nullable("changed_at"), true, |sink| {
-        emit_instant(sink, row.changed_ns.filter(|_| row.complete != Some(false)));
+        emit_scalar(
+            sink,
+            if row.status_observed { Scalar::I64(row.times.changed) } else { Scalar::Null },
+        );
     });
 
     emit_field(sink, Field::nullable("ignored"), true, |sink| match row.ignored {
@@ -1143,8 +1146,8 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow, several: bool) {
 /// An instant as RFC 3339 UTC to the nanosecond, or null.
 ///
 /// The readable twin of an exact `*_ns` field, never a replacement for it: a row's
-/// `modified_at` is null exactly when its time is a lower bound or absent, because a
-/// lower-bound maximum rendered as an instant would read as the time it was modified.
+/// `time_at` is null exactly when its time is a lower bound or absent, because a
+/// lower-bound maximum rendered as an instant would read as the time it last changed.
 fn emit_instant(sink: &mut impl Sink, nanos: Option<i64>) {
     match nanos {
         Some(nanos) => with_rfc3339_nanos(nanos, |text| emit_scalar(sink, Scalar::Str(text))),
@@ -1152,7 +1155,7 @@ fn emit_instant(sink: &mut impl Sink, nanos: Option<i64>) {
     }
 }
 
-fn emit_summary_row(sink: &mut impl Sink, row: &SummaryRow) {
+fn emit_summary_row(sink: &mut impl Sink, row: &SummaryRow, time: TimeBasis) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_u64_field(sink, "files", row.files);
     emit_u64_field(sink, "dirs", row.dirs);
@@ -1161,9 +1164,11 @@ fn emit_summary_row(sink: &mut impl Sink, row: &SummaryRow) {
     emit_field(sink, Field::nullable("ignored"), true, |sink| {
         emit_ignored(sink, row.ignored, true);
     });
-    emit_field(sink, Field::nullable("newest_mtime_ns"), true, |sink| match row.newest_mtime_ns {
-        Some(value) => emit_scalar(sink, Scalar::I64(value)),
-        None => emit_scalar(sink, Scalar::Null),
+    emit_field(sink, Field::nullable("newest_file_time_ns"), true, |sink| {
+        emit_scalar(
+            sink,
+            row.newest_file.map_or(Scalar::Null, |times| Scalar::I64(times.get(time))),
+        );
     });
     sink.event(Event::EndMap);
 }
@@ -1384,7 +1389,7 @@ fn emit_detection(sink: &mut impl Sink, row: &MetricRow) {
     sink.event(Event::EndMap);
 }
 
-fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
+fn emit_tree(sink: &mut impl Sink, root: &TreeNode, time: TimeBasis) {
     enum Step<'a> {
         Node(&'a TreeNode),
         Children(std::slice::Iter<'a, TreeNode>),
@@ -1409,14 +1414,12 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                 emit_field(sink, Field::nullable("ignored"), true, |sink| {
                     emit_ignored(sink, node.ignored, true);
                 });
-                emit_field(sink, Field::nullable("newest_mtime_ns"), true, |sink| {
-                    match node.newest_mtime_ns {
-                        Some(value) => emit_scalar(sink, Scalar::I64(value)),
-                        None => emit_scalar(sink, Scalar::Null),
-                    }
+                let at = |times: Option<Times>| times.map(|times| times.get(time));
+                emit_field(sink, Field::nullable("newest_file_time_ns"), true, |sink| {
+                    emit_scalar(sink, at(node.newest_file).map_or(Scalar::Null, Scalar::I64));
                 });
-                emit_field(sink, Field::nullable("mtime_ns"), true, |sink| {
-                    emit_scalar(sink, node.mtime_ns.map_or(Scalar::Null, Scalar::I64));
+                emit_field(sink, Field::nullable("time_ns"), true, |sink| {
+                    emit_scalar(sink, at(node.time).map_or(Scalar::Null, Scalar::I64));
                 });
                 emit_field(sink, Field::nullable("complete"), true, |sink| {
                     emit_scalar(sink, node.complete.map_or(Scalar::Null, Scalar::Bool));
@@ -1424,8 +1427,8 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                 emit_field(sink, Field::nullable("age_ns"), true, |sink| {
                     emit_scalar(sink, node.age_ns.map_or(Scalar::Null, Scalar::I128));
                 });
-                emit_field(sink, Field::nullable("modified_at"), true, |sink| {
-                    emit_instant(sink, node.mtime_ns.filter(|_| node.complete != Some(false)));
+                emit_field(sink, Field::nullable("time_at"), true, |sink| {
+                    emit_instant(sink, at(node.time).filter(|_| node.complete != Some(false)));
                 });
                 emit_field(sink, Field::always("truncated"), true, |sink| {
                     emit_scalar(sink, Scalar::Bool(node.truncated));
@@ -1473,7 +1476,7 @@ fn emit_tree_remainder(sink: &mut impl Sink, remainder: Option<crate::query::Tre
 
 /// The total row of a tree over several roots: a tree node's values, in a tree node's
 /// order, without the identity of an entry, since no entry is the total.
-fn emit_tree_total(sink: &mut impl Sink, total: &crate::query::TreeTotal) {
+fn emit_tree_total(sink: &mut impl Sink, total: &crate::query::TreeTotal, time: TimeBasis) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_u64_field(sink, "bytes", total.bytes);
     emit_u64_field(sink, "allocated", total.allocated);
@@ -1482,18 +1485,19 @@ fn emit_tree_total(sink: &mut impl Sink, total: &crate::query::TreeTotal) {
     emit_field(sink, Field::nullable("ignored"), true, |sink| {
         emit_ignored(sink, total.ignored, true);
     });
-    emit_field(sink, Field::nullable("newest_mtime_ns"), true, |sink| {
-        emit_scalar(sink, total.newest_mtime_ns.map_or(Scalar::Null, Scalar::I64));
+    let at = |times: Option<Times>| times.map(|times| times.get(time));
+    emit_field(sink, Field::nullable("newest_file_time_ns"), true, |sink| {
+        emit_scalar(sink, at(total.newest_file).map_or(Scalar::Null, Scalar::I64));
     });
-    emit_field(sink, Field::nullable("mtime_ns"), true, |sink| {
-        emit_scalar(sink, total.mtime_ns.map_or(Scalar::Null, Scalar::I64));
+    emit_field(sink, Field::nullable("time_ns"), true, |sink| {
+        emit_scalar(sink, at(total.time).map_or(Scalar::Null, Scalar::I64));
     });
     emit_bool_field(sink, "complete", total.complete);
     emit_field(sink, Field::nullable("age_ns"), true, |sink| {
         emit_scalar(sink, total.age_ns.map_or(Scalar::Null, Scalar::I128));
     });
-    emit_field(sink, Field::nullable("modified_at"), true, |sink| {
-        emit_instant(sink, total.mtime_ns.filter(|_| total.complete));
+    emit_field(sink, Field::nullable("time_at"), true, |sink| {
+        emit_instant(sink, at(total.time).filter(|_| total.complete));
     });
     sink.event(Event::EndMap);
 }
@@ -1758,7 +1762,7 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
                 }
                 ViewSpec::Recent => {
                     render_text_ranked_files(&mut out, report, rows, color, None, |row| {
-                        format_rfc3339_nanos(row.mtime_ns)
+                        format_rfc3339_nanos(row.times.get(report.time))
                     });
                 }
                 _ => {
@@ -2309,7 +2313,7 @@ impl TextTree {
     ) {
         // One column over the whole section: the total row and every root's tree.
         let total_age =
-            roots.total.map(|total| age_cell(Some(total.complete), total.mtime_ns, total.age_ns));
+            roots.total.map(|total| age_cell(Some(total.complete), total.time, total.age_ns));
         let mut ages = AgeCells::of(
             total_age
                 .into_iter()
@@ -2445,18 +2449,18 @@ struct TextRow {
 /// root before its first listing: the dash says the subtree holds nothing to count, and
 /// nobody has looked.
 fn tree_age_cell(node: &TreeNode) -> (String, Option<AnsiStyle>) {
-    age_cell(node.complete, node.mtime_ns, node.age_ns)
+    age_cell(node.complete, node.time, node.age_ns)
 }
 
 /// [`tree_age_cell`] from its three inputs, which a total row has without being a node.
 fn age_cell(
     complete: Option<bool>,
-    mtime_ns: Option<i64>,
+    time: Option<Times>,
     age_ns: Option<i128>,
 ) -> (String, Option<AnsiStyle>) {
     if complete == Some(false) {
         (human_age(None), Some(STYLE_DETAIL))
-    } else if mtime_ns.is_none() {
+    } else if time.is_none() {
         ("—".to_string(), Some(STYLE_DETAIL))
     } else if age_ns.is_none() {
         (human_age(None), Some(STYLE_DETAIL))
@@ -4257,7 +4261,10 @@ mod tests {
         assert!(super::render(&flat, Format::Long, false).expect("long").contains("100 B"));
         assert!(super::render(&flat, Format::Tree, false).is_err());
         let Section::Files { rows, .. } = &flat.sections[0] else { panic!("flat list") };
-        assert_eq!((rows[0].files, rows[0].dirs, rows[0].mtime_ns), (Some(1), Some(0), 10));
+        assert_eq!(
+            (rows[0].files, rows[0].dirs, rows[0].times),
+            (Some(1), Some(0), Times { modified: 10, changed: 10 })
+        );
         assert_eq!(rows[0].complete, Some(true));
         assert!(
             super::render(&flat, Format::Json, false).expect("json").contains("\"complete\": true")
@@ -4341,7 +4348,7 @@ mod tests {
             let age = i128::from(reference) - i128::from(modified);
             report.age_reference_ns = Some(reference);
             let Section::Files { rows, .. } = &mut report.sections[0] else { panic!("flat rows") };
-            rows[0].mtime_ns = modified;
+            rows[0].times = Times { modified, changed: modified };
             rows[0].age_ns = Some(age);
             for format in [Format::Json, Format::Jsonl, Format::Yaml] {
                 let rendered = super::render(&report, format, false).expect("machine format");
@@ -4597,20 +4604,20 @@ mod tests {
             "\"age_reference_ns\": 3456000000000000, \
              \"age_reference_at\": \"1970-02-10T00:00:00.000000000Z\"",
             "\"name\": \".\", \"path\": \"\", \"kind\": \"dir\"",
-            "\"newest_mtime_ns\": 3455970000000000, \"mtime_ns\": 3455970000000000, \
-             \"complete\": false, \"age_ns\": null, \"modified_at\": null, \"truncated\": true",
+            "\"newest_file_time_ns\": 3455970000000000, \"time_ns\": 3455970000000000, \
+             \"complete\": false, \"age_ns\": null, \"time_at\": null, \"truncated\": true",
             "\"name\": \"old\", \"path\": \"old\", \"kind\": \"dir\"",
-            "\"newest_mtime_ns\": 1000000000, \"mtime_ns\": 1000000000, \"complete\": true, \
-             \"age_ns\": 3455999000000000, \"modified_at\": \"1970-01-01T00:00:01.000000000Z\"",
-            "\"newest_mtime_ns\": 3455970000000000, \"mtime_ns\": 3455970000000000, \
+            "\"newest_file_time_ns\": 1000000000, \"time_ns\": 1000000000, \"complete\": true, \
+             \"age_ns\": 3455999000000000, \"time_at\": \"1970-01-01T00:00:01.000000000Z\"",
+            "\"newest_file_time_ns\": 3455970000000000, \"time_ns\": 3455970000000000, \
              \"complete\": null, \"age_ns\": 30000000000, \
-             \"modified_at\": \"1970-02-09T23:59:30.000000000Z\"",
+             \"time_at\": \"1970-02-09T23:59:30.000000000Z\"",
         ] {
             assert!(json.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
         for format in [Format::Jsonl, Format::Yaml] {
             let wire = render(&answer, format, false);
-            for field in ["age_reference_at", "mtime_ns", "complete", "age_ns", "modified_at"] {
+            for field in ["age_reference_at", "time_ns", "complete", "age_ns", "time_at"] {
                 assert!(wire.contains(field), "{format:?} lacks {field}: {wire}");
             }
         }
@@ -4641,7 +4648,7 @@ mod tests {
         let Section::Tree { root: Some(root), .. } = &answer.sections[0] else {
             panic!("expected a tree with a root row")
         };
-        assert_eq!((root.mtime_ns, root.complete), (None, Some(false)), "{root:?}");
+        assert_eq!((root.time, root.complete), (None, Some(false)), "{root:?}");
         let text = render(&answer, Format::Text, false);
         assert!(text.contains("  unknown  . 0 files\n"), "{text}");
         let colored = render(&answer, Format::Text, true);
@@ -5102,6 +5109,68 @@ mod tests {
         assert!(!diagnostics(&fields).iter().any(|line| line.contains("--gitignore-line-limit")));
     }
 
+    /// A list row's `time_ns`, `age_ns`, and `time_at` read the report's clock, which the
+    /// request echo names, while `mtime_ns` and `changed_ns` carry both clocks raw whichever
+    /// it reads. A file whose status change went unobserved is timed by its modification on
+    /// the change clock, and its raw `changed_ns` is null rather than that stand-in.
+    #[test]
+    fn a_rows_time_reads_the_reports_clock_beside_both_raw_clocks() {
+        let mut index = Index::new_with_scope("/root", ScanScope::default());
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("copy.bin"),
+                    kind: EntryKind::File,
+                    attrs: Attrs { ctime_ns: 70, ..attrs(1, 30) },
+                },
+                Op::Upsert {
+                    path: PathBuf::from("blind.bin"),
+                    kind: EntryKind::File,
+                    attrs: Attrs { ctime_ns: 0, ..attrs(2, 50) },
+                },
+            ]))
+            .expect("apply");
+        index.set_initial_freshness(true);
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: UNIX_EPOCH,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        for (time, copy) in [(TimeBasis::Changed, 70), (TimeBasis::Modified, 30)] {
+            let query = Query {
+                views: vec![ViewSpec::Files],
+                selection: Selection { time, ..Selection::default() },
+                ..Query::default()
+            };
+            let mut request = crate::test_support::read_of(&index, query);
+            // A whole microsecond, which a `SystemTime` holds exactly on every platform.
+            request.now = UNIX_EPOCH + Duration::from_micros(1);
+            let answer = report(&index, &request, &provenance).expect("report");
+            assert_eq!(answer.time, time);
+            let json = compact_json(&render(&answer, Format::Json, false));
+            let row = |path: &str, at: i64, mtime: i64, changed: &str| {
+                compact_json(&format!(
+                    "\"path\": \"{path}\", \"kind\": \"file\", \"bytes\": {bytes}, \
+                     \"allocated\": 512, \"time_ns\": {at}, \"files\": null, \"dirs\": null, \
+                     \"complete\": null, \"age_ns\": {age}, \
+                     \"time_at\": \"1970-01-01T00:00:00.0000000{at}Z\", \"mtime_ns\": {mtime}, \
+                     \"changed_ns\": {changed}, ",
+                    bytes = if path == "copy.bin" { 1 } else { 2 },
+                    age = 1_000 - at,
+                ))
+            };
+            for expected in [
+                compact_json(&format!("\"time\": \"{}\", \"sort_metric\"", time.label())),
+                row("copy.bin", copy, 30, "70"),
+                row("blind.bin", 50, 50, "null"),
+            ] {
+                assert!(json.contains(&expected), "{time:?}: missing {expected}\nin {json}");
+            }
+        }
+    }
+
     /// Every row that carries an ignored share says so in every format: text appends it
     /// only when something is ignored and the selection is not ignored entries alone, and
     /// machine formats write a zero share when nothing is and `null` when no rule was read.
@@ -5247,9 +5316,11 @@ mod tests {
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
-            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \
-             \"modified_at\": \"1970-01-01T00:00:00.000000010Z\", \"changed_ns\": null, \
-             \"changed_at\": null, \"ignored\": true, \"sort_value\": null, \"classification\": null}",
+            // A directory's times are maxima, so its change time is known though its own
+            // status change was not observed: the newer of its time and its file's.
+            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"time_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \
+             \"time_at\": \"1970-01-01T00:00:00.000000010Z\", \"mtime_ns\": 10, \"changed_ns\": 10, \
+             \"ignored\": true, \"sort_value\": null, \"classification\": null}",
         ] {
             assert!(compact.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
@@ -5266,7 +5337,7 @@ mod tests {
         assert!(
             yaml.contains(
                 "      allocated: 1024\n      ignored: {files: 1, dirs: 1, bytes: 128, \
-                 allocated: 512}\n      newest_mtime_ns: 20\n"
+                 allocated: 512}\n      newest_file_time_ns: 20\n"
             ),
             "{yaml}"
         );
@@ -6019,8 +6090,9 @@ mod tests {
             assert_eq!(age_style(age), style, "{age} ns ({})", human_age(Some(age)));
         }
         // A known age is painted; unknown and the empty dash stay gray.
-        assert_eq!(age_cell(Some(true), Some(1), Some(day)), ("1d".to_string(), Some(cyan)));
-        assert_eq!(age_cell(Some(false), Some(1), Some(day)).1, Some(STYLE_DETAIL));
+        let one = Some(Times { modified: 1, changed: 1 });
+        assert_eq!(age_cell(Some(true), one, Some(day)), ("1d".to_string(), Some(cyan)));
+        assert_eq!(age_cell(Some(false), one, Some(day)).1, Some(STYLE_DETAIL));
         assert_eq!(age_cell(Some(true), None, None).1, Some(STYLE_DETAIL));
     }
 
@@ -6443,9 +6515,9 @@ mod tests {
         for hex in [first_hex, second_hex] {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
-                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
+                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"time_ns\": 0, \
                  \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \
-                 \"modified_at\": \"1970-01-01T00:00:00.000000000Z\", \"changed_ns\": null, \"changed_at\": null, \
+                 \"time_at\": \"1970-01-01T00:00:00.000000000Z\", \"mtime_ns\": 0, \"changed_ns\": null, \
                  \"ignored\": false, \"sort_value\": null, \
                  \"classification\": {{\"file_type\": \"unknown\", \"family\": \"unknown\", \"source\": \"unknown\", \"confidence\": \"heuristic\", \
                  \"flags\": {{\"generated\": false, \"vendored\": false, \"documentation\": false}}}}}}"
@@ -6678,8 +6750,8 @@ mod tests {
         for expected in [
             r#""root":null,"roots":[{"label":"docs","path":"/abs/docs"},{"label":"src","path":"/abs/src"}]"#,
             r#""tree":null,"total":{"bytes":9001,"allocated":9728,"files":4,"dirs":2,"#,
-            r#""mtime_ns":100000000000,"complete":true,"age_ns":20000000000,"#,
-            r#""modified_at":"1970-01-01T00:01:40"#,
+            r#""newest_file_time_ns":100000000000,"time_ns":100000000000,"complete":true,"#,
+            r#""age_ns":20000000000,"time_at":"1970-01-01T00:01:40"#,
             r#""trees":[{"root":1,"tree":{"name":"src","path":"","kind":"dir","#,
         ] {
             assert!(compact.contains(expected), "{expected} in {json}");

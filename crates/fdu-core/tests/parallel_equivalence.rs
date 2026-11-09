@@ -58,8 +58,13 @@ fn image(index: &Index) -> Vec<String> {
                 .collect();
             let _ = write!(
                 line,
-                "|rollup(files={},dirs={},bytes={},alloc={},newest={},ext={by_ext:?})",
-                rollup.files, rollup.dirs, rollup.bytes, rollup.allocated, rollup.newest_mtime_ns,
+                "|rollup(files={},dirs={},bytes={},alloc={},newest={},changed={},ext={by_ext:?})",
+                rollup.files,
+                rollup.dirs,
+                rollup.bytes,
+                rollup.allocated,
+                rollup.newest_mtime_ns,
+                rollup.newest_changed_ns,
             );
             for (_, child) in index.children_of(id).expect("live id") {
                 stack.push(child);

@@ -20,7 +20,8 @@ mod query_subtrees;
 mod query_values;
 mod query_volumes;
 
-pub use query_ages::{AGE_BASIS, AgeBand, AgeProfile, AgeTally};
+pub use crate::engine_contract::{TimeBasis, Times};
+pub use query_ages::{AgeBand, AgeProfile, AgeTally};
 pub use query_glob::Pattern;
 pub use query_report::{
     AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, EntryTotals,
@@ -37,13 +38,13 @@ pub use query_request::{
     Basis, BasisHolder, Delivery, NamedRoot, ReadSpec, Request, RequestDefaults, RequestError,
     RequestSpec, Roots, RootsRequest, Scope, ScopeAxis, WatchDelivery, Workers, bound_nanos,
     labelled_path, parse_bound, parse_cache_policy, parse_kind, parse_kinds, parse_size_metric,
-    parse_sort,
+    parse_sort, parse_time_basis,
 };
 pub(crate) use query_request::{Rejection, RootAliases};
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
-    Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, ShareThreshold,
-    SizeMetric, SortKey, TimeWindow,
+    Bound, Candidate, EntrySelection, IgnoredEntries, Selection, ShareThreshold, SizeMetric,
+    SortKey, TimeWindow,
 };
 pub use query_status::{ReportProvenance, StatusIssue, TierProvenance, TierState, TreeStatus};
 #[cfg(test)]

@@ -128,7 +128,7 @@ pub use crate::engine_contract::{
     ProjectionRefusal, ProjectionResult, Provenance, QueryLimit, ReadDiagnostics, ReadProjection,
     ReadRequest, ReadResponse, RefreshRejection, RefreshResult, RejectedRefreshPath, ReportRequest,
     Result, RowShape, ScanScope, SemanticIdentity, SessionId, Source, StateTransition, Status,
-    TreePage, Work,
+    TimeBasis, Times, TreePage, Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY_BYTES, EntryId, ExtTally,

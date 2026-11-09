@@ -1,22 +1,21 @@
-//! The age profile: the selected regular files, partitioned by how long ago they changed.
+//! The age profile: the selected regular files, partitioned by their age in the
+//! report's time.
 //!
-//! Change time is the newer of modification and status change
-//! ([`Attrs::change_time_ns`](crate::Attrs::change_time_ns)), because the question this
-//! view answers is when space arrived, and modification time misses every arrival that
-//! kept an older one: a copy, an extracted archive, Cargo's crate sources.
+//! The time is the report's clock ([`TimeBasis`]): change time by default, because the
+//! question this view answers is when space arrived, and modification time misses every
+//! arrival that kept an older one: a copy, an extracted archive, Cargo's crate sources.
 //!
 //! The bands are fixed, so every report is comparable with every other, and each is one
-//! window query: the files `--kind file --changed-since <since_age> --changed-before
-//! <before_age>` selects over the same selection and instant. `--kind file` is part of
-//! the identity: without it a window admits a whole directory with activity in it, and
-//! a band only ever holds files. Windows are half-open, `[since, before)`,
-//! so an entry exactly on an edge falls in the newer band, and one stamped at the request
-//! instant itself is `future`. A file whose change time was not observed is `unknown`,
-//! which no window admits. The bands therefore partition the selection: their files and
-//! bytes sum to what `summary` reports for it.
+//! window query: the files `--kind file --since <since_age> --before <before_age>`
+//! selects over the same selection, clock, and instant. `--kind file` is part of the
+//! identity: without it a window admits a whole directory with activity in it, and a band
+//! only ever holds files. Windows are half-open, `[since, before)`, so an entry exactly on
+//! an edge falls in the newer band, and one stamped at the request instant itself is
+//! `future`. The bands therefore partition the selection: their files and bytes sum to
+//! what `summary` reports for it.
 
-use crate::EntryKind;
 use crate::query::{FileRow, IgnoredTally};
+use crate::{EntryKind, TimeBasis};
 
 const HOUR: i64 = 3_600_000_000_000;
 const DAY: i64 = 24 * HOUR;
@@ -38,14 +37,8 @@ const DATED: [(&str, i64); 8] = [
 ];
 /// Every age past the last dated edge.
 const OLDEST: &str = "over 3y";
-/// Files whose change time was not observed.
-const UNKNOWN: &str = "unknown";
-/// How many bands a profile has: the dated ones, the oldest, and unknown.
-const BANDS: usize = DATED.len() + 2;
-
-/// What the profile counts its bands by, which the section names so that no reader takes
-/// it for the tree's age column, whose basis is modification activity.
-pub const AGE_BASIS: &str = "changed";
+/// How many bands a profile has: the dated ones and the oldest.
+const BANDS: usize = DATED.len() + 1;
 
 /// The files, bytes, and ignored part one band, or several, holds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -100,13 +93,13 @@ impl AgeTally {
 /// One band of an age profile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgeBand {
-    /// The band's label: `future`, `under 1h`, … `over 3y`, or `unknown`.
+    /// The band's label: `future`, `under 1h`, … `over 3y`.
     pub band: &'static str,
-    /// The oldest age the band holds, inclusive, in nanoseconds: its window's
-    /// `--changed-since`. `None` for `over 3y`, which has no oldest age, and `unknown`.
+    /// The oldest age the band holds, inclusive, in nanoseconds: its window's `--since`.
+    /// `None` for `over 3y`, which has no oldest age.
     pub since_age_ns: Option<i64>,
-    /// The newest age the band excludes, in nanoseconds: its window's `--changed-before`.
-    /// `None` for `future`, which has no newer band, and `unknown`.
+    /// The newest age the band excludes, in nanoseconds: its window's `--before`. `None`
+    /// for `future`, which has no newer band.
     pub before_age_ns: Option<i64>,
     /// [`Self::since_age_ns`] as an instant, in epoch nanoseconds, at the request instant.
     pub since_ns: Option<i64>,
@@ -115,46 +108,57 @@ pub struct AgeBand {
     /// What the band holds.
     pub tally: AgeTally,
     /// What this band and every newer one hold, which answers "how much changed within
-    /// this age?"; `None` for `unknown`, which has no place in that order.
-    pub cumulative: Option<AgeTally>,
+    /// this age?".
+    pub cumulative: AgeTally,
 }
 
-/// The selected regular files by change-time band.
+/// The selected regular files by age band, on the report's clock.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgeProfile {
-    /// [`AGE_BASIS`].
-    pub basis: &'static str,
-    /// Every band, newest first, then `over 3y` and `unknown`; empty bands included.
+    /// Every band, newest first, ending with `over 3y`; empty bands included.
     pub bands: Vec<AgeBand>,
     /// Every band together: the files and bytes `summary` reports for the same selection.
     pub total: AgeTally,
+    /// Files whose status change was not observed, and which the change-time clock
+    /// therefore timed by modification ([`crate::Attrs::times`]); zero on the
+    /// modification-time clock, which needs no status change.
+    pub timed_by_modification: u64,
 }
 
-/// The band a change time falls in at `now_ns`, by index into a profile's bands.
-fn band_of(changed_ns: Option<i64>, now_ns: Option<i64>) -> usize {
-    let (Some(changed), Some(now)) = (changed_ns, now_ns) else { return BANDS - 1 };
-    let age = i128::from(now) - i128::from(changed);
+/// The band a time falls in at `now`, by index into a profile's bands.
+fn band_of(time: i64, now: i64) -> usize {
+    let age = i128::from(now) - i128::from(time);
     DATED.iter().position(|(_, oldest)| age <= i128::from(*oldest)).unwrap_or(DATED.len())
 }
 
 /// The age profile of `files`, the regular files a selection admits or covers, at
 /// `now_ns`, the request instant.
 ///
-/// `observed` says whether every root's index observed `.gitignore` rules, without which
-/// no band has an ignored part. With no representable instant every file is `unknown`,
-/// since no age can be measured from it.
+/// `time` names the clock, and `observed` says whether every root's index observed
+/// `.gitignore` rules, without which no band has an ignored part. With no representable
+/// instant no age can be measured, so no file is banded and only the total counts them;
+/// [`crate::query::Request::validate`] refuses `ages` for such a request.
 pub(crate) fn age_profile<'a>(
     files: impl IntoIterator<Item = &'a FileRow>,
     now_ns: Option<i64>,
+    time: TimeBasis,
     observed: bool,
 ) -> AgeProfile {
     let mut tallies = [AgeTally::empty(observed); BANDS];
+    let mut unbanded = AgeTally::empty(observed);
+    let mut timed_by_modification = 0;
     for row in files.into_iter().filter(|row| row.kind == EntryKind::File) {
-        tallies[band_of(row.changed_ns, now_ns)].count(row);
+        if time == TimeBasis::Changed && !row.status_observed {
+            timed_by_modification += 1;
+        }
+        match now_ns {
+            Some(now) => tallies[band_of(row.times.get(time), now)].count(row),
+            None => unbanded.count(row),
+        }
     }
     let instant = |age: Option<i64>| now_ns.zip(age).and_then(|(now, age)| now.checked_sub(age));
     let mut running = AgeTally::empty(observed);
-    let mut total = AgeTally::empty(observed);
+    let mut total = unbanded;
     let bands = tallies
         .iter()
         .enumerate()
@@ -166,13 +170,10 @@ pub(crate) fn age_profile<'a>(
                     Some(DATED[index].1),
                     index.checked_sub(1).map(|newer| DATED[newer].1),
                 ),
-                index if index == DATED.len() => (OLDEST, None, Some(DATED[DATED.len() - 1].1)),
-                _ => (UNKNOWN, None, None),
+                _ => (OLDEST, None, Some(DATED[DATED.len() - 1].1)),
             };
-            let cumulative = (band != UNKNOWN).then(|| {
-                running.add(tally);
-                running
-            });
+            running.add(tally);
+            let cumulative = running;
             AgeBand {
                 band,
                 since_age_ns,
@@ -184,7 +185,7 @@ pub(crate) fn age_profile<'a>(
             }
         })
         .collect();
-    AgeProfile { basis: AGE_BASIS, bands, total }
+    AgeProfile { bands, total, timed_by_modification }
 }
 
 #[cfg(test)]
@@ -194,15 +195,15 @@ mod tests {
 
     const NOW: i64 = 2_000_000_000_000_000_000;
 
-    fn file(changed_ns: Option<i64>, bytes: u64, ignored: Option<bool>) -> FileRow {
+    fn file(changed: i64, bytes: u64, ignored: Option<bool>) -> FileRow {
         FileRow {
             root: 0,
             path: PathBuf::from("f"),
             kind: EntryKind::File,
             bytes,
             allocated: bytes,
-            mtime_ns: 0,
-            changed_ns,
+            times: crate::Times { modified: 0, changed },
+            status_observed: true,
             files: None,
             dirs: None,
             complete: None,
@@ -220,13 +221,12 @@ mod tests {
     #[test]
     fn an_edge_falls_in_the_newer_band_and_the_request_instant_is_future() {
         // One file exactly on each edge, and one just past it.
-        let mut rows = vec![file(Some(NOW + 5), 1, Some(false)), file(Some(NOW), 1, Some(false))];
+        let mut rows = vec![file(NOW + 5, 1, Some(false)), file(NOW, 1, Some(false))];
         for (_, edge) in &DATED[1..] {
-            rows.push(file(Some(NOW - edge), 1, Some(false)));
-            rows.push(file(Some(NOW - edge - 1), 1, Some(false)));
+            rows.push(file(NOW - edge, 1, Some(false)));
+            rows.push(file(NOW - edge - 1, 1, Some(false)));
         }
-        rows.push(file(None, 1, Some(false)));
-        let profile = age_profile(&rows, Some(NOW), true);
+        let profile = age_profile(&rows, Some(NOW), TimeBasis::Changed, true);
         assert_eq!(
             labels(&profile),
             [
@@ -239,17 +239,35 @@ mod tests {
                 ("90d to 1y", 2),
                 ("1y to 3y", 2),
                 ("over 3y", 1),
-                ("unknown", 1),
             ]
         );
         assert_eq!(profile.total.files, rows.len() as u64);
-        assert_eq!(profile.bands[8].cumulative.map(|tally| tally.files), Some(16));
-        assert_eq!(profile.bands[9].cumulative, None);
+        assert_eq!(profile.bands[8].cumulative.files, 16);
+        // Every file here is dated by its change time; on the modification clock they are
+        // all from the epoch, the oldest band.
+        let modified = age_profile(&rows, Some(NOW), TimeBasis::Modified, true);
+        assert_eq!(modified.bands[8].tally.files, 16);
+        assert_eq!((profile.timed_by_modification, modified.timed_by_modification), (0, 0));
+    }
+
+    #[test]
+    fn a_file_with_no_observed_status_change_is_counted_on_the_change_clock() {
+        let mut blind = file(NOW - 10, 1, Some(false));
+        blind.status_observed = false;
+        let rows = [blind, file(NOW - 10, 1, Some(false))];
+        assert_eq!(
+            age_profile(&rows, Some(NOW), TimeBasis::Changed, true).timed_by_modification,
+            1
+        );
+        assert_eq!(
+            age_profile(&rows, Some(NOW), TimeBasis::Modified, true).timed_by_modification,
+            0
+        );
     }
 
     #[test]
     fn each_band_is_the_window_it_names() {
-        let profile = age_profile(&[], Some(NOW), true);
+        let profile = age_profile(&[], Some(NOW), TimeBasis::Changed, true);
         let windows: Vec<_> = profile
             .bands
             .iter()
@@ -259,7 +277,7 @@ mod tests {
         assert_eq!(windows[1], ("under 1h", Some(HOUR), Some(0)));
         assert_eq!(windows[6], ("90d to 1y", Some(YEAR), Some(90 * DAY)));
         assert_eq!(windows[8], ("over 3y", None, Some(3 * YEAR)));
-        assert_eq!(windows[9], ("unknown", None, None));
+        assert_eq!(windows.len(), 9);
         // As instants, `since` is inclusive and `before` exclusive at the request instant.
         assert_eq!(
             (profile.bands[1].since_ns, profile.bands[1].before_ns),
@@ -272,30 +290,31 @@ mod tests {
     #[test]
     fn the_ignored_part_is_unknown_wherever_a_counted_file_is_unclassified() {
         let rows = [
-            file(Some(NOW - 10), 7, Some(true)),
-            file(Some(NOW - 10), 3, Some(false)),
-            file(Some(NOW - 2 * DAY), 5, None),
+            file(NOW - 10, 7, Some(true)),
+            file(NOW - 10, 3, Some(false)),
+            file(NOW - 2 * DAY, 5, None),
         ];
-        let profile = age_profile(&rows, Some(NOW), true);
+        let profile = age_profile(&rows, Some(NOW), TimeBasis::Changed, true);
         let share = |index: usize| profile.bands[index].tally.ignored.map(|share| share.bytes);
         assert_eq!(share(1), Some(7));
         assert_eq!(share(3), None);
         assert_eq!(share(0), Some(0));
         assert_eq!(profile.total.ignored, None);
         assert_eq!(
-            profile.bands[1].cumulative.and_then(|tally| tally.ignored),
+            profile.bands[1].cumulative.ignored,
             share(1).map(|bytes| { IgnoredTally { files: 1, dirs: 0, bytes, allocated: bytes } })
         );
         // Unobserved rules leave every band without one, empty bands included.
-        let blind = age_profile(&rows, Some(NOW), false);
+        let blind = age_profile(&rows, Some(NOW), TimeBasis::Changed, false);
         assert!(blind.bands.iter().all(|band| band.tally.ignored.is_none()));
     }
 
     #[test]
-    fn without_an_instant_every_file_is_unknown() {
-        let rows = [file(Some(NOW), 1, Some(false))];
-        let profile = age_profile(&rows, None, true);
-        assert_eq!(profile.bands[9].tally.files, 1);
+    fn without_an_instant_no_file_is_banded_and_the_total_holds_them() {
+        let rows = [file(NOW, 1, Some(false))];
+        let profile = age_profile(&rows, None, TimeBasis::Changed, true);
+        assert_eq!(profile.total.files, 1);
+        assert!(profile.bands.iter().all(|band| band.tally.files == 0));
         assert!(
             profile.bands.iter().all(|band| band.since_ns.is_none() && band.before_ns.is_none())
         );

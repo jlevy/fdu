@@ -1,12 +1,14 @@
 //! A report's `scan_started_at` must be usable as the watermark for the next query.
 //!
 //! This is the property that makes incremental follow-up work: feed a report's
-//! `scan_started_at` back as `--modified-since` and the answer is exactly the entries at
-//! or after it. The contract is over mtimes, and the boundary is inclusive -- an entry
-//! stamped in the very nanosecond the walk began must be reported, because that is the
-//! side a mid-scan write lands on. An exclusive boundary, or a watermark taken when the
-//! walk *ended*, would both surface here as an entry inside the walk window going
-//! missing -- silently, since every later query uses a still-later watermark.
+//! `scan_started_at` back as `--since`, on the modification clock (`--time modified`), and
+//! the answer is exactly the entries at or after it. The contract is over mtimes, which a
+//! test can stamp exactly where it cannot stamp a status change, and the boundary is
+//! inclusive -- an entry stamped in the very nanosecond the walk began must be reported,
+//! because that is the side a mid-scan write lands on. An exclusive boundary, or a
+//! watermark taken when the walk *ended*, would both surface here as an entry inside the
+//! walk window going missing -- silently, since every later query uses a still-later
+//! watermark.
 //!
 //! Earlier versions of this test raced a writer thread against the real walk. That
 //! exercised the machinery but proved less than it appeared to: from outside the
@@ -66,7 +68,7 @@ fn the_watermark_window_is_inclusive_at_exactly_scan_start() {
         "the watermark must precede the report it came from: {watermark} > {generated}",
     );
 
-    // Parse the watermark with the same grammar `--modified-since` uses, so the boundary
+    // Parse the watermark with the same grammar `--since` uses, so the boundary
     // files below sit at exactly the instant the query will compare against.
     let now = SystemTime::now();
     let at_watermark = fdu_core::query::parse_when(&watermark, now).expect("parse watermark");
@@ -81,12 +83,15 @@ fn the_watermark_window_is_inclusive_at_exactly_scan_start() {
 
     let listing = run(
         tree,
-        &["--view", "files", "--format", "jsonl", "--cache", "off", "--modified-since", &watermark],
+        &[
+            "--view", "files", "--format", "jsonl", "--cache", "off", "--time", "modified",
+            "--since", &watermark,
+        ],
     );
 
     assert!(
         listing.contains("at-boundary.txt"),
-        "an entry stamped at exactly scan start must be inside the window: --modified-since \
+        "an entry stamped at exactly scan start must be inside the window: --since \
          is inclusive precisely so a mid-scan write cannot fall through. Listing: {listing}",
     );
     assert!(

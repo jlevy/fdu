@@ -20,7 +20,7 @@ use std::time::{Duration, SystemTime};
 use crate::CachePolicy;
 use crate::content::AnalysisSet;
 use crate::control::{ControlLimits, DEFAULT_CONTROL_BUDGET, DEFAULT_CONTROL_LINE_LIMIT};
-use crate::engine_contract::EntryKind;
+use crate::engine_contract::{EntryKind, TimeBasis};
 use crate::query::query_glob::Pattern;
 use crate::query::query_report::{AxisNames, Query, ViewList, ViewSpec};
 use crate::query::query_selection::{
@@ -966,15 +966,12 @@ pub struct ReadSpec<'a> {
     pub exclude: &'a [String],
     /// Smallest size, as `512`, `10M`, or `1.5GiB`.
     pub min_size: Option<&'a str>,
-    /// Inclusive lower bound on modification time, as `2h` or a timestamp.
-    pub modified_since: Option<&'a str>,
-    /// Exclusive upper bound on modification time.
-    pub modified_before: Option<&'a str>,
-    /// Inclusive lower bound on change time, the newer of modification and status change,
-    /// in the same grammar as `modified_since`.
-    pub changed_since: Option<&'a str>,
-    /// Exclusive upper bound on change time.
-    pub changed_before: Option<&'a str>,
+    /// Inclusive lower bound on the entry's time, as `2h` or a timestamp.
+    pub since: Option<&'a str>,
+    /// Exclusive upper bound on the entry's time.
+    pub before: Option<&'a str>,
+    /// Which clock every time is read from: `changed`, the default, or `modified`.
+    pub time: Option<&'a str>,
     /// Entry kinds: a comma list of `file`, `dir`, `symlink`, or `other`.
     pub kinds: Option<&'a str>,
     /// Selection by ignored state: `include`, `exclude`, or `only`.
@@ -987,8 +984,7 @@ pub struct ReadSpec<'a> {
     pub breadth: Option<&'a str>,
     /// Rows per view: a whole number or `all`.
     pub limit: Option<&'a str>,
-    /// Ordering key: `size`, `count`, `mtime`, `changed`, `name`, or a registered numeric
-    /// metric.
+    /// Ordering key: `size`, `count`, `time`, `name`, or a registered numeric metric.
     pub sort: Option<&'a str>,
     /// Reverse the ordering.
     pub reverse: bool,
@@ -1006,10 +1002,9 @@ impl ReadSpec<'_> {
             include: &[],
             exclude: &[],
             min_size: None,
-            modified_since: None,
-            modified_before: None,
-            changed_since: None,
-            changed_before: None,
+            since: None,
+            before: None,
+            time: None,
             kinds: None,
             ignored: None,
             depth: None,
@@ -1429,30 +1424,37 @@ impl Request {
                 });
             }
         }
-        // Change time is a fact of one entry, which a flat row carries. A tree node's age
-        // and a grouped row's recency are modification activity, so ordering either by
-        // change time would silently fall back to name order. A view whose rows have a
-        // fixed order (the summary, the age bands, the filesystems) is ordered by no sort,
-        // so it may sit beside one.
-        if self.query.selection.sort == Some(SortKey::Changed)
+        // Every tree, list, and code row carries the time its column shows; a type,
+        // extension, family, language, or document row carries none, so ordering one by
+        // time would silently fall back to name order. A view whose rows have a fixed
+        // order (the summary, the age bands, the filesystems) is ordered by no sort, so it
+        // may sit beside one.
+        if self.query.selection.sort == Some(SortKey::Time)
             && self.query.views.iter().any(|view| {
-                self.query.tree_for(*view)
-                    || !matches!(
-                        view,
-                        ViewSpec::List
-                            | ViewSpec::Files
-                            | ViewSpec::Largest
-                            | ViewSpec::Recent
-                            | ViewSpec::Summary
-                            | ViewSpec::Ages
-                            | ViewSpec::Volumes
-                    )
+                matches!(
+                    view,
+                    ViewSpec::Types
+                        | ViewSpec::Extensions
+                        | ViewSpec::Families
+                        | ViewSpec::Languages
+                        | ViewSpec::Documents
+                )
             })
         {
             return Err(invalid(
                 self.query.axes.sort,
-                "changed",
-                "only flat rows carry a change time: sort files, largest, or recent, or list in a flat format, or sort by mtime",
+                "time",
+                "type, extension, family, language, and document rows carry no time: sort tree, list, files, largest, recent, or code rows by time",
+            ));
+        }
+        // An age needs an instant to be measured from, and `ages` is nothing but ages.
+        if self.query.views.contains(&ViewSpec::Ages)
+            && crate::query::system_time_to_nanos(self.now).is_none()
+        {
+            return Err(invalid(
+                self.query.axes.view,
+                "ages",
+                "the request's instant is outside the range a time can be represented in",
             ));
         }
         let hierarchy = self.query.views.iter().any(|view| self.query.tree_for(*view));
@@ -1613,21 +1615,16 @@ fn build_query(
     if let Some(value) = spec.min_size {
         selection.min_size = Some(parse_size(value).map_err(grammar_refusal)?);
     }
-    if let Some(value) = spec.modified_since {
+    if let Some(value) = spec.since {
         let when = parse_when(value, now).map_err(grammar_refusal)?;
-        selection.modified.since = Some(bound_nanos(value, when, axes.modified_since)?);
+        selection.window.since = Some(bound_nanos(value, when, axes.since)?);
     }
-    if let Some(value) = spec.modified_before {
+    if let Some(value) = spec.before {
         let when = parse_when(value, now).map_err(grammar_refusal)?;
-        selection.modified.before = Some(bound_nanos(value, when, axes.modified_before)?);
+        selection.window.before = Some(bound_nanos(value, when, axes.before)?);
     }
-    if let Some(value) = spec.changed_since {
-        let when = parse_when(value, now).map_err(grammar_refusal)?;
-        selection.changed.since = Some(bound_nanos(value, when, axes.changed_since)?);
-    }
-    if let Some(value) = spec.changed_before {
-        let when = parse_when(value, now).map_err(grammar_refusal)?;
-        selection.changed.before = Some(bound_nanos(value, when, axes.changed_before)?);
+    if let Some(value) = spec.time {
+        selection.time = parse_time_basis(value, axes.time)?;
     }
     if let Some(value) = spec.kinds {
         selection.kinds = parse_kinds(value, axes.kind)?;
@@ -2039,7 +2036,7 @@ fn watch_scope_message(axes: &AxisNames) -> String {
     let vocabulary = [
         (fields.scan_depth, axes.scan_depth),
         (fields.one_filesystem, axes.one_filesystem),
-        (fields.modified_since, axes.modified_since),
+        (fields.since, axes.since),
         (fields.depth, axes.depth),
         (fields.include, axes.include),
     ];
@@ -2202,15 +2199,14 @@ pub fn parse_sort(value: &str, axis: &'static str) -> Result<SortKey, RequestErr
     match value.trim().to_ascii_lowercase().as_str() {
         "size" => Ok(SortKey::Size),
         "count" => Ok(SortKey::Count),
-        "mtime" => Ok(SortKey::Mtime),
-        "changed" => Ok(SortKey::Changed),
+        "time" => Ok(SortKey::Time),
         "name" => Ok(SortKey::Name),
         other => crate::content::METRICS.iter().find(|metric| metric.name == other).map_or_else(
             || {
                 Err(invalid(
                     axis,
                     other,
-                    "expected size, count, mtime, changed, name, or a registered numeric metric",
+                    "expected size, count, time, name, or a registered numeric metric",
                 ))
             },
             |metric| Ok(SortKey::Metric(metric.name)),
@@ -2218,7 +2214,13 @@ pub fn parse_sort(value: &str, axis: &'static str) -> Result<SortKey, RequestErr
     }
 }
 
-/// Parse a size metric: `allocated` or `apparent`.
+/// Parse the clock a report reads every time from: `changed` or `modified`.
+pub fn parse_time_basis(value: &str, axis: &'static str) -> Result<TimeBasis, RequestError> {
+    let spelled = value.trim().to_ascii_lowercase();
+    TimeBasis::parse(&spelled).map_err(|reason| invalid(axis, spelled, reason))
+}
+
+/// Parse the size metric a report answers in.
 pub fn parse_size_metric(value: &str, axis: &'static str) -> Result<SizeMetric, RequestError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "allocated" => Ok(SizeMetric::Allocated),
@@ -2285,7 +2287,7 @@ mod tests {
     fn each_grammar_names_its_axis_as_the_surface_spells_it() {
         let flags = &AxisNames::FLAGS;
         let fields = &AxisNames::FIELDS;
-        let cases: [(&str, RequestError, RequestError); 6] = [
+        let cases: [(&str, RequestError, RequestError); 7] = [
             (
                 "kind",
                 parse_kind(" Socket ", flags.kind).expect_err("unknown kind"),
@@ -2308,10 +2310,15 @@ mod tests {
             ),
             (
                 "time",
-                bound_nanos("2300-01-01T00:00:00Z", far_future(), flags.modified_since)
+                bound_nanos("2300-01-01T00:00:00Z", far_future(), flags.since)
                     .expect_err("unrepresentable"),
-                bound_nanos("2300-01-01T00:00:00Z", far_future(), fields.modified_since)
+                bound_nanos("2300-01-01T00:00:00Z", far_future(), fields.since)
                     .expect_err("unrepresentable"),
+            ),
+            (
+                "clock",
+                parse_time_basis("ctime", flags.time).expect_err("unknown clock"),
+                parse_time_basis("ctime", fields.time).expect_err("unknown clock"),
             ),
             (
                 "cache",
@@ -2329,18 +2336,22 @@ mod tests {
                 "invalid depth \"two\": expected a whole number or `all`",
             ),
             (
-                "invalid --sort \"newest\": expected size, count, mtime, changed, name, or a registered numeric metric",
-                "invalid sort \"newest\": expected size, count, mtime, changed, name, or a registered numeric metric",
+                "invalid --sort \"newest\": expected size, count, time, name, or a registered numeric metric",
+                "invalid sort \"newest\": expected size, count, time, name, or a registered numeric metric",
             ),
             (
                 "invalid --size \"logical\": expected allocated or apparent",
                 "invalid size \"logical\": expected allocated or apparent",
             ),
             (
-                "invalid --modified-since \"2300-01-01T00:00:00Z\": that time is outside the \
-                 range fdu can represent (about 1677 to 2262)",
-                "invalid modified_since \"2300-01-01T00:00:00Z\": that time is outside the range \
-                 fdu can represent (about 1677 to 2262)",
+                "invalid --since \"2300-01-01T00:00:00Z\": that time is outside the range fdu \
+                 can represent (about 1677 to 2262)",
+                "invalid since \"2300-01-01T00:00:00Z\": that time is outside the range fdu can \
+                 represent (about 1677 to 2262)",
+            ),
+            (
+                "invalid --time \"ctime\": expected one of changed, modified",
+                "invalid time \"ctime\": expected one of changed, modified",
             ),
             (
                 "invalid --cache \"readonly\": expected one of auto, on, off",
@@ -2376,12 +2387,21 @@ mod tests {
         for (spelling, key) in [
             ("size", SortKey::Size),
             ("count", SortKey::Count),
-            ("MTIME", SortKey::Mtime),
-            ("Changed", SortKey::Changed),
+            ("TIME", SortKey::Time),
             ("name", SortKey::Name),
             ("CODE_LINES", SortKey::Metric("code_lines")),
         ] {
             assert_eq!(parse_sort(spelling, axis), Ok(key));
+        }
+        // One time key reads the request's clock, so neither clock is a key of its own.
+        for retired in ["mtime", "changed"] {
+            assert!(parse_sort(retired, axis).is_err(), "{retired}");
+        }
+        for (spelling, clock) in
+            [(" Changed", TimeBasis::Changed), ("MODIFIED", TimeBasis::Modified)]
+        {
+            assert_eq!(parse_time_basis(spelling, axis), Ok(clock));
+            assert_eq!(parse_time_basis(clock.label(), axis), Ok(clock), "the label parses back");
         }
         assert_eq!(parse_size_metric("Allocated", axis), Ok(SizeMetric::Allocated));
         assert_eq!(parse_size_metric("apparent", axis), Ok(SizeMetric::Apparent));
@@ -2729,7 +2749,7 @@ mod tests {
         let vocabulary = [
             (fields.scan_depth, flags.scan_depth),
             (fields.one_filesystem, flags.one_filesystem),
-            (fields.modified_since, flags.modified_since),
+            (fields.since, flags.since),
             (fields.depth, flags.depth),
             (fields.include, flags.include),
         ];
@@ -2960,10 +2980,9 @@ mod tests {
                 include: &include,
                 exclude: &exclude,
                 min_size: Some("1KiB"),
-                modified_since: Some("@1700000000"),
-                modified_before: Some("@1800000000"),
-                changed_since: Some("@1600000000"),
-                changed_before: Some("@1900000000"),
+                since: Some("@1700000000"),
+                before: Some("@1800000000"),
+                time: Some("modified"),
                 kinds: Some("file,dir"),
                 ignored: Some("include"),
                 depth: Some("all"),
@@ -2990,10 +3009,9 @@ mod tests {
         assert_eq!(selection.include.len(), 1);
         assert_eq!(selection.exclude.len(), 1);
         assert_eq!(selection.min_size, Some(1024));
-        assert_eq!(selection.modified.since, Some(1_700_000_000_000_000_000));
-        assert_eq!(selection.modified.before, Some(1_800_000_000_000_000_000));
-        assert_eq!(selection.changed.since, Some(1_600_000_000_000_000_000));
-        assert_eq!(selection.changed.before, Some(1_900_000_000_000_000_000));
+        assert_eq!(selection.window.since, Some(1_700_000_000_000_000_000));
+        assert_eq!(selection.window.before, Some(1_800_000_000_000_000_000));
+        assert_eq!(selection.time, TimeBasis::Modified);
         assert_eq!(selection.kinds, vec![EntryKind::File, EntryKind::Dir]);
         assert_eq!(selection.ignored, IgnoredEntries::Include);
         assert_eq!(selection.depth, Some(Bound::All));
@@ -3003,10 +3021,12 @@ mod tests {
         assert_eq!(selection.size, SizeMetric::Apparent);
     }
 
-    /// A tree node and a grouped row carry no change time, so sorting either by it would
-    /// fall back to name order without saying so; only flat rows accept the key.
+    /// Every tree, list, and code row carries the time its column shows, on the request's
+    /// clock, so each sorts by it; a type, extension, family, language, or document row
+    /// carries none, and sorting one by time would fall back to name order without saying
+    /// so. A view whose rows have a fixed order may sit beside a time sort.
     #[test]
-    fn a_change_time_sort_is_refused_wherever_rows_render_as_a_tree_or_a_group() {
+    fn a_time_sort_is_refused_only_where_rows_carry_no_time() {
         for (view, format, valid) in [
             (Some("files"), None, true),
             (Some("largest"), None, true),
@@ -3015,30 +3035,74 @@ mod tests {
             (Some("files,summary"), None, true),
             (Some("files,ages,volumes"), None, true),
             (Some("ages"), Some("json"), true),
-            (None, None, false),
-            (Some("tree"), Some("json"), false),
-            (Some("list"), None, false),
-            (Some("files"), Some("tree"), false),
+            (None, None, true),
+            (Some("tree"), Some("json"), true),
+            (Some("list"), None, true),
+            (Some("files"), Some("tree"), true),
+            (Some("code"), None, true),
             (Some("extensions"), None, false),
             (Some("files,types"), None, false),
+            (Some("tree,families"), None, false),
+            (Some("languages"), None, false),
+            (Some("documents"), None, false),
         ] {
-            let spec = RequestSpec {
-                read: ReadSpec { views: view, format, sort: Some("changed"), ..ReadSpec::new() },
-                ..RequestSpec::new(Path::new("/absent"))
-            };
-            let request =
-                Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FLAGS).expect("grammar");
-            assert_eq!(request.query.selection.sort, Some(SortKey::Changed));
-            match request.validate() {
-                Ok(()) => assert!(valid, "{view:?} {format:?} accepted"),
-                Err(error) => {
-                    assert!(!valid, "{view:?} {format:?} refused: {error}");
-                    assert_eq!(
-                        error.message(&AxisNames::FLAGS),
-                        "invalid --sort \"changed\": only flat rows carry a change time: sort \
-                         files, largest, or recent, or list in a flat format, or sort by mtime"
-                    );
+            for clock in [None, Some("changed"), Some("modified")] {
+                let spec = RequestSpec {
+                    read: ReadSpec {
+                        views: view,
+                        format,
+                        sort: Some("time"),
+                        time: clock,
+                        ..ReadSpec::new()
+                    },
+                    ..RequestSpec::new(Path::new("/absent"))
+                };
+                let request = Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FLAGS)
+                    .expect("grammar");
+                assert_eq!(request.query.selection.sort, Some(SortKey::Time));
+                match request.validate() {
+                    Ok(()) => assert!(valid, "{view:?} {format:?} {clock:?} accepted"),
+                    Err(error) => {
+                        assert!(!valid, "{view:?} {format:?} {clock:?} refused: {error}");
+                        assert_eq!(
+                            error.message(&AxisNames::FLAGS),
+                            "invalid --sort \"time\": type, extension, family, language, and \
+                             document rows carry no time: sort tree, list, files, largest, \
+                             recent, or code rows by time"
+                        );
+                    }
                 }
+            }
+        }
+    }
+
+    /// An age is measured from the request's instant, and `ages` holds nothing but ages,
+    /// so a request whose instant no time can represent is refused that view rather than
+    /// answered with every file unbanded; every other view still reads at that instant.
+    #[test]
+    fn ages_are_refused_at_an_instant_no_time_can_represent() {
+        for (view, valid) in [(Some("ages"), false), (Some("summary,ages"), false), (None, true)] {
+            let spec = reading(ReadSpec { views: view, ..ReadSpec::new() });
+            for axes in [&AxisNames::FLAGS, &AxisNames::FIELDS] {
+                let request = Request::build(&spec, far_future(), axes).expect("grammar");
+                match request.validate() {
+                    Ok(()) => assert!(valid, "{view:?} accepted"),
+                    Err(error) => {
+                        assert!(!valid, "{view:?} refused: {error}");
+                        assert_eq!(
+                            error.message(axes),
+                            format!(
+                                "invalid {} \"ages\": the request's instant is outside the \
+                                 range a time can be represented in",
+                                axes.view
+                            )
+                        );
+                    }
+                }
+                assert!(
+                    Request::build(&spec, instant(), axes).expect("grammar").validate().is_ok(),
+                    "{view:?} at a representable instant"
+                );
             }
         }
     }
@@ -3048,23 +3112,20 @@ mod tests {
     /// selects exactly the same entries however much later that happens.
     #[test]
     fn relative_windows_resolve_against_the_requests_instant() {
-        let spec = reading(ReadSpec {
-            modified_since: Some("2h"),
-            modified_before: Some("now"),
-            ..ReadSpec::new()
-        });
+        let spec = reading(ReadSpec { since: Some("2h"), before: Some("now"), ..ReadSpec::new() });
         let request = built(&spec);
         let now = system_time_to_nanos(instant()).expect("representable");
         let two_hours = 2 * 60 * 60 * 1_000_000_000;
         assert_eq!(request.now, instant());
-        assert_eq!(request.query.selection.modified.since, Some(now - two_hours));
-        assert_eq!(request.query.selection.modified.before, Some(now));
+        assert_eq!(request.query.selection.window.since, Some(now - two_hours));
+        assert_eq!(request.query.selection.window.before, Some(now));
+        assert_eq!(request.query.selection.time, TimeBasis::Changed, "the default clock");
 
         let later = instant() + Duration::from_secs(60);
         let moved = Request::build(&spec, later, &AxisNames::FIELDS).expect("parses");
-        assert_eq!(moved.query.selection.modified.since, Some(now - two_hours + 60_000_000_000));
+        assert_eq!(moved.query.selection.window.since, Some(now - two_hours + 60_000_000_000));
         let again = built(&spec);
-        assert_eq!(again.query.selection.modified.since, request.query.selection.modified.since);
+        assert_eq!(again.query.selection.window.since, request.query.selection.window.since);
     }
 
     /// Each refusal `build` raises reads exactly as the path it replaces does today, in
@@ -3086,7 +3147,7 @@ mod tests {
             }
         }
 
-        let cases: [(RequestSpec<'_>, &str, &str); 7] = [
+        let cases: [(RequestSpec<'_>, &str, &str); 8] = [
             (
                 reading(ReadSpec { words_per_page: Some("0"), ..ReadSpec::new() }),
                 "invalid --words-per-page \"0\": expected a positive integer",
@@ -3123,14 +3184,16 @@ mod tests {
                  P/PB, or the binary forms KiB, MiB, GiB, TiB, PiB",
             ),
             (
-                reading(ReadSpec {
-                    modified_since: Some("2300-01-01T00:00:00Z"),
-                    ..ReadSpec::new()
-                }),
-                "invalid --modified-since \"2300-01-01T00:00:00Z\": that time is outside the \
-                 range fdu can represent (about 1677 to 2262)",
-                "invalid modified_since \"2300-01-01T00:00:00Z\": that time is outside the range \
-                 fdu can represent (about 1677 to 2262)",
+                reading(ReadSpec { since: Some("2300-01-01T00:00:00Z"), ..ReadSpec::new() }),
+                "invalid --since \"2300-01-01T00:00:00Z\": that time is outside the range fdu \
+                 can represent (about 1677 to 2262)",
+                "invalid since \"2300-01-01T00:00:00Z\": that time is outside the range fdu can \
+                 represent (about 1677 to 2262)",
+            ),
+            (
+                reading(ReadSpec { time: Some("birth"), ..ReadSpec::new() }),
+                "invalid --time \"birth\": expected one of changed, modified",
+                "invalid time \"birth\": expected one of changed, modified",
             ),
         ];
         for (spec, flags, fields) in cases {

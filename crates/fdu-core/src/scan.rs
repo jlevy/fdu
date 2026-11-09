@@ -288,7 +288,7 @@ impl Default for ScanConfig {
 pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
     "watching requires full scope and cannot be combined with max_depth or one_filesystem: ",
     "a watcher cannot filter backend events against a narrowed boundary. Selection such as ",
-    "depth, include, and modified_since does work while watching, because it filters the ",
+    "depth, include, and since does work while watching, because it filters the ",
     "retained index rather than narrowing the scan"
 );
 

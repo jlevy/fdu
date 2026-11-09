@@ -160,6 +160,7 @@ impl SessionTrace {
             value = replace_integer_field(value, field, replacement);
         }
         value = replace_integer_after(value, "newest_mtime_ns: Some(", "[TIME]");
+        value = replace_integer_after(value, "newest_changed_ns: Some(", "[TIME]");
         value = replace_integer_after(value, "observed_at_ns: Some(", "[TIME]");
         value = replace_integer_after(value, "kind: Dir, attrs: Attrs { size: ", "[DIR_SIZE]");
         // This byte count includes size_of::<ContinuationRecord>(), whose native

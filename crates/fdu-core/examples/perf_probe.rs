@@ -992,7 +992,7 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         dirs: row.dirs,
         apparent_bytes: u128::from(row.bytes),
         allocated_bytes: u128::from(row.allocated),
-        newest_file_mtime_ns: row.newest_mtime_ns,
+        newest_file_mtime_ns: row.newest_file.map(|times| times.modified),
         // Deliberately absent rather than zero: this tier never observed an index, and a
         // zero digest would read as "no entries" to an oracle rather than "not offered".
         engine_digest: None,
@@ -1079,7 +1079,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         dirs: root.dirs,
         apparent_bytes: u128::from(root.bytes),
         allocated_bytes: u128::from(root.allocated),
-        newest_file_mtime_ns: root.newest_mtime_ns,
+        newest_file_mtime_ns: root.newest_file.map(|times| times.modified),
         // Absent rather than zero, as for the aggregate tier: the index was consumed
         // inside `prepare_report`, so this mode has no digest to offer and says so.
         engine_digest: None,
@@ -1178,13 +1178,13 @@ fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
 
     let tallies = report.sections.iter().find_map(|section| match section {
         fdu_core::query::Section::Summary(row) => {
-            Some((row.files, row.dirs, row.bytes, row.allocated, row.newest_mtime_ns))
+            Some((row.files, row.dirs, row.bytes, row.allocated, row.newest_file))
         }
         fdu_core::query::Section::Tree { root: Some(node), .. } => {
-            Some((node.files, node.dirs, node.bytes, node.allocated, node.newest_mtime_ns))
+            Some((node.files, node.dirs, node.bytes, node.allocated, node.newest_file))
         }
         fdu_core::query::Section::Tree { roots: Some(trees), .. } => trees.total.map(|total| {
-            (total.files, total.dirs, total.bytes, total.allocated, total.newest_mtime_ns)
+            (total.files, total.dirs, total.bytes, total.allocated, total.newest_file)
         }),
         _ => None,
     });
@@ -1196,7 +1196,7 @@ fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
         dirs,
         apparent_bytes: u128::from(bytes),
         allocated_bytes: u128::from(allocated),
-        newest_file_mtime_ns: newest,
+        newest_file_mtime_ns: newest.map(|times| times.modified),
         engine_digest: None,
         index_len: None,
         ..Summary::default()

@@ -105,8 +105,7 @@ struct EntryFacts {
     kind: EntryKind,
     bytes: u64,
     allocated: u64,
-    mtime_ns: i64,
-    changed_ns: Option<i64>,
+    times: crate::Times,
 }
 
 /// The result of a throttled attempt to persist a live session.
@@ -148,7 +147,7 @@ impl Persistence {
 }
 
 /// Write the exact activity of every row whose age `format` shows into a repaint's
-/// identity: each tree row's `mtime_ns` and `complete`, and a flat row's under `--long`,
+/// identity: each tree row's time on the report's clock and `complete`, and a flat row's under `--long`,
 /// the one flat format that prints an age. A rendered age has a unit's resolution, so a
 /// touch that leaves `3m` at `3m` would otherwise repaint nothing; the other formats show
 /// the exact time or none. Whether a row counts, and so what each row shows, already
@@ -174,13 +173,13 @@ fn write_shown_activity(
             crate::query::Section::Tree { root: Some(root), .. } => {
                 let mut stack = vec![&**root];
                 while let Some(node) = stack.pop() {
-                    write_activity(identity, node.mtime_ns, node.complete)?;
+                    write_activity(identity, node.time.map(|t| t.get(report.time)), node.complete)?;
                     stack.extend(node.children.iter());
                 }
             }
             crate::query::Section::Files { rows, .. } if shown == Format::Long => {
                 for row in rows {
-                    write_activity(identity, Some(row.mtime_ns), row.complete)?;
+                    write_activity(identity, Some(row.times.get(report.time)), row.complete)?;
                 }
             }
             _ => {}
@@ -723,8 +722,7 @@ impl Session {
                             kind: index.kind_of(id)?,
                             bytes: attrs.size,
                             allocated: attrs.allocated,
-                            mtime_ns: attrs.mtime_ns,
-                            changed_ns: attrs.change_time_ns(),
+                            times: attrs.times(),
                         },
                     ))
                 })
@@ -771,8 +769,7 @@ impl Session {
                     kind: *kind,
                     bytes: attrs.size,
                     allocated: attrs.allocated,
-                    mtime_ns: attrs.mtime_ns,
-                    changed_ns: attrs.change_time_ns(),
+                    times: attrs.times(),
                     ignored: facts.is_ignored(path).unwrap_or(false),
                 };
                 self.selection().admits(&candidate).then(|| Change {
@@ -795,8 +792,7 @@ impl Session {
                     kind: *kind,
                     bytes: current.size,
                     allocated: current.allocated,
-                    mtime_ns: current.mtime_ns,
-                    changed_ns: current.change_time_ns(),
+                    times: current.times(),
                     ignored,
                 };
                 if self.selection().admits(&candidate) {
@@ -873,8 +869,7 @@ impl Session {
                         kind: entry.kind,
                         bytes: entry.bytes,
                         allocated: entry.allocated,
-                        mtime_ns: entry.mtime_ns,
-                        changed_ns: entry.changed_ns,
+                        times: entry.times,
                         ignored,
                     })
                 };
@@ -895,7 +890,7 @@ impl Session {
                         entry_kind: Some(entry.kind),
                         bytes: Some(entry.bytes),
                         allocated: Some(entry.allocated),
-                        mtime_ns: Some(entry.mtime_ns),
+                        mtime_ns: Some(entry.times.modified),
                         ignored: Some(*current_ignored),
                         clock,
                     }),
@@ -1935,10 +1930,13 @@ mod tests {
             .and_then(|handle| handle.set_modified(written))
             .expect("stamp");
         // The identity measures ages from the request's instant: a day and an hour after
-        // the file, so a five-second touch leaves it at `1d`.
+        // the file, so a five-second touch leaves it at `1d`. On the modification clock,
+        // which the fixture stamps; its status changes are its writes, made just now.
         let built = written + Duration::from_secs(25 * 3_600);
+        let mut query = tree_query();
+        query.selection.time = crate::TimeBasis::Modified;
         let (mut session, sender) =
-            scripted_session_built(root.path(), tree_query(), ScanConfig::default(), built);
+            scripted_session_built(root.path(), query, ScanConfig::default(), built);
         let at = |session: &mut Session, instant| {
             session.changed_report(instant, Format::Text, RenderOptions::default()).expect("report")
         };
