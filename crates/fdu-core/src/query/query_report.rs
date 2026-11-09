@@ -2330,8 +2330,8 @@ fn read_roots(
             }
             for row in volumes.rows.iter().filter(|row| row.other_paths > 0) {
                 notes.push(format!(
-                    "note: {} was also entered at {} other {}",
-                    row.absolute.display(),
+                    "note: the filesystem at {} was also entered at {} other {}",
+                    crate::report_format::volume_path(labels, row.root, &row.path),
                     crate::report_format::human_count(row.other_paths),
                     if row.other_paths == 1 { "path" } else { "paths" }
                 ));

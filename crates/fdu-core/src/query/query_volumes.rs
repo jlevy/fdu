@@ -440,6 +440,14 @@ mod tests {
         assert!(row.capacity.as_ref().is_some_and(|capacity| capacity.capacity_bytes > 0));
         assert_eq!(row.counted.files, 1);
         assert!(volumes.observed_at_ns.is_some());
+        // The row is named as every other row is, relative to its root, never by the
+        // canonical path the capacity call used (`\\?\C:\…` on Windows).
+        let text = crate::report_format::render(&report, crate::report_format::Format::Text, false)
+            .expect("text");
+        let first = text.lines().next().expect("a volume row");
+        assert!(first.contains(" in use  .  ("), "{text}");
+        assert!(!text.contains(r"\\?\"), "{text}");
+        assert!(!text.contains(&*index.root_path().to_string_lossy()), "{text}");
         // The pure reader with no observation answers the same rows, capacity unknown.
         let pure =
             crate::query::report(&index, &request, std::time::SystemTime::now()).expect("report");

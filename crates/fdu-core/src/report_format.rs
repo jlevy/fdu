@@ -342,6 +342,19 @@ fn display_path<'a>(report: &Report, row: &'a FileRow) -> std::borrow::Cow<'a, P
     crate::query::labelled_path(report.roots.as_deref(), row.root, &row.path)
 }
 
+/// Where a volume row's filesystem was entered, named as every other row is: relative to
+/// its root, `.` for the root itself, and after its root's label over several roots.
+/// Never the canonical path the capacity call used, which on Windows is a verbatim
+/// `\\?\C:\…` and on macOS `/private/var` for `/var`.
+pub(crate) fn volume_path(
+    roots: Option<&[crate::query::NamedRoot]>,
+    root: usize,
+    path: &Path,
+) -> String {
+    let shown = crate::query::labelled_path(roots, root, path);
+    if shown.as_os_str().is_empty() { ".".to_owned() } else { shown.to_string_lossy().into_owned() }
+}
+
 fn render_flat(report: &Report, format: Format) -> String {
     let mut out = String::new();
     for section in &report.sections {
@@ -1761,7 +1774,9 @@ fn render_text(report: &Report, options: RenderOptions) -> String {
             Section::Ages(profile) => {
                 render_text_ages(&mut out, profile, report.size, report.ignored_entries, color);
             }
-            Section::Volumes(volumes) => render_text_volumes(&mut out, volumes, report.size, color),
+            Section::Volumes(volumes) => {
+                render_text_volumes(&mut out, volumes, report.roots.as_deref(), report.size, color);
+            }
         }
     }
     out
@@ -2687,12 +2702,13 @@ const TEXT_IN_USE_WIDTH: usize = "100% in use".len();
 fn render_text_volumes(
     out: &mut String,
     volumes: &crate::query::VolumesSection,
+    roots: Option<&[crate::query::NamedRoot]>,
     size: SizeMetric,
     color: bool,
 ) {
     let indent = " ".repeat(TEXT_SIZE_WIDTH + 2 + TEXT_IN_USE_WIDTH + 2);
     for row in &volumes.rows {
-        let path = escaped_human(&row.absolute.to_string_lossy());
+        let path = escaped_human(&volume_path(roots, row.root, &row.path));
         let counted = human_bytes(pick(size, row.counted.bytes, row.counted.allocated));
         if let Some(capacity) = &row.capacity {
             let used = capacity.capacity_bytes.saturating_sub(capacity.available_bytes);
