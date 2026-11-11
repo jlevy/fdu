@@ -936,6 +936,7 @@ def main() -> None:
     assert contract["views"] == [value.value for value in fdu.View]
     assert contract["entry_kinds"] == [value.value for value in fdu.EntryKind]
     assert contract["size_metrics"] == [value.value for value in fdu.SizeMetric]
+    assert contract["time_bases"] == [value.value for value in fdu.TimeBasis]
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
     assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
     assert contract["cache_states"] == [value.value for value in fdu.CacheState]

@@ -1509,6 +1509,9 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("formats", fdu_core::report_format::Format::ALL)?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
+    let time_bases: Vec<&str> =
+        fdu_core::TimeBasis::ALL.iter().map(|basis| basis.label()).collect();
+    contract.set_item("time_bases", time_bases)?;
     let sort_keys: Vec<_> = ["size", "count", "time", "name"]
         .into_iter()
         .chain(fdu_core::content::METRICS.iter().map(|metric| metric.name))

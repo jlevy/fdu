@@ -100,6 +100,10 @@ pub enum TimeBasis {
 }
 
 impl TimeBasis {
+    /// Every basis, in declaration order: the vocabulary each surface states, and the one
+    /// the Python package is held to (`contract()["time_bases"]`).
+    pub const ALL: [Self; 2] = [Self::Changed, Self::Modified];
+
     /// Parse the library's spelling: `changed` or `modified`.
     ///
     /// The expectation only, as [`crate::query::ViewSpec::parse`] returns it, so each
@@ -2232,6 +2236,22 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every basis is listed once, and its label parses back to it: the list is what the
+    /// Python package's `TimeBasis` is held to, so a basis missing from it would leave
+    /// Python behind with every test green (review F6 on #209).
+    #[test]
+    fn every_time_basis_is_listed_and_round_trips_through_its_label() {
+        for basis in TimeBasis::ALL {
+            assert_eq!(TimeBasis::parse(basis.label()), Ok(basis));
+            match basis {
+                // An arm per basis: a new one fails to compile here until it is listed.
+                TimeBasis::Changed | TimeBasis::Modified => {}
+            }
+        }
+        assert_eq!(TimeBasis::ALL.map(TimeBasis::label), ["changed", "modified"]);
+        assert_eq!(TimeBasis::ALL[0], TimeBasis::default());
+    }
 
     #[test]
     fn clock_advances_monotonically() {
