@@ -278,6 +278,17 @@ of them held to serving, with 0 violations.
 The automount test passed as root.
 The refusal pass and the breaks were again not run, for the same reason.
 
+On 2026-11-11, the fixes for review G (a walk records a directory it enters across a
+device from its listing’s descriptor, capacity is asked only where the counted
+filesystem is still mounted, and an unverified root keeps its recorded device) were
+checked the same way, in the same regime, at a build of `046597c7`. `warm_cold.py`
+served 30 of 30 cases `cache_only`, with 0 answer mismatches, 0 mechanism failures, and
+0 stale reference instants, and `cross_warm.py` matched 72 of 72 pairs, 17 of them held
+to serving, with 0 violations.
+The three automount tests passed as root, among them the one whose automounter mounts a
+tmpfs and expires it.
+The refusal pass and the breaks were again not run, for the same reason.
+
 ### Previous Run: 0.5.0 Candidate on macOS
 
 On 2026-10-12, against the 0.5.0 preparation tree `67e3ca0f` (commit `d08624879`), all
