@@ -140,10 +140,12 @@ user for the refusal paths.
 ## When It Runs
 
 Before tagging a release, and after any change to cache identity, serving, or
-reconciliation. It is not on a timer and not in `make check`: it needs a built binary, a
-constructed tree, privilege on both sides of the root boundary, and minutes rather than
-seconds. Record each run per *Recording a Result* below, so that “when did anyone last
-actually check this” has an answer.
+reconciliation. On a pull request, the [Linux host gate](linux-host-gate.md) runs it
+through the stability pass, refusal pass included, on a real machine.
+It is not on a timer and not in `make check`: it needs a built binary, a constructed
+tree, privilege on both sides of the root boundary, and minutes rather than seconds.
+Record each run per *Recording a Result* below, so that “when did anyone last actually
+check this” has an answer.
 
 ## What the Tree Holds
 

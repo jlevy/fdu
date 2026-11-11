@@ -531,10 +531,12 @@ One pull request prepares the release, and its merge commit is the release commi
 ### Stability Pass
 
 `make release-stability` runs the whole pass on the release commit and writes its
-record. It reads `COMMIT` and `RELEASE` as the other steps do, works in
-`$RELEASE/stability`, which like `RELEASE` must be outside any checkout, and takes its
-trees from the QA playbook’s
-[Local Fixtures](../../../tests/qa/cli-installed-e2e.qa.md#local-fixtures) variables:
+record. The [Linux host gate](linux-host-gate.md) runs the same pass on a pull request’s
+head before it merges.
+It reads `COMMIT` and `RELEASE` as the other steps do, works in `$RELEASE/stability`,
+which like `RELEASE` must be outside any checkout, and takes its trees from the QA
+playbook’s [Local Fixtures](../../../tests/qa/cli-installed-e2e.qa.md#local-fixtures)
+variables:
 
 ```shell
 export FDU_QA_SMALL=<a checkout of this repository> FDU_QA_MEDIUM=<a larger tree>
