@@ -322,7 +322,8 @@ the window is admitted at its full size, and at home-folder scale nearly every t
 directory has some activity in a day.
 With it, each folder counts only the files written in the window.
 The root row’s 100% is their total, not the tree’s; a `note: selected … of …` line says
-how much of the scanned tree that is.
+how much of the scanned tree that is, and `note: selected all 2 files, 98 KiB` says a
+window selected everything, which without `--kind file` it often does.
 
 The result is data written in the window, not net growth:
 

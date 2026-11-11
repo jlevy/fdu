@@ -851,10 +851,13 @@ The fixture created the top-level directories moments ago, so each of them has r
 activity of its own and covers everything beneath it: the summary counts every file in
 the tree, where `--kind file --time modified` counts only the one file whose content was
 written recently.
+A time bound that selected everything says so, so the whole tree is not read as written
+in the window.
 
 ```console
 $ fdu --cache off --size apparent --since 30d --view summary builds
      240 B  4 files, 10 directories
+! note: selected all 4 files, 240 B
 ! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
@@ -879,6 +882,7 @@ change, so all four arrived moments ago.
 ```console
 $ fdu --cache off --size apparent --since 30d --kind file --view summary builds
      240 B  4 files, 0 directories
+! note: selected all 4 files, 240 B
 ! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```

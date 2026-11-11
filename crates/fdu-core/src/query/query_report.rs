@@ -1689,36 +1689,44 @@ impl SelectionCoverage {
     /// Under a scan that already kept only part of the population (`population` is not
     /// [`IgnoredEntries::Include`]), what it retained is not the tree, so the note names
     /// the scan rather than let its total read as the whole tree's (review D2 on #209).
+    ///
+    /// A `time_bounded` selection keeps its note when it admitted everything, as
+    /// `note: selected all 2 files, 98 KiB`: a time window without `--kind file` admits a
+    /// directory whenever anything in it falls inside the window, and every file beneath
+    /// with it, so a root that reads 100% must not read as an unqualified "written since"
+    /// (review D14 on #209). A scan that retained no file has nothing to qualify.
     fn note(
         self,
         metric: SizeMetric,
         population: IgnoredEntries,
         axes: &AxisNames,
+        time_bounded: bool,
     ) -> Option<String> {
         let (selected, scanned) = (self.selected, self.scanned);
-        if selected.files == scanned.files && selected.size(metric) == scanned.size(metric) {
+        let everything =
+            selected.files == scanned.files && selected.size(metric) == scanned.size(metric);
+        if everything && (!time_bounded || scanned.files == 0) {
             return None;
         }
         let human = crate::report_format::human_count;
         let bytes = crate::report_format::human_bytes;
         let files = if scanned.files == 1 { "file" } else { "files" };
+        let tally = format!("{} {files}", human(scanned.files));
         let of = match population {
-            IgnoredEntries::Include => format!("{} {files}", human(scanned.files)),
+            IgnoredEntries::Include => tally,
             IgnoredEntries::Exclude => {
-                format!(
-                    "the {} {files} an {} scan retained",
-                    human(scanned.files),
-                    axes.exclude_ignored
-                )
+                format!("the {tally} an {} scan retained", axes.exclude_ignored)
             }
-            IgnoredEntries::Only => {
-                format!(
-                    "the {} {files} an {} scan retained",
-                    human(scanned.files),
-                    axes.only_ignored
-                )
-            }
+            IgnoredEntries::Only => format!("the {tally} an {} scan retained", axes.only_ignored),
         };
+        if everything {
+            let whole = match (scanned.files, population) {
+                (1, IgnoredEntries::Include) => format!("the {of}"),
+                (1, _) => of,
+                _ => format!("all {of}"),
+            };
+            return Some(format!("note: selected {whole}, {}", bytes(scanned.size(metric))));
+        }
         Some(format!(
             "note: selected {} of {of}, {} of {}",
             human(selected.files),
@@ -2382,7 +2390,12 @@ fn read_roots(
     // A selection by the ignored state the scan already kept narrows nothing it retained.
     let population = request.basis.scope.population;
     if query.selection.narrows(population) {
-        notes.extend(selection.note(query.selection.size, population, query.axes));
+        notes.extend(selection.note(
+            query.selection.size,
+            population,
+            query.axes,
+            !query.selection.window.is_unbounded(),
+        ));
     }
     for section in &sections {
         if let Section::Volumes(volumes) = section {
@@ -5891,7 +5904,9 @@ mod tests {
             scanned: EntryTotals { files: 4, dirs: 1, bytes: 40, allocated: 2048 },
         };
         let note = |population| {
-            coverage.note(SizeMetric::Apparent, population, &AxisNames::FLAGS).expect("narrowed")
+            coverage
+                .note(SizeMetric::Apparent, population, &AxisNames::FLAGS, false)
+                .expect("narrowed")
         };
         assert_eq!(note(IgnoredEntries::Include), "note: selected 1 of 4 files, 10 B of 40 B");
         assert_eq!(
@@ -5900,9 +5915,65 @@ mod tests {
         );
         assert_eq!(
             coverage
-                .note(SizeMetric::Apparent, IgnoredEntries::Only, &AxisNames::FIELDS)
+                .note(SizeMetric::Apparent, IgnoredEntries::Only, &AxisNames::FIELDS, false)
                 .expect("narrowed"),
             "note: selected 1 of the 4 files an ignored=only scan retained, 10 B of 40 B"
+        );
+    }
+
+    /// A time window that admitted every file keeps its note, saying so, where any other
+    /// selection that admitted everything says nothing: a window without `--kind file`
+    /// admits a directory whenever anything in it falls inside, and every file beneath
+    /// with it, so the root's 100% must not read as an unqualified "written since"
+    /// (review D14 on #209).
+    #[test]
+    fn a_time_window_that_selected_everything_says_so() {
+        let totals = |files, bytes| EntryTotals { files, dirs: 1, bytes, allocated: bytes };
+        let all = |files, bytes| SelectionCoverage {
+            selected: totals(files, bytes),
+            scanned: totals(files, bytes),
+        };
+        let note = |coverage: SelectionCoverage, population, bounded| {
+            coverage.note(SizeMetric::Apparent, population, &AxisNames::FLAGS, bounded)
+        };
+        let two = all(2, 100_352);
+        assert_eq!(note(two, IgnoredEntries::Include, false), None, "no window, nothing said");
+        assert_eq!(
+            note(two, IgnoredEntries::Include, true).as_deref(),
+            Some("note: selected all 2 files, 98 KiB")
+        );
+        assert_eq!(
+            note(two, IgnoredEntries::Exclude, true).as_deref(),
+            Some("note: selected all the 2 files an --ignored=exclude scan retained, 98 KiB")
+        );
+        assert_eq!(
+            note(all(1, 10), IgnoredEntries::Include, true).as_deref(),
+            Some("note: selected the 1 file, 10 B")
+        );
+        assert_eq!(
+            note(all(1, 10), IgnoredEntries::Only, true).as_deref(),
+            Some("note: selected the 1 file an --ignored=only scan retained, 10 B")
+        );
+        assert_eq!(note(all(0, 0), IgnoredEntries::Include, true), None, "nothing to qualify");
+
+        // End to end: a window every file's directory has activity in admits the root, and
+        // the report says it selected everything.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("d/new.bin", EntryKind::File, stamped(30, 100, 100)),
+            upsert("d/old.bin", EntryKind::File, stamped(70, 1, 1)),
+        ]));
+        let windowed = Selection {
+            window: TimeWindow { since: Some(50), before: None },
+            size: SizeMetric::Apparent,
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Summary], windowed));
+        assert!(
+            report.notes.iter().any(|note| note == "note: selected all 2 files, 100 B"),
+            "{:?}",
+            report.notes
         );
     }
 

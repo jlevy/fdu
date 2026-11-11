@@ -427,7 +427,8 @@ OUTPUT AND AUTOMATION
   Before automating, check status.complete, errors and errors_omitted,
   provenance.freshness/source, tree truncation, and metric coverage.
   selected and scanned give what a selection admitted beside the whole scan; a
-  filtered text report ends with `note: selected N of M files, SIZE of SIZE`.
+  filtered text report ends with `note: selected N of M files, SIZE of SIZE`, or,
+  when a time bound admitted everything, `note: selected all M files, SIZE`.
   A multi-root report has root: null and roots; its tree section has tree: null,
   a combined total, and trees. Read the machine contract before parsing it.
   Cache status is its own document in every machine format: fdu.cache/3.

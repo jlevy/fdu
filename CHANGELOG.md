@@ -88,7 +88,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `CapacityObservation` holds one `ObservedVolume` per filesystem.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
-  is not read as the whole tree.
+  is not read as the whole tree. A time-bounded selection that admitted every file says
+  so, as `note: selected all 2 files, 98 KiB`, since a window without `--kind file`
+  admits a directory, and everything in it, whenever anything in it is recent.
   Every report’s envelope carries `selected` and `scanned`, each
   `{files, dirs, bytes, allocated}`; Python `Report.selected` and `Report.scanned` are
   `EntryTotals`, and Rust `Report::selection` is a `SelectionCoverage` of two
