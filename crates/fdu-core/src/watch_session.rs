@@ -1979,11 +1979,13 @@ mod tests {
         assert!(at(&mut session, later).is_none(), "and only once");
     }
 
-    /// An age band is measured from each repaint's own instant, but its edges as instants
-    /// are not part of the repaint's identity: an idle watch repaints when a file crosses
-    /// into an older band, not merely because the clock moved (review D4 on #209).
+    /// An age band is measured from each answer's own instant, but its edges as instants
+    /// are not part of the answer's identity: an answer asked for after a file crossed into
+    /// an older band differs, and one asked a minute later does not (review D4 on #209).
+    /// The command line asks after its tree changes, so a watch re-bands at each repaint,
+    /// not at each edge (review F7).
     #[test]
-    fn an_age_band_repaints_when_a_file_crosses_an_edge_and_not_before() {
+    fn an_answer_differs_once_a_file_crosses_a_band_edge_and_not_before() {
         use crate::report_format::{Format, RenderOptions};
 
         let root = tempfile::tempdir().expect("root");

@@ -1300,7 +1300,9 @@ impl Cli {
         loop {
             let Some(batch) = session.next_batch(interval)? else {
                 // Nothing arrived in the window. Repaint only if something is pending,
-                // so a quiet tree produces no output and no work at all.
+                // so a quiet tree produces no output and no work at all. Ages, the tree's
+                // and `ages`'s bands, are measured anew at each repaint, so they move when
+                // the tree does: an idle tree keeps a file in its band past the edge.
                 if has_aggregates && dirty_since_render {
                     Self::render_live(
                         out,

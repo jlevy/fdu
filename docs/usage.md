@@ -419,8 +419,9 @@ profiles the logs, `--ignored=only` the gitignored files, and
 `--kind=dir --include=node_modules` the contents of every `node_modules`. Beside a tree,
 the bands and the tree’s age column read the same clock, so a directory copied in
 minutes ago is minutes old in both, and `--time=modified` dates both by content.
-A `--watch` repaint measures the bands from its own instant, so a file moves to an older
-band with no filesystem change.
+A `--watch` repaint measures the bands from its own instant, and a watch repaints when
+the tree changes, so a file moves to an older band at the next repaint, and in an idle
+tree keeps its band until something else changes.
 
 ### See How Full the Disk Is
 

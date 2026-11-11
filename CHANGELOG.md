@@ -59,8 +59,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Machine output keeps every band, with its edges as ages and as instants, its tallies
   and ignored part, and a `cumulative` tally of it and every newer band.
   The view is metadata only, composes with every selection and several roots, shares one
-  walk with other views, and is part of `--view full`. A watch repaints when a file
-  crosses a band edge.
+  walk with other views, and is part of `--view full`. A watch re-bands at each repaint
+  and repaints when the tree changes, so in an idle tree a file keeps its band until
+  something else changes.
 - `--view volumes` (Python `View.VOLUMES`, Rust `ViewSpec::Volumes`) puts the disk
   beside the tree: each filesystem the report touches, its capacity, the share in use,
   what is available, and what the report counted there, in three lines per filesystem.

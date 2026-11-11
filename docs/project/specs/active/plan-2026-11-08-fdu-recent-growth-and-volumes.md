@@ -401,8 +401,8 @@ The rules it obeys:
   one walk.
 - **It is metadata-only.** Like `largest` and `recent`, it implies no analyzer.
 - **Bands are relative to the request instant.** A `--watch` repaint resolves them from
-  its own instant, as its ages do, so a file can move to an older band with no
-  filesystem change; the repaint rule for the tree’s ages
+  its own instant, as its ages do, so a file can move to an older band at a repaint
+  that another change caused; the repaint rule for the tree’s ages
   ([multiple paths and tree age](plan-2026-10-09-fdu-multiple-paths-and-tree-age.md))
   extends to band edges.
 
@@ -566,8 +566,11 @@ before release; the items above record what was built and then superseded.
   directory match profiles what it covers; the window identity holds for selections that
   compose with `--kind file`, and the partition for every selection.
 - [x] Text renderer on the grouped-row layout; JSON, JSONL, and YAML records.
-  A watch’s repaint identity measures band instants from its fixed reference, so it
-  repaints when a file crosses an edge and not merely because the clock moved.
+  A watch’s repaint identity measures band instants from its fixed reference, so an
+  answer whose bands moved differs and one whose clock alone moved does not. A watch asks
+  for an answer when its tree changes, so it re-bands at each repaint, not at each edge:
+  in an idle tree a file keeps its band until something else changes (review F7 on
+  #209).
 - [x] Inclusion in `--view full`.
 - [ ] A performance-loop experiment for a derived route: an unfiltered `--view ages`
   (alone or with `summary`) can count bands as the walk reports entries, with no index,

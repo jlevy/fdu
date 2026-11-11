@@ -779,8 +779,9 @@ impl PyWatch {
     /// Snapshot the latest state applied by this query-bound session's iterator.
     ///
     /// Reporting does not consume pending events or update the originating `Index`.
-    /// The returned snapshot renders the same answer on repeated calls; its ages use
-    /// this report call's instant, while query selection windows remain fixed.
+    /// The returned snapshot renders the same answer on repeated calls; its ages, the
+    /// tree's and the `ages` bands, use this report call's instant, while query selection
+    /// windows remain fixed, so a file crosses a band edge in the answer of the next call.
     fn report(&mut self, py: Python<'_>) -> PyResult<PyOneShot> {
         let session =
             self.session.as_mut().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
