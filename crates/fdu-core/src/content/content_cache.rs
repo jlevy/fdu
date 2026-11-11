@@ -1225,6 +1225,7 @@ mod tests {
                 index,
                 &crate::test_support::read_of(index, query),
                 std::time::UNIX_EPOCH,
+                None,
             )
             .expect("metric report");
             let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {

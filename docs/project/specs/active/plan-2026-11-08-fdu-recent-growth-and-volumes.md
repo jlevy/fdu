@@ -421,18 +421,22 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   Without `--one-filesystem` a walk can enter mounted filesystems below the root, so a
   report can have several rows.
 - **Capacity, observed by the serving layer, read by the reader.** The engine gains one
-  observation step, `observe_capacity(devices) -> CapacityObservation`, with one call
-  per filesystem and an `observed_at`: `statfs` on Linux and macOS, which returns
+  observation step, `observe_capacity(volumes) -> CapacityObservation`, given each
+  filesystem’s device and a path on it, with one call per filesystem and an
+  `observed_at`: `statfs` on Linux and macOS, which returns
   capacity and the filesystem type together, and `GetDiskFreeSpaceExW` with
   `GetVolumeInformationW` on Windows.
   The pure readers take the observation as an argument, so they never touch the
   filesystem
   ([views are readers](../../architecture/fdu-design-principles.md#views-are-readers)):
-  `report_with_capacity` and `report_roots_with_capacity` beside `report` and
-  `report_roots`, which keep their signatures and pass none.
+  `report` and `report_roots` take it as their last argument, `None` where nothing was
+  observed.
   Every serving route observes before it reads when the request names `volumes`, through
-  `query::observe_volumes`: `prepare_report` for one-shot reports, `OpenedIndex::read`,
-  each watch repaint, and Python’s `Index.report`, inside the native call.
+  `query::observe_volumes`: `prepare_report` for one-shot reports, `OpenedIndex::read`
+  (before it takes its index guard), each watch repaint, and Python’s `Index.report`,
+  inside the native call with the GIL released.
+  A capacity call is made only on a root or on a directory the walk listed, since on
+  an unmounted automount trigger it mounts as a listing would (review F1 on #209).
   The observation carries each root’s device beside the capacity, since an index does
   not record the root’s own attributes.
   `--stale-ok` observes now, so its capacity is current while its tree is stale, and the
@@ -573,9 +577,12 @@ before release; the items above record what was built and then superseded.
   serving route listed under [the `volumes` view](#the-volumes-view), through
   `query::observe_volumes`; unknown capacity with a note when none is passed.
   Amended in implementation:
-  - `report` and `report_roots` keep their signatures, and `report_with_capacity` and
-    `report_roots_with_capacity` take the observation, so no existing caller breaks and
-    none silently gains filesystem reads.
+  - `report` and `report_roots` take the observation as their last argument, `None`
+    where nothing was observed, so no caller silently gains filesystem reads. A first
+    version kept their signatures beside two `_with_capacity` readers; review F9 on #209
+    collapsed each pair, since the project owes no caller of the older shape.
+  - Capacity is asked only of the roots and of directories the walk listed, and an
+    opened read observes before it takes its guard (review F1 and F2 on #209).
   - The observation carries each root’s device beside capacity (`VolumesObservation`),
     because an index records every entry’s attributes but the root’s own; a reader given
     none infers it from the root’s directories.

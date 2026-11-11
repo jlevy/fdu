@@ -940,7 +940,7 @@ class ReportRequest:
     omitted_views: tuple[View, ...]
     #: Which clock every time in the report reads: each row's ``time_ns`` and ``age_ns``,
     #: the tree's ages, and ``ages``.
-    time: TimeBasis = TimeBasis.CHANGED
+    time: TimeBasis
 
 
 @dataclass(frozen=True, slots=True)
@@ -997,6 +997,15 @@ class AgesSection:
 
 
 @dataclass(frozen=True, slots=True)
+class VolumeCounted:
+    """The regular files, and their bytes, a report counted on one filesystem."""
+
+    files: int
+    bytes: int
+    allocated: int
+
+
+@dataclass(frozen=True, slots=True)
 class VolumeRow:
     """One filesystem a report touches.
 
@@ -1017,7 +1026,7 @@ class VolumeRow:
     shares_pool: bool | None
     unknown_reason: str | None
     #: The regular files this report counted on the filesystem.
-    counted: ExtensionTally
+    counted: VolumeCounted
     #: Position of the row's root in :attr:`Report.roots` over several roots.
     root: int | None = None
 
@@ -1240,6 +1249,12 @@ class Report:
     #: present and the refusals from ``status.ignore_rules``.
     notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
+    #: What the selection admitted or covers: the root totals a summary of the same
+    #: selection reports. A filtered root is 100% of this, not of :attr:`scanned`.
+    selected: EntryTotals
+    #: Everything the scan retained, the unfiltered root totals; equal to
+    #: :attr:`selected` when the selection filters nothing.
+    scanned: EntryTotals
     #: The instant every age in the report is measured from, in epoch nanoseconds, or
     #: ``None`` when it cannot be represented.
     age_reference_ns: int | None = None
@@ -1263,13 +1278,6 @@ class Report:
     #: The roots of a report over several, in the caller's order, each with its label and
     #: canonical path; ``None`` over one root.
     roots: tuple[ReportRoot, ...] | None = None
-    #: What the selection admitted or covers: the root totals a summary of the same
-    #: selection reports. A filtered root is 100% of this, not of :attr:`scanned`.
-    #: ``None`` only on a report built by hand.
-    selected: EntryTotals | None = None
-    #: Everything the scan retained, the unfiltered root totals; equal to
-    #: :attr:`selected` when the selection filters nothing.
-    scanned: EntryTotals | None = None
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
@@ -1876,11 +1884,16 @@ def _ages_section(view: View, raw: dict[str, Any]) -> AgesSection:
     )
 
 
-def _volume_counted(value: object) -> ExtensionTally:
+def _volume_counted(value: object) -> VolumeCounted:
     """Decode what a report counted on one filesystem, which every volume row carries."""
     if not isinstance(value, dict):
         raise TypeError("a volume row's counted tally must be an object")
-    return cast(ExtensionTally, _ignored_files(value))
+    counted = cast(dict[str, Any], value)
+    return VolumeCounted(
+        files=int(counted["files"]),
+        bytes=int(counted["bytes"]),
+        allocated=int(counted["allocated"]),
+    )
 
 
 def _ignored_files(value: object) -> ExtensionTally | None:

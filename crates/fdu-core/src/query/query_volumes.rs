@@ -455,13 +455,9 @@ mod tests {
             Query { views: vec![ViewSpec::Volumes], ..Query::default() },
             std::time::UNIX_EPOCH,
         );
-        let report = crate::query::report_with_capacity(
-            index,
-            &request,
-            std::time::UNIX_EPOCH,
-            Some(observation),
-        )
-        .expect("report");
+        let report =
+            crate::query::report(index, &request, std::time::UNIX_EPOCH, Some(observation))
+                .expect("report");
         let Section::Volumes(volumes) = &report.sections[0] else { panic!("volumes") };
         volumes
             .rows
@@ -619,13 +615,9 @@ mod tests {
         let observed = observe_volumes(&[&index], &request).expect("the request names volumes");
         assert_eq!(observed.root_devices.len(), 1);
         assert!(observed.root_devices[0].is_some_and(|device| device != 0));
-        let report = crate::query::report_with_capacity(
-            &index,
-            &request,
-            std::time::SystemTime::now(),
-            Some(&observed),
-        )
-        .expect("report");
+        let report =
+            crate::query::report(&index, &request, std::time::SystemTime::now(), Some(&observed))
+                .expect("report");
         let Section::Volumes(volumes) = &report.sections[0] else { panic!("volumes") };
         assert_eq!(volumes.rows.len(), 1, "a temporary directory is one filesystem");
         let row = &volumes.rows[0];
@@ -643,8 +635,8 @@ mod tests {
         assert!(!text.contains(r"\\?\"), "{text}");
         assert!(!text.contains(&*index.root_path().to_string_lossy()), "{text}");
         // The pure reader with no observation answers the same rows, capacity unknown.
-        let pure =
-            crate::query::report(&index, &request, std::time::SystemTime::now()).expect("report");
+        let pure = crate::query::report(&index, &request, std::time::SystemTime::now(), None)
+            .expect("report");
         let Section::Volumes(unobserved) = &pure.sections[0] else { panic!("volumes") };
         assert_eq!(unobserved.rows.len(), 1);
         assert!(unobserved.rows[0].capacity.is_none());

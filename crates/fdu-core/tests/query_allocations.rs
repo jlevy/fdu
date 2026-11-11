@@ -55,7 +55,7 @@ fn report_allocations(index: &Index, views: Vec<ViewSpec>, selection: Selection)
     let _disable = DisableCounters;
     fdu_core::counters::reset();
     fdu_core::counters::enable(true);
-    fdu_core::query::report(index, &request, UNIX_EPOCH).expect("report");
+    fdu_core::query::report(index, &request, UNIX_EPOCH, None).expect("report");
     let allocations = usize::try_from(fdu_core::counters::thread_snapshot().allocs)
         .expect("allocation count fits usize");
     fdu_core::counters::enable(false);
@@ -77,7 +77,7 @@ fn bounded_single_file_view_does_not_clone_every_materialized_path() {
         let _disable = DisableCounters;
         fdu_core::counters::reset();
         fdu_core::counters::enable(true);
-        let report = fdu_core::query::report(&index, &request, UNIX_EPOCH).expect("report");
+        let report = fdu_core::query::report(&index, &request, UNIX_EPOCH, None).expect("report");
         let allocations = usize::try_from(fdu_core::counters::thread_snapshot().allocs)
             .expect("allocation count fits usize");
         fdu_core::counters::enable(false);

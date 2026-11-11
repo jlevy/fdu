@@ -760,7 +760,7 @@ fn tree_activity(index: &Index) -> BTreeMap<PathBuf, Option<Times>> {
     let query = Query { views: vec![ViewSpec::Tree], selection, ..Query::default() };
     let instant = std::time::SystemTime::UNIX_EPOCH;
     let request = Request::new(Basis::held_by(index), query, instant);
-    let report = fdu_core::query::report(index, &request, instant).expect("tree report");
+    let report = fdu_core::query::report(index, &request, instant, None).expect("tree report");
     let Some(Section::Tree { root: Some(root), .. }) = report.sections.first() else {
         panic!("an unbounded tree report has a root");
     };

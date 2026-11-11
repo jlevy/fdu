@@ -98,7 +98,7 @@ fn warm_partial_report_retains_reconciliation_error() {
     assert_eq!(opened.path_taken, OpenPath::WarmRevalidate);
     assert_eq!(opened.scan.errors.len(), 1);
     let request = Request::new(Basis::held_by(&index), Query::default(), SystemTime::now());
-    let answer = report(&index, &request, SystemTime::now()).expect("report");
+    let answer = report(&index, &request, SystemTime::now(), None).expect("report");
     assert!(!answer.status.complete);
     assert_eq!(answer.status.errors.len(), 1);
     assert_eq!(answer.status.errors[0].issue.path.as_deref(), Some(Path::new("blocked")));
@@ -172,14 +172,14 @@ fn content_request(index: &fdu_core::Index) -> Request {
 }
 
 fn assert_content_pending(index: &fdu_core::Index) {
-    let answer = report(index, &content_request(index), SystemTime::now()).expect("report");
+    let answer = report(index, &content_request(index), SystemTime::now(), None).expect("report");
     assert!(!answer.status.complete);
     assert!(answer.status.errors.is_empty(), "pending analysis is not an I/O failure");
     assert_eq!(answer.provenance.freshness, fdu_core::Freshness::Partial);
 }
 
 fn assert_content_complete(index: &fdu_core::Index) {
-    let answer = report(index, &content_request(index), SystemTime::now()).expect("report");
+    let answer = report(index, &content_request(index), SystemTime::now(), None).expect("report");
     assert!(answer.status.complete);
     assert_eq!(answer.provenance.freshness, fdu_core::Freshness::Fresh);
 }

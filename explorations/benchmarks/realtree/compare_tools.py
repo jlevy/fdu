@@ -1332,21 +1332,22 @@ def _report_envelope(document: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-#: The clock an fdu report reads when its request echo names none.
-DEFAULT_REPORT_CLOCK = "changed"
-
-
 def _summary_oracle_error(
     summary: Mapping[str, Any], oracle: Mapping[str, Any], clock: Any = None
 ) -> Optional[str]:
     """Return why an fdu summary disagrees with the independent Python walk.
 
     The newest file time is held to the clock the report read, which is ``clock``, the
-    request echo's ``time``. A summary from a binary that had one clock names it
-    ``newest_mtime_ns``, a modification time, and is held to the fingerprint's
-    ``newest_file_mtime_ns``. One that names it ``newest_file_time_ns`` is held to
+    request echo's ``time``. A summary that names it ``newest_file_time_ns`` is held to
     ``newest_file_mtime_ns`` under ``modified`` and to ``newest_file_changed_ns`` under
-    ``changed``, the default where the echo names no clock.
+    ``changed``; every report that prints the field echoes its clock, so one that does
+    not is malformed and fails rather than being read on an assumed clock.
+
+    A summary from a binary that had one clock names it ``newest_mtime_ns``, a
+    modification time, and is held to the fingerprint's ``newest_file_mtime_ns``: a
+    control binary from before the change clock, 0.5.0 included, prints that field, and
+    without this branch no paired comparison against a release could run. The branch
+    can go once the oldest control the ledger replays emits ``fdu.report/12``.
 
     A fingerprint recorded before it carried ``newest_file_changed_ns``, or taken where
     no status change time is observable, cannot check a change-clock time, so that one
@@ -1364,7 +1365,8 @@ def _summary_oracle_error(
     if "newest_mtime_ns" in summary:
         expected["newest_mtime_ns"] = oracle["newest_file_mtime_ns"]
     else:
-        clock = DEFAULT_REPORT_CLOCK if clock is None else clock
+        if clock is None:
+            return "summary names newest_file_time_ns, but its request echo names no clock"
         if clock == "modified":
             expected["newest_file_time_ns"] = oracle["newest_file_mtime_ns"]
         elif clock != "changed":

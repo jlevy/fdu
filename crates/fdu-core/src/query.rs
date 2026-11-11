@@ -29,7 +29,7 @@ pub use query_report::{
     Query, Report, ReportMetricValues, ReportSource, RootTree, RootTrees, Section,
     SelectionCoverage, ShareMetric, SummaryRow, TreeDisplayLimits, TreeNode, TreeOmission,
     TreeOmissionReason, TreeRemainder, TreeTotal, TypeRow, ViewSpec, document_words, pages, report,
-    report_roots, report_roots_with_capacity, report_with_capacity,
+    report_roots,
 };
 pub(crate) use query_report::{
     SummaryPart, read_indexes, report_in, report_summary, summary_totals_fit,

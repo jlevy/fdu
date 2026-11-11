@@ -932,7 +932,7 @@ mod tests {
             std::time::UNIX_EPOCH,
         );
         let report =
-            crate::query::report(&bounded, &request, std::time::UNIX_EPOCH).expect("report");
+            crate::query::report(&bounded, &request, std::time::UNIX_EPOCH, None).expect("report");
         assert!(
             report.notes.iter().any(|note| note
                 == "note: 1 Markdown file over 64 MiB counted as plain text: every word counted \
@@ -956,7 +956,8 @@ mod tests {
             std::time::UNIX_EPOCH,
         );
         let exact_report =
-            crate::query::report(&exact, &exact_request, std::time::UNIX_EPOCH).expect("report");
+            crate::query::report(&exact, &exact_request, std::time::UNIX_EPOCH, None)
+                .expect("report");
         assert!(exact_report.notes.iter().all(|note| !note.contains("counted as plain text")));
 
         // The note speaks for the report's selection, not for every record the index
@@ -976,7 +977,9 @@ mod tests {
                 query,
                 std::time::UNIX_EPOCH,
             );
-            crate::query::report(&bounded, &request, std::time::UNIX_EPOCH).expect("report").notes
+            crate::query::report(&bounded, &request, std::time::UNIX_EPOCH, None)
+                .expect("report")
+                .notes
         };
         let text_only = |notes: &[String]| -> Vec<String> {
             notes.iter().filter(|note| note.contains("counted as plain text")).cloned().collect()
@@ -1161,6 +1164,7 @@ mod tests {
                 &index,
                 &crate::test_support::read_of(&index, query),
                 std::time::UNIX_EPOCH,
+                None,
             )
             .expect("report");
             let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
@@ -1415,6 +1419,7 @@ mod tests {
             &index,
             &crate::test_support::read_of(&index, query),
             std::time::UNIX_EPOCH,
+            None,
         )
         .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
@@ -1490,6 +1495,7 @@ mod tests {
             &index,
             &crate::test_support::read_of(&index, query),
             std::time::UNIX_EPOCH,
+            None,
         )
         .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
@@ -1530,6 +1536,7 @@ mod tests {
             &index,
             &crate::test_support::read_of(&index, query),
             std::time::UNIX_EPOCH,
+            None,
         )
         .expect("report");
         for format in [crate::report_format::Format::Json, crate::report_format::Format::Yaml] {
@@ -1636,6 +1643,7 @@ mod tests {
             &index,
             &crate::test_support::read_of(&index, query),
             std::time::UNIX_EPOCH,
+            None,
         )
         .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
@@ -1681,6 +1689,7 @@ mod tests {
             &index,
             &crate::test_support::read_of(&index, query),
             std::time::UNIX_EPOCH,
+            None,
         )
         .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
@@ -1764,6 +1773,7 @@ mod tests {
                 },
             ),
             std::time::UNIX_EPOCH,
+            None,
         )
         .expect("report");
         let json =
@@ -1793,6 +1803,7 @@ mod tests {
                 },
             ),
             std::time::UNIX_EPOCH,
+            None,
         )
         .expect("report");
         let text =

@@ -2806,6 +2806,7 @@ mod tests {
             &index,
             &crate::test_support::read_of(&index, query.clone()),
             compact.provenance.generated_at,
+            None,
         )
         .expect("report");
 
@@ -3928,10 +3929,10 @@ mod tests {
                             folded = Some((retention, index));
                         }
                         let (_, index) = folded.as_ref().expect("a folded index");
-                        let mut from_folded =
-                            report(index, &request, SystemTime::UNIX_EPOCH).expect("folded report");
-                        let from_full =
-                            report(full, &request, SystemTime::UNIX_EPOCH).expect("full report");
+                        let mut from_folded = report(index, &request, SystemTime::UNIX_EPOCH, None)
+                            .expect("folded report");
+                        let from_full = report(full, &request, SystemTime::UNIX_EPOCH, None)
+                            .expect("full report");
                         // Provenance describes each walk; everything else describes the tree.
                         assert_eq!(
                             (from_folded.provenance.source, from_folded.provenance.freshness),
@@ -4308,7 +4309,7 @@ mod tests {
         let (full, _) = crate::scan::scan_into_index(&root, &scan_config).expect("full index");
         let answer = |query: &Query| {
             let (request, _) = split(&root, &fixture, query);
-            report(&full, &request, SystemTime::UNIX_EPOCH)
+            report(&full, &request, SystemTime::UNIX_EPOCH, None)
         };
         let whole = tree_query(vec![ViewSpec::Tree], Format::Json, "0%", SizeMetric::Apparent);
         let unfiltered = format!("{:#?}", answer(&whole).expect("unfiltered report").sections);
@@ -4367,7 +4368,7 @@ mod tests {
                         .expect("folded index");
                         assert!(index.is_folded(), "{context}");
                         let folded =
-                            report(&index, &request, SystemTime::UNIX_EPOCH).expect("folded");
+                            report(&index, &request, SystemTime::UNIX_EPOCH, None).expect("folded");
                         assert_same_answer(folded, &expected, query.format, &context);
                     }
                 }
@@ -4817,6 +4818,7 @@ mod tests {
                 &roots,
                 request.request(),
                 SystemTime::UNIX_EPOCH,
+                None,
             )
             .expect("read");
             assert_eq!(answer_of(&prepared.report), answer_of(&expected), "{label}");

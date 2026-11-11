@@ -9688,7 +9688,7 @@ mod tests {
             query.selection.time = time;
             let mut request = crate::test_support::read_of(index, query);
             request.now = std::time::UNIX_EPOCH + std::time::Duration::from_nanos(100);
-            let report = crate::query::report(index, &request, request.now).expect("tree");
+            let report = crate::query::report(index, &request, request.now, None).expect("tree");
             match report.sections.into_iter().next() {
                 Some(Section::Tree { root: Some(root), .. }) => *root,
                 other => panic!("expected a tree, got {other:?}"),

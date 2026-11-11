@@ -706,20 +706,29 @@ class ToolComparisonTests(unittest.TestCase):
         }
 
     def test_a_change_clock_summary_is_held_to_the_newest_change_time(self) -> None:
-        """The default clock reads change time, so mtime is the wrong answer there."""
+        """The change clock reads change time, so mtime is the wrong answer there."""
         oracle = self._one_clock_oracle()
 
-        for clock in ("changed", None):
-            with self.subTest(clock=clock):
-                self.assertIsNone(
-                    compare_tools._summary_oracle_error(self._one_clock_summary(40), oracle, clock)
-                )
-                error = compare_tools._summary_oracle_error(
-                    self._one_clock_summary(17), oracle, clock
-                )
+        self.assertIsNone(
+            compare_tools._summary_oracle_error(self._one_clock_summary(40), oracle, "changed")
+        )
+        error = compare_tools._summary_oracle_error(self._one_clock_summary(17), oracle, "changed")
+        self.assertEqual(
+            error,
+            "summary newest_file_time_ns=17 disagrees with independent oracle 40",
+        )
+
+    def test_a_summary_that_names_its_time_without_a_clock_is_malformed(self) -> None:
+        """Every report that prints the field echoes its clock, so none is assumed."""
+        oracle = self._one_clock_oracle()
+
+        for newest in (17, 40):
+            with self.subTest(newest=newest):
                 self.assertEqual(
-                    error,
-                    "summary newest_file_time_ns=17 disagrees with independent oracle 40",
+                    compare_tools._summary_oracle_error(
+                        self._one_clock_summary(newest), oracle, None
+                    ),
+                    "summary names newest_file_time_ns, but its request echo names no clock",
                 )
 
     def test_a_modification_clock_summary_is_held_to_the_newest_mtime(self) -> None:

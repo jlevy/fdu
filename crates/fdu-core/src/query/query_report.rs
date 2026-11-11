@@ -1931,8 +1931,15 @@ fn refused_controls_note(
 
 /// Build a report from an index.
 ///
-/// Pure: the same index, request, and provenance always produce the same report, and
-/// nothing here reads the filesystem or mutates the index.
+/// Pure: the same index, request, provenance, and capacity observation always produce
+/// the same report, and nothing here reads the filesystem or mutates the index.
+///
+/// `capacity` is what [`observe_volumes`](crate::query::observe_volumes) observed of the
+/// filesystems the index touches, which a serving route makes just before it reads a
+/// request that names the `volumes` view. Capacity is a fact about the host at one
+/// instant, not about the tree, so it is an argument rather than something the reader
+/// looks up: given `None`, a `volumes` view reports every capacity as unknown, with a
+/// note, never as zero. A request that names no `volumes` view reads none of it.
 ///
 /// # Errors
 ///
@@ -1946,27 +1953,12 @@ pub fn report(
     index: &Index,
     request: &Request,
     generated_at: std::time::SystemTime,
-) -> crate::Result<Report> {
-    report_in(index, request, generated_at, NameIdentity::Native, None)
-}
-
-/// [`report`], with what [`observe_volumes`](crate::query::observe_volumes) observed of the
-/// filesystems it touches, for a request that names the `volumes` view.
-///
-/// Still pure: the observation is an argument, which a serving route makes with
-/// [`observe_volumes`](crate::query::observe_volumes) just before it reads. [`report`] is
-/// this with none, which reports every capacity as unknown, with a note, never as zero.
-pub fn report_with_capacity(
-    index: &Index,
-    request: &Request,
-    generated_at: std::time::SystemTime,
     capacity: Option<&crate::query::VolumesObservation>,
 ) -> crate::Result<Report> {
     report_in(index, request, generated_at, NameIdentity::Native, capacity)
 }
 
-/// [`report_with_capacity`], with the selection evaluated against the named spelling of
-/// each path.
+/// [`report`], with the selection evaluated against the named spelling of each path.
 ///
 /// A one-shot report matches native names; an opened-root read matches portable ones, so
 /// its report projection agrees with its flat and aggregate projections over one query.
@@ -1988,10 +1980,11 @@ pub(crate) fn report_in(
 /// [`Report::roots`], and every path stays relative to its own root. With one root this is
 /// [`report`], unchanged: no total, no labels, and [`Report::root`] set.
 ///
-/// Pure, as [`report`] is. A caller that already holds an index per root, from
-/// [`open`](crate::open) or [`scan_into_index`](crate::scan::scan_into_index), composes
-/// them here; a one-shot caller uses
-/// [`prepare_roots_report`](crate::prepare_roots_report), which walks each root first.
+/// Pure, as [`report`] is, and given capacity as it is. A caller that already holds an
+/// index per root, from [`open`](crate::open) or
+/// [`scan_into_index`](crate::scan::scan_into_index), composes them here; a one-shot
+/// caller uses [`prepare_roots_report`](crate::prepare_roots_report), which walks each
+/// root first.
 ///
 /// Over several roots on Unix, the overlap check below visits every entry of every index,
 /// so each call costs time in proportion to the entries the indexes hold, not only to the
@@ -2013,17 +2006,6 @@ pub(crate) fn report_in(
 /// written, where [`prepare_roots_report`](crate::prepare_roots_report) confirms the match
 /// with one read and answers (review E3 on #192, `fdu-eqyx`).
 pub fn report_roots(
-    indexes: &[&Index],
-    roots: &Roots,
-    request: &Request,
-    generated_at: std::time::SystemTime,
-) -> crate::Result<Report> {
-    report_roots_with_capacity(indexes, roots, request, generated_at, None)
-}
-
-/// [`report_roots`], with the capacity of the filesystems the roots touch, as
-/// [`report_with_capacity`] is to [`report`].
-pub fn report_roots_with_capacity(
     indexes: &[&Index],
     roots: &Roots,
     request: &Request,
@@ -2383,7 +2365,7 @@ fn read_roots(
             {
                 notes.push(
                     "note: capacity unknown: this read was given no capacity observation \
-                     (observe_volumes, then report_with_capacity)"
+                     (pass what observe_volumes observed to the reader)"
                         .to_owned(),
                 );
             }
@@ -5056,7 +5038,7 @@ mod tests {
             Selection { include: vec![pattern("past"), pattern("future")], ..Selection::default() },
         );
         let mut request = Request::new(Basis::held_by(&index), query, UNIX_EPOCH);
-        let answer = report(&index, &request, UNIX_EPOCH).expect("report");
+        let answer = report(&index, &request, UNIX_EPOCH, None).expect("report");
         let rows = files_of(&answer);
         assert_eq!(answer.age_reference_ns, Some(0));
         assert_eq!(
@@ -5064,7 +5046,7 @@ mod tests {
             [Some(-i128::from(i64::MAX)), Some(10)]
         );
         request.now = UNIX_EPOCH + Duration::from_secs(10_000_000_000);
-        let answer = report(&index, &request, UNIX_EPOCH)
+        let answer = report(&index, &request, UNIX_EPOCH, None)
             .expect("out-of-range reference is representable as unknown age");
         assert_eq!(answer.age_reference_ns, None);
         assert!(files_of(&answer).iter().all(|row| row.age_ns.is_none()));
@@ -5489,7 +5471,7 @@ mod tests {
                 ..RequestSpec::new(root.path())
             };
             let request = Request::build(&spec, now, &AxisNames::FIELDS).expect("parses");
-            paths(&files_of(&report(&index, &request, generated_at()).expect("report")))
+            paths(&files_of(&report(&index, &request, generated_at(), None).expect("report")))
         };
         let (both, fresh, copied) = (["copied.txt", "fresh.txt"], ["fresh.txt"], ["copied.txt"]);
         let none: [&str; 0] = [];
@@ -5520,7 +5502,7 @@ mod tests {
                 ..RequestSpec::new(root.path())
             };
             let request = Request::build(&spec, now, &AxisNames::FIELDS).expect("parses");
-            match &report(&index, &request, generated_at()).expect("report").sections[0] {
+            match &report(&index, &request, generated_at(), None).expect("report").sections[0] {
                 Section::Ages(profile) => profile
                     .bands
                     .iter()
@@ -5611,7 +5593,7 @@ mod tests {
                 views: vec![view],
                 ..Query::default()
             };
-            report(&index, &Request::new(Basis::held_by(&index), query, now), generated_at())
+            report(&index, &Request::new(Basis::held_by(&index), query, now), generated_at(), None)
                 .expect("report")
                 .sections
                 .remove(0)
@@ -6044,7 +6026,7 @@ mod tests {
         // A `SystemTime` is 100 ns apart on Windows, so the reference sits on a multiple of
         // that: a finer one would be truncated to an earlier instant there.
         request.now = UNIX_EPOCH;
-        let root = tree_of(&report(&index, &request, generated_at()).expect("report"));
+        let root = tree_of(&report(&index, &request, generated_at(), None).expect("report"));
         assert_eq!(ages_of(&root)[Path::new("docs")].2, Some(-70), "70 is after the epoch");
 
         let by_activity = tree_of(&run(
@@ -6143,7 +6125,7 @@ mod tests {
     }
 
     fn run(index: &Index, query: &Query) -> Report {
-        report(index, &crate::test_support::read_of(index, query.clone()), generated_at())
+        report(index, &crate::test_support::read_of(index, query.clone()), generated_at(), None)
             .expect("the query is answerable over this index")
     }
 
@@ -7295,7 +7277,7 @@ mod tests {
         let mut request =
             crate::test_support::read_of(&index, query(&[ViewSpec::Tree], selection.clone()));
         request.now = UNIX_EPOCH + Duration::from_secs(3_600);
-        let report = report(&index, &request, generated_at()).expect("report");
+        let report = report(&index, &request, generated_at(), None).expect("report");
         assert!(!report.status.complete);
         assert_eq!(
             crate::report_format::render(&report, crate::report_format::Format::Text, false)
@@ -8309,7 +8291,7 @@ mod tests {
             request.now = UNIX_EPOCH
                 + Duration::from_nanos(u64::try_from(newest).expect("after the epoch"))
                 + Duration::from_micros(1);
-            let report = report(index, &request, generated_at()).expect("report");
+            let report = report(index, &request, generated_at(), None).expect("report");
             actual.push_str(label);
             actual.push('\n');
             actual.push_str(
@@ -8483,7 +8465,8 @@ mod tests {
                     super::report(
                         &index,
                         &crate::test_support::read_of(&index, refused),
-                        generated_at()
+                        generated_at(),
+                        None
                     ),
                     Err(crate::Error::InvalidRequest(
                         crate::query::RequestError::IgnoredWithoutObservation(_)
@@ -8551,7 +8534,7 @@ mod tests {
 
     fn run_roots(indexes: &[&Index], roots: &Roots, query: &Query) -> Report {
         let request = crate::test_support::read_of(indexes[0], query.clone());
-        report_roots(indexes, roots, &request, generated_at()).expect("answerable")
+        report_roots(indexes, roots, &request, generated_at(), None).expect("answerable")
     }
 
     fn root_trees_of(report: &Report) -> (&RootTrees, &[TreeOmission]) {
@@ -8723,13 +8706,16 @@ mod tests {
         };
         let alone: Vec<MetricRow> = indexes
             .iter()
-            .map(|index| documents(&report(index, &request(index), generated_at()).expect("one")))
+            .map(|index| {
+                documents(&report(index, &request(index), generated_at(), None).expect("one"))
+            })
             .collect();
         let both = report_roots(
             &indexes.iter().collect::<Vec<_>>(),
             &roots,
             &request(&indexes[0]),
             generated_at(),
+            None,
         )
         .expect("both");
         let merged = documents(&both);
@@ -8952,10 +8938,11 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let report =
-            report_roots(&[&src, &docs], &roots, &request, generated_at()).expect("sorted");
+            report_roots(&[&src, &docs], &roots, &request, generated_at(), None).expect("sorted");
         assert_eq!(names(&report), ["docs", "src"]);
         request.query.selection = Selection { sort: None, ..by_lines };
-        let report = report_roots(&[&src, &docs], &roots, &request, generated_at()).expect("sized");
+        let report =
+            report_roots(&[&src, &docs], &roots, &request, generated_at(), None).expect("sized");
         assert_eq!(names(&report), ["src", "docs"]);
     }
 
@@ -8968,8 +8955,9 @@ mod tests {
         {
             let query = query(views, Selection::default());
             let request = crate::test_support::read_of(&index, query);
-            let alone = report(&index, &request, generated_at()).expect("one");
-            let through = report_roots(&[&index], &one, &request, generated_at()).expect("roots");
+            let alone = report(&index, &request, generated_at(), None).expect("one");
+            let through =
+                report_roots(&[&index], &one, &request, generated_at(), None).expect("roots");
             for format in [crate::report_format::Format::Json, crate::report_format::Format::Text] {
                 assert_eq!(
                     crate::report_format::render(&through, format, false).expect("render"),
@@ -8988,7 +8976,7 @@ mod tests {
             crate::test_support::read_of(&docs, query(&[ViewSpec::Tree], Selection::default()));
         for indexes in [&[&src, &docs][..], &[&docs]] {
             assert!(matches!(
-                report_roots(indexes, &roots, &request, generated_at()),
+                report_roots(indexes, &roots, &request, generated_at(), None),
                 Err(crate::Error::InvalidRequest(RequestError::RootMismatch { .. }))
             ));
         }
@@ -9004,7 +8992,7 @@ mod tests {
         let request =
             crate::test_support::read_of(&docs, query(&[ViewSpec::Tree], Selection::default()));
         assert!(matches!(
-            report_roots(&[&docs, &shallow], &roots, &request, generated_at()),
+            report_roots(&[&docs, &shallow], &roots, &request, generated_at(), None),
             Err(crate::Error::InvalidRequest(RequestError::RootScopesDiffer { first, other }))
                 if first == Path::new("/docs") && other == Path::new("/src")
         ));
@@ -9039,13 +9027,13 @@ mod tests {
         let request =
             crate::test_support::read_of(&entered, query(&[ViewSpec::Tree], Selection::default()));
         assert!(matches!(
-            report_roots(&[&entered, &inner], &roots, &request, generated_at()),
+            report_roots(&[&entered, &inner], &roots, &request, generated_at(), None),
             Err(crate::Error::InvalidRequest(RequestError::RootReachedInside { inner, outer, at }))
                 if inner == Path::new("view/x")
                     && outer == Path::new("srv")
                     && at == Path::new("srv").join("data").join("x")
         ));
-        report_roots(&[&listed, &inner], &roots, &request, generated_at())
+        report_roots(&[&listed, &inner], &roots, &request, generated_at(), None)
             .expect("listed, not entered");
     }
 

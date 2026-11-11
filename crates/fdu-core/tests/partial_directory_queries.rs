@@ -56,7 +56,7 @@ fn partial_cold_list_keeps_healthy_age_and_refuses_unknown_modification_times() 
         },
         now,
     );
-    let answer = fdu_core::query::report(&index, &request, now).expect("list report");
+    let answer = fdu_core::query::report(&index, &request, now, None).expect("list report");
     assert!(!answer.status.complete, "root remains partial");
     let Section::Files { rows, .. } = &answer.sections[0] else {
         panic!("flat list section");
@@ -79,7 +79,7 @@ fn partial_cold_list_keeps_healthy_age_and_refuses_unknown_modification_times() 
             request.query.selection.window = window;
             request.query.selection.time = time;
             let filtered =
-                fdu_core::query::report(&index, &request, now).expect("time-bounded list");
+                fdu_core::query::report(&index, &request, now, None).expect("time-bounded list");
             let Section::Files { rows, .. } = &filtered.sections[0] else {
                 panic!("flat list section");
             };
@@ -151,7 +151,7 @@ fn cached_partial_directory_rows_match_cold_and_pruned_subtrees_remain_complete(
         );
         assert!(!report.is_complete());
         request.query.selection.exclude.clear();
-        let answer = fdu_core::query::report(&index, &request, now).expect("rows");
+        let answer = fdu_core::query::report(&index, &request, now, None).expect("rows");
         let Section::Files { rows, .. } = &answer.sections[0] else {
             panic!("list");
         };
@@ -166,7 +166,7 @@ fn cached_partial_directory_rows_match_cold_and_pruned_subtrees_remain_complete(
             .selection
             .exclude
             .push(fdu_core::query::Pattern::parse("blocked").expect("pattern"));
-        let pruned = fdu_core::query::report(&index, &request, now).expect("pruned rows");
+        let pruned = fdu_core::query::report(&index, &request, now, None).expect("pruned rows");
         assert!(!pruned.status.complete, "query pruning does not change root coverage");
         let Section::Files { rows, .. } = &pruned.sections[0] else {
             panic!("list");

@@ -186,13 +186,8 @@ fn walk_in_a_child_process() {
         SystemTime::now(),
     );
     let observed = fdu_core::query::observe_volumes(&[&index], &request);
-    let report = fdu_core::query::report_with_capacity(
-        &index,
-        &request,
-        SystemTime::now(),
-        observed.as_ref(),
-    )
-    .expect("report");
+    let report = fdu_core::query::report(&index, &request, SystemTime::now(), observed.as_ref())
+        .expect("report");
     let Section::Volumes(volumes) = &report.sections[0] else { panic!("volumes") };
     for row in &volumes.rows {
         println!(

@@ -77,9 +77,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The view is part of `--view full`.
 - Rust: `observe_capacity`, `CapacityObservation`, and `VolumeCapacity` in
   `fdu_core::capacity`; `query::observe_volumes` observes what a request needs, and
-  `report_with_capacity` and `report_roots_with_capacity` read with it.
-  `report` and `report_roots` keep their signatures and report capacity as unknown, with
-  a note. The sections and their parts are `AgeProfile`, `AgeBand`, and `AgeTally`, and
+  `report` and `report_roots` take that observation as their last argument, reporting
+  capacity as unknown, with a note, when given `None`. The sections and their parts are `AgeProfile`, `AgeBand`, and `AgeTally`, and
   `VolumesSection`, `VolumeRow`, and `VolumeCounted`; `observe_volumes` returns a
   `VolumesObservation`, `volume_entries` lists the `VolumeEntry` values it observes, and
   `CapacityObservation` holds one `ObservedVolume` per filesystem.
@@ -101,6 +100,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking (Rust):** `ViewSpec` gains `Ages` and `Volumes` and `Section` gains `Ages`
   and `Volumes`, so an exhaustive match over either needs the new arms; `ViewSpec::ALL`
   has 14 views. `Report` gains `selection`.
+- **Breaking (Rust):** `query::report` and `query::report_roots` take a capacity
+  observation as their last argument, `None` for a request without `volumes`.
 - **Breaking:** every time is change time unless `--time modified` is given, so the
   tree’s age column, `--view recent`, and every age read change time: a tree copied in
   yesterday reads `1d` however old its files.

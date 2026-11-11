@@ -434,7 +434,7 @@ class RollUpSummary:
     newest_mtime_ns: int | None
     #: The newest descendant file's change time, the newer of modification and status
     #: change, or ``None`` with none.
-    newest_changed_ns: int | None = None
+    newest_changed_ns: int | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -554,8 +554,7 @@ impl PyIndex {
         // filesystem and waits as long as a filesystem takes to answer, so it runs without
         // the GIL: a mount that answers slowly then delays this call, not every thread.
         let capacity = py.detach(|| fdu_core::query::observe_volumes(&[&self.inner], &request));
-        fdu_core::query::report_with_capacity(&self.inner, &request, now, capacity.as_ref())
-            .map_err(to_py_err)
+        fdu_core::query::report(&self.inner, &request, now, capacity.as_ref()).map_err(to_py_err)
     }
 }
 

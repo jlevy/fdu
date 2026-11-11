@@ -533,7 +533,7 @@ impl Session {
         // Each answer observes capacity anew when it shows `volumes`. A watch answers when
         // its tree changes, so free space is read then, not as it moves.
         let capacity = crate::query::observe_volumes(&[&index], &request);
-        crate::query::report_with_capacity(&index, &request, generated_at, capacity.as_ref())
+        crate::query::report(&index, &request, generated_at, capacity.as_ref())
     }
 
     /// The session's request, read at `at`: the same question, with its ages measured

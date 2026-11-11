@@ -610,7 +610,7 @@ fn report_for_render(arguments: &Arguments) -> ProbeResult<(Index, fdu_core::que
         query,
         now,
     );
-    let report = fdu_core::query::report(&index, &request, now)?;
+    let report = fdu_core::query::report(&index, &request, now, None)?;
     Ok((index, report))
 }
 
@@ -784,11 +784,13 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     );
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("report"));
+        black_box(
+            fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH, None).expect("report"),
+        );
     }
     let component = started.elapsed();
     let oracle_report =
-        fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("oracle report");
+        fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH, None).expect("oracle report");
     verify_content_query_report(&index, &read, &oracle_report)?;
     let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
@@ -828,7 +830,7 @@ fn verify_content_query_report(
         let mut independent = request.clone();
         independent.query.views = vec![view];
         independent.query.omitted_views.clear();
-        let expected = fdu_core::query::report(index, &independent, std::time::UNIX_EPOCH)?;
+        let expected = fdu_core::query::report(index, &independent, std::time::UNIX_EPOCH, None)?;
         let Some(expected) = expected.sections.first() else {
             return Err(ProbeError(format!("content-query independent {view:?} report was empty")));
         };
@@ -1715,13 +1717,13 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         query,
         now,
     );
-    let first = fdu_core::query::report(&index, &request, now)?;
+    let first = fdu_core::query::report(&index, &request, now, None)?;
     let first_rendered =
         fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false)?;
     black_box(first_rendered.len());
 
     let started = Instant::now();
-    let second = fdu_core::query::report(&index, &request, now)?;
+    let second = fdu_core::query::report(&index, &request, now, None)?;
     let rendered =
         fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());

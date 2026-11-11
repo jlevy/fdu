@@ -3607,7 +3607,7 @@ mod tests {
     }
 
     fn report(index: &Index, request: &Request, provenance: &Provenance) -> crate::Result<Report> {
-        let mut report = crate::query::report(index, request, provenance.generated_at)?;
+        let mut report = crate::query::report(index, request, provenance.generated_at, None)?;
         report.provenance.scan_started_at = provenance.scan_started_at;
         report.provenance.source = provenance.source;
         report.status.complete = provenance.complete;
@@ -6644,7 +6644,7 @@ mod tests {
         ]);
         let mut request = crate::test_support::read_of(&docs, query.clone());
         request.now = UNIX_EPOCH + Duration::from_secs(120);
-        crate::query::report_roots(&[&docs, &src], &roots, &request, UNIX_EPOCH)
+        crate::query::report_roots(&[&docs, &src], &roots, &request, UNIX_EPOCH, None)
             .expect("several roots")
     }
 
