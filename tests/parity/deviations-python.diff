@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 73 sessions differ, and every one of them has a named cause.
+# 75 sessions differ, and every one of them has a named cause.
 #
-#  31  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  32  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
 #      platform separator, and [AGE] for an age measured from the run's own instant.
 #      The Python replay prints the sandbox root, a literal separator, and the age, whose
@@ -58,7 +58,7 @@
 #      Only the four setter and value pairs the shared report renderer emits, in its
 #      fixed order, are accepted; every other line remains identical.
 #
-#  26  Each surface names its own parameter  [surface-label]
+#  27  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -265,6 +265,25 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --sort "time": type, extension, family, language, and document rows carry no time: sort tree, list, files, largest, recent, or code rows by time
 +fdu: invalid sort "time": type, extension, family, language, and document rows carry no time: sort tree, list, files, largest, recent, or code rows by time
+  ✗ Change Time Finds What Kept an Old Modification Time
+@@ -1,6 +1,6 @@
+ TREE
+-██████████   100%       240 B  [AGE]  . 4 files
+-██████████   100%       240 B  [AGE_BLANK]    … and 4 more files
++██████████   100%       240 B  [AGE_VALUE]  . 4 files
++██████████   100%       240 B  [AGE_BLANK_VALUE]    … and 4 more files
+ AGES
+      240 B  100.0%  under 1h     4 files
+    stderr:
+@@ -1,3 +1,3 @@
+ note: totals include descendants
+ note: display limits: below 1% of root, depth 0
+-tip: show more: --min-share=0% --depth=all
++tip: show more: min_share=0%, depth=all
+  ✗ Change Time Finds What Kept an Old Modification Time
+@@ -1,1 +1,1 @@
+-fdu: invalid --sort "time": summary, age band, and volume rows have a fixed order: sort tree, list, files, largest, recent, or code rows by time
++fdu: invalid sort "time": summary, age band, and volume rows have a fixed order: sort tree, list, files, largest, recent, or code rows by time
   ✓ Ages Profile the Selection on the Report’s Clock
   ✓ Ages Profile the Selection on the Report’s Clock
   ✓ Ages Profile the Selection on the Report’s Clock

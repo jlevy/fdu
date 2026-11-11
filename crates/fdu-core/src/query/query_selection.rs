@@ -64,8 +64,9 @@ pub enum SortKey {
     /// Newest time, on the clock [`Selection::time`] names: tree, list, and code rows,
     /// each of which carries the time its column shows. Type, extension, family, language,
     /// and document rows carry none: beside a view that has a time, as in `--view full`,
-    /// they keep size order under a note, and a request in which the sort would order no
-    /// view is refused.
+    /// they keep size order under a note. The summary, age bands, and filesystems have a
+    /// fixed order, which no sort changes. A request in which the sort would order no
+    /// view, because it has only these views, is refused.
     Time,
     /// Path or name, lexicographically.
     Name,

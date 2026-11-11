@@ -183,7 +183,8 @@ class SortKey(StrEnum):
     COUNT = "count"
     #: Newest first, on the clock :attr:`Selection.time` names. Types, extensions,
     #: families, languages, and documents carry no time and keep size order beside a view
-    #: that does; requested alone, they refuse it.
+    #: that does; summary, ages, and volumes have a fixed order. A query with only these
+    #: views refuses it.
     TIME = "time"
     NAME = "name"
 

@@ -950,6 +950,31 @@ fdu: invalid --sort "time": type, extension, family, language, and document rows
 ? 2
 ```
 
+A view whose rows have a fixed order, `summary`, `ages`, or `volumes`, is ordered by no
+sort, so it may sit beside a time sort; with only such views the sort would order
+nothing, and it is refused rather than accepted and ignored.
+
+```console
+$ fdu --cache off --size apparent --view tree,ages --depth 0 --sort time builds
+TREE
+██████████   100%       240 B  [AGE]  . 4 files
+██████████   100%       240 B  [AGE_BLANK]    … and 4 more files
+
+AGES
+     240 B  100.0%  under 1h     4 files
+! note: totals include descendants
+! note: display limits: below 1% of root, depth 0
+! tip: show more: --min-share=0% --depth=all
+! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --view summary,ages --sort time builds
+fdu: invalid --sort "time": summary, age band, and volume rows have a fixed order: sort tree, list, files, largest, recent, or code rows by time
+? 2
+```
+
 ### Ages Profile the Selection on the Report’s Clock
 
 `--view ages` puts the selected files in fixed bands by age.

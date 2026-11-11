@@ -401,10 +401,11 @@ display bound. Numeric content sorts such as `--sort=code_lines` require their a
 Extensions sorts by size, count, and name only; use a metric-capable view for content
 ranking. `--sort time` orders tree, list, and code rows by their time.
 Types, extensions, families, languages, and documents carry none: beside a view that
-does, as in `--view full`, they keep size order and a note says so; requested alone, the
-sort is refused.
-`--scan-depth` changes what is scanned and retained; display bounds only
-shorten output.
+does, as in `--view full`, they keep size order and a note says so.
+Summary, ages, and volumes have a fixed order; with only these views, the sort is
+refused.
+`--scan-depth` changes what is scanned and retained; display bounds only shorten
+output.
 
 ## Find What Was Written Recently
 

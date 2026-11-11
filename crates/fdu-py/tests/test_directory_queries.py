@@ -136,6 +136,29 @@ def test_cold_warm_and_cache_only_directory_membership_agree(builds: Path) -> No
     assert [row.bytes for row in section.files] == [47, 59]
 
 
+def test_a_time_sort_that_orders_no_view_is_refused(builds: Path) -> None:
+    # SortKey.TIME is validated by the engine, as --sort time is: beside a view it orders,
+    # it is accepted, and with only rows that carry no time, or only views of a fixed
+    # order, it is refused rather than accepted and silently ignored.
+    index = fdu.scan(builds)
+    timed = fdu.Selection(sort=fdu.SortKey.TIME)
+    for views in (
+        (fdu.View.TREE, fdu.View.AGES),
+        (fdu.View.FILES, fdu.View.SUMMARY, fdu.View.VOLUMES),
+        (fdu.View.FILES, fdu.View.EXTENSIONS),
+    ):
+        index.report(fdu.Query(views=views, selection=timed))
+    for views, reason in (
+        ((fdu.View.TYPES,), "carry no time"),
+        ((fdu.View.EXTENSIONS, fdu.View.SUMMARY), "carry no time"),
+        ((fdu.View.SUMMARY,), "fixed order"),
+        ((fdu.View.AGES,), "fixed order"),
+        ((fdu.View.VOLUMES,), "fixed order"),
+    ):
+        with pytest.raises(fdu.InvalidArgumentError, match=reason):
+            index.report(fdu.Query(views=views, selection=timed))
+
+
 def test_list_default_and_format_compatibility(builds: Path) -> None:
     index = fdu.scan(builds)
     default = index.report(fdu.Query()).render()

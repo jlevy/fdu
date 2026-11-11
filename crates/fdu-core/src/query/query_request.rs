@@ -1427,22 +1427,24 @@ impl Request {
         // Every tree, list, and code row carries the time its column shows; a type,
         // extension, family, language, or document row carries none. Beside a view the
         // sort can order, those keep size order and a note says so, which is how
-        // `--view full --sort time` reads; with nothing to order, the sort is refused. A
-        // view whose rows have a fixed order (the summary, the age bands, the filesystems)
-        // is ordered by no sort, so it may sit beside one either way.
+        // `--view full --sort time` reads. A view whose rows have a fixed order (the
+        // summary, the age bands, the filesystems) is ordered by no sort, so it may sit
+        // beside one either way. A request in which the sort orders no view is refused,
+        // naming the rows that carry no time where it holds any, so a time sort is never
+        // accepted and silently ignored.
         if self.query.selection.sort == Some(SortKey::Time)
-            && self.query.views.iter().any(|view| view.timeless_rows().is_some())
-            && self
+            && !self
                 .query
                 .views
                 .iter()
-                .all(|view| !view.is_sorted() || view.timeless_rows().is_some())
+                .any(|view| view.is_sorted() && view.timeless_rows().is_none())
         {
-            return Err(invalid(
-                self.query.axes.sort,
-                "time",
-                "type, extension, family, language, and document rows carry no time: sort tree, list, files, largest, recent, or code rows by time",
-            ));
+            let reason = if self.query.views.iter().any(|view| view.timeless_rows().is_some()) {
+                "type, extension, family, language, and document rows carry no time: sort tree, list, files, largest, recent, or code rows by time"
+            } else {
+                "summary, age band, and volume rows have a fixed order: sort tree, list, files, largest, recent, or code rows by time"
+            };
+            return Err(invalid(self.query.axes.sort, "time", reason));
         }
         // An age needs an instant to be measured from, and `ages` is nothing but ages.
         if self.query.views.contains(&ViewSpec::Ages)
@@ -3021,31 +3023,43 @@ mod tests {
     /// Every tree, list, and code row carries the time its column shows, on the request's
     /// clock, so each sorts by it; a type, extension, family, language, or document row
     /// carries none. Beside a view the sort orders, those keep size order under a note, so
-    /// `full` takes a time sort; a request in which the sort would order nothing is
-    /// refused. A view whose rows have a fixed order may sit beside a time sort.
+    /// `full` takes a time sort, and a view whose rows have a fixed order may sit beside
+    /// one. A request in which the sort would order nothing is refused, whether its views
+    /// carry no time or have a fixed order, rather than accepted and silently ignored.
     #[test]
     fn a_time_sort_is_refused_only_where_no_sorted_row_carries_a_time() {
-        for (view, format, valid) in [
-            (Some("files"), None, true),
-            (Some("largest"), None, true),
-            (Some("recent"), Some("long"), true),
-            (Some("list"), Some("json"), true),
-            (Some("files,summary"), None, true),
-            (Some("files,ages,volumes"), None, true),
-            (Some("ages"), Some("json"), true),
-            (None, None, true),
-            (Some("tree"), Some("json"), true),
-            (Some("list"), None, true),
-            (Some("files"), Some("tree"), true),
-            (Some("code"), None, true),
-            (Some("full"), None, true),
-            (Some("files,types"), None, true),
-            (Some("tree,families"), None, true),
-            (Some("extensions"), None, false),
-            (Some("types,summary"), None, false),
-            (Some("families,ages"), None, false),
-            (Some("languages"), None, false),
-            (Some("documents"), None, false),
+        const TIMELESS: &str = "invalid --sort \"time\": type, extension, family, language, \
+                                and document rows carry no time: sort tree, list, files, \
+                                largest, recent, or code rows by time";
+        const FIXED: &str = "invalid --sort \"time\": summary, age band, and volume rows \
+                             have a fixed order: sort tree, list, files, largest, recent, or \
+                             code rows by time";
+        for (view, format, refused) in [
+            (Some("files"), None, None),
+            (Some("largest"), None, None),
+            (Some("recent"), Some("long"), None),
+            (Some("list"), Some("json"), None),
+            (Some("files,summary"), None, None),
+            (Some("files,ages,volumes"), None, None),
+            (Some("tree,ages"), None, None),
+            (Some("volumes,list"), Some("json"), None),
+            (None, None, None),
+            (Some("tree"), Some("json"), None),
+            (Some("list"), None, None),
+            (Some("files"), Some("tree"), None),
+            (Some("code"), None, None),
+            (Some("full"), None, None),
+            (Some("files,types"), None, None),
+            (Some("tree,families"), None, None),
+            (Some("extensions"), None, Some(TIMELESS)),
+            (Some("types,summary"), None, Some(TIMELESS)),
+            (Some("families,ages"), None, Some(TIMELESS)),
+            (Some("languages"), None, Some(TIMELESS)),
+            (Some("documents"), None, Some(TIMELESS)),
+            (Some("summary"), None, Some(FIXED)),
+            (Some("ages"), Some("json"), Some(FIXED)),
+            (Some("volumes"), None, Some(FIXED)),
+            (Some("summary,ages,volumes"), Some("yaml"), Some(FIXED)),
         ] {
             for clock in [None, Some("changed"), Some("modified")] {
                 let spec = RequestSpec {
@@ -3061,17 +3075,14 @@ mod tests {
                 let request = Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FLAGS)
                     .expect("grammar");
                 assert_eq!(request.query.selection.sort, Some(SortKey::Time));
-                match request.validate() {
-                    Ok(()) => assert!(valid, "{view:?} {format:?} {clock:?} accepted"),
-                    Err(error) => {
-                        assert!(!valid, "{view:?} {format:?} {clock:?} refused: {error}");
-                        assert_eq!(
-                            error.message(&AxisNames::FLAGS),
-                            "invalid --sort \"time\": type, extension, family, language, and \
-                             document rows carry no time: sort tree, list, files, largest, \
-                             recent, or code rows by time"
-                        );
-                    }
+                match (request.validate(), refused) {
+                    (Ok(()), None) => {}
+                    (Ok(()), Some(_)) => panic!("{view:?} {format:?} {clock:?} accepted"),
+                    (Err(error), expected) => assert_eq!(
+                        Some(error.message(&AxisNames::FLAGS).as_str()),
+                        expected,
+                        "{view:?} {format:?} {clock:?}"
+                    ),
                 }
             }
         }

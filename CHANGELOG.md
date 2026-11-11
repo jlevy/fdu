@@ -49,8 +49,9 @@ details.
   largest, recent, and code rows newest first on the report’s clock, trees included.
   Types, extensions, families, languages, and documents carry no time: beside a view
   that does, as in `--view full`, they keep size order under
-  `note: type and extension rows carry no time, so they keep size order`, and requested
-  alone they refuse the sort.
+  `note: type and extension rows carry no time, so they keep size order`. Summary, ages,
+  and volumes have a fixed order, which no sort changes.
+  A request with only these views refuses the sort.
 - Machine output: the request echo names its `time`; every list row, tree node, and
   total gives its time as `time_ns`, `time_at`, and `age_ns`; summary and tree rows give
   `newest_file_time_ns`; and list rows also give both raw clocks, `mtime_ns` and
@@ -167,8 +168,8 @@ details.
   `Selection(modified_since=, modified_before=)` is `Selection(since=, before=)` and
   `SortKey.MTIME` is `SortKey.TIME`.
 - **Breaking:** a time sort is refused where no sorted view carries a time:
-  `--sort time` with only `types`, `extensions`, `families`, `languages`, or `documents`
-  exits 2, naming the views that do.
+  `--sort time` with only `types`, `extensions`, `families`, `languages`, `documents`,
+  `summary`, `ages`, or `volumes` exits 2, naming the views that do.
   `--sort mtime` was accepted there and ordered those rows by name.
   Python raises `InvalidArgumentError` for the same request.
 - **Breaking:** the report schema is `fdu.report/12`, for the time fields and envelope
