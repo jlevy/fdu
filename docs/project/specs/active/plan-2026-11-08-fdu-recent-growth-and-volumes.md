@@ -435,9 +435,21 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   `OpenedIndex::read` (before it takes its index guard), each watch repaint, and
   Python’s `Index.report`, inside the native call with the GIL released.
   A capacity call is made only on a root or on a directory the walk listed, since on an
-  unmounted automount trigger it mounts as a listing would (review F1 on #209). The
-  observation carries each root’s device beside the capacity, since an index does not
-  record the root’s own attributes.
+  unmounted automount trigger it mounts as a listing would (review F1 on #209). A
+  listing may be hours old when a report is read, and an automount may have expired
+  since, so a listed directory below a root is asked only where touching it mounts
+  nothing (review G1). The stat that never mounts cannot decide that: it covers a path’s
+  last component, only where it exists, so an expired indirect-map key or a path through
+  a trigger asked the automounter all the same (review H1). The operating system’s mount
+  table decides it, read without resolving any path: a directory is asked only where the
+  table lists a reachable mount at exactly its path whose topmost filesystem is not
+  autofs, and the stat, safe there, then finds the device the walk recorded.
+  Every listed directory is checked, and nothing below one that fails is read.
+  Every walk records the device it read its root on as the root entry’s attributes, and
+  the snapshot keeps it (format 7), so the root is keyed by the number its walk counted
+  it on, whatever a remount or a reboot has numbered it since (reviews G2 and H2). The
+  root and every nested row follow one rule: where the device found now is not the one
+  the walk recorded, the row keeps its counts and its capacity is unknown (review H6).
   `--stale-ok` observes now, so its capacity is current while its tree is stale, and the
   section’s `observed_at` says when capacity was read.
   A caller of the pure reader that passes no observation gets every capacity field as
@@ -447,9 +459,10 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
 - **Columns.** Capacity, the share in use, the path where the report entered the
   filesystem (a root, or the directory where the walk crossed onto it), available bytes,
   and the bytes this report counted there.
-  No mount table is read: the walk already knows where the device changes.
-  When the walk reaches one filesystem at several paths, the row is labeled by the
-  bytewise-first of them, and a note says how many others there are.
+  The mount table never names a row: the walk already knows where the device changes.
+  It only decides which paths a capacity call may touch (review H1 on #209). When the
+  walk reaches one filesystem at several paths, the row is labeled by the bytewise-first
+  of them, and a note says how many others there are.
   The type comes from the same call: by name on macOS and Windows, and on Linux as
   `f_type`, a number, which a short table maps to names for the filesystems the notes
   need (btrfs, ZFS); any other number is shown as itself.
@@ -493,8 +506,10 @@ suppresses it with the other notes; the machine fields are always present.
 note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB
 ```
 
-The scanned totals are the unfiltered root roll-up, already maintained, so the note
-costs nothing. Machine output carries the same two tallies.
+The scanned totals are the index’s maintained roll-up of the scan’s own population (the
+ignored part under `--ignored=only`, the unignored part under `--ignored=exclude`, and
+everything otherwise), so the note costs nothing and a narrowed scan’s note compares
+like with like (review G7 on #209). Machine output carries the same two tallies.
 This follows the output rule that a note is added wherever the displayed facts can be
 misread
 ([output design](../../architecture/fdu-output-design.md#streams-and-categories)), and
@@ -589,18 +604,36 @@ before release; the items above record what was built and then superseded.
     on #209 collapsed each pair, since the project owes no caller of the older shape.
   - Capacity is asked only of the roots and of directories the walk listed, and an
     opened read observes before it takes its guard (review F1 and F2 on #209).
-  - The observation carries each root’s device beside capacity (`VolumesObservation`),
-    because an index records every entry’s attributes but the root’s own; a reader given
-    none infers it from the root’s directories.
+  - A walk records a directory it descends into across a device from a descriptor it
+    opens on it, so a trigger the walk mounted carries the filesystem its listing found
+    and two cold walks agree (review G4); a kernel automount point, which stats on its
+    parent’s device, is read the same way, and a one-filesystem walk keeps it as a
+    boundary (review H4). A reconciliation and a watch record the directory above what
+    they verify by the same rule (review H5). A browsable autofs key, on its parent’s
+    device with no flag, and reading each directory where its own listing opens it
+    (review H8) are deferred to `fdu-vxji`.
+  - Below a root, a listed directory is asked only where the mount table lists a
+    reachable mount at exactly its path that is not autofs, and the stat then finds the
+    recorded device: `/proc/self/mountinfo` on Linux, `getfsstat` with `MNT_NOWAIT` on
+    macOS, and on Windows, which has no automount, every path passes to the stat
+    (reviews G1 and H1). One that fails keeps its row and counts with the reason, and
+    nothing below it is read, except below autofs, where what the table lists hangs from
+    the map.
+  - The root is keyed by the device its walk recorded, which every walk route records as
+    the root entry’s attributes and a snapshot keeps (format 7), and asked where it is
+    still on it (reviews G2, H2, and H6). A first fix inferred it from the root’s
+    children for an unverified index, which four ordinary situations made it guess
+    wrong. `VolumesObservation` carries the key per root.
   - When capacity was observed is the section’s `observed_at`, not a provenance tier: it
     labels the capacity beside a stale tree just as well and leaves every other envelope
     unchanged.
 - [x] Each row labeled by the bytewise-first path where the report entered the
   filesystem, from the walk’s own device changes, with a note when there are others; the
-  type from the same call, with Linux `f_type` mapped for btrfs and ZFS. No mount-table
-  parsing. Only a directory starts a filesystem: overlayfs, which containers run on,
-  reports each file’s underlying layer, which split one filesystem into a row per layer
-  until files were counted on their directory’s device.
+  type from the same call, with Linux `f_type` mapped for btrfs and ZFS. The mount table
+  names no row; it only gates capacity calls.
+  Only a directory starts a filesystem: overlayfs, which containers run on, reports each
+  file’s underlying layer, which split one filesystem into a row per layer until files
+  were counted on their directory’s device.
   A one-filesystem walk touches only its root’s filesystem, since it never enters the
   mount points it retains.
 - [x] Rows, pooled-filesystem wording, text and machine renderers.
@@ -734,6 +767,15 @@ Exact nanosecond edges and unknown change times use synthetic entry facts.
 - **Volumes:** a root on one filesystem gives one row; a fixture with a mount below the
   root gives two (Linux CI, where mounting a tmpfs is possible), and `--one-filesystem`
   gives one; capacity never appears in a snapshot.
+  Root-only tests (`tests/volumes_automount.rs`) mount real automounts and count the
+  automounter’s requests: a direct trigger kept at the scan depth, one that expires
+  after the walk, one with a filesystem mounted below it whose filesystem is also
+  mounted plainly elsewhere, an indirect map whose expired key is removed, a report
+  rooted at an indirect map, and debugfs’s `tracing`, a kernel automount that needs no
+  automounter. Engine tests feed a synthetic mount table and a synthetic stat, and hold
+  the root to the device its walk recorded through a renumbered root, a mount gone from
+  a directory that sorts first, an unmounted root filesystem, and an expired indirect
+  map.
 - **Parity and goldens:** every new flag, view, and field goes through the shared golden
   corpus and Python parity.
   Capacity and band contents vary by host, so goldens pin layout with named patterns,

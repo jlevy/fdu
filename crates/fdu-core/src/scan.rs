@@ -7876,7 +7876,9 @@ pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<A
 /// entry the listing finds under it, so on Linux the device is read from an opened
 /// descriptor on every route and under either libc, and `meta`'s device answers only
 /// when the open fails, as the listing then fails the same way. Every other stat of the
-/// tree never mounts ([`observe_dir_entry`], [`observe_path`], `linux_dents`).
+/// tree passes `AT_NO_AUTOMOUNT` ([`observe_dir_entry`], [`observe_path`], `linux_dents`),
+/// which never mounts at a path's last component where it exists; a path a route resolves
+/// by itself is resolved through its earlier components as any lookup is.
 pub(crate) fn root_device(root: &Path, meta: &fs::Metadata) -> std::io::Result<u64> {
     #[cfg(windows)]
     {
@@ -8018,18 +8020,10 @@ mod tests {
         dir
     }
 
-    /// A counter that silently reads zero is worse than a missing one, because a report
-    /// full of zeroes invites the conclusion that the work did not happen.
-    ///
-    /// This has already gone wrong twice: once when the per-entry counter was added to
-    /// the serial walk while the parallel walk went uninstrumented, and once when a
-    /// clippy fix hoisted a `read_dir` out of a match scrutinee and took the counter
-    /// with it. Both builds compiled, passed every other test, and reported zero. This
-    /// asserts the relationships a real walk must satisfy, so the next such edit fails
-    /// here instead of in a report someone believes.
-    /// A directory the walk descends into on another device than its parent is recorded
-    /// from the descriptor its listing opens, so an automount trigger the listing mounts
-    /// carries the filesystem the listing found, not the trigger (review G4 on #209). No
+    /// A directory the walk descends into on another device than its parent, or flagged a
+    /// kernel automount point, is recorded from a descriptor the walk opens on it, so an
+    /// automount the listing mounts carries the filesystem the listing found, not the
+    /// trigger (reviews G4 and H4 on #209). No
     /// mount is needed to see it: a stat that put the directory on a device of its own, as
     /// a trigger's does, is replaced by what the opened directory says.
     #[cfg(unix)]
@@ -8063,6 +8057,15 @@ mod tests {
         assert_eq!(listed_device(deviceless, 3), 3);
     }
 
+    /// A counter that silently reads zero is worse than a missing one, because a report
+    /// full of zeroes invites the conclusion that the work did not happen.
+    ///
+    /// This has already gone wrong twice: once when the per-entry counter was added to
+    /// the serial walk while the parallel walk went uninstrumented, and once when a
+    /// clippy fix hoisted a `read_dir` out of a match scrutinee and took the counter
+    /// with it. Both builds compiled, passed every other test, and reported zero. This
+    /// asserts the relationships a real walk must satisfy, so the next such edit fails
+    /// here instead of in a report someone believes.
     #[test]
     fn a_walk_moves_every_counter_it_should() {
         // Both walkers, because they are separate loops with separate call sites. The

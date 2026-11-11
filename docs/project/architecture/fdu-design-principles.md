@@ -385,10 +385,18 @@ would never descend into, and report the mounted root’s identity where `lstat`
 
 fdu’s stat of a listed child never mounts, on any route or delivery: the native reader
 and the portable fallback, the serial and concurrent walks, revalidation and
-reconciliation, opened discovery, watch verification, and control lookups all pass the
-flag, and a musl build never had the problem.
-The walk root alone is resolved: the user named it, listing it mounts it in any case,
-and `--one-filesystem` must bound the walk to the filesystem the listing finds, so its
+reconciliation, and opened discovery all pass the flag, and a musl build never had the
+problem. The flag says less than its name, though: it governs a path’s last component,
+and only where that component exists.
+Every earlier component is resolved as any lookup is, through whatever trigger lies on
+the way, and a name an indirect map does not hold (an expired key, whose directory
+automount(8) removed) is looked up, which asks the automounter.
+A listed child exists and is looked up by name beside its listing, so its stat is safe;
+a path a route stats by itself is safe only where nothing on the way is an unmounted
+trigger. Watch verification and control lookups pass the flag, and verifying a name that
+has just been removed from an indirect map asks for it all the same (fdu-kle7). The walk
+root alone is resolved: the user named it, listing it mounts it in any case, and
+`--one-filesystem` must bound the walk to the filesystem the listing finds, so its
 device is read from an opened descriptor rather than from a stat that might have
 answered for the trigger.
 This is a consequence of the rule above that every route returns the same answer: when
@@ -397,23 +405,32 @@ worker count, and by whether a directory happened to be read natively or portabl
 The mechanism is in `scan/linux_dents.rs` and at `scan::root_device`.
 
 A directory the walk descends into is listed next, which mounts a trigger as it mounts
-the root, so where the stat put a directory on another device than its parent, the walk
-reads its attributes again from the descriptor it opens, as it does for the root.
-The directory then carries the filesystem its listing found.
+the root, so where a mount can be, the walk reads its attributes again from a descriptor
+it opens on it, as it does for the root.
+That is where the stat put a directory on another device than its parent, and where the
+stat flagged a kernel automount point (`STATX_ATTR_AUTOMOUNT`: tracefs under debugfs, an
+NFS nested export or referral), which is on its parent’s device until something resolves
+through it. The directory then carries the filesystem its listing found.
 Recorded as the stat found it, a trigger the walk mounted was on the trigger’s own
 device and everything beneath it on the filesystem’s: one filesystem reported as two,
 and two cold runs over an unchanged tree disagreeing on which held what, because the
 second found the filesystem already mounted.
 An ordinary mount point reads the same either way, and a boundary the walk does not
-descend into, under `--one-filesystem` or at the scan depth, is never opened.
-The rule is `scan::entered_directory_attrs`, applied on every route that lists.
+descend into, under `--one-filesystem` or at the scan depth, is never opened; a
+one-filesystem walk keeps a kernel automount point as such a boundary.
+The rule is `scan::entered_directory_attrs`, applied on every route that lists, and by a
+reconciliation and a watch to the directory above what they verify.
+The descriptor is opened in the parent’s listing and closed again, and a key of a
+browsable indirect map, which is on its parent’s device and carries no flag, is still
+recorded as the stat found it; reading each directory where its own listing opens it
+would close both gaps (fdu-vxji).
 
 A capacity observation is the one call that takes no such flag.
 `statfs` and `GetDiskFreeSpaceExW` resolve the path they are given, so on Linux a call
-on an unmounted trigger mounts it and waits for the automounter, exactly as a listing
-would; what macOS does for its triggers is untested.
-So `volumes` asks only where the walk listed, and only while the filesystem the walk
-counted there is still mounted, on every route.
+on an unmounted trigger, or on a path through one, mounts it and waits for the
+automounter, exactly as a listing would; what macOS does for its triggers is untested.
+So `volumes` asks only where the walk listed, and below a root only where touching the
+path mounts nothing.
 Each root is asked: the user named it, and reading its device opens it in any case.
 A filesystem the report entered only at a directory the walk kept without listing it, at
 the scan depth or not yet reached by an opened root’s discovery, keeps its row with
@@ -421,36 +438,52 @@ capacity unknown and the reason that the walk did not list it.
 And a listing is a fact about a walk that may be hours old, while the call is made when
 the report is read: under `--stale-ok`, at a watch’s repaint, from a retained index, or
 by an opened root’s read.
-An automounter unmounts what it mounted once it sits idle, so a directory the walk
-listed can be an unmounted trigger again by then.
-Every directory other than a root is therefore read again with the stat that never
-mounts, in path order, and asked only where that stat still finds a directory on the
-device its row is keyed by, which the walk recorded from its listing.
-One that fails, because the automount expired or the filesystem was unmounted, replaced,
-or removed, keeps its row with the counts the walk made, capacity unknown, and the
-reason that the filesystem was no longer mounted there; nothing below it is read at all,
-because resolving a deeper path walks through the trigger and mounts it.
+An automounter unmounts what it mounted once it sits idle, and a remount or a reboot
+numbers many filesystems afresh, so a directory the walk listed can be an unmounted
+trigger, a removed key, or another filesystem by then, and no stat can say so safely.
+The operating system’s mount table can, without resolving any path:
+`/proc/self/mountinfo` on Linux, and `getfsstat` with `MNT_NOWAIT` on macOS, which
+answers from what the kernel holds.
+It never names a row; it only decides which paths may be touched.
+Every directory other than a root is looked up in it, in path order, and asked only
+where the table lists a mount at exactly its path, reachable there and not covered by a
+later mount above it, whose topmost filesystem is not autofs; then the stat, safe
+because every component resolves through mounted filesystems, must find the device the
+walk recorded. One that fails keeps its row with the counts the walk made, capacity
+unknown, and the reason: not a mount point now (an expired key or submount, an unmounted
+filesystem, or a device boundary that is no mount point, such as a btrfs subvolume),
+autofs topmost, or not on the device the walk recorded.
+Nothing below one that is not a mount point, or on another device, is looked at, and
+every listed directory is checked, one whose filesystem was asked at another path too.
+Where autofs is topmost, nothing is asked there and nothing below is blocked: what the
+table lists below an indirect map hangs from it, as a mounted key does.
+Windows has no automount and keeps no such table, so there every path passes to the
+stat, and where the table cannot be read nothing below a root is asked.
 `--view volumes` then mounts nothing a tree of the same request would not, on a route
 that walked or one that did not, and `--view full` leaves `volumes` out and makes no
 capacity call at all.
-The rules are `query_volumes::walk_listed` and `query_volumes::observe_entries`, and
-root-only tests mount a real trigger to hold them (`tests/volumes_automount.rs`): one
-whose automounter refuses every request, and one whose automounter mounts a filesystem
-and then expires it.
+The rules are `query_volumes::walk_listed`, `query_volumes::observe_entries`, and
+`capacity::MountTable`, and root-only tests mount real triggers to hold them
+(`tests/volumes_automount.rs`): a direct trigger whose automounter refuses every
+request, one that mounts a filesystem and expires it, one with a second filesystem
+mounted below it, an indirect map whose keys are made on request and removed on expiry,
+with the report rooted below it and at it, and debugfs’s `tracing`, which needs no
+automounter.
 
-An index served without verification, from a snapshot under `--stale-ok`, may also be
-older than a remount or a reboot, and many filesystems are numbered when they are
-mounted: tmpfs, overlayfs, btrfs subvolumes, NFS, ZFS, and FUSE. A walk does not record
-its root’s own device, so a report reads it when it is read, and joined to the
-snapshot’s numbers, every directory beneath a renumbered root would read as a mount
-point, and a one-filesystem report would drop what they hold beside a summary that
-counts it. So such an index keeps the root’s live device only where an entry directly
-beneath the root recorded it, or none recorded one; otherwise the stat that never mounts
-reads the root’s directories in path order, and the first now on the root’s live device
-names the number the snapshot recorded for the root’s filesystem, which keys the root.
-Where every directory is still on a device of its own, each is a mount point, and the
-root keeps its live device, as a cold walk would key it.
-The rule is `query_volumes::root_key`.
+A walk records the device it read its root on, as the root entry’s attributes, on every
+route, and a snapshot keeps it, so a report keys the root’s filesystem by the number its
+walk counted it on. An index served without verification, from a snapshot under
+`--stale-ok`, may be older than a remount or a reboot, and many filesystems are numbered
+when they are mounted: tmpfs, overlayfs, btrfs subvolumes, NFS, ZFS, and FUSE. Keyed by
+the root’s number when the report is read, every directory beneath a renumbered root
+read as a mount point, and a one-filesystem report dropped what they held beside a
+summary that counted it; inferred from its children’s numbers, the root could take a
+mount’s number, a number dealt again at the remount, or the filesystem under an
+unplugged disk’s mount point.
+The root and every nested row follow one rule: where the device found at its path now
+(the root’s live device; a nested row’s, at a mount point the table lists) is not the
+one the walk recorded, the row keeps its key and its counts, and its capacity is
+unknown, because it was not found on the device the walk recorded.
 
 ## Data Structures
 

@@ -260,7 +260,7 @@ The target models are in
 | Measured value | What each metric means, and how coverage is decided | The `METRICS` registry and per-unit outcomes in `FileAnalysis`; `ReportMetricValues` and per-unit coverage in `MetricRow`; `document_words` and `pages` in `query_report.rs` | Yes. The registry owns metric names and units, each requested unit records its own outcome, and absent units stay absent from reports |
 | Provenance | Source, freshness, observation time, completeness, errors | `TreeStatus` and `ReportProvenance`, including per-tier `TierState`; per-entry `Provenance` in `engine_contract.rs` | Yes. Report status, delivery provenance, and retained-tier provenance are separate values; an unavailable observation time is `None` rather than an invented timestamp |
 | Time basis | Which clock every time in one report reads | `TimeBasis` (`Changed` by default, or `Modified`) on `Selection`, `Times` on each entry and tier, and `Attrs::times`, which applies the substitution for an unobserved status change (`engine_contract.rs`); `TimeBasis::ALL` is the vocabulary each surface states | Yes. The clock is applied only where a value leaves the engine: the window predicate, the time sort, the age profile, and the writers; every tier keeps both clocks, so either request reads the same fast paths |
-| Capacity observation | How full each filesystem a `volumes` report touches is, at read time | `VolumesObservation`, `CapacityObservation`, and `observe_capacity` (`capacity.rs`, `query/query_volumes.rs`); `observe_volumes` composes the roots’ devices, the entries the walk listed (`volume_entries`), and the calls | Yes. Never stored in any tier or served from one; every serving route observes it with the same step, only on roots and on directories the walk listed that the stat that never mounts still finds on the filesystem the walk counted, outside any index guard, and passes it to the pure readers, which report capacity as unknown when given none |
+| Capacity observation | How full each filesystem a `volumes` report touches is, at read time | `VolumesObservation`, `CapacityObservation`, and `observe_capacity` (`capacity.rs`, `query/query_volumes.rs`); `observe_volumes` composes the roots’ devices as their walks recorded them (`Index::root_device`), the entries the walk listed (`volume_entries`), the mount table (`capacity::MountTable`), and the calls | Yes. Never stored in any tier or served from one; every serving route observes it with the same step, outside any index guard: on each root still on the device its walk recorded, and below a root only on a directory the walk listed where the mount table, read without resolving any path, lists a reachable mount at exactly that path whose topmost filesystem is not autofs, and the stat that never mounts, safe there, then finds the device the walk recorded. It passes the observation to the pure readers, which report capacity as unknown, with the reason, when given none |
 | Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants, field-presence rules, and the shared machine-output walk in `report_format.rs` | Yes. JSON, JSON Lines, and YAML consume one field walk, while each document family keeps its own schema identity |
 
 ### Core Values and Ownership
@@ -327,8 +327,10 @@ together. There is no route that changes one without the others.
 #### Persisted Snapshot
 
 A snapshot is a detached representation, not a dormant opened root.
-It contains the complete retained entry facts, the engine fingerprint, the validated
-scope and semantic identities, and the control table required to interpret them.
+It contains the complete retained entry facts, the device each walk read its root on
+among them (the root entry’s attributes, which a `volumes` report keys the root by), the
+engine fingerprint, the validated scope and semantic identities, and the control table
+required to interpret them.
 It stores no roll-ups and no classification: loading rebuilds roll-ups from the entries,
 classification happens on read with the registry in use, and the reducer-set identity it
 records is a constant today.

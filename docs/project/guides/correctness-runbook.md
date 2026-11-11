@@ -85,10 +85,11 @@ FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py /tmp/fdu-correct
 FDU_BIN=target/debug/fdu python3 tests/correctness/cross_warm.py /tmp/fdu-correctness/served
 ```
 
-As root, also run the tests that mount a real autofs trigger and hold `volumes` to
-asking capacity only where the walk listed and the filesystem it counted is still
-mounted, and a walk that mounts the trigger to one row for it; CI runs unprivileged, so
-there they say they skipped:
+As root, also run the tests that mount real automounts (direct autofs triggers, an
+indirect map with keys made and removed on request, and debugfs’s `tracing`) and hold
+`volumes` to asking capacity only where the walk listed and the mount table shows the
+path mounted, never through an expired trigger or key, and a walk that mounts a trigger
+to one row for it; CI runs unprivileged, so there they say they skipped:
 
 ```shell
 FDU_TEST_ALLOW_NO_PERMISSION_BITS=1 cargo test --locked -p fdu-core --test volumes_automount

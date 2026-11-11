@@ -76,24 +76,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   beside the tree: each filesystem the report touches, its capacity, the share in use,
   what is available, and what the report counted there, in three lines per filesystem.
   Rows come from the walk’s own device changes, so a walk without `--one-filesystem`
-  shows each mount below the root; no mount table is read.
+  shows each mount below the root; the mount table never names a row.
   Capacity is observed when the report is read, by one `statfs` per filesystem on Linux
   and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so `--stale-ok`
   shows current capacity.
   A capacity call mounts an unmounted automount trigger and waits for it, as a listing
-  does, so it is made only where the walk listed and only while the filesystem the walk
-  counted there is still mounted, which the stat that never mounts confirms first: a
-  directory kept at the scan depth, or one whose automount has expired since the walk,
-  keeps its row with its counts, capacity unknown, and the reason.
-  So `--stale-ok`, a watch’s repaint, a retained index, and an opened root’s read never
-  mount what the tree view would not.
-  Under `--stale-ok` after a remount or a reboot gave the root’s filesystem a new
-  number, the root keeps the number the snapshot recorded, so the tree beneath it is one
-  filesystem, not a mount point per directory.
-  An APFS, btrfs, or ZFS row says its available space is shared within its pool.
-  Each row names its filesystem’s type: on Linux, which gives a number, the common ones
-  by the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`, `fuse`,
-  and others), and any other by its number.
+  does, and so does any path through one, or a name an indirect map no longer holds; a
+  stat with `AT_NO_AUTOMOUNT` covers only a path’s last component, where it exists.
+  So below a root it is made only where the walk listed and the operating system’s mount
+  table (`/proc/self/mountinfo`, or `getfsstat` without waiting on macOS), read without
+  resolving any path, lists a mount at exactly that path whose topmost filesystem is not
+  autofs, and only once the stat, safe there, finds the device the walk recorded.
+  A directory kept at the scan depth, an expired automount, a filesystem unmounted or
+  numbered afresh, or a device boundary that is no mount point (a btrfs subvolume) keeps
+  its row with its counts, capacity unknown, and the reason, and nothing below one is
+  read. So `--stale-ok`, a watch’s repaint, a retained index, and an opened root’s read
+  never mount what the tree view would not, on indirect maps such as `/home` and `/net`
+  and kernel automounts such as NFS nested exports too.
+  Every walk records the device it read its root on, and the snapshot keeps it (snapshot
+  format 7; older snapshots are discarded), so a report keys the root by the number its
+  walk counted it on: under `--stale-ok` after a remount or a reboot gave the root a new
+  number, the tree beneath it is still one filesystem, not a mount point per directory,
+  and the root’s capacity, like any row’s, reads unknown until a fresh walk.
+  A refresh or reconciliation of the whole root records the root’s device again, so its
+  counts include the root: Python `Index.refresh()` counts it among `unchanged`. A
+  kernel automount point (`STATX_ATTR_AUTOMOUNT`) is read as its listing finds it, so
+  two cold walks agree whether it was mounted before, and a one-filesystem walk keeps it
+  as a boundary. An APFS, btrfs, or ZFS row says its available space is shared within its
+  pool. Each row names its filesystem’s type: on Linux, which gives a number, the common
+  ones by the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`,
+  `fuse`, and others), and any other by its number.
   A row names where the report entered the filesystem as every other row is named,
   relative to its root and `.` for the root itself, never by the canonical path the
   capacity call used (`\\?\C:\…` on Windows, `/private/var` for `/var` on macOS).

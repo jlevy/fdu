@@ -483,10 +483,23 @@ Capacity is read when the report is, with one `statfs` call per filesystem on Li
 macOS and `GetDiskFreeSpaceExW` on Windows, and is never stored in the cache, so
 `--stale-ok` still shows current capacity beside a stale tree.
 Such a call mounts an unmounted automount trigger and waits for it, as a listing does,
-so fdu makes it only where the walk listed and the filesystem it counted is still
-mounted: a filesystem kept at the scan depth, or one whose automount has expired since
-the walk, keeps its row and its counts with `capacity unknown` and the reason, and a
-report never mounts what `--view tree` would not.
+and so does any path through one, or a name an indirect map such as `/home` or `/net` no
+longer holds once its key has expired.
+So below the root fdu asks only where the walk listed, and where the operating system’s
+mount table, which it reads without touching any path, lists a mount at exactly that
+directory that is not an automount trigger (autofs); the device found there must then be
+the one the walk recorded.
+A filesystem kept at the scan depth, an automount that has expired since the walk, a
+filesystem unmounted or numbered afresh, and a device boundary that is no mount point,
+such as a btrfs subvolume, each keep their row and their counts with `capacity unknown`
+and the reason, and nothing below one is read, so a report never mounts what
+`--view tree` would not.
+The root is always asked, since you named it, and holds to the same device rule.
+Many filesystems are numbered when they are mounted (tmpfs, overlayfs, btrfs subvolumes,
+NFS, ZFS, FUSE), so after a remount or a reboot that numbers them afresh, `--stale-ok`
+rows on them, the root’s included, read
+`capacity unknown: not found on the device the walk recorded` until a fresh walk; the
+tree beneath a renumbered root is still counted as one filesystem.
 Under `--watch` it is read at each repaint, and a watch repaints when the tree changes,
 so free space that moves while the tree does not is shown only at the next repaint.
 Rows never add up. Available space can be shared within an APFS container, a btrfs
