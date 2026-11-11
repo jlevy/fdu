@@ -453,10 +453,15 @@ walk recorded. One that fails keeps its row with the counts the walk made, capac
 unknown, and the reason: not a mount point now (an expired key or submount, an unmounted
 filesystem, or a device boundary that is no mount point, such as a btrfs subvolume),
 autofs topmost, or not on the device the walk recorded.
-Nothing below one that is not a mount point, or on another device, is looked at, and
-every listed directory is checked, one whose filesystem was asked at another path too.
-Where autofs is topmost, nothing is asked there and nothing below is blocked: what the
-table lists below an indirect map hangs from it, as a mounted key does.
+One that fails blocks nothing below it: the lookup is what makes a path safe, so every
+listed directory is looked up on its own, one whose filesystem was asked at another path
+too, and a mount the table lists below a device boundary that is no mount point (a btrfs
+subvolume, or a macOS firmlink such as `/Volumes` seen from `/`) is asked like any
+other. What the table lists is reachable through mounted filesystems alone; a mount
+covered from above is not visible and is not touched, and below an expired trigger or a
+filesystem unmounted since, the table lists nothing.
+Where autofs is topmost, nothing is asked there: what the table lists below an indirect
+map hangs from it, as a mounted key does.
 Windows has no automount and keeps no such table, so there every path passes to the
 stat, and where the table cannot be read nothing below a root is asked.
 `--view volumes` then mounts nothing a tree of the same request would not, on a route

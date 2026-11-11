@@ -25,9 +25,11 @@
 //! ([`NOT_A_MOUNT_POINT`], [`AUTOMOUNT_NOT_MOUNTED`]); then, the path being a mount point,
 //! the stat that never mounts confirms it is on the device the walk recorded
 //! ([`NOT_ON_RECORDED_DEVICE`]). One that fails keeps its row and its counts with the
-//! reason, and so does everything below it, which is never read at all ([`NOT_REACHED`]).
-//! A root is held to the same device rule: it is asked where it is still on the device its
-//! walk recorded, which keys its row ([`Index::root_device`]).
+//! reason, and blocks nothing below it: the table lookup is what makes a path safe, so
+//! each directory is looked up on its own, and a mount the table lists below a device
+//! boundary that is no mount point, such as a btrfs subvolume or a macOS firmlink, is asked
+//! like any other. A root is held to the same device rule: it is asked where it is still on
+//! the device its walk recorded, which keys its row ([`Index::root_device`]).
 //!
 //! No row is summed with another. Available space can be shared between volumes of one
 //! pool, and the bytes a report counted and the bytes in use never add to the capacity:
@@ -153,10 +155,6 @@ pub(crate) const AUTOMOUNT_NOT_MOUNTED: &str =
 /// Why a row's capacity is unknown when the mount table could not be read, so no path below
 /// a root can be shown safe to touch.
 pub(crate) const NO_MOUNT_TABLE: &str = "the mount table could not be read, so it was not asked";
-
-/// Why a row's capacity is unknown when every path the walk entered its filesystem at lies
-/// below one that was not asked, so reaching it could walk through that one and mount it.
-pub(crate) const NOT_REACHED: &str = "a directory above this one was not asked, so it was not read";
 
 /// Where a walk entered one filesystem below a root: the device, the path relative to the
 /// root, and whether the walk listed that directory.
@@ -321,19 +319,26 @@ pub(crate) fn observe_entries(
 /// the capacity calls made by `observe`: the seams a test uses to see which paths would be
 /// read and asked.
 ///
-/// Entries are visited in the byte order of their real paths, so a directory comes before
-/// everything below it, and every listed entry is checked, one whose filesystem was already
-/// asked at an earlier path too. A root is asked where `live` finds it on the device its row
-/// is keyed by. Any other entry is looked up in `mounts`, under its root's real path, which
-/// the table names mount points by, and passes only where the table lists a mount at exactly
-/// that path whose topmost filesystem is no automount trigger, and `current_device` then
-/// finds it on its row's device, which a walk records from the descriptor it opens
+/// Entries are visited in the byte order of their real paths, so each filesystem is asked
+/// at, or refused with the reason of, the first of its paths in that order, and every listed
+/// entry is checked, one whose filesystem was already asked at an earlier path too. A root
+/// is asked where `live` finds it on the device its row is keyed by. Any other entry is
+/// looked up in `mounts`, under its root's real path, which the table names mount points
+/// by, and passes only where the table lists a mount at exactly that path whose topmost
+/// filesystem is no automount trigger, and `current_device` then finds it on its row's
+/// device, which a walk records from the descriptor it opens
 /// ([`crate::scan::entered_directory_attrs`]), so the filesystem the walk counted is the one
-/// asked. No entry below one that failed is looked at, let alone read: a path below an
-/// unmounted trigger resolves through the trigger and mounts it. One where autofs is topmost
-/// is not asked and blocks nothing: what the table lists below it hangs from it, as a
-/// mounted key hangs from its indirect map. A filesystem asked nowhere is observed as the
-/// first reason one of its paths failed with.
+/// asked.
+///
+/// An entry that fails blocks none below it, since the lookup alone is what makes a path
+/// safe to touch (review I1 on #209). A mount the table lists is visible at its path, so
+/// resolving the path crosses mounted filesystems only; a mount covered from above since
+/// the walk is not visible, and is not touched; and below an expired trigger or a
+/// filesystem unmounted since, the table lists nothing, since a mount pins the one it hangs
+/// from. What the table lists below autofs hangs from it, as a mounted key hangs from its
+/// indirect map. So a mount below a device boundary that is no mount point, a btrfs
+/// subvolume or a macOS firmlink, is asked like any other. A filesystem asked nowhere is
+/// observed as the first reason one of its paths failed with.
 fn observe_entries_with(
     root_devices: Vec<Option<u64>>,
     live: &[Option<u64>],
@@ -362,31 +367,21 @@ fn observe_entries_with(
         left.1.as_os_str().as_encoded_bytes().cmp(right.1.as_os_str().as_encoded_bytes())
     });
     let mut asked: Vec<(u64, PathBuf)> = Vec::new();
-    let mut failed: Vec<PathBuf> = Vec::new();
     let mut refused: Vec<(u64, PathBuf, &'static str)> = Vec::new();
     for (entry, real) in listed {
         let reason = if entry.path.as_os_str().is_empty() {
             // A root, which the user named and whose device the walk read by opening it.
             (live.get(entry.root).copied().flatten() != Some(entry.device))
                 .then_some(NOT_ON_RECORDED_DEVICE)
-        } else if failed.iter().any(|above| real.starts_with(above)) {
-            Some(NOT_REACHED)
         } else {
-            let reason = match mounts.at(&real) {
+            match mounts.at(&real) {
                 None => Some(NO_MOUNT_TABLE),
                 Some(MountAt::NotMounted) => Some(NOT_A_MOUNT_POINT),
                 Some(MountAt::Automount) => Some(AUTOMOUNT_NOT_MOUNTED),
                 Some(MountAt::Mounted) => {
                     (current_device(&real) != Some(entry.device)).then_some(NOT_ON_RECORDED_DEVICE)
                 }
-            };
-            // Autofs topmost blocks nothing below it: a mount the table lists there hangs
-            // from the autofs mount, as a mounted key of an indirect map does, and a lookup
-            // reaches it without a request; and below an expired trigger the table lists none.
-            if reason.is_some_and(|reason| reason != AUTOMOUNT_NOT_MOUNTED) {
-                failed.push(real.clone());
             }
-            reason
         };
         match reason {
             None if !asked.iter().any(|(device, _)| *device == entry.device) => {
@@ -753,8 +748,9 @@ mod tests {
     /// stat that never mounts cannot say where it is safe to look: it covers only a path's
     /// last component, where that exists (review H1). So each directory is looked up in the
     /// mount table first, and asked only where the table lists a mount at exactly its path
-    /// that is no automount trigger, and the stat, safe there, finds the recorded device;
-    /// nothing below one that fails is looked at.
+    /// that is no automount trigger, and the stat, safe there, finds the recorded device.
+    /// One that fails blocks nothing below it: each is looked up on its own, and a mount
+    /// the table lists below one is read and asked (review I1).
     #[test]
     fn a_filesystem_no_longer_mounted_where_the_walk_entered_it_is_never_asked() {
         let mut index = Index::new("/srv");
@@ -797,27 +793,33 @@ mod tests {
                 Some(4)
             } else if path == at(&["re"]) {
                 Some(9)
+            } else if path == at(&["re", "in"]) {
+                Some(8)
             } else {
                 panic!("read a path the table does not show safe to touch: {path:?}")
             }
         });
-        assert_eq!(asked, [(1, PathBuf::from("/srv")), (4, at(&["other"]))]);
+        assert_eq!(
+            asked,
+            [(1, PathBuf::from("/srv")), (4, at(&["other"])), (8, at(&["re", "in"]))],
+            "a mount the table lists below one on another device is asked"
+        );
         assert_eq!(
             read.into_inner(),
-            [at(&["other"]), at(&["re"])],
-            "only mount points are read, never the root and never below one that failed"
+            [at(&["other"]), at(&["re"]), at(&["re", "in"])],
+            "only mount points the table lists are read, never the root"
         );
         assert_eq!(
             rows_of(&index, &observation),
             [
                 (PathBuf::new(), 1, true, None),
                 (PathBuf::from("gone"), 5, false, Some(NOT_A_MOUNT_POINT.to_owned())),
-                (["gone", "below"].iter().collect(), 7, false, Some(NOT_REACHED.to_owned())),
+                (["gone", "below"].iter().collect(), 7, false, Some(NOT_A_MOUNT_POINT.to_owned())),
                 (PathBuf::from("mnt"), 2, false, Some(AUTOMOUNT_NOT_MOUNTED.to_owned())),
                 (["mnt", "inner"].iter().collect(), 3, false, Some(NOT_A_MOUNT_POINT.to_owned())),
                 (PathBuf::from("other"), 4, true, None),
                 (PathBuf::from("re"), 6, false, Some(NOT_ON_RECORDED_DEVICE.to_owned())),
-                (["re", "in"].iter().collect(), 8, false, Some(NOT_REACHED.to_owned())),
+                (["re", "in"].iter().collect(), 8, true, None),
             ],
             "each keeps its row, with the counts the walk made, and says why"
         );
@@ -880,6 +882,90 @@ mod tests {
         assert_eq!(
             rows_of(&index, &observation)[2],
             (["z", "inner"].iter().collect(), 3, false, Some(NOT_A_MOUNT_POINT.to_owned()))
+        );
+    }
+
+    /// A mount the table lists below a device boundary that is no mount point is asked: a
+    /// tmpfs below a btrfs subvolume, which has a device of its own and is mounted nowhere,
+    /// as a disk under `/Volumes` lies below a macOS firmlink. Refused for the boundary
+    /// above it, it read as unknown on every fresh walk (review I1 on #209). The boundary
+    /// itself is still no mount point, and a mount covered from above since the walk, which
+    /// the table lists but no path reaches, is still never touched.
+    #[cfg(unix)]
+    #[test]
+    fn a_mount_below_a_boundary_that_is_no_mount_point_is_asked() {
+        let mut index = Index::new("/srv");
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::new(),
+                    kind: EntryKind::Dir,
+                    attrs: Index::root_attrs(1),
+                },
+                upsert("top.bin", EntryKind::File, 3, 1),
+                // The subvolume: a device boundary, mounted nowhere.
+                upsert("home", EntryKind::Dir, 0, 10),
+                upsert("home/alice", EntryKind::Dir, 0, 10),
+                upsert("home/alice/a.bin", EntryKind::File, 7, 10),
+                upsert("home/alice/mnt", EntryKind::Dir, 0, 11),
+                upsert("home/alice/mnt/m.bin", EntryKind::File, 1, 11),
+                upsert("plain", EntryKind::Dir, 0, 1),
+                upsert("plain/mnt2", EntryKind::Dir, 0, 12),
+                upsert("plain/mnt2/n.bin", EntryKind::File, 2, 12),
+                upsert("cover", EntryKind::Dir, 0, 1),
+                upsert("cover/hidden", EntryKind::Dir, 0, 13),
+                upsert("cover/hidden/h.bin", EntryKind::File, 4, 13),
+            ]))
+            .expect("apply");
+        // What `/proc/self/mountinfo` held for the reproduction: both tmpfs mounts hang
+        // from the btrfs mount, and nothing is mounted at the subvolume. Since the walk, a
+        // mount at `cover` has covered the one at `cover/hidden`.
+        let mounts = MountTable::from_mountinfo(
+            b"\
+1 0 0:1 / / rw - ext4 /dev/vda rw\n\
+20 1 0:20 / /srv rw,relatime - btrfs /dev/loop0 rw,space_cache=v2,subvolid=5\n\
+21 20 0:21 / /srv/home/alice/mnt rw,relatime - tmpfs tmpfs rw,size=8192k\n\
+22 20 0:22 / /srv/plain/mnt2 rw,relatime - tmpfs tmpfs rw,size=8192k\n\
+23 20 0:23 / /srv/cover/hidden rw,relatime - tmpfs tmpfs rw\n\
+24 20 0:24 / /srv/cover rw,relatime - tmpfs tmpfs rw\n",
+        );
+        let at = |components: &[&str]| {
+            components.iter().fold(PathBuf::from("/srv"), |path, part| path.join(part))
+        };
+        let read = std::cell::RefCell::new(Vec::new());
+        let (asked, observation) = asked_with(&index, &mounts, |path| {
+            read.borrow_mut().push(path.to_path_buf());
+            if path == at(&["home", "alice", "mnt"]) {
+                Some(11)
+            } else if path == at(&["plain", "mnt2"]) {
+                Some(12)
+            } else {
+                panic!("read a path the table does not show safe to touch: {path:?}")
+            }
+        });
+        assert_eq!(
+            asked,
+            [
+                (1, PathBuf::from("/srv")),
+                (11, at(&["home", "alice", "mnt"])),
+                (12, at(&["plain", "mnt2"])),
+            ]
+        );
+        assert_eq!(read.into_inner(), [at(&["home", "alice", "mnt"]), at(&["plain", "mnt2"])]);
+        assert_eq!(
+            rows_of(&index, &observation),
+            [
+                (PathBuf::new(), 1, true, None),
+                (
+                    ["cover", "hidden"].iter().collect(),
+                    13,
+                    false,
+                    Some(NOT_A_MOUNT_POINT.to_owned())
+                ),
+                (PathBuf::from("home"), 10, false, Some(NOT_A_MOUNT_POINT.to_owned())),
+                (["home", "alice", "mnt"].iter().collect(), 11, true, None),
+                (["plain", "mnt2"].iter().collect(), 12, true, None),
+            ]
         );
     }
 

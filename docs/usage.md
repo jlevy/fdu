@@ -493,8 +493,9 @@ the one the walk recorded.
 A filesystem kept at the scan depth, an automount that has expired since the walk, a
 filesystem unmounted or numbered afresh, and a device boundary that is no mount point,
 such as a btrfs subvolume, each keep their row and their counts with `capacity unknown`
-and the reason, and nothing below one is read, so a report never mounts what
-`--view tree` would not.
+and the reason, so a report never mounts what `--view tree` would not.
+Each directory is looked up on its own, so a mount the table lists below one of these,
+such as a tmpfs below a btrfs subvolume, is still asked.
 The root is always asked, since you named it, and holds to the same device rule.
 Many filesystems are numbered when they are mounted (tmpfs, overlayfs, btrfs subvolumes,
 NFS, ZFS, FUSE), so after a remount or a reboot that numbers them afresh, `--stale-ok`

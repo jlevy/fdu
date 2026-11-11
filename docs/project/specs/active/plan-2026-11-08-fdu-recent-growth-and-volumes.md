@@ -444,12 +444,13 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   table decides it, read without resolving any path: a directory is asked only where the
   table lists a reachable mount at exactly its path whose topmost filesystem is not
   autofs, and the stat, safe there, then finds the device the walk recorded.
-  Every listed directory is checked, and nothing below one that fails is read.
-  Every walk records the device it read its root on as the root entry’s attributes, and
-  the snapshot keeps it (format 7), so the root is keyed by the number its walk counted
-  it on, whatever a remount or a reboot has numbered it since (reviews G2 and H2). The
-  root and every nested row follow one rule: where the device found now is not the one
-  the walk recorded, the row keeps its counts and its capacity is unknown (review H6).
+  Every listed directory is checked on its own, and one that fails blocks nothing below
+  it, so a mount the table lists below a btrfs subvolume is asked (review I1). Every
+  walk records the device it read its root on as the root entry’s attributes, and the
+  snapshot keeps it (format 7), so the root is keyed by the number its walk counted it
+  on, whatever a remount or a reboot has numbered it since (reviews G2 and H2). The root
+  and every nested row follow one rule: where the device found now is not the one the
+  walk recorded, the row keeps its counts and its capacity is unknown (review H6).
   `--stale-ok` observes now, so its capacity is current while its tree is stale, and the
   section’s `observed_at` says when capacity was read.
   A caller of the pure reader that passes no observation gets every capacity field as
@@ -616,9 +617,10 @@ before release; the items above record what was built and then superseded.
     reachable mount at exactly its path that is not autofs, and the stat then finds the
     recorded device: `/proc/self/mountinfo` on Linux, `getfsstat` with `MNT_NOWAIT` on
     macOS, and on Windows, which has no automount, every path passes to the stat
-    (reviews G1 and H1). One that fails keeps its row and counts with the reason, and
-    nothing below it is read, except below autofs, where what the table lists hangs from
-    the map.
+    (reviews G1 and H1). One that fails keeps its row and counts with the reason and
+    blocks nothing below it: the lookup is what makes a path safe, so a mount the table
+    lists below a device boundary that is no mount point, such as a btrfs subvolume, is
+    asked (review I1). Asking the boundary itself is deferred to `fdu-3sv9`.
   - The root is keyed by the device its walk recorded, which every walk route records as
     the root entry’s attributes and a snapshot keeps (format 7), and asked where it is
     still on it (reviews G2, H2, and H6). A first fix inferred it from the root’s

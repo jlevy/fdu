@@ -111,10 +111,11 @@ details.
     device the walk recorded.
     A directory kept at the scan depth, an expired automount, a filesystem unmounted or
     numbered afresh, or a device boundary that is no mount point (a btrfs subvolume)
-    keeps its row with its counts, capacity unknown, and the reason, and nothing below
-    one is read. So `--stale-ok`, a watch’s repaint, a retained index, and an opened
-    root’s read never mount what the tree view would not, on indirect maps such as
-    `/home` and `/net` and kernel automounts such as NFS nested exports too.
+    keeps its row with its counts, capacity unknown, and the reason; a mount the table
+    lists below one is still asked.
+    So `--stale-ok`, a watch’s repaint, a retained index, and an opened root’s read
+    never mount what the tree view would not, on indirect maps such as `/home` and
+    `/net` and kernel automounts such as NFS nested exports too.
   - **The root’s device.** Every walk records the device it read its root on, and the
     snapshot keeps it, so a report keys the root by the number its walk counted it on:
     under `--stale-ok` after a remount or a reboot gave the root a new number, the tree
