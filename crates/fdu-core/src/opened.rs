@@ -1008,6 +1008,10 @@ fn bind_root(
 struct PendingDirectory {
     path: PathBuf,
     depth: usize,
+    /// The device the directory is on, which its children are compared with
+    /// ([`crate::scan::entered_directory_attrs`]); zero for the root, whose device the
+    /// discovery reads when it starts.
+    device: u64,
 }
 
 struct DiscoveryFrontier {
@@ -1059,7 +1063,7 @@ impl DiscoveryFrontier {
             state: Mutex::new(FrontierState {
                 unprioritized: VecDeque::from([QueuedDirectory {
                     sequence: 0,
-                    directory: PendingDirectory { path: PathBuf::new(), depth: 0 },
+                    directory: PendingDirectory { path: PathBuf::new(), depth: 0, device: 0 },
                 }]),
                 serving: Vec::new(),
                 priorities: Vec::new(),
@@ -1241,6 +1245,7 @@ fn discover_directory(
     #[cfg(test)] deterministic_discovery_order: bool,
 ) -> Result<DiscoveryStep> {
     let absolute = root.join(&directory.path);
+    let dir_dev = if directory.path.as_os_str().is_empty() { root_dev } else { directory.device };
     let policy = crate::scan::ListingPolicy::every_child_stated(scan.one_filesystem);
     let listing = match crate::scan::list_directory(readers, &absolute, policy, None) {
         Ok(listing) => listing,
@@ -1323,6 +1328,7 @@ fn discover_directory(
             root,
             &directory.path,
             directory.depth,
+            dir_dev,
             &name,
             kind,
             attrs,
@@ -1370,6 +1376,7 @@ fn discover_directory(
             discovered.push(PendingDirectory {
                 path: path.clone(),
                 depth: directory.depth.saturating_add(1),
+                device: crate::scan::listed_device(attrs, dir_dev),
             });
         }
         let answer = push_discovery_op(
@@ -2750,7 +2757,8 @@ mod tests {
             usize::try_from(seed % u64::try_from(bound).expect("small bound")).expect("fits")
         };
         let frontier = DiscoveryFrontier::new();
-        let mut reference = VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0 }]);
+        let mut reference =
+            VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0, device: 0 }]);
         let mut priorities = Vec::new();
         for step in 0..4_000 {
             match next(10) {
@@ -2767,6 +2775,7 @@ mod tests {
                             .map(|child| PendingDirectory {
                                 path: parent.path.join(["a", "b", "c"][child]),
                                 depth: parent.depth + 1,
+                                device: 0,
                             })
                             .collect();
                         reference.extend(children.iter().cloned());
@@ -2774,8 +2783,11 @@ mod tests {
                     }
                 }
                 5..=7 => {
-                    let directory =
-                        PendingDirectory { path: PathBuf::from(PATHS[next(7)]), depth: 1 };
+                    let directory = PendingDirectory {
+                        path: PathBuf::from(PATHS[next(7)]),
+                        depth: 1,
+                        device: 0,
+                    };
                     reference.push_back(directory.clone());
                     frontier.extend([directory]);
                 }
