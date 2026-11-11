@@ -105,15 +105,19 @@ directory never holds a root-owned file:
 
 ```shell
 cargo test --locked --all-features -p fdu-core --test volumes_automount --no-run 2>&1 | tail -1
-sudo <the test binary the line above names> --test-threads=1 --nocapture 2>&1 | tee volumes-automount.log
-grep -c '^skipped:' volumes-automount.log    # must print 0
+sudo <the test binary the line above names> --test-threads=1 --nocapture 2>&1 \
+  | tee "$GATE/volumes-automount.log"
+grep -c 'skipped:' "$GATE/volumes-automount.log"    # must print 0
 ```
 
-Every test must pass, and none may print a `skipped:` line, which `--nocapture` makes
-visible: a test that cannot mount returns early and would otherwise read as a pass.
-They mount real autofs triggers (direct, an expired one, an indirect map with default
-keys, a report rooted at an indirect map), a kernel automount (tracefs under debugfs),
-and tmpfs, and count the mount requests each report makes.
+Every test must pass, and none may print `skipped:`, which `--nocapture` makes visible:
+a test that cannot mount returns early and would otherwise read as a pass.
+Run without root, the binary still passes every test, and the count is 6 of its 7. The
+match is not anchored, because libtest prints `test NAME ... ` before a test runs, so a
+skip lands on that line, never at the start of one.
+The tests mount real autofs triggers (direct, an expired one, an indirect map with
+default keys, a report rooted at an indirect map), a kernel automount (tracefs under
+debugfs), and tmpfs, and count the mount requests each report makes.
 
 ### 4. The pull request’s own manual checks
 

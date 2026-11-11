@@ -89,11 +89,12 @@ As root, also run the tests that mount real automounts (direct autofs triggers, 
 indirect map with keys made and removed on request, and debugfs’s `tracing`) and hold
 `volumes` to asking capacity only where the walk listed and the mount table shows the
 path mounted, never through an expired trigger or key, and a walk that mounts a trigger
-to one row for it; CI runs unprivileged, so there they say they skipped:
-
-```shell
-FDU_TEST_ALLOW_NO_PERMISSION_BITS=1 cargo test --locked -p fdu-core --test volumes_automount
-```
+to one row for it. Run them as
+[step 3 of the Linux host gate](linux-host-gate.md#3-automount-and-mount-tests-as-root)
+does: built as your user, the binary run as root with `--nocapture`, its log outside the
+checkout, and a count of `skipped:` that must be 0. Without `--nocapture` a test that
+cannot mount returns early and reads as a pass, as every one does in CI, which runs
+unprivileged.
 
 **The serving proof needs a tree without refusals.** An unreadable file or unlistable
 directory makes every answer partial for an unprivileged user, and a partial scan never
