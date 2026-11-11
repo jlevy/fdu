@@ -331,10 +331,11 @@ WHAT WAS WRITTEN RECENTLY
 
   ages shows the selected files by age, every window from one scan: future,
   under 1h, 1h to 1d, 1d to 7d, 7d to 30d, 30d to 90d, 90d to 1y, 1y to 3y, and
-  over 3y. Each row is what --kind file with the --since/--before window it names
-  selects, the rows add up to --view summary, and machine output adds each band's
-  edges and the cumulative total of it and every newer band. Without --kind file a
-  window admits whole directories, which the bands never do.
+  over 3y. future also holds files written while the scan runs. The rows add up to
+  --view summary, and where the selection admits files alone each is what --kind
+  file with the --since/--before window it names selects. Machine output adds each
+  band's edges and the cumulative total of it and every newer band. Without --kind
+  file a window admits whole directories, which the bands never do.
 
 HOW FULL THE DISK IS
   fdu PATH --view volumes

@@ -59,10 +59,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--view ages` (Python `View.AGES`, Rust `ViewSpec::Ages`) profiles the selected
   regular files by age on the report’s clock in nine fixed bands, newest first:
   `future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`,
-  `1y to 3y`, and `over 3y`. Each band is what `--kind file` with the
-  `--since`/`--before` window it names selects over the same selection, clock, and
-  instant, the bands add up to `--view summary`, and text keeps the grouped-row layout,
-  leaving empty bands out.
+  `1y to 3y`, and `over 3y`. The bands add up to `--view summary`, and where the
+  selection admits files alone each is what `--kind file` with the `--since`/`--before`
+  window it names selects over the same selection, clock, and instant; a size, pattern,
+  or kind a directory satisfies covers its contents, in the bands as in `summary`.
+  `future` holds a time at or after the report’s instant, taken before the walk, so a
+  file written while the walk runs lands there too.
+  Text keeps the grouped-row layout, leaving empty bands out.
   Machine output keeps every band, with its edges as ages and as instants, its tallies
   and ignored part, and a `cumulative` tally of it and every newer band.
   The view is metadata only, composes with every selection and several roots, shares one

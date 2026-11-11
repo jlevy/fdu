@@ -968,15 +968,20 @@ class AgeTally:
 
 @dataclass(frozen=True, slots=True)
 class AgeBand:
-    """One band of an age profile: the files one time window selects.
+    """One band of an age profile: the selected files whose time falls in one window.
 
-    The band is what ``kinds=(EntryKind.FILE,)`` with the window
+    The bands add up to the selection's summary. Where the selection admits files alone
+    (no filter, an ignored state, exclusions, ``kinds=(EntryKind.FILE,)``, or patterns no
+    directory matches), the band is also what ``kinds=(EntryKind.FILE,)`` with the window
     ``since=since_age, before=before_age`` selects over the same selection, clock, and
-    instant; without the kind, a window admits whole directories. ``since_ns`` and
-    ``before_ns`` are those edges as instants.
+    instant; a size, pattern, or kind a directory satisfies covers that directory's
+    contents, in the bands as in the summary. Without the kind, a window admits whole
+    directories. ``since_ns`` and ``before_ns`` are those edges as instants.
     """
 
-    #: ``future``, ``under 1h``, … ``over 3y``.
+    #: ``future``, ``under 1h``, … ``over 3y``. ``future`` holds a time at or after the
+    #: report's instant, which is taken before the walk, so a file written during the walk
+    #: is there too.
     band: str
     #: The oldest age the band holds, inclusive, in nanoseconds; ``None`` for ``over 3y``.
     since_age_ns: int | None

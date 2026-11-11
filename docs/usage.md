@@ -418,14 +418,21 @@ On a Linux build container, during a day of Rust builds whose output is gitignor
    848 MiB    2.0%  over 3y      37,542 files (24 KiB gitignored)
 ```
 
-The bands are fixed: `future` (a time at or after now), `under 1h`, `1h to 1d`,
-`1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`, and `over 3y`. A year is
-365.25 days, as in the tree’s age column.
-Each row is what `--kind=file` with the window it names selects, over the same
-selection, clock, and instant: `--kind=file --since=24h --before=1h` for `1h to 1d`.
+The bands are fixed: `future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`,
+`30d to 90d`, `90d to 1y`, `1y to 3y`, and `over 3y`. A year is 365.25 days, as in the
+tree’s age column.
+`future` holds a time at or after the report’s instant, which is taken
+before the walk begins, so a file written while the walk runs is in it too, beside one
+dated ahead of the clock.
+The rows add up to what `--view=summary` reports for the selection, whatever it is.
+Where the selection admits files alone (no filter, an ignored state, `--exclude`,
+`--kind=file`, or `--include` patterns no directory matches), each row is also what
+`--kind=file` with the window it names selects, over the same selection, clock, and
+instant: `--kind=file --since=24h --before=1h` for `1h to 1d`. A size, pattern, or kind
+that a directory satisfies admits everything inside it, in the bands as in `summary`,
+where the window with `--kind=file` would test each file alone.
 Without `--kind=file`, a window admits whole directories with activity in it, which the
 bands never do. An entry exactly on an edge falls in the newer band.
-The rows add up to what `--view=summary` reports for the selection.
 Text leaves empty bands out; JSON keeps every band, with its edges as ages
 (`since_age_ns`, `before_age_ns`) and as instants (`since_ns`, `before_ns`, `since_at`,
 `before_at`), its `files`, `bytes`, `allocated`, and `ignored` tallies, and a

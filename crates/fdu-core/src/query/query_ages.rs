@@ -5,14 +5,20 @@
 //! question this view answers is when space arrived, and modification time misses every
 //! arrival that kept an older one: a copy, an extracted archive, Cargo's crate sources.
 //!
-//! The bands are fixed, so every report is comparable with every other, and each is one
-//! window query: the files `--kind file --since <since_age> --before <before_age>`
-//! selects over the same selection, clock, and instant. `--kind file` is part of the
-//! identity: without it a window admits a whole directory with activity in it, and a band
-//! only ever holds files. Windows are half-open, `[since, before)`, so an entry exactly on
-//! an edge falls in the newer band, and one stamped at the request instant itself is
-//! `future`. The bands therefore partition the selection: their files and bytes sum to
-//! what `summary` reports for it.
+//! The bands are fixed, so every report is comparable with every other. Windows are
+//! half-open, `[since, before)`, so an entry exactly on an edge falls in the newer band,
+//! and one stamped at the request instant itself is `future`. That instant is taken before
+//! the walk, so a file written while the walk runs is `future` too. The bands partition the
+//! selection, whatever it is: their files and bytes sum to what `summary` reports for it.
+//!
+//! Where the selection admits files alone (no filter, an ignored state, exclusions, a kind
+//! of file, or patterns no directory matches), each band is also one window query: the
+//! files `--kind file --since <since_age> --before <before_age>` selects over the same
+//! selection, clock, and instant. `--kind file` is part of that identity: without it a
+//! window admits a whole directory with activity in it, and a band only ever holds files.
+//! A size, pattern, or kind that a directory satisfies admits everything inside it, in the
+//! bands as in `summary`, while the window with `--kind file` tests each file alone, so
+//! there the identity does not hold (review G5 on #209).
 
 use std::path::{Path, PathBuf};
 
@@ -26,8 +32,9 @@ const DAY: i64 = 24 * HOUR;
 const YEAR: i64 = 365 * DAY + 6 * HOUR;
 
 /// Each dated band's label and the oldest age it holds, inclusive. A band holds the ages
-/// above the previous band's edge; `future` holds every age at or below zero, and the band
-/// after the last edge every age above it.
+/// above the previous band's edge; `future` holds every age at or below zero, a file written
+/// after the request instant, during the walk, included; and the band after the last edge
+/// every age above it.
 const DATED: [(&str, i64); 8] = [
     ("future", 0),
     ("under 1h", HOUR),

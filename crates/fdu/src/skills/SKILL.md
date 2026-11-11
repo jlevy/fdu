@@ -469,10 +469,15 @@ fdu PATH --view ages                             # how much arrived when
 fdu PATH --view tree,ages --kind file --since 7d # where this week's data is
 ```
 
-Each row is what `--kind file` with the `--since`/`--before` window it names selects
-(without `--kind file` a window admits whole directories, which the bands never do), the
-rows add up to `--view summary`, and JSON adds each band’s edges and a `cumulative`
-total of it and every newer band: the answer to “how much changed within 30 days?”
+The rows add up to `--view summary`. Where the selection admits files alone (no filter,
+an ignored state, `--kind file`, or patterns no directory matches), each row is what
+`--kind file` with the `--since`/`--before` window it names selects; a size, pattern, or
+kind a directory satisfies covers its contents, in the bands as in `summary`. Without
+`--kind file` a window admits whole directories, which the bands never do.
+`future` holds a time at or after the report’s instant, which is taken before the walk,
+so a file written while the walk runs is there too.
+JSON adds each band’s edges and a `cumulative` total of it and every newer band: the
+answer to “how much changed within 30 days?”
 without adding rows.
 
 `--view volumes` puts the disk beside the tree: each filesystem the report touches, its

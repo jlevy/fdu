@@ -258,12 +258,16 @@ control state and do not imply every rule file was reread on a cache-only run.
 An `ages` section has `bands` and `total`, by age on the clock `request.time` names.
 `bands` always holds all nine bands, newest first, empty ones included: `future`,
 `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`, `1y to 3y`,
-and `over 3y`.
+and `over 3y`. `future` holds a time at or after `age_reference_ns`, which is taken
+before the walk, so a file written while the walk runs is there as well as one dated
+ahead of the clock. The bands add up to the selection’s `summary`; where the selection
+admits files alone, each band is also the window its edges name, selected with
+`--kind file`.
 
 | Field | Meaning |
 | --- | --- |
 | `band` | The band’s label |
-| `since_age_ns`, `before_age_ns` | The band’s window as ages at `age_reference_ns`: the files `--kind file --since <since_age> --before <before_age>` selects; null where the window is open |
+| `since_age_ns`, `before_age_ns` | The band’s window as ages at `age_reference_ns`, for a selection that admits files alone the files `--kind file --since <since_age> --before <before_age>` selects; null where the window is open |
 | `since_ns`, `before_ns`, `since_at`, `before_at` | The same edges as epoch nanoseconds and RFC 3339 instants |
 | `files`, `bytes`, `allocated` | The regular files in the band |
 | `ignored` | The band’s gitignored files, bytes, and allocated bytes, or null when rules were unobserved or a counted file’s classification is unknown |
