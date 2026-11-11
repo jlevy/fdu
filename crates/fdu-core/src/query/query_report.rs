@@ -3062,7 +3062,6 @@ fn needs_unfiltered_entry_rows(view: ViewSpec) -> bool {
             | ViewSpec::Files
             | ViewSpec::Largest
             | ViewSpec::Recent
-            | ViewSpec::Ages
     )
 }
 
@@ -3120,15 +3119,23 @@ fn build_section(
         ViewSpec::Code => Section::Code(Box::new(code_overview(reads, query, content))),
         ViewSpec::Summary => Section::Summary(sum_roots(reads.iter().map(RootRead::summary))),
         ViewSpec::Ages => {
-            // The same files `summary` counts, so the bands partition its totals.
-            let members: Vec<_> = reads.iter().map(RootRead::members).collect();
+            // The same files `summary` counts, so the bands partition its totals: what a
+            // filtering selection admitted or covers, and otherwise every regular file,
+            // read from the index by id, since banding reads no path (review F5 on #209).
+            use crate::query::query_ages::{AgeCounter, AgedFile, each_file};
             let observed = reads.iter().all(|read| read.index.observes_controls());
-            Section::Ages(Box::new(crate::query::query_ages::age_profile(
-                members.iter().flat_map(|rows| rows.iter()),
-                now_ns,
-                query.selection.time,
-                observed,
-            )))
+            let mut ages = AgeCounter::new(now_ns, query.selection.time, observed);
+            for read in reads {
+                match &read.walked {
+                    Some(walked) => walked
+                        .members
+                        .iter()
+                        .filter_map(AgedFile::of_row)
+                        .for_each(|file| ages.count(file)),
+                    None => each_file(read.index, |file| ages.count(file)),
+                }
+            }
+            Section::Ages(Box::new(ages.finish()))
         }
         ViewSpec::Volumes => {
             // What the selection counted on each device: every regular file when it filters
@@ -5663,6 +5670,90 @@ mod tests {
         // every other file in `d` was modified ten days before it changed.
         assert_eq!(files(TimeBasis::Changed), [3, 2, 3, 1, 1, 1, 1, 1, 1], "future .. over 3y");
         assert_eq!(files(TimeBasis::Modified), [1, 0, 1, 0, 8, 1, 1, 1, 1], "future .. over 3y");
+    }
+
+    /// An unfiltered `ages` reads every regular file from the index by id, building no
+    /// row and no path (review F5 on #209); a selection that filters nothing but walks
+    /// (`min_size` of zero) bands the walk's members. The two routes give one profile on
+    /// both clocks: every band's tally, ignored part, and cumulative tally, the total, and
+    /// the count of files timed by modification.
+    #[test]
+    fn an_unfiltered_age_profile_from_the_index_is_the_walked_one() {
+        const DAY: i64 = 86_400_000_000_000;
+        let now_ns: i64 = 1_800_000_000_000_000_000;
+        let mut ops = vec![
+            upsert("a", EntryKind::Dir, stamped(0, now_ns - DAY, now_ns - DAY)),
+            upsert("a/b", EntryKind::Dir, stamped(0, now_ns - 2 * DAY, now_ns - DAY)),
+            upsert("a/link", EntryKind::Symlink, stamped(3, now_ns, now_ns)),
+            upsert("a/blind.bin", EntryKind::File, stamped(5, now_ns - 4 * DAY, 0)),
+        ];
+        for (position, age) in [0, 1, 3, 9, 40, 100, 400, 2_000].into_iter().enumerate() {
+            let changed = now_ns - age * DAY;
+            let parent = if position % 2 == 0 { "a" } else { "a/b" };
+            ops.push(upsert(
+                &format!("{parent}/f{position}"),
+                EntryKind::File,
+                stamped(10 + position as u64, changed - 30 * DAY, changed),
+            ));
+        }
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(ops));
+        let now =
+            UNIX_EPOCH + Duration::from_nanos(u64::try_from(now_ns).expect("after the epoch"));
+        let profile = |index: &Index, now, selection: Selection| {
+            let query = Query { selection, views: vec![ViewSpec::Ages], ..Query::default() };
+            match report(index, &Request::new(Basis::held_by(index), query, now), now, None)
+                .expect("report")
+                .sections
+                .remove(0)
+            {
+                Section::Ages(profile) => *profile,
+                other => panic!("expected ages, got {other:?}"),
+            }
+        };
+        let both = |index: &Index, now, time| {
+            let unfiltered = Selection { time, ..Selection::default() };
+            assert!(
+                !Query { selection: unfiltered.clone(), ..Query::default() }.needs_selection_walk()
+            );
+            let walked = Selection { min_size: Some(0), ..unfiltered.clone() };
+            (profile(index, now, unfiltered), profile(index, now, walked))
+        };
+        for time in [TimeBasis::Changed, TimeBasis::Modified] {
+            let (from_index, walked) = both(&index, now, time);
+            assert_eq!(from_index, walked, "{time:?}");
+            assert_eq!(from_index.total.files, 9, "{time:?}");
+            assert_eq!(from_index.timed_by_modification, u64::from(time == TimeBasis::Changed));
+        }
+
+        // Ignored parts, from a real walk: rules read in full give each band its part,
+        // `noise.log` and `guarded/uncertain.rs`, and a refused rule leaves the files below
+        // it, and so every band, without one.
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir_all(root.path().join("guarded")).expect("directory");
+        fs::write(root.path().join(".gitignore"), "*.log\n").expect("rules");
+        fs::write(root.path().join("kept.rs"), "fn kept() {}\n").expect("kept");
+        fs::write(root.path().join("noise.log"), "noise\n").expect("ignored");
+        fs::write(root.path().join("guarded/.gitignore"), "*.rs\n").expect("refused rules");
+        fs::write(root.path().join("guarded/uncertain.rs"), "fn uncertain() {}\n")
+            .expect("uncertain");
+        let now = std::time::SystemTime::now();
+        for line_limit in [None, Some(1)] {
+            let config = crate::ScanConfig {
+                control_limits: crate::control::ControlLimits {
+                    line_limit,
+                    ..crate::control::ControlLimits::default()
+                },
+                ..crate::ScanConfig::default()
+            };
+            let (index, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+            for time in [TimeBasis::Changed, TimeBasis::Modified] {
+                let (from_index, walked) = both(&index, now, time);
+                assert_eq!(from_index, walked, "{line_limit:?} {time:?}");
+                let ignored = from_index.total.ignored.map(|part| part.files);
+                assert_eq!(ignored, line_limit.is_none().then_some(2), "{line_limit:?} {time:?}");
+            }
+        }
     }
 
     /// A scan that kept only part of the population retained less than the tree, so a

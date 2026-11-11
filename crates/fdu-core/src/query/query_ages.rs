@@ -14,8 +14,11 @@
 //! `future`. The bands therefore partition the selection: their files and bytes sum to
 //! what `summary` reports for it.
 
+use std::path::{Path, PathBuf};
+
+use crate::index::{EntryId, Index};
 use crate::query::{FileRow, IgnoredTally};
-use crate::{EntryKind, TimeBasis};
+use crate::{EntryKind, TimeBasis, Times};
 
 const HOUR: i64 = 3_600_000_000_000;
 const DAY: i64 = 24 * HOUR;
@@ -59,18 +62,18 @@ impl AgeTally {
         Self { ignored: observed.then(IgnoredTally::default), ..Self::default() }
     }
 
-    fn count(&mut self, row: &FileRow) {
+    fn count(&mut self, file: &AgedFile) {
         self.files += 1;
-        self.bytes += row.bytes;
-        self.allocated += row.allocated;
-        match row.ignored {
+        self.bytes += file.bytes;
+        self.allocated += file.allocated;
+        match file.ignored {
             Some(true) => {
                 if let Some(share) = self.ignored.as_mut() {
                     share.add(IgnoredTally {
                         files: 1,
                         dirs: 0,
-                        bytes: row.bytes,
-                        allocated: row.allocated,
+                        bytes: file.bytes,
+                        allocated: file.allocated,
                     });
                 }
             }
@@ -131,61 +134,171 @@ fn band_of(time: i64, now: i64) -> usize {
     DATED.iter().position(|(_, oldest)| age <= i128::from(*oldest)).unwrap_or(DATED.len())
 }
 
-/// The age profile of `files`, the regular files a selection admits or covers, at
-/// `now_ns`, the request instant.
+/// One regular file as an age profile counts it. No path: banding never reads one, so a
+/// profile of a whole index need not build one per entry (review F5 on #209).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct AgedFile {
+    /// Apparent bytes.
+    pub(crate) bytes: u64,
+    /// Allocated bytes.
+    pub(crate) allocated: u64,
+    /// Its time on both clocks.
+    pub(crate) times: Times,
+    /// Whether its status change was observed.
+    pub(crate) status_observed: bool,
+    /// Whether `.gitignore` rules ignore it; `None` where its classification is unknown.
+    pub(crate) ignored: Option<bool>,
+}
+
+impl AgedFile {
+    /// The file a row describes, or `None` for a row that is not a regular file.
+    pub(crate) fn of_row(row: &FileRow) -> Option<Self> {
+        (row.kind == EntryKind::File).then_some(Self {
+            bytes: row.bytes,
+            allocated: row.allocated,
+            times: row.times,
+            status_observed: row.status_observed,
+            ignored: row.ignored,
+        })
+    }
+}
+
+/// Every regular file `index` holds, as an age profile counts it, handed to `each` in no
+/// particular order: what `ages` bands when the selection filters nothing.
 ///
-/// `time` names the clock, and `observed` says whether every root's index observed
-/// `.gitignore` rules, without which no band has an ignored part. With no representable
-/// instant no age can be measured, so no file is banded and only the total counts them;
+/// Read by entry id, as [`super::query_subtrees`] reads activity: no file's path is built.
+/// A file's ignored classification is known when the rules governing its directory were
+/// read ([`Index::ignored_classification_of`]); where every rule was, no path is built at
+/// all, and otherwise only a directory's, to ask that of it.
+pub(crate) fn each_file(index: &Index, mut each: impl FnMut(AgedFile)) {
+    debug_assert!(!index.is_folded(), "a folded index keeps too few files to band");
+    let observes = index.observes_controls();
+    let all_known = observes && index.ignored_classification_complete_below(Path::new(""));
+    // Each directory still to read, with its path where classification is decided by
+    // path, and whether the classification of the entries directly in it is known.
+    let known_in = |path: &Option<PathBuf>| match path {
+        _ if !observes => false,
+        None => all_known,
+        Some(path) => index.children_classification_known(path),
+    };
+    let root_path = (observes && !all_known).then(PathBuf::new);
+    let root_known = known_in(&root_path);
+    let mut stack: Vec<(EntryId, Option<PathBuf>, bool)> =
+        vec![(EntryId::ROOT, root_path, root_known)];
+    while let Some((id, path, known)) = stack.pop() {
+        let Some(children) = index.children_of(id) else { continue };
+        for (name, child) in children {
+            let (Some(kind), Some(attrs)) = (index.kind_of(child), index.attrs_of(child)) else {
+                continue;
+            };
+            match kind {
+                EntryKind::File => each(AgedFile {
+                    bytes: attrs.size,
+                    allocated: attrs.allocated,
+                    times: attrs.times(),
+                    status_observed: attrs.change_time_ns().is_some(),
+                    ignored: known.then(|| index.entry_ignored(child)).flatten(),
+                }),
+                EntryKind::Dir => {
+                    let child_path = path.as_ref().map(|path| path.join(name));
+                    let child_known = known_in(&child_path);
+                    stack.push((child, child_path, child_known));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// An age profile counted one file at a time: the selected regular files, at `now_ns`,
+/// the request instant, on clock `time`.
+///
+/// `observed` says whether every root's index observed `.gitignore` rules, without which
+/// no band has an ignored part. With no representable instant no age can be measured, so
+/// no file is banded and only the total counts them;
 /// [`crate::query::Request::validate`] refuses `ages` for such a request.
-pub(crate) fn age_profile<'a>(
-    files: impl IntoIterator<Item = &'a FileRow>,
+pub(crate) struct AgeCounter {
+    tallies: [AgeTally; BANDS],
+    unbanded: AgeTally,
+    timed_by_modification: u64,
+    now_ns: Option<i64>,
+    time: TimeBasis,
+    observed: bool,
+}
+
+impl AgeCounter {
+    /// A profile with nothing counted yet.
+    pub(crate) fn new(now_ns: Option<i64>, time: TimeBasis, observed: bool) -> Self {
+        Self {
+            tallies: [AgeTally::empty(observed); BANDS],
+            unbanded: AgeTally::empty(observed),
+            timed_by_modification: 0,
+            now_ns,
+            time,
+            observed,
+        }
+    }
+
+    /// Count one regular file.
+    pub(crate) fn count(&mut self, file: AgedFile) {
+        if self.time == TimeBasis::Changed && !file.status_observed {
+            self.timed_by_modification += 1;
+        }
+        match self.now_ns {
+            Some(now) => self.tallies[band_of(file.times.get(self.time), now)].count(&file),
+            None => self.unbanded.count(&file),
+        }
+    }
+
+    /// The profile of every file counted.
+    pub(crate) fn finish(self) -> AgeProfile {
+        let Self { tallies, unbanded, timed_by_modification, now_ns, observed, .. } = self;
+        let instant =
+            |age: Option<i64>| now_ns.zip(age).and_then(|(now, age)| now.checked_sub(age));
+        let mut running = AgeTally::empty(observed);
+        let mut total = unbanded;
+        let bands = tallies
+            .iter()
+            .enumerate()
+            .map(|(index, tally)| {
+                total.add(tally);
+                let (band, since_age_ns, before_age_ns) = match index {
+                    index if index < DATED.len() => (
+                        DATED[index].0,
+                        Some(DATED[index].1),
+                        index.checked_sub(1).map(|newer| DATED[newer].1),
+                    ),
+                    _ => (OLDEST, None, Some(DATED[DATED.len() - 1].1)),
+                };
+                running.add(tally);
+                let cumulative = running;
+                AgeBand {
+                    band,
+                    since_age_ns,
+                    before_age_ns,
+                    since_ns: instant(since_age_ns),
+                    before_ns: instant(before_age_ns),
+                    tally: *tally,
+                    cumulative,
+                }
+            })
+            .collect();
+        AgeProfile { bands, total, timed_by_modification }
+    }
+}
+
+/// The age profile of `rows`, the entries a selection admits or covers, at `now_ns`: their
+/// regular files, as [`AgeCounter`] counts them.
+#[cfg(test)]
+fn age_profile<'a>(
+    rows: impl IntoIterator<Item = &'a FileRow>,
     now_ns: Option<i64>,
     time: TimeBasis,
     observed: bool,
 ) -> AgeProfile {
-    let mut tallies = [AgeTally::empty(observed); BANDS];
-    let mut unbanded = AgeTally::empty(observed);
-    let mut timed_by_modification = 0;
-    for row in files.into_iter().filter(|row| row.kind == EntryKind::File) {
-        if time == TimeBasis::Changed && !row.status_observed {
-            timed_by_modification += 1;
-        }
-        match now_ns {
-            Some(now) => tallies[band_of(row.times.get(time), now)].count(row),
-            None => unbanded.count(row),
-        }
-    }
-    let instant = |age: Option<i64>| now_ns.zip(age).and_then(|(now, age)| now.checked_sub(age));
-    let mut running = AgeTally::empty(observed);
-    let mut total = unbanded;
-    let bands = tallies
-        .iter()
-        .enumerate()
-        .map(|(index, tally)| {
-            total.add(tally);
-            let (band, since_age_ns, before_age_ns) = match index {
-                index if index < DATED.len() => (
-                    DATED[index].0,
-                    Some(DATED[index].1),
-                    index.checked_sub(1).map(|newer| DATED[newer].1),
-                ),
-                _ => (OLDEST, None, Some(DATED[DATED.len() - 1].1)),
-            };
-            running.add(tally);
-            let cumulative = running;
-            AgeBand {
-                band,
-                since_age_ns,
-                before_age_ns,
-                since_ns: instant(since_age_ns),
-                before_ns: instant(before_age_ns),
-                tally: *tally,
-                cumulative,
-            }
-        })
-        .collect();
-    AgeProfile { bands, total, timed_by_modification }
+    let mut counter = AgeCounter::new(now_ns, time, observed);
+    rows.into_iter().filter_map(AgedFile::of_row).for_each(|file| counter.count(file));
+    counter.finish()
 }
 
 #[cfg(test)]
