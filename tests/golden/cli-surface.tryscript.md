@@ -1120,11 +1120,13 @@ HOW FULL THE DISK IS
   volumes shows each filesystem the report touches: its capacity, the share in use,
   what is available, and what this report counted there. A walk without
   --one-filesystem can cross mounts below PATH, one row each. Capacity is read when
-  the report is, never cached, and only for filesystems the walk listed, so
-  --view full, which describes the tree, leaves volumes out. Rows never add up:
-  available space can be shared within an APFS container, btrfs filesystem, or ZFS
-  pool, which the row says, and snapshots, other volumes, and deleted files still
-  open use space no walk sees.
+  the report is, never cached, and below PATH only where the walk listed and the
+  mount table shows a mounted filesystem, not an automount trigger, at exactly that
+  path, so reading it mounts nothing; any other row reads capacity unknown and says
+  why. --view full, which describes the tree, leaves volumes out. Rows never add
+  up: available space can be shared within an APFS container, btrfs filesystem, or
+  ZFS pool, which the row says, and snapshots, other volumes, and deleted files
+  still open use space no walk sees.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached

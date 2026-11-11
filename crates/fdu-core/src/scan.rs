@@ -1819,6 +1819,11 @@ pub(crate) struct DetachedDirectory {
 }
 
 /// Walk `root` and emit observations describing everything found.
+///
+/// The first observation is an upsert of the root itself, the empty path, as a directory
+/// whose attributes hold only the device the walk read it on (`dev`; every other field is
+/// zero). Applied to an [`Index`], it is what [`Index::root_device`] returns, which a
+/// report keys the root's filesystem by; no report counts the root entry itself.
 pub fn scan(
     root: &Path,
     config: &ScanConfig,

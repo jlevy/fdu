@@ -44,6 +44,15 @@ its final head is recorded on it.
   [AGENTS.md](../../../AGENTS.md#build-and-test) requires, owned by your ordinary user.
 - The [toolchain versions](../../../AGENTS.md#toolchain-versions): uv at the Makefile’s
   floor, Rust at `MSRV`, and the rustup targets `make cross-lint` checks.
+- For a pull request that sets the release version, whose pass runs `semver-check`, the
+  reviewed `cargo-semver-checks`: the version
+  [supply-chain-policy.json](../../../supply-chain-policy.json) inventories, installed
+  with the one command `make semver-check` prints when the tool is missing or another
+  version.
+- Python 3.11 or newer as `python3`, which `scripts/release/stability_pass.py` needs
+  (`tomllib`, `datetime.UTC`). Where the system’s is older, as on Ubuntu 22.04 or RHEL
+  9, run the script with `uv run --no-project --python 3.12 python` in place of
+  `python3`, as the Makefile does.
 - GNU `time` at `/usr/bin/time`, and for peer agreement GNU `du`, `dust`, `pdu`, `dua`,
   and `diskus` on `PATH`; the pass records a missing peer as skipped.
 - The QA playbook’s trees, as
@@ -67,15 +76,17 @@ git -C <checkout> fetch origin && git -C <checkout> checkout --detach "$HEAD"
 
 The [stability pass](release-process.md#stability-pass) runs on any commit, in a clean
 worktree with its own Cargo target directory.
-Run it as your ordinary user, with neither waiver set, so its `make check` runs every
-permission fixture and native watch test, and the correctness runbook’s refusal pass and
-its break are refused by mode bits for real.
+Run it from the checkout, whose relative script path the command uses, as your ordinary
+user, with neither waiver set, so its `make check` runs every permission fixture and
+native watch test, and the correctness runbook’s refusal pass and its break are refused
+by mode bits for real.
 A pull request that prepares a release, setting the new version, runs the whole pass,
 with no `--only`. Any other pull request selects every step but the two that belong to
 the release commit: `semver-check`, which before the version bump asks whether the tree
 could still ship as a patch, and `release-rehearse`.
 
 ```shell
+cd <checkout>
 env -u FDU_TEST_ALLOW_NO_PERMISSION_BITS -u FDU_TEST_ALLOW_NO_NATIVE_WATCH \
   python3 scripts/release/stability_pass.py --commit "$HEAD" --work-dir "$GATE" \
   --only check,cross-lint,candidate,qa,correctness

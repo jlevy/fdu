@@ -336,8 +336,11 @@ Where the selection admits files alone, each band is also the files
 `View.VOLUMES` returns a `VolumesSection` of `VolumeRow` values: each filesystem the
 report touches, its capacity, available space, type, and whether it shares space in a
 pool, beside the `VolumeCounted` files and bytes this report counted there.
-Capacity is read when the report is, only for filesystems the walk listed, and is `None`
-with an `unknown_reason` otherwise; `View.FULL` leaves volumes out.
+Capacity is read when the report is, and below the root only where the walk listed and
+the operating system’s mount table shows a mounted filesystem, not an automount trigger
+(autofs), at exactly that path, so reading it mounts nothing.
+Any other row’s capacity is `None`, with an `unknown_reason` that says why, such as
+`not a mount point now, so it was not asked`; `View.FULL` leaves volumes out.
 
 Directory `FileRow` values carry subtree `bytes`, `allocated`, `files`, `dirs`,
 `complete`, `time_ns`, `age_ns`, and `time_at`; non-directory counts are `None`. A
