@@ -31,18 +31,48 @@ fn c_path(path: &Path) -> io::Result<CString> {
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "a path holds a NUL byte"))
 }
 
-/// Linux names a filesystem only by number. The two named here are the ones whose free
-/// space is shared across volumes, which a report must say; any other is shown as the
-/// number the kernel gave, in the hexadecimal its headers use.
+/// The filesystems Linux names by number that a report is likely to touch, by the magic
+/// the kernel headers define (`include/uapi/linux/magic.h`, and ZFS's own), with the name
+/// `mount` gives each. The ext family shares one number, so it is named as one.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const LINUX_TYPES: [(u32, &str); 26] = [
+    (0x0000_0187, "autofs"),
+    (0x0000_1CD1, "devpts"),
+    (0x0000_4D44, "vfat"),
+    (0x0000_6969, "nfs"),
+    (0x0000_9660, "iso9660"),
+    (0x0000_9FA0, "proc"),
+    (0x0000_EF53, "ext2/3/4"),
+    (0x00C3_6400, "ceph"),
+    (0x0102_1994, "tmpfs"),
+    (0x0102_1997, "9p"),
+    (0x2011_BAB0, "exfat"),
+    (0x2FC1_2FC1, "zfs"),
+    (0x5346_544E, "ntfs"),
+    (0x5846_5342, "xfs"),
+    (0x6265_6572, "sysfs"),
+    (0x6367_7270, "cgroup2"),
+    (0x6462_6720, "debugfs"),
+    (0x6573_5546, "fuse"),
+    (0x7371_7368, "squashfs"),
+    (0x794C_7630, "overlay"),
+    (0x8584_58F6, "ramfs"),
+    (0x9123_683E, "btrfs"),
+    (0xE0F5_E1E2, "erofs"),
+    (0xF2F5_2010, "f2fs"),
+    (0xFE53_4D42, "smb2"),
+    (0xFF53_4D42, "cifs"),
+];
+
+/// Linux names a filesystem only by number: the common ones by the name `mount` gives
+/// them ([`LINUX_TYPES`]), btrfs and ZFS among them, whose free space is shared across
+/// volumes, which a report must say; any other as the number the kernel gave, in the
+/// hexadecimal its headers use.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn linux_type_name(magic: u32) -> String {
-    const BTRFS: u32 = 0x9123_683E;
-    const ZFS: u32 = 0x2FC1_2FC1;
-    match magic {
-        BTRFS => "btrfs".to_owned(),
-        ZFS => "zfs".to_owned(),
-        other => format!("{other:#x}"),
-    }
+    LINUX_TYPES
+        .binary_search_by_key(&magic, |(number, _)| *number)
+        .map_or_else(|_| format!("{magic:#x}"), |at| LINUX_TYPES[at].1.to_owned())
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -127,10 +157,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn linux_names_the_pooled_filesystems_and_shows_every_other_number() {
+    fn linux_names_the_common_filesystems_and_shows_every_other_number() {
         assert_eq!(linux_type_name(0x9123_683E), "btrfs");
         assert_eq!(linux_type_name(0x2FC1_2FC1), "zfs");
-        assert_eq!(linux_type_name(0xEF53), "0xef53");
+        assert_eq!(linux_type_name(0xEF53), "ext2/3/4");
+        assert_eq!(linux_type_name(0x0102_1994), "tmpfs");
+        assert_eq!(linux_type_name(0x794C_7630), "overlay");
+        assert_eq!(linux_type_name(0x0187), "autofs");
+        // One the table does not name keeps the kernel's number.
+        assert_eq!(linux_type_name(0x1234_5678), "0x12345678");
+    }
+
+    /// The names are found by binary search, so the table must stay sorted by number,
+    /// with each number named once.
+    #[test]
+    fn the_linux_type_table_is_sorted_by_number() {
+        assert!(LINUX_TYPES.windows(2).all(|pair| pair[0].0 < pair[1].0), "{LINUX_TYPES:?}");
+        for (number, name) in LINUX_TYPES {
+            assert_eq!(linux_type_name(number), name);
+        }
     }
 
     #[test]

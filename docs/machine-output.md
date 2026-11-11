@@ -277,7 +277,7 @@ A `volumes` section has `observed_at_ns` and `observed_at`, when capacity was re
 | `device` | The device the walk identified the filesystem by |
 | `root`, `path`, optional `path_raw` | Where the report entered the filesystem, relative to its root; the root itself is an empty path |
 | `other_paths` | How many other paths the report entered it at |
-| `filesystem` | The type by name, or on Linux any type but `btrfs` and `zfs` as its number |
+| `filesystem` | The type by name, or on Linux, which gives a number, the common types by name (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, and others) and any other as its number |
 | `capacity_bytes`, `available_bytes` | Size and the bytes an unprivileged writer can still use; null when unknown |
 | `shares_pool` | Whether available space is shared with other volumes of an APFS container, btrfs filesystem, or ZFS pool |
 | `unknown_reason` | Why capacity is unknown, or null |

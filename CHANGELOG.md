@@ -70,6 +70,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so `--stale-ok`
   shows current capacity.
   An APFS, btrfs, or ZFS row says its available space is shared within its pool.
+  Each row names its filesystem’s type: on Linux, which gives a number, the common ones
+  by the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`, `fuse`,
+  and others), and any other by its number.
   A row names where the report entered the filesystem as every other row is named,
   relative to its root and `.` for the root itself, never by the canonical path the
   capacity call used (`\\?\C:\…` on Windows, `/private/var` for `/var` on macOS).

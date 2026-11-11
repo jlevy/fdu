@@ -40,7 +40,8 @@ pub struct VolumeCapacity {
     /// `(capacity - available) / capacity`, what `duf` shows.
     pub available_bytes: u64,
     /// The filesystem type by name (`apfs`, `NTFS`), or on Linux, where the kernel gives a
-    /// number, `btrfs` and `zfs` by name and any other as its number (`0xef53`); `None`
+    /// number, the common ones by the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`,
+    /// `overlay`, `btrfs`, `zfs`) and any other as its number (`0x12345678`); `None`
     /// where the platform gives no type.
     pub filesystem: Option<String>,
 }
@@ -156,7 +157,7 @@ mod tests {
                 .shares_pool()
         };
         assert!(pooled("apfs") && pooled("btrfs") && pooled("zfs") && pooled("APFS"));
-        assert!(!pooled("ext4") && !pooled("0xef53") && !pooled("NTFS"));
+        assert!(!pooled("ext2/3/4") && !pooled("0x12345678") && !pooled("NTFS"));
         let untyped = VolumeCapacity { capacity_bytes: 1, available_bytes: 1, filesystem: None };
         assert!(!untyped.shares_pool());
     }
