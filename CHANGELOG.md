@@ -7,7 +7,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-11-11
+## [0.6.0] - 2026-11-12
 
 fdu 0.6.0 finds what was written recently and puts the disk beside the tree.
 Every time a report reads is on one clock, change time by default, selected by
