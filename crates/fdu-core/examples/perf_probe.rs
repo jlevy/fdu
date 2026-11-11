@@ -3285,7 +3285,7 @@ mod tests {
             std::time::SystemTime::now(),
         );
         let mut report =
-            fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH).expect("report");
+            fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH, None).expect("report");
 
         verify_content_query_report(&index, &request, &report).expect("exact sections");
         report.sections.swap(0, 1);
