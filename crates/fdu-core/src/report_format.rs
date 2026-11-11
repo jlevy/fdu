@@ -1008,7 +1008,7 @@ fn emit_volumes(sink: &mut impl Sink, volumes: &crate::query::VolumesSection, se
             emit_u64_field(sink, "device", row.device);
             emit_root_field(sink, row.root, several);
             emit_path_fields(sink, &row.path);
-            emit_u64_field(sink, "other_paths", row.other_paths);
+            emit_u64_field(sink, "other_paths", row.also_entered.len() as u64);
             let capacity = row.capacity.as_ref();
             emit_field(sink, Field::nullable("filesystem"), true, |sink| {
                 match capacity.and_then(|capacity| capacity.filesystem.as_deref()) {
@@ -5854,7 +5854,7 @@ mod tests {
             root: 0,
             path: PathBuf::from(path),
             absolute: PathBuf::from("/canonical").join(path),
-            other_paths: 0,
+            also_entered: Vec::new(),
             capacity,
             unknown_reason: reason.map(str::to_owned),
             counted: VolumeCounted { files: 2, bytes: 2048, allocated: 4096 },

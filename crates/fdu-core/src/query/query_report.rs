@@ -1933,6 +1933,30 @@ fn refused_controls_note(
     ))
 }
 
+/// How many other paths a volume row's note names; past this it counts them.
+const NAMED_OTHER_PATHS: usize = 3;
+
+/// The note for a filesystem the report entered at more than one path: each other path by
+/// name when there are few, so a row labelled by one root says which other root or mount
+/// counted on it as well, and otherwise how many.
+fn also_entered_note(labels: Option<&[NamedRoot]>, row: &crate::query::VolumeRow) -> String {
+    let at = crate::report_format::volume_path(labels, row.root, &row.path);
+    let others: Vec<String> = row
+        .also_entered
+        .iter()
+        .map(|(root, path)| crate::report_format::volume_path(labels, *root, path))
+        .collect();
+    let named = match others.as_slice() {
+        [one] => one.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] if others.len() <= NAMED_OTHER_PATHS => {
+            format!("{}, and {last}", rest.join(", "))
+        }
+        _ => format!("{} other paths", crate::report_format::human_count(others.len() as u64)),
+    };
+    format!("note: the filesystem at {at} was also entered at {named}")
+}
+
 /// Build a report from an index.
 ///
 /// Pure: the same index, request, provenance, and capacity observation always produce
@@ -2373,13 +2397,8 @@ fn read_roots(
                         .to_owned(),
                 );
             }
-            for row in volumes.rows.iter().filter(|row| row.other_paths > 0) {
-                notes.push(format!(
-                    "note: the filesystem at {} was also entered at {} other {}",
-                    crate::report_format::volume_path(labels, row.root, &row.path),
-                    crate::report_format::human_count(row.other_paths),
-                    if row.other_paths == 1 { "path" } else { "paths" }
-                ));
+            for row in volumes.rows.iter().filter(|row| !row.also_entered.is_empty()) {
+                notes.push(also_entered_note(labels, row));
             }
         }
     }
@@ -5810,6 +5829,51 @@ mod tests {
         };
         let (_, notes) = rows(windowed);
         assert!(notes.contains(&timed_by_modification_note(1)), "the file alone: {notes:?}");
+    }
+
+    /// A filesystem entered at a few other paths names them, so a row labelled by one root
+    /// says which other root or mount counted on it as well; past three it counts them
+    /// (review F16 on #209).
+    #[test]
+    fn a_filesystem_entered_at_a_few_other_paths_names_them() {
+        let row = |others: &[&str]| crate::query::VolumeRow {
+            device: 1,
+            root: 0,
+            path: PathBuf::new(),
+            absolute: PathBuf::from("/srv"),
+            also_entered: others.iter().map(|path| (0, PathBuf::from(path))).collect(),
+            capacity: None,
+            unknown_reason: None,
+            counted: crate::query::VolumeCounted::default(),
+        };
+        let note = |others: &[&str]| also_entered_note(None, &row(others));
+        assert_eq!(note(&["a/mnt"]), "note: the filesystem at . was also entered at a/mnt");
+        assert_eq!(note(&["a", "b"]), "note: the filesystem at . was also entered at a and b");
+        assert_eq!(
+            note(&["a", "b", "c"]),
+            "note: the filesystem at . was also entered at a, b, and c"
+        );
+        assert_eq!(
+            note(&["a", "b", "c", "d"]),
+            "note: the filesystem at . was also entered at 4 other paths"
+        );
+        // Over several roots, each path is named after its root's label, as a row is: the
+        // row `fdu t1 empty --view volumes` labels `empty` names `t1` as well.
+        let base = tempfile::tempdir().expect("base");
+        let (empty, t1) = (base.path().join("empty"), base.path().join("t1"));
+        fs::create_dir(&empty).expect("empty");
+        fs::create_dir(&t1).expect("t1");
+        let roots = Roots::resolve(&[empty, t1]).expect("disjoint roots");
+        let label =
+            |root| crate::report_format::volume_path(Some(roots.as_slice()), root, Path::new(""));
+        let mut two = row(&[]);
+        two.also_entered = vec![(1, PathBuf::new())];
+        let note = also_entered_note(Some(roots.as_slice()), &two);
+        assert_eq!(
+            note,
+            format!("note: the filesystem at {} was also entered at {}", label(0), label(1))
+        );
+        assert!(label(1).ends_with("t1"), "{note}");
     }
 
     /// A scan that kept only part of the population retained less than the tree, so a

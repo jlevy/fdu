@@ -82,8 +82,10 @@ pub struct VolumeRow {
     pub path: PathBuf,
     /// [`Self::path`] as an absolute path.
     pub absolute: PathBuf,
-    /// How many other paths the report entered this filesystem at.
-    pub other_paths: u64,
+    /// Every other path the report entered this filesystem at, each as its root's
+    /// position and its path relative to that root, in the byte order of their absolute
+    /// paths. Machine output gives how many, as `other_paths`.
+    pub also_entered: Vec<(usize, PathBuf)>,
     /// The observed capacity, or `None` when it is unknown.
     pub capacity: Option<VolumeCapacity>,
     /// Why the capacity is unknown, when it is.
@@ -332,9 +334,10 @@ pub(super) fn volumes_section(
             entries.sort_by(|left, right| {
                 left.0.as_os_str().as_encoded_bytes().cmp(right.0.as_os_str().as_encoded_bytes())
             });
-            let other_paths = entries.len().saturating_sub(1) as u64;
             let listed = entries.iter().any(|entry| entry.3);
-            let (absolute, root, path, _) = entries.into_iter().next()?;
+            let mut entries = entries.into_iter();
+            let (absolute, root, path, _) = entries.next()?;
+            let also_entered = entries.map(|(_, root, path, _)| (root, path)).collect();
             // The observation answers where it holds the device. Otherwise the reason is
             // the walk's, when no path it entered the filesystem at was listed and so none
             // was asked; else no observation was made, or the filesystem appeared after it.
@@ -353,7 +356,7 @@ pub(super) fn volumes_section(
                 root,
                 path,
                 absolute,
-                other_paths,
+                also_entered,
                 capacity,
                 unknown_reason,
                 counted,
@@ -612,7 +615,9 @@ mod tests {
         let rows: Vec<_> = section
             .rows
             .iter()
-            .map(|row| (row.device, row.absolute.clone(), row.other_paths, row.counted.bytes))
+            .map(|row| {
+                (row.device, row.absolute.clone(), row.also_entered.len(), row.counted.bytes)
+            })
             .collect();
         assert_eq!(
             rows,
