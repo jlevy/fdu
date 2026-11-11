@@ -2649,7 +2649,7 @@ impl Index {
     /// The device the walk that built this index read its root on, or `None` where none was
     /// recorded: an index built from observations by hand, and not by a walk.
     ///
-    /// Every walk records it as its root entry's attributes ([`Self::root_attrs`]), from the
+    /// Every walk records it as its root entry's attributes (`Index::root_attrs`), from the
     /// descriptor it lists the root through (`scan::root_device`), and a snapshot keeps it,
     /// so a report read later keys the root's filesystem by the number the walk counted it
     /// on, however the host has numbered it since (review H2 on #209).

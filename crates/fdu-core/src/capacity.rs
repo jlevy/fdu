@@ -10,7 +10,7 @@
 //! filesystem type together, `statvfs` on other Unix systems, and `GetDiskFreeSpaceExW`
 //! with `GetVolumeInformationW` on Windows. The walk knows where the device changes, so the
 //! mount table never names a row; it only decides which paths may be touched
-//! ([`MountTable`]).
+//! (`MountTable`).
 //!
 //! Each call resolves its path, so on an unmounted automount trigger, or on a path through
 //! one, it asks for the mount and waits for the answer, as a listing does. A caller
