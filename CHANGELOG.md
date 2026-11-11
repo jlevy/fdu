@@ -40,7 +40,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   carries old content is a row with a recent `changed_ns` and an old `mtime_ns`. Python
   `FileRow`, `TreeNode`, `TreeTotal`, `SummaryRow`, and `ReportRequest` carry the same
   names, and Rust `FileRow` has `status_observed` and `FileRow::changed_ns`.
-- Watch change records (`fdu.stream/2`) give an upsert’s `changed_ns` beside its
+- Watch change records (`fdu.stream/3`) give an upsert’s `changed_ns` beside its
   `mtime_ns`, absent where the status change was not observed, so a `--since --watch`
   tail shows the time that admitted an entry.
   Rust `Change::changed_ns`, Python `Change.changed_ns`.
@@ -97,6 +97,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Breaking:** the report schema is `fdu.report/12`, for the list-row and envelope
   fields above and the `ages` and `volumes` sections.
+- **Breaking:** the watch change-record schema is `fdu.stream/3`, for the upsert’s
+  `changed_ns` above; a consumer pinned to `fdu.stream/2` moves to `fdu.stream/3`.
 - **Breaking (Rust):** `ViewSpec` gains `Ages` and `Volumes` and `Section` gains `Ages`
   and `Volumes`, so an exhaustive match over either needs the new arms; `ViewSpec::ALL`
   has 14 views. `Report` gains `selection`.

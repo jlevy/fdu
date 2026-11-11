@@ -417,7 +417,7 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/12; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/12; watch changes use fdu.stream/3.
   A Files watch emits an initial ordinary report, then change records;
   aggregate views repaint reports. An invalidate change requires rebuilding
   or resynchronizing the inventory, not continuing from incomplete state.

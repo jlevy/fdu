@@ -768,7 +768,7 @@ Use a retained index and reconciliation when maintaining an inventory.
 Check the process exit status and these fields:
 
 - `schema` before parsing anything else: reports carry `fdu.report/12`, watch change
-  records carry `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. A Files
+  records carry `fdu.stream/3`, and `--cache-status` carries `fdu.cache/3`. A Files
   watch first emits an ordinary report, then change records; aggregate views repaint
   reports. An `invalidate` change requires rebuilding or resynchronizing the inventory.
   Treat unknown schemas as unsupported instead of guessing at fields.
@@ -1175,7 +1175,7 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/12; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/12; watch changes use fdu.stream/3.
   A Files watch emits an initial ordinary report, then change records;
   aggregate views repaint reports. An invalidate change requires rebuilding
   or resynchronizing the inventory, not continuing from incomplete state.

@@ -1,7 +1,7 @@
 # Machine Output and Directory Inventories
 
 All reports use `fdu.report/12`, including metadata-only and content-analyzed reports.
-Cache status uses `fdu.cache/3`, and raw watch changes use `fdu.stream/2`. Check the
+Cache status uses `fdu.cache/3`, and raw watch changes use `fdu.stream/3`. Check the
 schema before decoding.
 The [schema rule](project/guides/release-process.md) requires a new version when a
 published shape changes.
@@ -326,7 +326,7 @@ Largest/recent retain their file ranking and support Paths and Long.
 Cache-status human aliases render its table.
 A List watch repaints snapshots.
 A Files watch first writes an ordinary report (`fdu.report/12` in machine formats), then
-streams raw changes (`fdu.stream/2`) in Text or machine formats; explicit Tree, Paths,
+streams raw changes (`fdu.stream/3`) in Text or machine formats; explicit Tree, Paths,
 and Long repaint snapshots instead.
 Aggregate views also repaint reports.
 An `upsert` gives both raw clocks, `mtime_ns` and, where the entry’s status change was
@@ -338,7 +338,7 @@ A consumer must handle the initial report and the change-record schema separatel
 Creating, removing, or renaming an entry also moves its directory’s own modification
 time, so a Files watch follows that change with an `upsert` record for the directory,
 unless it is the scan root or the selection leaves directories out.
-It is an ordinary `fdu.stream/2` record: the schema and the record shape are unchanged.
+It is an ordinary `fdu.stream/3` record.
 
 See [the usage guide](usage.md) for filter grammar and examples, and
 [the surface architecture](project/architecture/fdu-surface-architecture.md) for schema

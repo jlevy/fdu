@@ -3037,7 +3037,7 @@ pub fn is_lossy(path: &Path) -> bool {
 /// Distinct from the one-shot schema on purpose: a stream is a sequence of tagged
 /// records over time, not one document, and a consumer should not have to discover which
 /// it is holding.
-pub const STREAM_SCHEMA: &str = "fdu.stream/2";
+pub const STREAM_SCHEMA: &str = "fdu.stream/3";
 
 /// The rule drawn above a watch repaint, carrying the instant it was rendered.
 ///
@@ -5377,14 +5377,15 @@ mod tests {
     /// exists to prevent. This pins the whole record, so adding, renaming, or reordering
     /// a field fails here and forces a deliberate version bump.
     ///
-    /// `ignored` was added to `fdu.stream/2` before the first release, so no consumer has
-    /// ever read the earlier draft shape it extends.
+    /// `fdu.stream/3` is `fdu.stream/2`, which 0.3.0 through 0.5.0 emitted, with an
+    /// upsert's `changed_ns` (review F3 on #209): an added field is a new version, so a
+    /// record without it never means two things under one identifier.
     #[cfg(feature = "watch")]
     #[test]
     fn a_stream_record_is_pinned_field_by_field() {
         use crate::{Change, ChangeKind};
 
-        assert_eq!(STREAM_SCHEMA, "fdu.stream/2");
+        assert_eq!(STREAM_SCHEMA, "fdu.stream/3");
 
         let upsert = Change {
             path: ["src", "main.rs"].iter().collect(),
@@ -5403,7 +5404,7 @@ mod tests {
         assert_eq!(
             render_change(&upsert, Format::Json),
             format!(
-                "{{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"upsert\", \
+                "{{\"schema\": \"fdu.stream/3\", \"record\": \"change\", \"op\": \"upsert\", \
                  \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
                  \"allocated\": 4096, \"mtime_ns\": 1700000000000000000, \
                  \"changed_ns\": 1700000000500000000, \"ignored\": false}}"
@@ -5417,7 +5418,7 @@ mod tests {
         assert_eq!(
             render_change(&unclassified, Format::Json),
             format!(
-                "{{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"upsert\", \
+                "{{\"schema\": \"fdu.stream/3\", \"record\": \"change\", \"op\": \"upsert\", \
                  \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
                  \"allocated\": 4096, \"mtime_ns\": 1700000000000000000}}"
             )
@@ -5439,7 +5440,7 @@ mod tests {
         };
         assert_eq!(
             render_change(&removed, Format::Json),
-            "{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"remove\", \
+            "{\"schema\": \"fdu.stream/3\", \"record\": \"change\", \"op\": \"remove\", \
              \"path\": \"gone.txt\", \"clock\": 8}"
         );
 
@@ -5449,7 +5450,7 @@ mod tests {
             Change { path: PathBuf::from("debug.log"), ignored: Some(true), ..removed.clone() };
         assert_eq!(
             render_change(&reclassified, Format::Json),
-            "{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"remove\", \
+            "{\"schema\": \"fdu.stream/3\", \"record\": \"change\", \"op\": \"remove\", \
              \"path\": \"debug.log\", \"clock\": 8, \"ignored\": true}"
         );
 
@@ -5468,7 +5469,7 @@ mod tests {
         };
         assert_eq!(
             render_change(&invalidated, Format::Json),
-            "{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"invalidate\", \
+            "{\"schema\": \"fdu.stream/3\", \"record\": \"change\", \"op\": \"invalidate\", \
              \"path\": \"subtree\", \"clock\": 9}"
         );
 

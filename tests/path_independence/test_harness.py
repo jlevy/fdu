@@ -162,7 +162,7 @@ class CompareTests(unittest.TestCase):
         envelope["request"]["views"] = ["summary", "types"]
         summary = {"view": "summary", "summary": {"files": 1}}
         types = {"view": "types", "metrics": {"rows": []}}
-        later_change = {"schema": "fdu.stream/2", "record": "change"}
+        later_change = {"schema": "fdu.stream/3", "record": "change"}
         stream = StringIO(
             "\n".join(json.dumps(value) for value in (envelope, summary, types, later_change))
             + "\n"

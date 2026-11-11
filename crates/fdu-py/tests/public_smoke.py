@@ -59,7 +59,7 @@ def check_watch_reports_its_own_index(root: Path) -> None:
     # And a change record renders as the CLI streams it, rather than as repr().
     record = fdu.Change(clock=1, path=Path("a.txt"), kind=fdu.ChangeKind.UPSERT)
     line = record.render(fdu.Format.JSONL)
-    assert '"schema": "fdu.stream/2"' in line, line
+    assert '"schema": "fdu.stream/3"' in line, line
     assert '"op": "upsert"' in line, line
     assert "\t" in record.render(fdu.Format.TEXT)
 

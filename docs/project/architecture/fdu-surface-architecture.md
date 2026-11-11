@@ -214,7 +214,7 @@ surface emits the same string.
 | Schema | Document | Constant |
 | --- | --- | --- |
 | `fdu.report/12` | A report over one root or several, including its request, status, per-tier provenance, and any requested metric units; over several roots, `roots` beside a null `root`, a tree `total` and `trees`, and a `root` position on rows, errors, and refusals | `REPORT_SCHEMA` |
-| `fdu.stream/2` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
+| `fdu.stream/3` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
 | `fdu.cache/3` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
 
 The three families version independently, so a report change never bumps the stream or
