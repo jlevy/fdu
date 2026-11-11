@@ -70,6 +70,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Capacity is observed when the report is read, by one `statfs` per filesystem on Linux
   and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so `--stale-ok`
   shows current capacity.
+  A capacity call mounts an unmounted automount trigger and waits for it, as a listing
+  does, so it is made only where the walk listed and only while the filesystem the walk
+  counted there is still mounted, which the stat that never mounts confirms first: a
+  directory kept at the scan depth, or one whose automount has expired since the walk,
+  keeps its row with its counts, capacity unknown, and the reason.
+  So `--stale-ok`, a watch’s repaint, a retained index, and an opened root’s read never
+  mount what the tree view would not.
+  Under `--stale-ok` after a remount or a reboot gave the root’s filesystem a new
+  number, the root keeps the number the snapshot recorded, so the tree beneath it is one
+  filesystem, not a mount point per directory.
   An APFS, btrfs, or ZFS row says its available space is shared within its pool.
   Each row names its filesystem’s type: on Linux, which gives a number, the common ones
   by the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`, `fuse`,
@@ -155,6 +165,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   growth: modified files count in full and deleted files do not appear.
 - A tree row’s age is described as how long ago anything it counts last changed, on the
   report’s clock.
+- A directory a walk enters on another device than its parent is recorded as the
+  filesystem its listing found, read from the descriptor the walk opens, as the walk
+  root already was. An automount trigger the walk mounts is then one filesystem in
+  `volumes`, with the mounted root’s own size and identity, as it reads when already
+  mounted; it was two rows, the trigger’s and the filesystem’s, and two cold runs over
+  an unchanged tree disagreed.
+  An ordinary mount point reads as before.
 
 ## [0.5.0] - 2026-10-11
 

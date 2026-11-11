@@ -1,15 +1,19 @@
 //! A report that names `volumes` never mounts what its walk did not list (review F1 on
-//! #209).
+//! #209), or what has been unmounted since the walk listed it (review G1).
 //!
 //! On Linux a capacity call on an unmounted autofs trigger asks the automounter to mount
 //! it and waits for the answer, exactly as a listing would. The walk lists a trigger only
 //! where its scope descends, so `volumes` may ask only there: a trigger kept at the scan
-//! depth keeps its row, with capacity unknown.
+//! depth keeps its row, with capacity unknown. And an automounter unmounts what it mounted
+//! once it sits idle, so a report from an index walked earlier asks only where the
+//! filesystem it counted is still mounted. A walk that mounts a trigger reports it as one
+//! filesystem, the one its listing found (review G4).
 //!
-//! The test mounts a real direct trigger and answers its requests itself, refusing each
-//! one so nothing is ever mounted, and counts them. Mounting needs root, so the test runs
-//! only as root on a kernel with autofs, and otherwise says why it skipped: the
-//! correctness runbook's root pass runs it, and CI, which runs unprivileged, cannot.
+//! The tests mount a real direct trigger and answer its requests themselves, counting
+//! them: one refuses each request, so nothing is ever mounted, and one mounts a filesystem
+//! of its own and then expires it. Mounting needs root, so the tests run only as root on a
+//! kernel with autofs, and otherwise say why they skipped: the correctness runbook's root
+//! pass runs them, and CI, which runs unprivileged, cannot.
 //!
 //! The kernel never sends a request for an access by the automounter's own process
 //! group, so the walk runs in a child process in a group of its own: this test binary
@@ -22,7 +26,7 @@
 
 use std::ffi::CString;
 use std::fs::File;
-use std::io::Read as _;
+use std::io::{BufRead as _, Read as _, Write as _};
 use std::os::fd::{AsRawFd as _, FromRawFd as _, OwnedFd};
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::process::CommandExt as _;
@@ -38,6 +42,11 @@ use fdu_core::query::{Basis, Query, Request, Section, ViewSpec};
 const CHILD_ROOT: &str = "FDU_TEST_AUTOMOUNT_CHILD_ROOT";
 /// The child's scan depth, or `unbounded`.
 const CHILD_DEPTH: &str = "FDU_TEST_AUTOMOUNT_CHILD_DEPTH";
+/// Set when the child reports a second time from the index it walked, once its parent
+/// says so on its standard input.
+const CHILD_AGAIN: &str = "FDU_TEST_AUTOMOUNT_CHILD_AGAIN";
+/// `AUTOFS_IOC_READY`: the request with this token is answered; the mount is in place.
+const AUTOFS_IOC_READY: libc::c_ulong = 0x9360;
 /// `AUTOFS_IOC_FAIL`: refuse the request with this token.
 const AUTOFS_IOC_FAIL: libc::c_ulong = 0x9361;
 /// `AUTOFS_IOC_CATATONIC`: stop sending requests, so every later access fails at once.
@@ -45,8 +54,17 @@ const AUTOFS_IOC_CATATONIC: libc::c_ulong = 0x9362;
 /// How long one child walk may take before the test fails rather than waits.
 const CHILD_DEADLINE: Duration = Duration::from_secs(30);
 
+/// How the automounter answers a request.
+#[derive(Clone)]
+enum Answer {
+    /// Refuse it, so the trigger is never mounted.
+    Refuse,
+    /// Bind-mount this directory at the trigger, then say the mount is ready.
+    Mount(PathBuf),
+}
+
 /// A direct autofs trigger at `path` with this process as its automounter: each request
-/// is counted and refused, so the trigger is never mounted.
+/// is counted and answered as [`Answer`] says.
 struct Trigger {
     path: PathBuf,
     control: OwnedFd,
@@ -54,9 +72,38 @@ struct Trigger {
     answering: Option<std::thread::JoinHandle<()>>,
 }
 
+/// `mount(2)` with NUL-terminated copies of its arguments.
+fn mount(source: &str, target: &Path, kind: Option<&str>, flags: libc::c_ulong) -> i32 {
+    let source = CString::new(source).expect("source");
+    let target = CString::new(target.as_os_str().as_bytes()).expect("target");
+    let kind = kind.map(|kind| CString::new(kind).expect("type"));
+    // SAFETY: every argument is a NUL-terminated string that outlives the call, or null.
+    unsafe {
+        libc::mount(
+            source.as_ptr(),
+            target.as_ptr(),
+            kind.as_ref().map_or(std::ptr::null(), |kind| kind.as_ptr()),
+            flags,
+            std::ptr::null(),
+        )
+    }
+}
+
+/// Unmount what is mounted at `path`, topmost first; `false` where nothing was.
+fn unmount(path: &Path, flags: i32) -> bool {
+    let target = CString::new(path.as_os_str().as_bytes()).expect("target");
+    // SAFETY: `target` is NUL-terminated and outlives the call.
+    unsafe { libc::umount2(target.as_ptr(), flags) == 0 }
+}
+
 impl Trigger {
     /// Mount the trigger, or say why this host cannot.
     fn mount(path: &Path) -> Result<Self, String> {
+        Self::mount_answering(path, Answer::Refuse)
+    }
+
+    /// Mount the trigger with its requests answered as `answer` says.
+    fn mount_answering(path: &Path, answer: Answer) -> Result<Self, String> {
         let mut pipe = [0; 2];
         // SAFETY: `pipe` is a valid two-element array the call fills on success.
         if unsafe { libc::pipe2(pipe.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
@@ -88,25 +135,44 @@ impl Trigger {
         let answering = {
             let requests = Arc::clone(&requests);
             let control = control.as_raw_fd();
+            let trigger = path.to_path_buf();
             let mut packets = File::from(read);
             std::thread::spawn(move || {
                 let mut packet = [0_u8; 512];
                 // Each read is one request; end of file is the kernel closing the pipe
                 // when the trigger goes catatonic.
                 while let Ok(length) = packets.read(&mut packet) {
+                    // The packet's header is two `int`s, and its wait-queue token an
+                    // `autofs_wqt_t`, which is 32 bits wide on every architecture but ia64
+                    // and alpha (`linux/auto_fs.h`); the `__u32` device follows it. Read as
+                    // a `c_ulong`, a 64-bit big-endian host would take the device for the
+                    // token (review G8 on #209).
                     let token_at = 8;
-                    let token_width = std::mem::size_of::<libc::c_ulong>();
-                    if length < token_at + token_width {
+                    let Some(token) = packet
+                        .get(token_at..token_at + 4)
+                        .filter(|_| length >= token_at + 4)
+                        .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+                    else {
                         return;
-                    }
-                    let mut token = [0_u8; 8];
-                    token[..token_width].copy_from_slice(&packet[token_at..token_at + token_width]);
-                    let token = libc::c_ulong::try_from(u64::from_ne_bytes(token))
-                        .expect("a token fits its own width");
+                    };
+                    let token = libc::c_ulong::from(u32::from_ne_bytes(token));
                     requests.fetch_add(1, Ordering::SeqCst);
+                    let answer = match &answer {
+                        // This thread is in the automounter's group, so the bind mount
+                        // resolves the trigger without asking itself again.
+                        Answer::Mount(source) => {
+                            let source = source.to_str().expect("a UTF-8 scratch path");
+                            if mount(source, &trigger, None, libc::MS_BIND) == 0 {
+                                AUTOFS_IOC_READY
+                            } else {
+                                AUTOFS_IOC_FAIL
+                            }
+                        }
+                        Answer::Refuse => AUTOFS_IOC_FAIL,
+                    };
                     // SAFETY: `control` is the trigger's open descriptor, which outlives
                     // this thread, and the request takes the token by value.
-                    unsafe { libc::ioctl(control, AUTOFS_IOC_FAIL, token) };
+                    unsafe { libc::ioctl(control, answer, token) };
                 }
             })
         };
@@ -125,9 +191,26 @@ impl Drop for Trigger {
         if let Some(answering) = self.answering.take() {
             let _ = answering.join();
         }
-        let target = CString::new(self.path.as_os_str().as_bytes()).expect("target");
-        // SAFETY: `target` is NUL-terminated and outlives the call.
-        unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) };
+        // A filesystem the automounter mounted, if it is still there, then the trigger.
+        while unmount(&self.path, libc::MNT_DETACH) {}
+    }
+}
+
+/// A tmpfs mounted at a path for one test, unmounted when dropped.
+struct Tmpfs(PathBuf);
+
+impl Tmpfs {
+    fn mount(path: &Path) -> Result<Self, String> {
+        if mount("fdu-test-tmpfs", path, Some("tmpfs"), 0) != 0 {
+            return Err(format!("mount tmpfs: {}", std::io::Error::last_os_error()));
+        }
+        Ok(Self(path.to_path_buf()))
+    }
+}
+
+impl Drop for Tmpfs {
+    fn drop(&mut self) {
+        unmount(&self.0, libc::MNT_DETACH);
     }
 }
 
@@ -136,7 +219,8 @@ impl Drop for Trigger {
 const ROW: &str = "volume-row\t";
 
 /// Walk `root` in a child process of its own process group, and return its volume rows,
-/// each as its path and why its capacity is unknown (`known` when it is not).
+/// each as its path, its counted files, and why its capacity is unknown (`known` when it is
+/// not).
 fn walk_in_a_child(root: &Path, depth: Option<usize>) -> Vec<String> {
     let mut child = Command::new(std::env::current_exe().expect("this test binary"))
         .args(["--exact", "walk_in_a_child_process", "--nocapture", "--test-threads", "1"])
@@ -166,6 +250,64 @@ fn walk_in_a_child(root: &Path, depth: Option<usize>) -> Vec<String> {
         .collect()
 }
 
+/// What the second report of a child that reports twice prints before each volume row.
+const AGAIN_ROW: &str = "volume-row-again\t";
+/// What a child that reports twice prints once it has walked and reported the first time.
+const WALKED: &str = "walked-and-reported";
+
+/// Walk `root` in a child process of its own process group, report its volumes, then run
+/// `between` and have the child report again from the index it walked: a route that reads
+/// an index it did not just walk, as `--stale-ok`, a watch, and a retained `Index` do.
+/// Returns each report's rows, as its path, its counted files, and why its capacity is
+/// unknown (`known` when it is not).
+fn walk_and_report_again(root: &Path, between: impl FnOnce()) -> (Vec<String>, Vec<String>) {
+    let mut child = Command::new(std::env::current_exe().expect("this test binary"))
+        .args(["--exact", "walk_in_a_child_process", "--nocapture", "--test-threads", "1"])
+        .env(CHILD_ROOT, root)
+        .env(CHILD_DEPTH, "unbounded")
+        .env(CHILD_AGAIN, "1")
+        .process_group(0)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn the child walk");
+    let mut lines = std::io::BufReader::new(child.stdout.take().expect("stdout")).lines();
+    let mut first = Vec::new();
+    let started = Instant::now();
+    loop {
+        let line = lines.next().expect("the child walk ended before it reported").expect("line");
+        if line.contains(WALKED) {
+            break;
+        }
+        if let Some(at) = line.find(ROW) {
+            first.push(line[at + ROW.len()..].to_owned());
+        }
+        assert!(started.elapsed() < CHILD_DEADLINE, "the child walk did not report in time");
+    }
+    between();
+    let mut stdin = child.stdin.take().expect("stdin");
+    writeln!(stdin, "again").expect("tell the child to report again");
+    drop(stdin);
+    let reader = std::thread::spawn(move || {
+        lines
+            .map_while(Result::ok)
+            .filter_map(|line| {
+                line.find(AGAIN_ROW).map(|at| line[at + AGAIN_ROW.len()..].to_owned())
+            })
+            .collect::<Vec<_>>()
+    });
+    let started = Instant::now();
+    while child.try_wait().expect("child status").is_none() {
+        if started.elapsed() > CHILD_DEADLINE {
+            let _ = child.kill();
+            panic!("the child's second report did not finish in {CHILD_DEADLINE:?}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(child.wait().expect("child status").success(), "the child walk failed");
+    (first, reader.join().expect("the child's output"))
+}
+
 /// The walk this test runs in a child process; outside one it does nothing.
 #[test]
 fn walk_in_a_child_process() {
@@ -180,21 +322,32 @@ fn walk_in_a_child_process() {
         Ok((index, _)) => index,
         Err(error) => panic!("walk: {error}"),
     };
-    let request = Request::new(
-        Basis::held_by(&index),
-        Query { views: vec![ViewSpec::Volumes], ..Query::default() },
-        SystemTime::now(),
-    );
-    let observed = fdu_core::query::observe_volumes(&[&index], &request);
-    let report = fdu_core::query::report(&index, &request, SystemTime::now(), observed.as_ref())
-        .expect("report");
-    let Section::Volumes(volumes) = &report.sections[0] else { panic!("volumes") };
-    for row in &volumes.rows {
-        println!(
-            "{ROW}{}\t{}",
-            row.path.display(),
-            row.unknown_reason.as_deref().unwrap_or("known")
+    let report_volumes = |prefix: &str| {
+        let request = Request::new(
+            Basis::held_by(&index),
+            Query { views: vec![ViewSpec::Volumes], ..Query::default() },
+            SystemTime::now(),
         );
+        let observed = fdu_core::query::observe_volumes(&[&index], &request);
+        let report =
+            fdu_core::query::report(&index, &request, SystemTime::now(), observed.as_ref())
+                .expect("report");
+        let Section::Volumes(volumes) = &report.sections[0] else { panic!("volumes") };
+        for row in &volumes.rows {
+            println!(
+                "{prefix}{}\t{}\t{}",
+                row.path.display(),
+                row.counted.files,
+                row.unknown_reason.as_deref().unwrap_or("known")
+            );
+        }
+    };
+    report_volumes(ROW);
+    if std::env::var_os(CHILD_AGAIN).is_some() {
+        println!("{WALKED}");
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line).expect("the parent's word");
+        report_volumes(AGAIN_ROW);
     }
 }
 
@@ -227,7 +380,7 @@ fn a_trigger_below_the_scan_depth_is_never_mounted_by_volumes() {
     assert_eq!(trigger.requests(), 0, "a scan-depth walk with volumes mounted the trigger");
     assert_eq!(
         rows,
-        ["\tknown", "trig\tthe walk did not list this directory"],
+        ["\t1\tknown", "trig\t0\tthe walk did not list this directory"],
         "the root is asked, and the trigger keeps its row, capacity unknown, with the walk's \
          reason"
     );
@@ -235,4 +388,71 @@ fn a_trigger_below_the_scan_depth_is_never_mounted_by_volumes() {
     walk_in_a_child(base.path(), None);
     assert!(trigger.requests() > 0, "the control: a walk that lists the trigger asks for it");
     drop(trigger);
+}
+
+/// A walk that mounts a trigger reports the filesystem it mounted as one row, the one its
+/// listing found (review G4 on #209). And once the automounter has unmounted it again, as
+/// it does after an idle timeout, a report from the index walked earlier never mounts it
+/// again: the trigger keeps its row, with the counts the walk made and capacity unknown,
+/// and the automounter sees no request (review G1).
+#[test]
+fn an_automount_that_expired_since_the_walk_is_never_mounted_again_by_volumes() {
+    if std::env::var_os(CHILD_ROOT).is_some() {
+        return;
+    }
+    // SAFETY: `geteuid` cannot fail.
+    if unsafe { libc::geteuid() } != 0 {
+        eprintln!("skipped: mounting an autofs trigger needs root");
+        return;
+    }
+    let base = tempfile::tempdir().expect("base");
+    let root = base.path().join("root");
+    let trigger_path = root.join("data").join("trig");
+    std::fs::create_dir_all(&trigger_path).expect("trigger directory");
+    std::fs::write(root.join("a.txt"), b"some bytes").expect("file");
+    // The filesystem the automounter mounts, with files at its top and in two directories.
+    let source = base.path().join("src");
+    std::fs::create_dir(&source).expect("source directory");
+    let filesystem = match Tmpfs::mount(&source) {
+        Ok(filesystem) => filesystem,
+        Err(reason) => {
+            eprintln!("skipped: this host cannot mount a tmpfs ({reason})");
+            return;
+        }
+    };
+    for (name, size) in [("top.bin", 5000), ("sub1/one.bin", 7000), ("sub2/two.bin", 9000)] {
+        let path = source.join(name);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+        std::fs::write(path, vec![b'x'; size]).expect("file");
+    }
+    let trigger = match Trigger::mount_answering(&trigger_path, Answer::Mount(source.clone())) {
+        Ok(trigger) => trigger,
+        Err(reason) => {
+            eprintln!("skipped: this host cannot mount an autofs trigger ({reason})");
+            return;
+        }
+    };
+
+    let trig = ["data", "trig"].iter().collect::<PathBuf>().display().to_string();
+    let mut after_walk = 0;
+    let (walked, again) = walk_and_report_again(&root, || {
+        after_walk = trigger.requests();
+        // The idle timeout passes: the automounter unmounts what it mounted, and the
+        // trigger is left in its place.
+        assert!(unmount(&trigger_path, 0), "expire the automount");
+    });
+    assert_eq!(after_walk, 1, "the control: the walk's listing mounted the trigger");
+    assert_eq!(
+        walked,
+        ["\t1\tknown".to_owned(), format!("{trig}\t3\tknown")],
+        "one row for the filesystem the walk mounted, keyed by it and counting all its files"
+    );
+    assert_eq!(trigger.requests(), 1, "a report from the retained index mounted the trigger");
+    assert_eq!(
+        again,
+        ["\t1\tknown".to_owned(), format!("{trig}\t3\tthe filesystem was no longer mounted here")],
+        "the trigger keeps its row and its counts, with capacity unknown and the reason"
+    );
+    drop(trigger);
+    drop(filesystem);
 }

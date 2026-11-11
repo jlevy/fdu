@@ -380,19 +380,61 @@ one route’s stat mounted and another’s did not, the same request answered di
 worker count, and by whether a directory happened to be read natively or portably.
 The mechanism is in `scan/linux_dents.rs` and at `scan::root_device`.
 
+A directory the walk descends into is listed next, which mounts a trigger as it mounts
+the root, so where the stat put a directory on another device than its parent, the walk
+reads its attributes again from the descriptor it opens, as it does for the root.
+The directory then carries the filesystem its listing found.
+Recorded as the stat found it, a trigger the walk mounted was on the trigger’s own
+device and everything beneath it on the filesystem’s: one filesystem reported as two,
+and two cold runs over an unchanged tree disagreeing on which held what, because the
+second found the filesystem already mounted.
+An ordinary mount point reads the same either way, and a boundary the walk does not
+descend into, under `--one-filesystem` or at the scan depth, is never opened.
+The rule is `scan::entered_directory_attrs`, applied on every route that lists.
+
 A capacity observation is the one call that takes no such flag.
 `statfs` and `GetDiskFreeSpaceExW` resolve the path they are given, so on Linux a call
 on an unmounted trigger mounts it and waits for the automounter, exactly as a listing
 would; what macOS does for its triggers is untested.
-So `volumes` asks only where the walk listed, on every route: each root, and each
-directory below one that the walk listed.
+So `volumes` asks only where the walk listed, and only while the filesystem the walk
+counted there is still mounted, on every route.
+Each root is asked: the user named it, and reading its device opens it in any case.
 A filesystem the report entered only at a directory the walk kept without listing it, at
 the scan depth or not yet reached by an opened root’s discovery, keeps its row with
 capacity unknown and the reason that the walk did not list it.
-`--view volumes` then mounts nothing a tree of the same request would not, and
-`--view full` leaves `volumes` out and makes no capacity call at all.
-The rule is `query_volumes::walk_listed`, and a root-only test mounts a real trigger to
-hold it (`tests/volumes_automount.rs`).
+And a listing is a fact about a walk that may be hours old, while the call is made when
+the report is read: under `--stale-ok`, at a watch’s repaint, from a retained index, or
+by an opened root’s read.
+An automounter unmounts what it mounted once it sits idle, so a directory the walk
+listed can be an unmounted trigger again by then.
+Every directory other than a root is therefore read again with the stat that never
+mounts, in path order, and asked only where that stat still finds a directory on the
+device its row is keyed by, which the walk recorded from its listing.
+One that fails, because the automount expired or the filesystem was unmounted, replaced,
+or removed, keeps its row with the counts the walk made, capacity unknown, and the
+reason that the filesystem was no longer mounted there; nothing below it is read at all,
+because resolving a deeper path walks through the trigger and mounts it.
+`--view volumes` then mounts nothing a tree of the same request would not, on a route
+that walked or one that did not, and `--view full` leaves `volumes` out and makes no
+capacity call at all.
+The rules are `query_volumes::walk_listed` and `query_volumes::observe_entries`, and
+root-only tests mount a real trigger to hold them (`tests/volumes_automount.rs`): one
+whose automounter refuses every request, and one whose automounter mounts a filesystem
+and then expires it.
+
+An index served without verification, from a snapshot under `--stale-ok`, may also be
+older than a remount or a reboot, and many filesystems are numbered when they are
+mounted: tmpfs, overlayfs, btrfs subvolumes, NFS, ZFS, and FUSE. A walk does not record
+its root’s own device, so a report reads it when it is read, and joined to the
+snapshot’s numbers, every directory beneath a renumbered root would read as a mount
+point, and a one-filesystem report would drop what they hold beside a summary that
+counts it. So such an index keeps the root’s live device only where an entry directly
+beneath the root recorded it, or none recorded one; otherwise the stat that never mounts
+reads the root’s directories in path order, and the first now on the root’s live device
+names the number the snapshot recorded for the root’s filesystem, which keys the root.
+Where every directory is still on a device of its own, each is a mount point, and the
+root keeps its live device, as a cold walk would key it.
+The rule is `query_volumes::root_key`.
 
 ## Data Structures
 

@@ -13,9 +13,10 @@
 //!
 //! Each call resolves its path, so on an unmounted automount trigger it asks for the mount
 //! and waits for the answer, as a listing does. A caller therefore names only paths the
-//! walk listed ([`crate::query::observe_volumes`]), and never calls this while it holds an
-//! index guard: a filesystem that answers slowly, or never, then delays one report rather
-//! than every reader and writer of a root.
+//! walk listed where the filesystem it counted is still mounted
+//! ([`crate::query::observe_volumes`]), and never calls this while it holds an index
+//! guard: a filesystem that answers slowly, or never, then delays one report rather than
+//! every reader and writer of a root.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;

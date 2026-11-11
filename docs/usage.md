@@ -459,6 +459,11 @@ ones by the name `mount` gives them (`ext2/3/4`, which share one number, `xfs`, 
 Capacity is read when the report is, with one `statfs` call per filesystem on Linux and
 macOS and `GetDiskFreeSpaceExW` on Windows, and is never stored in the cache, so
 `--stale-ok` still shows current capacity beside a stale tree.
+Such a call mounts an unmounted automount trigger and waits for it, as a listing does,
+so fdu makes it only where the walk listed and the filesystem it counted is still
+mounted: a filesystem kept at the scan depth, or one whose automount has expired since
+the walk, keeps its row and its counts with `capacity unknown` and the reason, and a
+report never mounts what `--view tree` would not.
 Under `--watch` it is read at each repaint, and a watch repaints when the tree changes,
 so free space that moves while the tree does not is shown only at the next repaint.
 Rows never add up. Available space can be shared within an APFS container, a btrfs
