@@ -692,9 +692,10 @@ Decided in implementation:
   clock shows the time that admitted each entry.
 - `ages` is refused for a request whose instant cannot be represented, where no age can
   be measured, rather than keeping an `unknown` band for that case alone.
-- A list row’s raw `changed_ns` is null for a file whose status change was not observed,
-  though its time on the change clock is its modification time, so the substitution is
-  visible per row as well as in the note.
+- A list row’s raw `changed_ns` is null for an entry other than a directory whose status
+  change was not observed, though its time on the change clock is its modification time,
+  so the substitution is visible per row as well as in the note, and a symlink’s row
+  agrees with its watch record (review F8 on #209).
 - `FileRow` stays at 192 bytes: `times` and a crate-private `status_observed` flag
   replace `mtime_ns` and `changed_ns`.
 

@@ -763,8 +763,9 @@ class FileRow:
     time_ns: int
     #: Both clocks, whatever the report's: the modification time, and the change time,
     #: the newer of modification and status change. An arrival carrying old content has a
-    #: recent ``changed_ns`` and an old ``mtime_ns``. ``changed_ns`` is ``None`` for a file
-    #: whose status change was not observed; a directory's are its subtree's newest.
+    #: recent ``changed_ns`` and an old ``mtime_ns``. ``changed_ns`` is ``None`` for an entry
+    #: whose status change was not observed, as a watch record's is; a directory's are its
+    #: subtree's newest.
     mtime_ns: int
     changed_ns: int | None
     #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.

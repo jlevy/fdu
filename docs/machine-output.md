@@ -70,7 +70,7 @@ projection as a `tree` object, so inspect the payload key as well as `view`.
 | `age_ns` | Signed age of `time_ns` at `age_reference_ns`; negative for a future time, null if the reference cannot be represented or the subtree is incomplete |
 | `time_at` | `time_ns` as an RFC 3339 UTC instant to the nanosecond, or null when the subtree is incomplete and `time_ns` only a lower bound |
 | `mtime_ns` | Modification time in signed epoch nanoseconds, whatever the report’s clock; a directory uses the newest of the entries `time_ns` counts |
-| `changed_ns` | Change time, the newer of modification and status change, in signed epoch nanoseconds, whatever the report’s clock; a directory uses the newest of the entries `time_ns` counts; null for a regular file whose status change was not observed |
+| `changed_ns` | Change time, the newer of modification and status change, in signed epoch nanoseconds, whatever the report’s clock; a directory uses the newest of the entries `time_ns` counts; null for any other entry whose status change was not observed, as in a watch record |
 | `ignored` | Boolean classification, or null when rules were unobserved or governing classification is unknown |
 | `sort_value` | Value of the requested content sort metric, or null when absent/unavailable |
 | `classification` | For a regular file: stable file type, family, detection source/confidence, and generated/vendor/documentation flags; null for other kinds |

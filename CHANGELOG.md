@@ -36,7 +36,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Machine output: the request echo names its `time`; every list row, tree node, and
   total gives its time as `time_ns`, `time_at`, and `age_ns`; summary and tree rows give
   `newest_file_time_ns`; and list rows also give both raw clocks, `mtime_ns` and
-  `changed_ns` (null where a file’s status change was not observed), so an arrival that
+  `changed_ns` (null where an entry’s status change was not observed), so an arrival that
   carries old content is a row with a recent `changed_ns` and an old `mtime_ns`. Python
   `FileRow`, `TreeNode`, `TreeTotal`, `SummaryRow`, and `ReportRequest` carry the same
   names, and Rust `FileRow` has `status_observed` and `FileRow::changed_ns`.

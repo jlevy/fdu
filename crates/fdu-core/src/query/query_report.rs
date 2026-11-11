@@ -1359,8 +1359,9 @@ pub struct FileRow {
     pub times: Times,
     /// Whether the entry's status change was observed; when it was not, `times.changed`
     /// is its modification time ([`crate::Attrs::times`]), [`Self::changed_ns`] is
-    /// `None`, and a report that counts it by change time says how many files it so
-    /// timed. Always true for a directory, whose times are maxima.
+    /// `None`, as a watch record's is for the same entry, and a report that counts a
+    /// regular file by change time says how many files it so timed. Always true for a
+    /// directory, whose times are maxima.
     pub status_observed: bool,
     /// Descendant regular files for a directory; absent for other entry kinds.
     pub files: Option<u64>,
@@ -2910,7 +2911,9 @@ fn walk(
                 classification.is_some() || selection.ignored == IgnoredEntries::Include;
             let mut measured = *attrs;
             let mut times = attrs.times();
-            let status_observed = kind != EntryKind::File || attrs.change_time_ns().is_some();
+            // A directory's times are maxima over its subtree, so its own status change is
+            // not what it reports; every other entry's is, a symlink's as a file's.
+            let status_observed = kind == EntryKind::Dir || attrs.change_time_ns().is_some();
             let subtree = directories.and_then(|values| values.get(&child)).copied();
             if let Some(subtree) = subtree {
                 measured.size = subtree.bytes;
@@ -2928,7 +2931,8 @@ fn walk(
                     (
                         query_subtrees::pruned(selection, &candidate),
                         selection.admits(&candidate),
-                        !status_observed
+                        kind == EntryKind::File
+                            && !status_observed
                             && unwindowed.as_ref().is_some_and(|rest| rest.admits(&candidate)),
                     )
                 },
@@ -4145,7 +4149,7 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 times: attrs.times(),
-                status_observed: kind != EntryKind::File || attrs.change_time_ns().is_some(),
+                status_observed: kind == EntryKind::Dir || attrs.change_time_ns().is_some(),
                 files: None,
                 dirs: None,
                 complete: None,
@@ -5757,6 +5761,55 @@ mod tests {
                 assert_eq!(ignored, line_limit.is_none().then_some(2), "{line_limit:?} {time:?}");
             }
         }
+    }
+
+    /// An entry whose status change was not observed says so on its list row whatever its
+    /// kind, as its watch record does (review F8 on #209): a symlink's row gives no
+    /// `changed_ns`, as a file's does not, while a directory's, whose times are maxima,
+    /// always observes. The note still counts the regular files a window timed by
+    /// modification, which is all its wording claims.
+    #[test]
+    fn an_unobserved_status_change_is_unobserved_on_every_row_but_a_directorys() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, stamped(0, 40, 0)),
+            upsert("d/blind.bin", EntryKind::File, stamped(5, 40, 0)),
+            upsert("d/blind-link", EntryKind::Symlink, stamped(3, 40, 0)),
+            upsert("d/seen-link", EntryKind::Symlink, stamped(3, 40, 60)),
+        ]));
+        let rows = |selection: Selection| {
+            let report = run(&index, &flat(selection));
+            let Section::Files { rows, .. } = &report.sections[0] else { panic!("files") };
+            let rows: Vec<_> = rows
+                .iter()
+                .map(|row| (row.path.to_string_lossy().into_owned(), row.changed_ns()))
+                .collect();
+            (rows, report.notes)
+        };
+        let expected = [
+            ("d".to_owned(), Some(60)),
+            ("d/blind-link".to_owned(), None),
+            ("d/blind.bin".to_owned(), None),
+            ("d/seen-link".to_owned(), Some(60)),
+        ];
+        // Unfiltered, from every entry; and walked, by a selection that filters nothing.
+        for selection in
+            [Selection::default(), Selection { min_size: Some(0), ..Selection::default() }]
+        {
+            assert_eq!(rows(selection.clone()).0, expected, "{selection:?}");
+        }
+        // Each row's `changed_ns` is what a watch record gives the same entry, but a
+        // directory's, which is its subtree's newest.
+        for (path, changed) in &expected[1..] {
+            let attrs = index.attrs(Path::new(path)).expect("retained");
+            assert_eq!(attrs.change_time_ns(), *changed, "{path}");
+        }
+        let windowed = Selection {
+            window: TimeWindow { since: Some(10), before: None },
+            ..Selection::default()
+        };
+        let (_, notes) = rows(windowed);
+        assert!(notes.contains(&timed_by_modification_note(1)), "the file alone: {notes:?}");
     }
 
     /// A scan that kept only part of the population retained less than the tree, so a
