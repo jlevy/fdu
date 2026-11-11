@@ -251,6 +251,13 @@ details.
   the provenance of a later state, or with none for a directory removed since.
 - Python: `OpenedIndex.read` raises `TypeError` for an argument that is not a
   projection; it was read as `Diagnostics`.
+- A watch, an observing opened root, or an index refresh that removes many files from
+  one directory rebuilds that directory’s newest times once per batch of changes, not
+  once per removal. Removing a wide directory’s files newest first, as `rm -rf` does on
+  tmpfs, read every remaining file again for each removal, with the index’s write guard
+  held: 2,000 such removals rebuilt directories 8,000 times, and now 32. The counters
+  report the work as `maximum repairs` and `maximum repair child reads`, and Rust
+  `counters::Counts` gains `maximum_repairs` and `maximum_repair_reads`.
 
 ## [0.5.0] - 2026-10-11
 
