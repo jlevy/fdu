@@ -28,7 +28,7 @@ patterns:
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -117,7 +117,7 @@ one.
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -212,7 +212,7 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a 
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -299,7 +299,7 @@ Under `auto` the report scans fresh and leaves the snapshot as it found it.
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -386,7 +386,7 @@ fixture expanded
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -464,7 +464,7 @@ answers with the changed total rather than the one the first run recorded.
 $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -552,7 +552,7 @@ $ fdu --watch --stale-ok project
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -640,7 +640,7 @@ A run that writes replaces the corrupt file.
 $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -728,7 +728,7 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -801,7 +801,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
 $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -872,7 +872,7 @@ stronger snapshot usable by a subsequent default `--stale-ok` request.
 $ fdu --no-gitignore --format json --size apparent --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -929,7 +929,7 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
 $ fdu --stale-ok --format json --size apparent --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -997,7 +997,7 @@ way out.
 $ fdu --no-gitignore --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/12",
-  "generator": "fdu 0.5.0",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",

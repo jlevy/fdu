@@ -615,7 +615,7 @@ If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`
 does not publish free-threaded wheels yet.
 
 **Pinned versions:** For a repeatable run, replace `latest` with a release number, such
-as `uvx --no-build fdu@0.5.0 .`.
+as `uvx --no-build fdu@0.6.0 .`.
 
 **uv cool-off policies:** If uv is configured with an `exclude-newer` cool-off, a new
 fdu release may be filtered.
