@@ -197,22 +197,24 @@ fn walk_listed(index: &Index, id: EntryId, path: &Path) -> bool {
 ///
 /// The root is on `root_device`, the key an observation gave it, or else the device its
 /// walk recorded ([`Index::root_device`]).
+///
+/// Only a crossing's path is built: every other directory is visited by its id alone
+/// (review K4 on #209).
 pub(super) fn devices(
     index: &Index,
     root_device: Option<u64>,
     counted: impl Fn(EntryId) -> bool,
 ) -> (Vec<Entered>, BTreeMap<u64, VolumeCounted>) {
-    let root_device =
-        root_device.filter(|device| *device != 0).or_else(|| index.root_device()).unwrap_or(0);
+    let root_device = root_key(index, root_device);
     // A one-filesystem walk retains each mount point it reached as a boundary and never
     // enters it, so the report touches no other filesystem.
     let crosses = !index.scope().one_filesystem;
     let mut entries = vec![(root_device, PathBuf::new(), true)];
     let mut tallies: BTreeMap<u64, VolumeCounted> = BTreeMap::new();
-    let mut stack = vec![(EntryId::ROOT, PathBuf::new(), root_device)];
-    while let Some((id, path, device)) = stack.pop() {
+    let mut stack = vec![(EntryId::ROOT, root_device)];
+    while let Some((id, device)) = stack.pop() {
         let Some(children) = index.children_of(id) else { continue };
-        for (name, child) in children {
+        for (_, child) in children {
             let (Some(kind), Some(attrs)) = (index.kind_of(child), index.attrs_of(child)) else {
                 continue;
             };
@@ -223,18 +225,26 @@ pub(super) fn devices(
                 tally.allocated += attrs.allocated;
             } else if kind == EntryKind::Dir {
                 let own = if attrs.dev == 0 { device } else { attrs.dev };
-                let child_path = path.join(name);
                 if own != device {
                     if !crosses {
                         continue;
                     }
-                    entries.push((own, child_path.clone(), walk_listed(index, child, &child_path)));
+                    // A directory the index has just listed has a path.
+                    let Some(path) = index.path_of(child) else { continue };
+                    let listed = walk_listed(index, child, &path);
+                    entries.push((own, path, listed));
                 }
-                stack.push((child, child_path, own));
+                stack.push((child, own));
             }
         }
     }
     (entries, tallies)
+}
+
+/// The device a root's row is keyed by: `root_device`, the key an observation gave it, or
+/// else the device its walk recorded ([`Index::root_device`]); 0 where neither is known.
+fn root_key(index: &Index, root_device: Option<u64>) -> u64 {
+    root_device.filter(|device| *device != 0).or_else(|| index.root_device()).unwrap_or(0)
 }
 
 /// `relative` under `root`, without the separator `join` adds for an empty path, so the
@@ -249,12 +259,20 @@ fn absolute(root: &Path, relative: &Path) -> PathBuf {
 /// `root_devices` names the device each root's row is keyed by, in the roots' order, as
 /// [`VolumesObservation::root_devices`] does; a root it leaves out is keyed by the device
 /// its walk recorded.
+///
+/// One pass over each index, except one a one-filesystem walk built: that walk entered no
+/// other filesystem, so its root is the only place it enters one, and no pass is made.
 pub fn volume_entries(indexes: &[&Index], root_devices: &[Option<u64>]) -> Vec<VolumeEntry> {
     indexes
         .iter()
         .enumerate()
         .flat_map(|(root, index)| {
-            let (entries, _) = devices(index, root_devices.get(root).copied().flatten(), |_| false);
+            let root_device = root_devices.get(root).copied().flatten();
+            let entries = if index.scope().one_filesystem {
+                vec![(root_key(index, root_device), PathBuf::new(), true)]
+            } else {
+                devices(index, root_device, |_| false).0
+            };
             entries.into_iter().map(move |(device, path, listed)| VolumeEntry {
                 root,
                 device,
@@ -1272,6 +1290,28 @@ mod tests {
         let (entries, tallies) = devices(&index, Some(1), |_| true);
         assert_eq!(entries, [(1, PathBuf::new(), true)], "the mount point was a boundary");
         assert_eq!(tallies.keys().copied().collect::<Vec<_>>(), [1]);
+    }
+
+    /// A one-filesystem walk entered no filesystem but its root's, so where a report enters
+    /// each is found without a pass over the index: the root alone, keyed as an
+    /// observation keyed it, or else as its walk recorded it, which is what the pass finds
+    /// (review K4 on #209).
+    #[test]
+    fn a_one_filesystem_walk_is_entered_at_its_root_without_a_pass() {
+        let scope = crate::ScanScope { one_filesystem: true, ..crate::ScanScope::default() };
+        for recorded in [40, 0] {
+            let index = walked(recorded, Some(("zzz", 41)), scope);
+            for key in [Some(7), Some(0), None] {
+                let entries = volume_entries(&[&index], &[key]);
+                let found: Vec<Entered> = entries
+                    .iter()
+                    .map(|entry| (entry.device, entry.path.clone(), entry.listed))
+                    .collect();
+                assert_eq!(found, devices(&index, key, |_| false).0, "{recorded} {key:?}");
+                assert_eq!(found.len(), 1, "the root alone");
+                assert_eq!(entries[0].absolute, PathBuf::from("/srv"));
+            }
+        }
     }
 
     #[test]

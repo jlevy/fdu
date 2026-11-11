@@ -375,7 +375,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
         let shaping = query.views.iter().fold(0_u64, |total, view| {
             let rows = match view {
                 crate::query::ViewSpec::Summary => 1,
-                crate::query::ViewSpec::Volumes => volumes_passes(entries),
+                crate::query::ViewSpec::Volumes => volumes_passes(index, entries),
                 crate::query::ViewSpec::List
                 | crate::query::ViewSpec::Tree
                 | crate::query::ViewSpec::Types
@@ -416,7 +416,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 work.maintained = work.maintained.saturating_add(entries);
             }
             crate::query::ViewSpec::Volumes => {
-                work.rows = work.rows.saturating_add(volumes_passes(entries));
+                work.rows = work.rows.saturating_add(volumes_passes(index, entries));
             }
             crate::query::ViewSpec::List
             | crate::query::ViewSpec::Tree
@@ -436,11 +436,13 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
     })
 }
 
-/// What a `volumes` view reads of an index of `entries` entries: two passes, one before
-/// the capacity observation, under its own short guard, to find where the root enters
-/// each filesystem ([`observe_report_capacity`]), and the report's own, to count on each.
-fn volumes_passes(entries: u64) -> u64 {
-    entries.saturating_mul(2)
+/// What a `volumes` view reads of an index of `entries` entries: the report's own pass, to
+/// count on each filesystem, and one before the capacity observation, under its own short
+/// guard, to find where the root enters each filesystem ([`observe_report_capacity`]).
+/// A one-filesystem walk entered none but its root's, so that is found without a pass
+/// ([`crate::query::volume_entries`]), and only the report's is charged.
+fn volumes_passes(index: &crate::Index, entries: u64) -> u64 {
+    if index.scope().one_filesystem { entries } else { entries.saturating_mul(2) }
 }
 
 fn report_rows(report: &crate::query::Report) -> u64 {
@@ -1323,5 +1325,38 @@ mod tests {
         filtered.selection.min_size = Some(1);
         assert!(filtered.needs_selection_walk());
         assert_eq!(report_work(&index, &filtered).total(), 2 + 4);
+    }
+
+    /// A one-filesystem walk entered no filesystem but its root's, so a `volumes` view finds
+    /// that without a pass before capacity is observed, and is charged the report's alone
+    /// (review K4 on #209).
+    #[test]
+    fn a_one_filesystem_volumes_report_is_charged_its_one_pass() {
+        let mut index = crate::Index::new_with_scope(
+            "/root",
+            crate::ScanScope { one_filesystem: true, ..crate::ScanScope::default() },
+        );
+        index.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: "a.bin".into(),
+                kind: crate::EntryKind::File,
+                attrs: crate::Attrs::default(),
+            },
+            crate::Op::Upsert {
+                path: "b.bin".into(),
+                kind: crate::EntryKind::File,
+                attrs: crate::Attrs::default(),
+            },
+        ]));
+        let views = |views: Vec<crate::query::ViewSpec>| crate::query::Query {
+            views,
+            ..crate::query::Query::default()
+        };
+        assert_eq!(report_work(&index, &views(vec![crate::query::ViewSpec::Volumes])).total(), 2);
+        let mut filtered = views(vec![crate::query::ViewSpec::Volumes]);
+        filtered.selection.kinds = vec![crate::EntryKind::File];
+        filtered.selection.min_size = Some(1);
+        assert!(filtered.needs_selection_walk());
+        assert_eq!(report_work(&index, &filtered).total(), 2 + 2);
     }
 }
