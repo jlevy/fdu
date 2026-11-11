@@ -316,16 +316,23 @@ pub(crate) fn observe_entries(
         live,
         entries,
         |root| std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()),
-        &MountTable::read(),
+        MountTable::read,
         directory_device,
         |volumes| crate::capacity::observe_capacity(volumes),
     )
 }
 
 /// [`observe_entries`], with each root's real path resolved by `real_path`, what is mounted
-/// where read from `mounts`, each mount point's current device read by `current_device`, and
+/// where read by `mounts`, each mount point's current device read by `current_device`, and
 /// the capacity calls made by `observe`: the seams a test uses to see which paths would be
 /// read and asked.
+///
+/// The table, and each root's real path, which the table names mount points by, are read
+/// once, and only where a listed entry below a root needs them: a root is checked against
+/// the device it is on now, never the table. So a report whose only listed entries are its
+/// roots, under `--one-filesystem`, at `--scan-depth 0`, or over a tree that crosses no
+/// mount, reads neither, and asks each root at the path its walk recorded (review K3 on
+/// #209).
 ///
 /// Entries are visited in the byte order of their real paths, so each filesystem is asked
 /// at, or refused with the reason of, the first of its paths in that order, and every listed
@@ -352,15 +359,20 @@ fn observe_entries_with(
     live: &[Option<u64>],
     entries: &[VolumeEntry],
     real_path: impl Fn(&Path) -> PathBuf,
-    mounts: &MountTable,
+    mounts: impl FnOnce() -> MountTable,
     current_device: impl Fn(&Path) -> Option<u64>,
     observe: impl for<'p> FnOnce(Vec<(u64, &'p Path)>) -> CapacityObservation,
 ) -> VolumesObservation {
     // Each root's real path, resolved once: the table names mount points by real path.
+    // Neither is read where no listed entry below a root looks anything up in the table.
+    let below = entries.iter().any(|entry| entry.listed && !entry.path.as_os_str().is_empty());
     let mut real_roots: BTreeMap<usize, PathBuf> = BTreeMap::new();
-    for entry in entries.iter().filter(|entry| entry.path.as_os_str().is_empty()) {
-        real_roots.entry(entry.root).or_insert_with(|| real_path(&entry.absolute));
+    if below {
+        for entry in entries.iter().filter(|entry| entry.path.as_os_str().is_empty()) {
+            real_roots.entry(entry.root).or_insert_with(|| real_path(&entry.absolute));
+        }
     }
+    let mounts = below.then(mounts);
     let mut listed: Vec<(&VolumeEntry, PathBuf)> = entries
         .iter()
         .filter(|entry| entry.listed)
@@ -382,7 +394,9 @@ fn observe_entries_with(
             (live.get(entry.root).copied().flatten() != Some(entry.device))
                 .then_some(NOT_ON_RECORDED_DEVICE)
         } else {
-            match mounts.at(&real) {
+            // The table was read, as this listed entry is below a root; had it not been,
+            // nothing would be shown safe to touch.
+            match mounts.as_ref().and_then(|mounts| mounts.at(&real)) {
                 None => Some(NO_MOUNT_TABLE),
                 Some(MountAt::NotMounted) => Some(NOT_A_MOUNT_POINT),
                 Some(MountAt::Automount) => Some(AUTOMOUNT_NOT_MOUNTED),
@@ -608,29 +622,139 @@ mod tests {
             &[live],
             &entries,
             Path::to_path_buf,
-            mounts,
+            || mounts.clone(),
             current,
             |volumes| {
                 asked =
                     volumes.iter().map(|(device, path)| (*device, path.to_path_buf())).collect();
-                CapacityObservation {
-                    observed_at: std::time::UNIX_EPOCH,
-                    volumes: volumes
-                        .into_iter()
-                        .map(|(device, path)| crate::capacity::ObservedVolume {
-                            device,
-                            path: path.to_path_buf(),
-                            capacity: Ok(VolumeCapacity {
-                                capacity_bytes: 100,
-                                available_bytes: 50,
-                                filesystem: None,
-                            }),
-                        })
-                        .collect(),
-                }
+                answered(volumes)
             },
         );
         (asked, observation)
+    }
+
+    /// A stand-in for the capacity calls that answers every path it is given.
+    fn answered(volumes: Vec<(u64, &Path)>) -> CapacityObservation {
+        CapacityObservation {
+            observed_at: std::time::UNIX_EPOCH,
+            volumes: volumes
+                .into_iter()
+                .map(|(device, path)| crate::capacity::ObservedVolume {
+                    device,
+                    path: path.to_path_buf(),
+                    capacity: Ok(VolumeCapacity {
+                        capacity_bytes: 100,
+                        available_bytes: 50,
+                        filesystem: None,
+                    }),
+                })
+                .collect(),
+        }
+    }
+
+    /// Reading the mount table costs a read of the whole table, which on a host with
+    /// thousands of mounts takes milliseconds, and a root is checked against its live device,
+    /// never looked up in it. So a report whose only listed entries are its roots reads no
+    /// table and resolves no root's real path: under `--one-filesystem`, at `--scan-depth 0`,
+    /// where it kept a crossing without listing it, or over a tree that crosses no mount.
+    /// One with a listed entry below a root reads the table exactly once, however many such
+    /// entries and roots it has (review K3 on #209).
+    #[test]
+    fn only_a_listed_entry_below_a_root_reads_the_mount_table() {
+        let scoped = |scope: crate::ScanScope, ops: Vec<Op>| {
+            let mut index = Index::new_with_scope("/srv", scope);
+            index.apply(&Observation::new(ops)).expect("apply");
+            index
+        };
+        let kept =
+            || vec![upsert("a.txt", EntryKind::File, 10, 1), upsert("mnt", EntryKind::Dir, 0, 2)];
+        let one_filesystem = crate::ScanScope { one_filesystem: true, ..Default::default() };
+        let boundary = scoped(one_filesystem, kept());
+        let depth_zero = Index::new_with_scope(
+            "/srv",
+            crate::ScanScope { max_depth: Some(0), ..Default::default() },
+        );
+        let unlisted =
+            scoped(crate::ScanScope { max_depth: Some(1), ..Default::default() }, kept());
+        let flat = walked(1, None, crate::ScanScope::default());
+        let crossing = mounted();
+        let twice = scoped(
+            crate::ScanScope::default(),
+            vec![
+                upsert("mnt", EntryKind::Dir, 0, 2),
+                upsert("mnt/b.bin", EntryKind::File, 20, 2),
+                upsert("zz", EntryKind::Dir, 0, 3),
+                upsert("zz/c.bin", EntryKind::File, 30, 3),
+            ],
+        );
+        let mut other = Index::new("/data");
+        other
+            .apply(&Observation::new(vec![upsert("e.bin", EntryKind::File, 5, 1)]))
+            .expect("apply");
+        let srv = |components: &[&str]| {
+            components.iter().fold(PathBuf::from("/srv"), |path, part| path.join(part))
+        };
+
+        // What observing a report over `indexes`, each root on device 1, read: how many
+        // times it read the table, the roots it resolved, and the paths it asked.
+        let observed = |indexes: &[&Index]| {
+            let keys = vec![Some(1); indexes.len()];
+            let entries = volume_entries(indexes, &keys);
+            let tables = std::cell::Cell::new(0);
+            let resolved = std::cell::RefCell::new(Vec::new());
+            let mut asked = Vec::new();
+            observe_entries_with(
+                keys.clone(),
+                &keys,
+                &entries,
+                |root| {
+                    resolved.borrow_mut().push(root.to_path_buf());
+                    root.to_path_buf()
+                },
+                || {
+                    tables.set(tables.get() + 1);
+                    mounted_at([(srv(&["mnt"]), false)])
+                },
+                |path| (path == srv(&["mnt"])).then_some(2),
+                |volumes| {
+                    asked = volumes
+                        .iter()
+                        .map(|(device, path)| (*device, path.to_path_buf()))
+                        .collect::<Vec<_>>();
+                    answered(volumes)
+                },
+            );
+            (tables.get(), resolved.into_inner(), asked)
+        };
+
+        let root_only: [&[&Index]; 6] = [
+            &[&boundary],
+            &[&depth_zero],
+            &[&unlisted],
+            &[&flat],
+            &[&flat, &other],
+            &[&other, &boundary],
+        ];
+        for indexes in root_only {
+            let (tables, resolved, asked) = observed(indexes);
+            assert_eq!((tables, resolved), (0, vec![]), "{:?}", indexes[0].scope());
+            let first = if indexes.len() == 1 { "/srv" } else { "/data" };
+            assert_eq!(asked, [(1, PathBuf::from(first))], "each root is still asked");
+        }
+        assert_eq!(
+            observed(&[&crossing]),
+            (1, vec![srv(&[])], vec![(1, srv(&[])), (2, srv(&["mnt"]))]),
+            "a listed crossing reads the table once"
+        );
+        assert_eq!(
+            observed(&[&twice, &other]),
+            (
+                1,
+                vec![srv(&[]), PathBuf::from("/data")],
+                vec![(1, PathBuf::from("/data")), (2, srv(&["mnt"]))]
+            ),
+            "and so do two crossings under two roots, each root resolved once"
+        );
     }
 
     /// The volume rows of a report over `index` given `observation`, as (path, device,
