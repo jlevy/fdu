@@ -119,8 +119,6 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 /// envelope gives what the selection admitted and the scan retained (`selected`,
 /// `scanned`).
 pub const REPORT_SCHEMA: &str = "fdu.report/12";
-/// All reports now use one shape-versioned schema regardless of requested analyzers.
-pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
 ///
 /// Its own identity because cache status is its own document: a fact about the cache
@@ -5001,7 +4999,6 @@ mod tests {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
         assert_eq!(REPORT_SCHEMA, "fdu.report/12");
-        assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
     /// Every format says whether ignore rules were read and which files were refused, and

@@ -3426,7 +3426,6 @@ mod tests {
         const PREFIX: &str = "fdu.";
         let live = [
             report_format::REPORT_SCHEMA,
-            report_format::CONTENT_REPORT_SCHEMA,
             report_format::CACHE_SCHEMA,
             report_format::STREAM_SCHEMA,
         ];

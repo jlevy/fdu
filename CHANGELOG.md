@@ -110,6 +110,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   has 14 views. `Report` gains `selection`.
 - **Breaking (Rust):** `query::report` and `query::report_roots` take a capacity
   observation as their last argument, `None` for a request without `volumes`.
+- **Breaking (Rust):** `report_format::CONTENT_REPORT_SCHEMA`, an alias of
+  `REPORT_SCHEMA` since every report shares one schema, is gone.
 - **Breaking:** every time is change time unless `--time modified` is given, so the
   tree’s age column, `--view recent`, and every age read change time: a tree copied in
   yesterday reads `1d` however old its files.
