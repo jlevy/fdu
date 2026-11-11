@@ -92,10 +92,18 @@ pub enum TimeBasis {
     /// answers: asked what is new, it over-includes (a `chmod` looks new) rather than
     /// omits a copy that kept old times; asked what is old, it holds back a just-restored
     /// backup rather than calling it stale.
+    ///
+    /// A link count is the file's own metadata, so making or removing a hard link to a
+    /// file anywhere moves the status change of every other name it has: a package store
+    /// that installs by linking (`uv`, `pnpm`), `cp -l`, and `git clone --local` move it
+    /// in every tree sharing the files. A watch or an observing opened root reads a name
+    /// again only where an event names it, so another name keeps its old status change
+    /// until it is next read (review G3 on #209).
     #[default]
     Changed,
     /// When the entry's content was last written, as `ls -l` shows: for content age, or
-    /// when a bulk `chmod`, `chown`, or relabel moved every status-change time at once.
+    /// when a bulk `chmod`, `chown`, or relabel moved every status-change time at once, or
+    /// in a tree whose files are hard-linked from elsewhere, which no link moves.
     Modified,
 }
 

@@ -292,6 +292,10 @@ class OpenedOptions:
     hidden_allow: tuple[str, ...] = ()
     exclude_special: bool = False
     max_files: int | None = None
+    #: Start native observation, which verifies the paths the backend's events name. A
+    #: hard link made or removed moves the change time of every other name of the file,
+    #: which no event names, so those keep their old change time until a ``refresh`` or
+    #: a later change reads them; ``TimeBasis.MODIFIED`` reads a clock no link moves.
     observe: bool = False
     #: A byte budget for the exact change journal ``changes()`` reads from, or ``None``
     #: for the engine default of 8 MiB. The smallest budget is the engine's minimum,

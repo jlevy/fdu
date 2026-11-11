@@ -319,7 +319,11 @@ WHAT WAS WRITTEN RECENTLY
 
   --time modified reads modification time everywhere instead: windows, --sort time,
   the tree's ages, recent, and ages. That is content age, as ls -l shows, and the
-  clock to use after a bulk chmod, chown, or relabel moved every status change.
+  clock to use after a bulk chmod, chown, or relabel moved every status change, and
+  where files are hard-linked: making or removing any link moves the change time of
+  every other name of the file, as uv and pnpm installs from a shared store, cp -l,
+  and a git clone of a local repository do. A watch reads a name again only when an
+  event names it.
   Machine list rows carry both clocks, mtime_ns and changed_ns.
 
   fdu PATH --view ages

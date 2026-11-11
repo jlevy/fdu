@@ -20,7 +20,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Asked what is new, it over-includes (a `chmod` looks new) rather than omits; asked
   what is old, it does not call a just-restored backup stale.
   `modified` is content age, as `ls -l` shows, and the clock to use after a bulk
-  `chmod`, `chown`, or relabel moved every status change.
+  `chmod`, `chown`, or relabel moved every status change, and in a tree whose files are
+  hard-linked from elsewhere: a link count is the file’s own metadata, so making or
+  removing any link moves the change time of every other name of the file, which package
+  managers that link from a shared store (`uv`, `pnpm`), `cp -l`, and
+  `git clone --local` do routinely.
+  A watch or an observing opened root reads a name again only where an event names it,
+  so a link made outside its tree, or to another name inside it, leaves the file’s other
+  names with their old change time until they are next read.
   A file whose status change was not observed (on Windows, one fdu could list but not
   open) is timed by its modification time, a lower bound, and a note counts such files
   wherever a window or `ages` counted one.

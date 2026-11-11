@@ -179,7 +179,12 @@ extracted archive that kept an old modification time is still new.
 `--time modified` reads **modification time** instead, content age as `ls -l` shows, for
 every age, window, sort, `recent`, and `ages` in the report at once.
 Use it when a bulk `chmod`, `chown`, SELinux relabel, or sync client moved every status
-change at once, or to compare with `ls -l`.
+change at once, or to compare with `ls -l`. Use it too where files are hard-linked from
+elsewhere: a link count is the file’s own metadata, so making or removing any link to a
+file moves the change time of every other name it has, and package managers that link
+from a shared store (`uv`, `pnpm`), `cp -l`, and `git clone --local` do that routinely,
+so installing one project can make another’s `.venv` or `node_modules` read as just
+written.
 
 Color is on only when the output is a terminal or `--color=always` is given, so piped
 tree bars are plain: `█` for usage and `░` for unused width.
@@ -433,7 +438,9 @@ Read the result as data written, not as net growth:
   counts 10 GB. The total is an upper bound on the growth those files caused.
 - Deleted files do not appear, and a file that shrank counts at its new size, so space
   freed in the window is not subtracted and the total can exceed the space lost.
-- A `chmod` or `chown` changes a file without growing it, so such a file counts too.
+- A `chmod` or `chown` changes a file without growing it, so such a file counts too, and
+  so does a file another name of which was linked or unlinked, as a `uv` or `pnpm`
+  install elsewhere does to every file it shares; `--time modified` leaves both out.
 - A file whose status change was not observed, such as a Windows file fdu could not
   open, is timed by its modification time, and a note counts such files whenever a
   window or `ages` counted one.
@@ -535,6 +542,9 @@ same `time_ns`, `complete`, and `age_ns` as the text column, beside
 `time_at` and the envelope’s `age_reference_at` are the same instants in RFC 3339 UTC;
 `time_at` is null wherever the time is only a lower bound.
 A `--watch` repaint measures its ages from its own instant.
+A watch reads a file’s change time again only where an event names it, so a hard link
+made outside the tree, or to another name inside it, leaves the file’s other names with
+their old change time until something reads them again; a new run reads them all.
 
 Tree/Paths/Long require one compatible list view.
 Use automatic Text or machine output for grouped/mixed views and Full.

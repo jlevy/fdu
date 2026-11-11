@@ -2254,6 +2254,69 @@ mod tests {
         assert_matches_cold_walk(&session, root.path(), "an old file moved in");
     }
 
+    /// A link count is the file's own metadata, so making a hard link moves the status
+    /// change of every name the file has, while a backend names only the name made, and
+    /// nothing at all for a link made outside the watched tree. The watch reads the named
+    /// path and its directory, and no other name: another keeps its old change time until
+    /// something reads it again, where a cold walk reads the new one. This holds the
+    /// documented limit as it is, not as fixed (review G3 on #209): the time-basis docs
+    /// name it, and `--time modified` reads a clock no link moves.
+    #[cfg(unix)]
+    #[test]
+    fn a_hard_link_moves_a_change_time_the_watch_reads_only_where_an_event_names_it() {
+        let root = tempfile::tempdir().expect("root");
+        let outside = tempfile::tempdir().expect("outside the watched tree");
+        crate::test_support::stamped_file(&root.path().join("src/lib.rs"), b"fn f() {}", 1_000);
+        std::fs::create_dir(root.path().join("docs")).expect("docs");
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        let held = |session: &Session, path: &str| {
+            session
+                .index
+                .read_with(|index| match index.expectation(std::path::Path::new(path)).state {
+                    crate::engine_contract::PathState::Present { attrs, .. } => attrs,
+                    state => panic!("{path} is held: {state:?}"),
+                })
+                .expect("read the session's index")
+        };
+        let cold = |path: &str| {
+            let (_, attrs) =
+                crate::scan::observe_path(&root.path().join(path)).expect("a cold read");
+            attrs
+        };
+        // Past the coarsest timestamp tick, so the link's change time is a later one.
+        let wait_past = |attrs: crate::engine_contract::Attrs| {
+            let past = std::time::UNIX_EPOCH
+                + Duration::from_nanos(u64::try_from(attrs.ctime_ns).expect("after 1970"))
+                + Duration::from_millis(20);
+            while std::time::SystemTime::now() <= past {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        let before = held(&session, "src/lib.rs");
+        wait_past(before);
+
+        // A link made outside the tree: no event reaches the watch.
+        std::fs::hard_link(root.path().join("src/lib.rs"), outside.path().join("lib.rs"))
+            .expect("link outside");
+        drain(&mut session);
+        let after_outside = cold("src/lib.rs");
+        assert!(after_outside.ctime_ns > before.ctime_ns, "the link moved the change time");
+        assert_eq!(after_outside.mtime_ns, before.mtime_ns, "and not the modification time");
+        assert_eq!(held(&session, "src/lib.rs"), before, "the watch keeps the old change time");
+
+        // A link made inside the tree: the event names the new name, which the watch
+        // reads; the file's other name keeps its old change time.
+        wait_past(after_outside);
+        std::fs::hard_link(root.path().join("src/lib.rs"), root.path().join("docs/lib_link.rs"))
+            .expect("link inside");
+        sender.send("create\tdocs/lib_link.rs\n").expect("script the new name");
+        drain(&mut session);
+        let linked = cold("docs/lib_link.rs");
+        assert_eq!(held(&session, "docs/lib_link.rs").ctime_ns, linked.ctime_ns);
+        assert!(cold("src/lib.rs").ctime_ns > before.ctime_ns);
+        assert_eq!(held(&session, "src/lib.rs"), before, "the other name is not read again");
+    }
+
     /// Deterministic `SplitMix64`, so a failing sequence replays from its printed seed.
     struct SplitMix(u64);
 

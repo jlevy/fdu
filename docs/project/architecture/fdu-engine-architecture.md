@@ -717,6 +717,10 @@ Logical preconditions prevent an older sample from overwriting newer facts.
 A backend reports only what its kernel emits: on macOS, a write through an open
 descriptor produces an event only at the last close (and a writable mapping at the last
 unmap), so growth in a file held open is observed when it closes.
+And no backend names the other names of a file when a hard link to it is made or
+removed, which moves the status change they share: a link made outside the observed tree
+sends no event at all, so those names keep their old change time until something
+verifies them again, where a cold walk reads the new one.
 
 Where the backend permits it, observation starts before baseline discovery and buffers
 hints in a bounded queue.

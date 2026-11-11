@@ -348,6 +348,22 @@ Every maintenance test had compared the index with itself or with a model fed th
 operations, which cannot see a fact no operation carried, so a property test now holds a
 watched tree to a cold walk of the same tree after every generated step.
 
+One fact moves that no event carries and no directory re-read finds: a hard link.
+A link count is the file’s own metadata, so making or removing any name of a file moves
+the status change of every other name it has, while the backend names only the name made
+or removed.
+A link made inside the tree updates that name and its directory and no other,
+and one made outside the tree sends no event at all.
+So under the default clock, change time, a watch and an observing opened root keep a
+linked file’s other names at their old change time until something reads them again (a
+change to them, a refresh, or a cold walk), where a cold report reads the new one.
+Package stores that install by linking (`uv`, `pnpm`), `cp -l`, and `git clone --local`
+do this routinely; `--time modified` reads a clock no link moves.
+Reading every other name of a linked file would need an index by inode the engine does
+not keep, so the limit is documented, pinned by a test that holds it as it is
+(`a_hard_link_moves_a_change_time_the_watch_reads_only_where_an_event_names_it`), and
+tracked as a design question.
+
 ### Concurrency Guards
 
 Conditional observations carry generation and revision guards.

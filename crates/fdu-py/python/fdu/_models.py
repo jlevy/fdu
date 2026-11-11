@@ -492,7 +492,10 @@ class TimeBasis(StrEnum):
     #: still new. The default.
     CHANGED = "changed"
     #: When the entry's content was last written, as ``ls -l`` shows: content age, or the
-    #: clock to use after a bulk ``chmod``, ``chown``, or relabel moved every status change.
+    #: clock to use after a bulk ``chmod``, ``chown``, or relabel moved every status change,
+    #: and in a tree whose files are hard-linked from a shared store (``uv``, ``pnpm``,
+    #: ``cp -l``, ``git clone --local``): making or removing any link to a file moves the
+    #: status change of every other name it has, which no modification time follows.
     MODIFIED = "modified"
 
 

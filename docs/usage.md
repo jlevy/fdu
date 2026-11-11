@@ -297,6 +297,20 @@ Use `--time=modified` after a bulk `chmod -R`, `chown -R`, or SELinux relabel, o
 client writing extended attributes, has moved every status change at once, or to compare
 with `ls -l`.
 
+Use it too in a tree whose files are hard-linked from elsewhere.
+A link count is the file’s own metadata, so making or removing a hard link to a file
+anywhere moves the change time of every other name it has.
+Package managers that install by linking from a shared store do that on every install
+and removal: `uv` on Linux and Windows, `pnpm` where the filesystem has no reflinks.
+So do `cp -l` and `git clone --local`. Measured with `uv` 0.12.1 on ext4: after it
+installed the same two packages into a second environment, 26 files (632 KiB) of the
+first read as written since, and under `--time=modified` none did.
+A watch, or an opened root that observes, reads a file’s change time again only where an
+event names it: a link made outside the tree sends no event, and one made inside updates
+the name it made, not the file’s other names.
+Those keep their old change time until something reads them again, a change to them, a
+refresh, or a new run, which reads them all.
+
 ### Find What Was Written Recently
 
 When free space drops, look for the data written since it was last fine.
@@ -335,6 +349,8 @@ The result is data written in the window, not net growth:
   space freed in the window is not subtracted and the total can exceed the space lost.
 - A `chmod` or `chown` changes a file without growing it, so such a file counts too;
   after a bulk one, `--time=modified` reads content age instead.
+  So does a file another name of which was linked or unlinked, which a `uv` or `pnpm`
+  install elsewhere does to every file it shares with this tree.
 - A file whose status change was not observed is timed by its modification time, a lower
   bound of its change time.
   On Windows, fdu reads change time from each entry’s own handle, so a file it could
@@ -807,6 +823,9 @@ Creating, removing, or renaming an entry also changes its directory’s own modi
 time, so under `--view files` the record for that change is followed by an `upsert` for
 the directory, unless it is the scan root or the selection leaves directories out, and a
 watched tree ages the directory as a one-shot report does.
+A hard link is the exception: making or removing one moves the change time of every
+other name of the file, which no event names, so those names keep their old change time
+until they are next read; a link made outside the watched tree sends no event at all.
 `--interval` throttles rendering, not change detection; an idle tree performs no polling
 scan. On macOS, the kernel reports writes to a file only when it is closed, so watch
 shows a file held open for writing as of its last close; a one-shot report reads its

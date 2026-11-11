@@ -296,7 +296,14 @@ def _query_kwargs(query: Query) -> dict[str, object]:
 
 
 class Watch(Iterator[tuple[Change, ...]]):
-    """Closable iterator of event-driven change batches."""
+    """Closable iterator of event-driven change batches.
+
+    Each batch verifies the paths the backend's events name and their directories. A
+    hard link made or removed moves the change time of every other name of the file,
+    which no event names, and a link made outside the watched tree sends none at all, so
+    those names keep their old change time until they are next read: under
+    ``TimeBasis.MODIFIED`` no link moves a time.
+    """
 
     __slots__ = ("_native",)
 
