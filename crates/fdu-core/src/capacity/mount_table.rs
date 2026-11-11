@@ -376,10 +376,27 @@ a malformed line\n\
         assert_eq!(MountTable::NoAutomount.at(&path(&["Volumes"])), Some(MountAt::Mounted));
     }
 
-    /// The table this host keeps reads, and holds the mount the root is on.
+    /// The table this host keeps reads, and holds the mount the root is on wherever one is
+    /// mounted there. In a chroot whose root directory is no mount point, as distribution
+    /// build tools make, Linux's table has no line for `/` (review I5 on #209), so there
+    /// the root is asked of the table only where a line names it, and `/proc`, which the
+    /// table is read from, is asked in any case.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn this_hosts_table_holds_its_root() {
-        assert_eq!(MountTable::read().at(Path::new("/")), Some(MountAt::Mounted));
+        let table = MountTable::read();
+        assert!(matches!(table, MountTable::Read(_)), "the table reads: {table:?}");
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(table.at(Path::new("/proc")), Some(MountAt::Mounted), "its own source");
+            let text = std::fs::read("/proc/self/mountinfo").expect("mountinfo");
+            let names_root = text
+                .split(|byte| *byte == b'\n')
+                .any(|line| line.split(|byte| *byte == b' ').nth(4) == Some(b"/".as_slice()));
+            if !names_root {
+                return;
+            }
+        }
+        assert_eq!(table.at(Path::new("/")), Some(MountAt::Mounted));
     }
 }
