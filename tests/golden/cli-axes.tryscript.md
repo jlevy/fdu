@@ -1009,7 +1009,30 @@ $ fdu --cache off --size apparent --view volumes --scan-depth 0 builds
 ```console
 $ fdu --cache off --size apparent --view volumes --format jsonl builds
 {"schema": "fdu.report/12", "generator": "fdu 0.6.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "time": "changed", "sort_metric": null, "views": ["volumes"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "selected": {"files": 4, "dirs": 10, "bytes": 240, "allocated": [ALLOCATED]}, "scanned": {"files": 4, "dirs": 10, "bytes": 240, "allocated": [ALLOCATED]}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": null}
-{"view": "volumes", "observed_at_ns": [OBSERVED_NS], "observed_at": "[RFC3339]", "volumes": [{"device": [DEVICE], "path": "", "other_paths": 0, "filesystem": [FS_NAME], "capacity_bytes": [HOST_BYTES], "available_bytes": [HOST_BYTES], "shares_pool": [BOOL], "unknown_reason": null, "counted": {"files": 4, "bytes": 240, "allocated": [ALLOCATED]}}]}
+{"view": "volumes", "observed_at_ns": [OBSERVED_NS], "observed_at": "[RFC3339]", "volumes": [{"device": [DEVICE], "path": "", "also_entered": [], "filesystem": [FS_NAME], "capacity_bytes": [HOST_BYTES], "available_bytes": [HOST_BYTES], "shares_pool": [BOOL], "unknown_reason": null, "counted": {"files": 4, "bytes": 240, "allocated": [ALLOCATED]}}]}
+? 0
+```
+
+A filesystem entered at several paths, here two roots in one sandbox, is one row named
+by the first, and what it counted is under all of them.
+The note names the others, and machine output lists each in `also_entered`, as a row’s
+path is written, so a consumer can find where the row’s bytes are.
+
+```console
+$ fdu --cache off --size apparent --view volumes builds/a builds/b
+[CAPACITY]  [IN_USE]  builds[SEP]a[FS_TYPE]
+                         [CAPACITY] available[POOL]
+                         80 B counted by this report
+! note: the filesystem at builds[SEP]a was also entered at builds[SEP]b
+! perf: took [PERF_TIME] to walk 2 files (80 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --view volumes --format jsonl builds/a builds/b
+{"schema": "fdu.report/12", "generator": "fdu 0.6.0", "root": null, "roots": [{"label": "builds[JSON_SEP]a", "path": "[SCAN_PATH]"}, {"label": "builds[JSON_SEP]b", "path": "[SCAN_PATH]"}], "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "time": "changed", "sort_metric": null, "views": ["volumes"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "selected": {"files": 2, "dirs": 2, "bytes": 80, "allocated": [ALLOCATED]}, "scanned": {"files": 2, "dirs": 2, "bytes": 80, "allocated": [ALLOCATED]}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": null}
+{"view": "volumes", "observed_at_ns": [OBSERVED_NS], "observed_at": "[RFC3339]", "volumes": [{"device": [DEVICE], "root": 0, "path": "", "also_entered": [{"root": 1, "path": ""}], "filesystem": [FS_NAME], "capacity_bytes": [HOST_BYTES], "available_bytes": [HOST_BYTES], "shares_pool": [BOOL], "unknown_reason": null, "counted": {"files": 2, "bytes": 80, "allocated": [ALLOCATED]}}]}
+! note: the filesystem at builds[SEP]a was also entered at builds[SEP]b
 ? 0
 ```
 

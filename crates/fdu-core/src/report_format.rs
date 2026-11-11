@@ -990,8 +990,11 @@ fn emit_age_profile(sink: &mut impl Sink, profile: &AgeProfile) {
 }
 
 /// The filesystems a report touches: when capacity was observed, and per filesystem its
-/// device, where the report entered it, its capacity or why that is unknown, and what the
-/// report counted there.
+/// device, where the report entered it and every other path it entered it at, its capacity
+/// or why that is unknown, and what the report counted there.
+///
+/// The other paths are written as every row's path is, after their root's position over
+/// several roots, so a consumer can find where the rest of a row's counted bytes are.
 fn emit_volumes(sink: &mut impl Sink, volumes: &crate::query::VolumesSection, several: bool) {
     emit_field(sink, Field::nullable("observed_at_ns"), true, |sink| {
         emit_scalar(sink, volumes.observed_at_ns.map_or(Scalar::Null, Scalar::I64));
@@ -1006,7 +1009,16 @@ fn emit_volumes(sink: &mut impl Sink, volumes: &crate::query::VolumesSection, se
             emit_u64_field(sink, "device", row.device);
             emit_root_field(sink, row.root, several);
             emit_path_fields(sink, &row.path);
-            emit_u64_field(sink, "other_paths", row.also_entered.len() as u64);
+            emit_field(sink, Field::always("also_entered"), true, |sink| {
+                sink.event(Event::BeginSeq(Shape::Block));
+                for (root, path) in &row.also_entered {
+                    sink.event(Event::BeginMap(Shape::Inline));
+                    emit_root_field(sink, *root, several);
+                    emit_path_fields(sink, path);
+                    sink.event(Event::EndMap);
+                }
+                sink.event(Event::EndSeq);
+            });
             let capacity = row.capacity.as_ref();
             emit_field(sink, Field::nullable("filesystem"), true, |sink| {
                 match capacity.and_then(|capacity| capacity.filesystem.as_deref()) {
@@ -5894,6 +5906,67 @@ mod tests {
              \x20                        0 B available\n\
              \x20                        2.0 KiB counted by this report\n"
         );
+    }
+
+    /// Machine output names every other path a filesystem was entered at, as a row's path
+    /// is named: after its root's position over several roots, and with its raw bytes
+    /// where the display string is lossy. A count alone would leave a consumer unable to
+    /// say where the rest of a row's counted bytes are.
+    #[test]
+    fn machine_output_names_every_other_path_a_filesystem_was_entered_at() {
+        use crate::query::{VolumeCounted, VolumeRow, VolumesSection};
+        let row = |also_entered: Vec<(usize, PathBuf)>| VolumeRow {
+            device: 1,
+            root: 0,
+            path: PathBuf::new(),
+            absolute: PathBuf::from("/a"),
+            also_entered,
+            capacity: None,
+            unknown_reason: Some("capacity was not observed".to_owned()),
+            counted: VolumeCounted::default(),
+        };
+        let line = |row: VolumeRow, several: bool| {
+            let section = Section::Volumes(Box::new(VolumesSection {
+                observed_at_ns: None,
+                rows: vec![row],
+            }));
+            let mut sink = JsonSink::line();
+            emit_section(&mut sink, &section, several, TimeBasis::Changed);
+            sink.finish()
+        };
+        let alone = line(row(Vec::new()), false);
+        assert!(alone.contains(r#""path": "", "also_entered": [], "filesystem""#), "{alone}");
+        let others = vec![(1, PathBuf::new()), (2, PathBuf::from("mnt/data"))];
+        let several = line(row(others.clone()), true);
+        assert!(
+            several.contains(
+                r#""root": 0, "path": "", "also_entered": [{"root": 1, "path": ""}, {"root": 2, "path": "mnt/data"}], "filesystem""#
+            ),
+            "{several}"
+        );
+        let rows = vec![row(others)];
+        let section = Section::Volumes(Box::new(VolumesSection { observed_at_ns: None, rows }));
+        let mut sink = YamlSink::new();
+        emit_section(&mut sink, &section, true, TimeBasis::Changed);
+        let yaml = sink.finish();
+        assert!(
+            yaml.contains(
+                "    also_entered:\n      - {root: 1, path: \"\"}\n      - {root: 2, path: mnt/data}\n"
+            ),
+            "{yaml}"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let lossy = PathBuf::from(OsStr::from_bytes(b"caf\xff"));
+            let raw = line(row(vec![(0, lossy)]), false);
+            assert!(
+                raw.contains(
+                    r#""also_entered": [{"path": "caf�", "path_raw": {"encoding": "unix-bytes", "hex": "636166ff"}}]"#
+                ),
+                "{raw}"
+            );
+        }
     }
 
     #[test]

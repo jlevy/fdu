@@ -92,10 +92,11 @@ details.
     row. A row names where the report entered the filesystem as every other row is named,
     relative to its root and `.` for the root itself, never by the canonical path the
     capacity call used (`\\?\C:\…` on Windows, `/private/var` for `/var` on macOS). A
-    filesystem entered at several paths is one row, with a note naming the others.
-    Each row names its filesystem’s type: on Linux, which gives a number, the common
-    ones by the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`,
-    `fuse`, and others), and any other by its number.
+    filesystem entered at several paths is one row, named by the first, with a note
+    naming the others; machine output lists every one in the row’s `also_entered`. Each
+    row names its filesystem’s type: on Linux, which gives a number, the common ones by
+    the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`, `fuse`,
+    and others), and any other by its number.
     An APFS, btrfs, or ZFS row says its available space is shared within its pool.
   - **Capacity** is observed when the report is read, by one `statfs` per filesystem on
     Linux and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so
@@ -135,7 +136,8 @@ details.
   and `CapacityObservation` holds one `ObservedVolume` per filesystem.
 - Python: `View.AGES` reports an `AgesSection` of `AgeBand` values with `AgeTally`
   tallies, and `View.VOLUMES` a `VolumesSection` of `VolumeRow` values, each with what
-  the report counted there as a `VolumeCounted`.
+  the report counted there as a `VolumeCounted` and the other paths it entered the
+  filesystem at as `VolumeEntered` values.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
   is not read as the whole tree.

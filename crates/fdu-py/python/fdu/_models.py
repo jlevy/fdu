@@ -1016,6 +1016,16 @@ class VolumeCounted:
 
 
 @dataclass(frozen=True, slots=True)
+class VolumeEntered:
+    """Another path at which a report entered one filesystem."""
+
+    #: Relative to its root; a root itself is an empty path.
+    path: Path
+    #: Position of the path's root in :attr:`Report.roots` over several roots.
+    root: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class VolumeRow:
     """One filesystem a report touches.
 
@@ -1026,10 +1036,11 @@ class VolumeRow:
 
     device: int
     #: Where the report entered the filesystem, relative to its root; the root itself is
-    #: an empty path.
+    #: an empty path. Entered at several paths, it is the first by absolute path.
     path: Path
-    #: How many other paths the report entered this filesystem at.
-    other_paths: int
+    #: Every other path the report entered this filesystem at, in the same order;
+    #: ``counted`` holds the files under each of them as well as under ``path``.
+    also_entered: tuple[VolumeEntered, ...]
     filesystem: str | None
     capacity_bytes: int | None
     available_bytes: int | None
@@ -1847,7 +1858,7 @@ def _volumes_section(view: View, raw: dict[str, Any]) -> VolumesSection:
             VolumeRow(
                 device=int(row["device"]),
                 path=_wire_path(row),
-                other_paths=int(row["other_paths"]),
+                also_entered=_volume_entered(row["also_entered"]),
                 filesystem=_optional_str(row["filesystem"]),
                 capacity_bytes=_optional_int(row["capacity_bytes"]),
                 available_bytes=_optional_int(row["available_bytes"]),
@@ -1894,6 +1905,16 @@ def _ages_section(view: View, raw: dict[str, Any]) -> AgesSection:
             for band in cast(list[dict[str, Any]], bands)
         ),
         total=_age_tally(raw["total"]),
+    )
+
+
+def _volume_entered(value: object) -> tuple[VolumeEntered, ...]:
+    """Decode the other paths a volume row was entered at, each named as a row's path is."""
+    if not isinstance(value, list):
+        raise TypeError("a volume row's also_entered must be a list")
+    return tuple(
+        VolumeEntered(path=_wire_path(item), root=_root_position(item))
+        for item in cast(list[dict[str, Any]], value)
     )
 
 

@@ -1112,7 +1112,7 @@ def test_a_volumes_section_decodes_capacity_and_what_the_report_counted() -> Non
     row = {
         "device": 2049,
         "path": "",
-        "other_paths": 0,
+        "also_entered": [],
         "filesystem": "apfs",
         "capacity_bytes": 1000,
         "available_bytes": 250,
@@ -1123,6 +1123,10 @@ def test_a_volumes_section_decodes_capacity_and_what_the_report_counted() -> Non
     unknown = {
         **row,
         "path": "mnt",
+        "also_entered": [
+            {"path": "mnt2"},
+            {"path": "caf\ufffd", "path_raw": {"encoding": "unix-bytes", "hex": "636166ff"}},
+        ],
         "filesystem": None,
         "capacity_bytes": None,
         "available_bytes": None,
@@ -1142,9 +1146,31 @@ def test_a_volumes_section_decodes_capacity_and_what_the_report_counted() -> Non
     assert (known.capacity_bytes, known.available_bytes, known.shares_pool) == (1000, 250, True)
     assert known.counted.files == 3 and known.root is None
     assert (missing.capacity_bytes, missing.unknown_reason) == (None, "capacity was not observed")
+    # Every other path a filesystem was entered at is named, as a row's path is, so a
+    # consumer can say where the rest of what it counted is.
+    assert known.also_entered == ()
+    if os.name == "posix":
+        assert missing.also_entered == (
+            fdu.VolumeEntered(Path("mnt2")),
+            fdu.VolumeEntered(Path(os.fsdecode(b"caf\xff"))),
+        )
+    # Over several roots, each names its root's position, as the row does.
+    several = {
+        **row,
+        "root": 0,
+        "also_entered": [{"root": 1, "path": ""}, {"root": 0, "path": "b"}],
+    }
+    decoded = report_from_dict(_envelope([{**section, "volumes": [several]}])).sections[0]
+    assert isinstance(decoded, fdu.VolumesSection)
+    assert decoded.volumes[0].also_entered == (
+        fdu.VolumeEntered(Path(""), root=1),
+        fdu.VolumeEntered(Path("b"), root=0),
+    )
     # What a report counted is always known, even where capacity is not.
     with pytest.raises(TypeError, match="counted tally"):
         report_from_dict(_envelope([{**section, "volumes": [{**row, "counted": None}]}]))
+    with pytest.raises(TypeError, match="also_entered"):
+        report_from_dict(_envelope([{**section, "volumes": [{**row, "also_entered": 0}]}]))
 
 
 def test_fields_every_report_carries_are_required_rather_than_defaulted() -> None:

@@ -183,8 +183,9 @@ same schema, with these differences; a report over one root has none of them.
   `label`, the path as given and normalized by its components (with `label_raw` when it
   is not Unicode), and `path`, the canonical directory (with `path_raw`). Exactly one of
   `root` and `roots` is set.
-- List rows, `status.errors` items, and `ignore_rules.refusals` items begin with `root`,
-  the position of their root in `roots`. Their `path` stays relative to that root, so
+- List rows, `status.errors` items, `ignore_rules.refusals` items, and a volume row’s
+  `also_entered` items begin with `root`, the position of their root in `roots`, and a
+  volume row has one before its `path`. Their `path` stays relative to that root, so
   `roots[root].path` joined with `path` names the entry, and an absolute label never
   makes a relative path absolute.
 - A tree section has `tree: null`, then `total`, then `trees`. `total` is the merged
@@ -284,8 +285,8 @@ A `volumes` section has `observed_at_ns` and `observed_at`, when capacity was re
 | Field | Meaning |
 | --- | --- |
 | `device` | The device the walk identified the filesystem by |
-| `root`, `path`, optional `path_raw` | Where the report entered the filesystem, relative to its root; the root itself is an empty path |
-| `other_paths` | How many other paths the report entered it at |
+| `root`, `path`, optional `path_raw` | Where the report entered the filesystem, relative to its root; the root itself is an empty path. Entered at several paths, the first by absolute path |
+| `also_entered` | Every other path the report entered it at, in the same order, each `{root, path, path_raw}` as a row names one; empty when there is none |
 | `filesystem` | The type by name, or on Linux, which gives a number, the common types by name (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, and others) and any other as its number |
 | `capacity_bytes`, `available_bytes` | Size and the bytes an unprivileged writer can still use; null when unknown |
 | `shares_pool` | Whether available space is shared with other volumes of an APFS container, btrfs filesystem, or ZFS pool |

@@ -100,7 +100,7 @@ pub struct VolumeRow {
     pub absolute: PathBuf,
     /// Every other path the report entered this filesystem at, each as its root's
     /// position and its path relative to that root, in the byte order of their absolute
-    /// paths. Machine output gives how many, as `other_paths`.
+    /// paths. Machine output lists them as `also_entered`, each written as a row's path is.
     pub also_entered: Vec<(usize, PathBuf)>,
     /// The observed capacity, or `None` when it is unknown.
     pub capacity: Option<VolumeCapacity>,

@@ -239,6 +239,25 @@ for (const view of [...views, 'full']) {
   }
 }
 
+// Two roots on one filesystem are one volume row naming the other root in
+// `also_entered`, which every format must carry alike.
+{
+  const args = ['--cache', 'off', '-q', '--view', 'volumes', join(tree, 'docs'), join(tree, 'src')];
+  const run = (format) => execFileSync(fdu, [...args, '--format', format], { encoding: 'utf8' });
+  const expected = stripVolatile(exactJson(run('json')));
+  assert.deepStrictEqual(expected.reports[0].volumes[0].also_entered, [{ root: 1n, path: '' }],
+    'volumes over two roots: the other root is not named in also_entered');
+  const yaml = run('yaml');
+  for (const version of ['1.1', '1.2']) {
+    const parsed = parse(yaml, { strict: true, uniqueKeys: true, intAsBigInt: true, version });
+    assert.deepStrictEqual(stripVolatile(parsed), expected,
+      `volumes over two roots: YAML ${version} differs from JSON`);
+  }
+  assert.deepStrictEqual(stripVolatile(reassembleJsonl(run('jsonl'))), expected,
+    'volumes over two roots: reconstructed JSON Lines differs from JSON');
+  compared += 1;
+}
+
 const probe = process.env.FDU_FORMAT_PROBE
   ?? join(target, 'debug', 'examples', 'format_conformance');
 for (const kind of [
