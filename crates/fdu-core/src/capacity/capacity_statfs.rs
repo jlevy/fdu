@@ -32,34 +32,53 @@ fn c_path(path: &Path) -> io::Result<CString> {
 }
 
 /// The filesystems Linux names by number that a report is likely to touch, by the magic
-/// the kernel headers define (`include/uapi/linux/magic.h`, and ZFS's own), with the name
-/// `mount` gives each. The ext family shares one number, so it is named as one.
+/// the kernel defines (most in `include/uapi/linux/magic.h`; configfs, fusectl, hfsplus,
+/// and mqueue in their own sources; ZFS in its own), with the name `mount` gives each.
+/// They include the pseudo filesystems a report of `/` crosses on an ordinary machine,
+/// such as cgroup, tracefs, and securityfs. The ext family shares one number, so it is
+/// named as one.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-const LINUX_TYPES: [(u32, &str); 26] = [
+const LINUX_TYPES: [(u32, &str); 42] = [
     (0x0000_0187, "autofs"),
     (0x0000_1CD1, "devpts"),
+    (0x0000_482B, "hfsplus"),
     (0x0000_4D44, "vfat"),
     (0x0000_6969, "nfs"),
     (0x0000_9660, "iso9660"),
     (0x0000_9FA0, "proc"),
     (0x0000_EF53, "ext2/3/4"),
+    (0x0027_E0EB, "cgroup"),
     (0x00C3_6400, "ceph"),
     (0x0102_1994, "tmpfs"),
     (0x0102_1997, "9p"),
+    (0x1501_3346, "udf"),
+    (0x1980_0202, "mqueue"),
     (0x2011_BAB0, "exfat"),
     (0x2FC1_2FC1, "zfs"),
+    (0x4249_4E4D, "binfmt_misc"),
     (0x5346_544E, "ntfs"),
     (0x5846_5342, "xfs"),
+    (0x6165_676C, "pstore"),
+    (0x6265_6570, "configfs"),
     (0x6265_6572, "sysfs"),
     (0x6367_7270, "cgroup2"),
     (0x6462_6720, "debugfs"),
+    (0x6573_5543, "fusectl"),
     (0x6573_5546, "fuse"),
+    (0x6E73_6673, "nsfs"),
+    (0x7363_6673, "securityfs"),
     (0x7371_7368, "squashfs"),
+    (0x7472_6163, "tracefs"),
     (0x794C_7630, "overlay"),
     (0x8584_58F6, "ramfs"),
     (0x9123_683E, "btrfs"),
+    (0x9584_58F6, "hugetlbfs"),
+    (0xCA45_1A4E, "bcachefs"),
+    (0xCAFE_4A11, "bpf"),
+    (0xDE5E_81E4, "efivarfs"),
     (0xE0F5_E1E2, "erofs"),
     (0xF2F5_2010, "f2fs"),
+    (0xF97C_FF8C, "selinuxfs"),
     (0xFE53_4D42, "smb2"),
     (0xFF53_4D42, "cifs"),
 ];
@@ -164,6 +183,9 @@ mod tests {
         assert_eq!(linux_type_name(0x0102_1994), "tmpfs");
         assert_eq!(linux_type_name(0x794C_7630), "overlay");
         assert_eq!(linux_type_name(0x0187), "autofs");
+        // The pseudo filesystems a whole-machine report crosses are named too.
+        assert_eq!(linux_type_name(0x0027_E0EB), "cgroup");
+        assert_eq!(linux_type_name(0x7472_6163), "tracefs");
         // One the table does not name keeps the kernel's number.
         assert_eq!(linux_type_name(0x1234_5678), "0x12345678");
     }
