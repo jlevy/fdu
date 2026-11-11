@@ -74,6 +74,18 @@ pub struct VolumeCounted {
     pub allocated: u64,
 }
 
+impl VolumeCounted {
+    /// Count `other` here too, saturating: a FUSE daemon chooses its files' sizes, so what
+    /// roots count on one filesystem together can pass what a `u64` holds, and would
+    /// otherwise wrap to a small number with no note, or panic in a debug build (review L4
+    /// on #209).
+    fn add(&mut self, other: &Self) {
+        self.files = self.files.saturating_add(other.files);
+        self.bytes = self.bytes.saturating_add(other.bytes);
+        self.allocated = self.allocated.saturating_add(other.allocated);
+    }
+}
+
 /// Where a report enters one filesystem: a root, or the entry where its walk crossed onto
 /// another device.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -219,10 +231,11 @@ pub(super) fn devices(
                 continue;
             };
             if kind == EntryKind::File && counted(child) {
-                let tally = tallies.entry(device).or_default();
-                tally.files += 1;
-                tally.bytes += attrs.size;
-                tally.allocated += attrs.allocated;
+                tallies.entry(device).or_default().add(&VolumeCounted {
+                    files: 1,
+                    bytes: attrs.size,
+                    allocated: attrs.allocated,
+                });
             } else if kind == EntryKind::Dir {
                 let own = if attrs.dev == 0 { device } else { attrs.dev };
                 if own != device {
@@ -496,10 +509,7 @@ pub(super) fn volumes_section(
             ));
         }
         for (device, tally) in tallies {
-            let total = &mut by_device.entry(device).or_default().1;
-            total.files += tally.files;
-            total.bytes += tally.bytes;
-            total.allocated += tally.allocated;
+            by_device.entry(device).or_default().1.add(&tally);
         }
     }
     let mut rows: Vec<VolumeRow> = by_device
@@ -1347,6 +1357,29 @@ mod tests {
             |row| row.capacity.is_none() && row.unknown_reason.as_deref() == Some(NOT_OBSERVED)
         ));
         assert_eq!(section.observed_at_ns, None);
+    }
+
+    /// A FUSE daemon chooses its files' sizes, up to `i64::MAX` apparent and `u64::MAX`
+    /// allocated, so what three roots count on one filesystem can pass what a `u64` holds.
+    /// It saturates there, never wrapping to a small number or panicking (review L4 on
+    /// #209). One index's own counts cannot: it refuses a batch whose total would not fit.
+    #[test]
+    fn what_roots_count_on_one_filesystem_saturates_rather_than_wraps() {
+        let huge = VolumeCounted { files: 1, bytes: u64::MAX - 1, allocated: u64::MAX - 2 };
+        let roots = [PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")];
+        let parts = roots
+            .iter()
+            .enumerate()
+            .map(|(root, path)| {
+                (root, path.as_path(), vec![(9, PathBuf::new(), true)], BTreeMap::from([(9, huge)]))
+            })
+            .collect();
+        let section = volumes_section(parts, None);
+        assert_eq!(section.rows.len(), 1, "one filesystem");
+        assert_eq!(
+            section.rows[0].counted,
+            VolumeCounted { files: 3, bytes: u64::MAX, allocated: u64::MAX }
+        );
     }
 
     #[test]

@@ -69,10 +69,11 @@ impl AgeTally {
         Self { ignored: observed.then(IgnoredTally::default), ..Self::default() }
     }
 
+    /// Count one file, saturating as [`Self::add`] does.
     fn count(&mut self, file: &AgedFile) {
-        self.files += 1;
-        self.bytes += file.bytes;
-        self.allocated += file.allocated;
+        self.files = self.files.saturating_add(1);
+        self.bytes = self.bytes.saturating_add(file.bytes);
+        self.allocated = self.allocated.saturating_add(file.allocated);
         match file.ignored {
             Some(true) => {
                 if let Some(share) = self.ignored.as_mut() {
@@ -89,10 +90,14 @@ impl AgeTally {
         }
     }
 
+    /// Count `other` here too, saturating: a FUSE daemon chooses its files' sizes, so
+    /// what several roots' files hold together can pass what a `u64` holds, and would
+    /// otherwise wrap to a small number with no note, or panic in a debug build (review L4
+    /// on #209).
     fn add(&mut self, other: &Self) {
-        self.files += other.files;
-        self.bytes += other.bytes;
-        self.allocated += other.allocated;
+        self.files = self.files.saturating_add(other.files);
+        self.bytes = self.bytes.saturating_add(other.bytes);
+        self.allocated = self.allocated.saturating_add(other.allocated);
         self.ignored = self.ignored.zip(other.ignored).map(|(mut sum, share)| {
             sum.add(share);
             sum
@@ -427,6 +432,36 @@ mod tests {
         // Unobserved rules leave every band without one, empty bands included.
         let blind = age_profile(&rows, Some(NOW), TimeBasis::Changed, false);
         assert!(blind.bands.iter().all(|band| band.tally.ignored.is_none()));
+    }
+
+    /// Three files near what a `u64` holds, as a FUSE daemon may report on each of three
+    /// roots, saturate a band, the total, and the cumulative tallies rather than wrapping
+    /// or panicking (review L4 on #209).
+    #[test]
+    fn tallies_past_what_a_u64_holds_saturate() {
+        let huge = u64::MAX - 1;
+        let rows = [
+            file(NOW - 10, huge, Some(true)),
+            file(NOW - 20, huge, Some(true)),
+            file(NOW - 2 * DAY, huge, Some(true)),
+        ];
+        let profile = age_profile(&rows, Some(NOW), TimeBasis::Changed, true);
+        let saturated = AgeTally {
+            files: 2,
+            bytes: u64::MAX,
+            allocated: u64::MAX,
+            ignored: Some(IgnoredTally { files: 2, dirs: 0, bytes: u64::MAX, allocated: u64::MAX }),
+        };
+        assert_eq!(profile.bands[1].tally, saturated, "two files in one band");
+        assert_eq!(profile.bands[3].tally.bytes, huge, "one file alone");
+        let all = AgeTally {
+            files: 3,
+            ignored: saturated.ignored.map(|share| IgnoredTally { files: 3, ..share }),
+            ..saturated
+        };
+        assert_eq!(profile.total, all);
+        assert_eq!(profile.bands[3].cumulative, all);
+        assert_eq!(profile.bands[8].cumulative, all);
     }
 
     #[test]
