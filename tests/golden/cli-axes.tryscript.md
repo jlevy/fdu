@@ -973,6 +973,17 @@ $ fdu --cache off --size apparent --view ages --time modified builds
 ? 0
 ```
 
+A band shows its gitignored part as a summary row does, and the report says, as a
+summary does, that its sizes include it.
+
+```console
+$ fdu --cache off --size apparent --view ages project
+     269 B  100.0%  under 1h     7 files (128 B gitignored)
+! note: totals include gitignored sizes
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
 ```console
 $ fdu --cache off --size apparent --view ages --format jsonl builds
 {"schema": "fdu.report/12", "generator": "fdu 0.6.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "time": "changed", "sort_metric": null, "views": ["ages"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "selected": {"files": 4, "dirs": 10, "bytes": 240, "allocated": [ALLOCATED]}, "scanned": {"files": 4, "dirs": 10, "bytes": 240, "allocated": [ALLOCATED]}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": null}
