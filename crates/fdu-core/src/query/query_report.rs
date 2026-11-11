@@ -2283,6 +2283,9 @@ fn totals_fit<'a>(roots: impl Iterator<Item = (&'a Path, [u64; 4])>) -> crate::R
 /// The note for a time sort beside views whose rows carry no time, which keep size order
 /// rather than fall back silently; `None` when the sort reached every sorted view. A
 /// request in which no sorted view carries a time is refused before it is read.
+///
+/// `--reverse` reverses every sorted view, these rows' size order included, so the note
+/// says so rather than describe an order the reader does not see.
 fn timeless_rows_note(query: &Query) -> Option<String> {
     if query.selection.sort != Some(SortKey::Time) {
         return None;
@@ -2294,7 +2297,8 @@ fn timeless_rows_note(query: &Query) -> Option<String> {
         [first] => format!("{first} and {last}"),
         _ => format!("{}, and {last}", rest.join(", ")),
     };
-    Some(format!("note: {named} rows carry no time, so they keep size order"))
+    let reversed = if query.selection.reverse { ", reversed" } else { "" };
+    Some(format!("note: {named} rows carry no time, so they keep size order{reversed}"))
 }
 
 /// The note for `files` regular files whose status change was not observed, where a
@@ -6087,34 +6091,43 @@ mod tests {
 
     /// Beside a view a time sort orders, rows that carry no time keep size order, and a
     /// note says so rather than leave the reader to take that order as a time's; with no
-    /// time sort, or none of those rows, there is nothing to say.
+    /// time sort, or none of those rows, there is nothing to say. `--reverse` reverses
+    /// every sorted view, those rows included, and the note says that too.
     #[test]
     fn rows_without_a_time_keep_size_order_under_a_time_sort_and_say_so() {
         let index = change_time_sample();
-        let read = |views: &[ViewSpec], sort| {
+        let read = |views: &[ViewSpec], sort, reverse| {
             let selection =
-                Selection { kinds: vec![EntryKind::File], sort, ..Selection::default() };
+                Selection { kinds: vec![EntryKind::File], sort, reverse, ..Selection::default() };
             run(&index, &query(views, selection))
         };
-        let both = read(&[ViewSpec::Files, ViewSpec::Extensions], Some(SortKey::Time));
-        let extensions = both
-            .sections
-            .iter()
-            .find_map(|section| match section {
-                Section::Extensions { rows, .. } => {
-                    Some(rows.iter().map(|row| row.extension.as_str()).collect::<Vec<_>>())
-                }
-                _ => None,
-            })
-            .expect("an extensions section");
-        assert_eq!(extensions, [".bin", ".dat", ".txt"]);
+        let extensions = |report: &Report| {
+            report
+                .sections
+                .iter()
+                .find_map(|section| match section {
+                    Section::Extensions { rows, .. } => {
+                        Some(rows.iter().map(|row| row.extension.clone()).collect::<Vec<_>>())
+                    }
+                    _ => None,
+                })
+                .expect("an extensions section")
+        };
+        let both = read(&[ViewSpec::Files, ViewSpec::Extensions], Some(SortKey::Time), false);
+        assert_eq!(extensions(&both), [".bin", ".dat", ".txt"]);
         let note = "note: extension rows carry no time, so they keep size order";
         assert!(both.notes.iter().any(|line| line == note), "{:?}", both.notes);
-        for (views, sort) in [
-            (&[ViewSpec::Files, ViewSpec::Extensions][..], Some(SortKey::Size)),
-            (&[ViewSpec::Files, ViewSpec::Summary][..], Some(SortKey::Time)),
+        let reversed = read(&[ViewSpec::Files, ViewSpec::Extensions], Some(SortKey::Time), true);
+        assert_eq!(extensions(&reversed), [".txt", ".dat", ".bin"], "smallest first");
+        let note = "note: extension rows carry no time, so they keep size order, reversed";
+        assert!(reversed.notes.iter().any(|line| line == note), "{:?}", reversed.notes);
+        for (views, sort, reverse) in [
+            (&[ViewSpec::Files, ViewSpec::Extensions][..], Some(SortKey::Size), false),
+            (&[ViewSpec::Files, ViewSpec::Extensions][..], Some(SortKey::Size), true),
+            (&[ViewSpec::Files, ViewSpec::Summary][..], Some(SortKey::Time), false),
+            (&[ViewSpec::Files, ViewSpec::Summary][..], Some(SortKey::Time), true),
         ] {
-            let report = read(views, sort);
+            let report = read(views, sort, reverse);
             assert!(!report.notes.iter().any(|line| line.contains("carry no time")));
         }
         let timed = Selection { sort: Some(SortKey::Time), ..Selection::default() };
@@ -6128,6 +6141,12 @@ mod tests {
         assert_eq!(
             timeless_rows_note(&grouped).as_deref(),
             Some("note: language and document rows carry no time, so they keep size order")
+        );
+        let timed = Selection { sort: Some(SortKey::Time), reverse: true, ..Selection::default() };
+        let grouped = query(&[ViewSpec::Tree, ViewSpec::Types, ViewSpec::Documents], timed);
+        assert_eq!(
+            timeless_rows_note(&grouped).as_deref(),
+            Some("note: type and document rows carry no time, so they keep size order, reversed")
         );
     }
 

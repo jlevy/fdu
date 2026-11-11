@@ -320,7 +320,8 @@ apply. Five belong to selection, time, and capacity:
    change was not observed:
    `note: 3 files have no observed status change, so their modification time stands for their change time`.
 5. A time sort beside rows that carry no time:
-   `note: type and extension rows carry no time, so they keep size order`.
+   `note: type and extension rows carry no time, so they keep size order`, ending
+   `size order, reversed` under `--reverse`, which reverses those rows too.
 
 Apply color using stderr’s terminal state for diagnostics and stdout’s terminal state
 for results.
