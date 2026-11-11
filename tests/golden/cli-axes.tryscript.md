@@ -30,14 +30,18 @@ patterns:
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   SOURCE: 'cold_scan|warm_revalidate'
   HUMAN_SIZE: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB)'
-  # A volume row reads the host's filesystem, so its capacity, share in use, path, type,
-  # and device are matched; its layout and what the report counted are not.
+  # A volume row reads the host's filesystem, so its capacity, share in use, available
+  # space, type, device, and observation instant are matched; its path (`.` for the root,
+  # `""` in machine output), its layout, and what the report counted are pinned.
   CAPACITY: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (?:B|KiB|MiB|GiB|TiB|PiB)'
   IN_USE: '\s*(?:<1%|[0-9]{1,3}%|—) in use'
   # The root's own row is `.`, as every view names it, then its type, if the host has one.
   FS_TYPE: '(?:  \([^)\r\n]+\))?'
   POOL: '(?:, shared with the other volumes of its pool)?'
   FS_NAME: '(?:"[^"]*"|null)'
+  DEVICE: '\d+'
+  HOST_BYTES: '\d+'
+  OBSERVED_NS: '\d+'
   BOOL: 'true|false'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
   PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
@@ -1003,7 +1007,7 @@ $ fdu --cache off --size apparent --view volumes --scan-depth 0 builds
 ```console
 $ fdu --cache off --size apparent --view volumes --format jsonl builds
 {"schema": "fdu.report/12", "generator": "fdu 0.5.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "age_reference_at": "[RFC3339]", "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "time": "changed", "sort_metric": null, "views": ["volumes"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "selected": {"files": 4, "dirs": 10, "bytes": 240, "allocated": [ALLOCATED]}, "scanned": {"files": 4, "dirs": 10, "bytes": 240, "allocated": [ALLOCATED]}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": null}
-{"view": "volumes", "observed_at_ns": [MTIME_NS], "observed_at": "[RFC3339]", "volumes": [{"device": [ALLOCATED], "path": "", "other_paths": 0, "filesystem": [FS_NAME], "capacity_bytes": [ALLOCATED], "available_bytes": [ALLOCATED], "shares_pool": [BOOL], "unknown_reason": null, "counted": {"files": 4, "bytes": 240, "allocated": [ALLOCATED]}}]}
+{"view": "volumes", "observed_at_ns": [OBSERVED_NS], "observed_at": "[RFC3339]", "volumes": [{"device": [DEVICE], "path": "", "other_paths": 0, "filesystem": [FS_NAME], "capacity_bytes": [HOST_BYTES], "available_bytes": [HOST_BYTES], "shares_pool": [BOOL], "unknown_reason": null, "counted": {"files": 4, "bytes": 240, "allocated": [ALLOCATED]}}]}
 ? 0
 ```
 

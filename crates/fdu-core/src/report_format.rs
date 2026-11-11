@@ -141,7 +141,7 @@ pub enum Format {
     Tree,
     /// Matching paths, one safely escaped path per line.
     Paths,
-    /// Flat size, signed modification age, and path columns.
+    /// Flat size, signed age on the report's clock, and path columns.
     Long,
     /// One JSON document.
     Json,

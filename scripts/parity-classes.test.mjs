@@ -412,8 +412,8 @@ test("no class absorbs an extra changed line", () => {
       ["error: invalid max_depth", "total 999"],
     ),
     "surface-vocabulary": session(
-      ["error: invalid --modified-since", "total 100"],
-      ["error: invalid modified_since", "total 999"],
+      ["error: invalid --since", "total 100"],
+      ["error: invalid since", "total 999"],
     ),
     "bound-tip-vocabulary": session(
       ["tip: show more: --depth=all", "total 100"],

@@ -1545,7 +1545,8 @@ impl Section {
 /// A rendered answer: provenance, plus one section per requested view.
 #[derive(Clone, Debug)]
 pub struct Report {
-    /// Instant used for modification age, in epoch nanoseconds; unknown outside i64.
+    /// The instant every age is measured from, on the report's clock, in epoch
+    /// nanoseconds; unknown outside i64.
     pub age_reference_ns: Option<i64>,
     /// Requested presentation; Text resolves from each section projection.
     pub format: crate::report_format::Format,
@@ -9323,11 +9324,10 @@ mod tests {
     /// next 8-byte field grows every row a walk builds (review C13 on #192). Pinned where
     /// the layout is known.
     ///
-    /// 176 bytes until `changed_ns`, which took it to 192: the row's 16-byte alignment
-    /// (its `i128` age) rounds any 8-byte field up to 16. Both clocks ([`FileRow::times`])
-    /// and `status_observed` replaced `mtime_ns` and `changed_ns` without growing it, so
-    /// the row stays at 192. Kept on the row because sorting and windowing a flat view by
-    /// either clock read it there, and rows are built only for admitted entries.
+    /// 192 bytes: the row's 16-byte alignment (its `i128` age) rounds any 8-byte field up
+    /// to 16, so its second clock ([`FileRow::times`]) and `status_observed` took it from
+    /// 176. Kept on the row because sorting and windowing a flat view by either clock read
+    /// it there, and rows are built only for admitted entries.
     #[cfg(all(unix, target_pointer_width = "64"))]
     #[test]
     fn a_flat_row_keeps_its_size() {

@@ -277,7 +277,7 @@ function normalise(text) {
     .replace(/\b\d+ metadata bytes\b/g, '[N] metadata bytes')
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/g, '[RFC3339]')
     // Every clock reading, raw or the report's own time, is named by the one pattern.
-    .replace(/("(?:(?:newest_)?mtime|changed|time|newest_file_time)_ns":\s*)\d+/g, '$1[MTIME_NS]');
+    .replace(/("(?:mtime|changed|time|newest_file_time)_ns":\s*)\d+/g, '$1[MTIME_NS]');
   // A tree row's age cell and its padding, where the golden names the cell, before the
   // duration mask below can turn an age in seconds into [TIME] and leave padding the clock
   // sized (review E1 on #192); maskAgeCells says why.
