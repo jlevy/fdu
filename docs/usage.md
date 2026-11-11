@@ -498,7 +498,10 @@ the one the walk recorded.
 A filesystem kept at the scan depth, an automount that has expired since the walk, a
 filesystem unmounted or numbered afresh, and a device boundary that is no mount point,
 such as a btrfs subvolume, each keep their row and their counts with `capacity unknown`
-and the reason, so a report never mounts what `--view tree` would not.
+and the reason, so a report never mounts what `--view tree` would not, except an
+automount that expires between fdu’s read of the table and its call there: that window
+is as long as the calls before it, so a slow network filesystem in the same report can
+stretch it to seconds.
 Each directory is looked up on its own, so a mount the table lists below one of these,
 such as a tmpfs below a btrfs subvolume, is still asked.
 The root is always asked, since you named it, and holds to the same device rule.

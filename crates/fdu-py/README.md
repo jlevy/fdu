@@ -342,7 +342,8 @@ A filesystem the report entered at several paths is one row, named by the first,
 each other path in `also_entered` as a `VolumeEntered`. Capacity is read when the report
 is, and below the root only where the walk listed and the operating system’s mount table
 shows a mounted filesystem, not an automount trigger (autofs), at exactly that path, so
-reading it mounts nothing.
+reading it mounts nothing, except an automount that expires between the report’s read of
+the mount table and its call there, a window as long as the calls before it.
 Any other row’s capacity is `None`, with an `unknown_reason` that says why, such as
 `not a mount point now, so it was not asked`; `View.FULL` leaves volumes out.
 

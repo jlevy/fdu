@@ -430,7 +430,7 @@ A capacity observation is the one call that takes no such flag.
 on an unmounted trigger, or on a path through one, mounts it and waits for the
 automounter, exactly as a listing would; what macOS does for its triggers is untested.
 So `volumes` asks only where the walk listed, and below a root only where touching the
-path mounts nothing.
+path mounts nothing, as far as the mount table read for the report can tell.
 Each root is asked: the user named it, and reading its device opens it in any case.
 A filesystem the report entered only at a directory the walk kept without listing it, at
 the scan depth or not yet reached by an opened root’s discovery, keeps its row with
@@ -467,13 +467,23 @@ stat, and where the table cannot be read nothing below a root is asked.
 `--view volumes` then mounts nothing a tree of the same request would not, on a route
 that walked or one that did not, and `--view full` leaves `volumes` out and makes no
 capacity call at all.
-The rules are `query_volumes::walk_listed`, `query_volumes::observe_entries`, and
-`capacity::MountTable`, and root-only tests mount real triggers to hold them
-(`tests/volumes_automount.rs`): a direct trigger whose automounter refuses every
-request, one that mounts a filesystem and expires it, one with a second filesystem
-mounted below it, an indirect map whose keys are made on request and removed on expiry,
-with the report rooted below it and at it, and debugfs’s `tracing`, which needs no
-automounter.
+That gate is exact for the mount table as it was read when the report was read, and no
+further.
+The table is read once, and each directory is then checked and asked in turn, by
+path, so a mount that expires between that read and its own check or call (an idle
+autofs key, an NFS submount) can be asked for again and mounted: the stat and the
+capacity call resolve the path afresh, and `statfs` resolves it with automounting on.
+The window is as long as the checks and capacity calls made before it, so one slow
+network filesystem earlier in the same report stretches it from microseconds to that
+server’s latency. Opening each path that passes the table at once and making the check
+and the call on that descriptor would hold its mount busy throughout; that is deferred
+(fdu-pxd2). The rules are `query_volumes::walk_listed`,
+`query_volumes::observe_entries`, and `capacity::MountTable`, and root-only tests mount
+real triggers to hold them (`tests/volumes_automount.rs`): a direct trigger whose
+automounter refuses every request, one that mounts a filesystem and expires it, one with
+a second filesystem mounted below it, an indirect map whose keys are made on request and
+removed on expiry, with the report rooted below it and at it, and debugfs’s `tracing`,
+which needs no automounter.
 
 A walk records the device it read its root on, as the root entry’s attributes, on every
 route, and a snapshot keeps it, so a report keys the root’s filesystem by the number its

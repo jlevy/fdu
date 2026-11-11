@@ -119,7 +119,10 @@ details.
     lists below one is still asked.
     So `--stale-ok`, a watch’s repaint, a retained index, and an opened root’s read
     never mount what the tree view would not, on indirect maps such as `/home` and
-    `/net` and kernel automounts such as NFS nested exports too.
+    `/net` and kernel automounts such as NFS nested exports too, as far as the table
+    read for the report can tell: an automount that expires between that read and the
+    call there is asked for again, and the window is as long as the calls before it, so
+    a slow network filesystem in the same report stretches it.
   - **The root’s device.** Every walk records the device it read its root on, and the
     snapshot keeps it, so a report keys the root by the number its walk counted it on:
     under `--stale-ok` after a remount or a reboot gave the root a new number, the tree

@@ -31,6 +31,14 @@
 //! like any other. A root is held to the same device rule: it is asked where it is still on
 //! the device its walk recorded, which keys its row ([`Index::root_device`]).
 //!
+//! The gate is exact for the table as it was read, and no further. `observe_entries`
+//! reads it once, then checks and asks each directory in turn, by path, so a mount that
+//! expires between that read and a directory's own check or call (an idle autofs key, an
+//! NFS submount) is resolved afresh and asked for again: `statfs` resolves with automounting
+//! on. The window is as long as the checks and calls made before it, so one slow network
+//! filesystem stretches it; asking on a descriptor opened when the table is read would hold
+//! each mount busy throughout (fdu-pxd2).
+//!
 //! No row is summed with another. Available space can be shared between volumes of one
 //! pool, and the bytes a report counted and the bytes in use never add to the capacity:
 //! snapshots, other volumes, purgeable space, and deleted files still open all take space
