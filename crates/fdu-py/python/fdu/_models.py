@@ -135,7 +135,8 @@ class View(StrEnum):
     LIST = "list"
     SUMMARY = "summary"
     #: Each filesystem the report touches: capacity, available space, and what the report
-    #: counted there, observed when the report is read.
+    #: counted there, observed when the report is read. Not part of ``full``, which
+    #: describes the tree; ask for it by name.
     VOLUMES = "volumes"
     #: The selected regular files by age band on the report's clock, newest first.
     AGES = "ages"

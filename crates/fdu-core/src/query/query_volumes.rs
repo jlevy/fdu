@@ -468,6 +468,32 @@ mod tests {
             .collect()
     }
 
+    /// `--view full` describes the tree and leaves `volumes` out, so whatever analyzers
+    /// it runs with, a full request observes no capacity on any route: each route asks
+    /// [`observe_volumes`], or the same question of the request's views, before it reads
+    /// (the maintainer's decision on review F13 of #209).
+    #[test]
+    fn a_full_report_asks_no_filesystem_for_its_capacity() {
+        use crate::content::AnalysisSet;
+        use crate::query::{Query, Request, ViewSpec};
+        let root = tempfile::tempdir().expect("root");
+        let (index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        for analysis in [AnalysisSet::NONE, AnalysisSet::ALL] {
+            let (views, omitted) =
+                ViewSpec::resolve(Some("full"), analysis, "view").expect("full resolves");
+            assert!(!views.contains(&ViewSpec::Volumes), "{views:?}");
+            assert!(!omitted.contains(&ViewSpec::Volumes), "not dropped, never part of it");
+            assert!(views.contains(&ViewSpec::Ages), "full keeps ages: {views:?}");
+            let request = Request::new(
+                crate::query::Basis::held_by(&index),
+                Query { views, omitted_views: omitted, ..Query::default() },
+                std::time::SystemTime::now(),
+            );
+            assert!(observe_volumes(&[&index], &request).is_none(), "{analysis:?}");
+        }
+    }
+
     /// A capacity call on an unmounted automount trigger asks the kernel to mount it and
     /// waits for the automounter, as a listing would, so it is made only where the walk
     /// listed: never on a directory it kept at the scan depth, or one an opened root's

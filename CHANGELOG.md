@@ -74,7 +74,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   relative to its root and `.` for the root itself, never by the canonical path the
   capacity call used (`\\?\C:\…` on Windows, `/private/var` for `/var` on macOS).
   `fdu PATH --view volumes --scan-depth 0` reads capacity alone.
-  The view is part of `--view full`.
+  The view describes the host rather than the tree, so `--view full` leaves it out; ask
+  for it by name, alone or beside other views (`--view tree,volumes`).
 - Rust: `observe_capacity`, `CapacityObservation`, and `VolumeCapacity` in
   `fdu_core::capacity`; `query::observe_volumes` observes what a request needs, and
   `report` and `report_roots` take that observation as their last argument, reporting
@@ -131,11 +132,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The Python decoder requires the request’s `time` and each list row’s `time_ns`, and a
   hand-built Python `FileRow` takes `time_ns`, `mtime_ns`, and `changed_ns` after
   `allocated`.
-- `--view full` holds `volumes` and `ages` right after `summary`, so every later section
-  of a full report moves two places in machine output: read sections by their `view`,
-  not their position. A full report now also opens each root, makes one `statfs` per
-  filesystem it touches, and takes two more passes over the index, one to find where the
-  walk changed filesystem and one to count each filesystem’s files.
+- `--view full` holds `ages` right after `summary`, so every later section of a full
+  report moves one place in machine output: read sections by their `view`, not their
+  position.
 - The agent skill, `fdu --help`, `fdu --docs`, and the README show how to find what was
   written recently from one scan with no saved state: `fdu PATH --kind file --since 24h`
   by folder, and `--view largest` for the files.

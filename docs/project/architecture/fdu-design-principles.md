@@ -383,9 +383,10 @@ directory below one that the walk listed.
 A filesystem the report entered only at a directory the walk kept without listing it,
 at the scan depth or not yet reached by an opened root’s discovery, keeps its row with
 capacity unknown and the reason that the walk did not list it.
-`--view full`, which includes `volumes`, then mounts nothing a tree of the same request
-would not. The rule is `query_volumes::walk_listed`, and a root-only test mounts a real
-trigger to hold it (`tests/volumes_automount.rs`).
+`--view volumes` then mounts nothing a tree of the same request would not, and
+`--view full` leaves `volumes` out and makes no capacity call at all.
+The rule is `query_volumes::walk_listed`, and a root-only test mounts a real trigger to
+hold it (`tests/volumes_automount.rs`).
 
 ## Data Structures
 

@@ -297,7 +297,8 @@ metadata visible but does not retain a separate lower-level metric record for th
   One-shot text adds the performance footer described below; use a machine format when
   output is consumed programmatically.
 - `--view summary` for one aggregate row.
-- `--view full` for the bounded digest of every view but List and Files.
+- `--view full` for the bounded digest of every view but List, Files, and Volumes, which
+  describes the host rather than the tree and is asked for by name.
 - Several views in one run share one scan: `--view summary,types,families`. Text then
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.

@@ -263,7 +263,8 @@ MORE COMPOSITIONS
   Explicit bounds override it regardless of order. It leaves view, scan scope,
   population, and analysis unchanged. --view=full chooses views instead.
   --sort and --limit still override them. files alone is complete: every
-  matching entry, in name order. full combines applicable views, without list/files.
+  matching entry, in name order. full combines applicable views, without list,
+  files, or volumes.
 
 LIST FORMATS AND OLD BUILD DIRECTORIES
   The metadata default view is list; its default format is tree. These agree:
@@ -338,9 +339,11 @@ HOW FULL THE DISK IS
   volumes shows each filesystem the report touches: its capacity, the share in use,
   what is available, and what this report counted there. A walk without
   --one-filesystem can cross mounts below PATH, one row each. Capacity is read when
-  the report is, never cached. Rows never add up: available space can be shared
-  within an APFS container, btrfs filesystem, or ZFS pool, which the row says, and
-  snapshots, other volumes, and deleted files still open use space no walk sees.
+  the report is, never cached, and only for filesystems the walk listed, so
+  --view full, which describes the tree, leaves volumes out. Rows never add up:
+  available space can be shared within an APFS container, btrfs filesystem, or ZFS
+  pool, which the row says, and snapshots, other volumes, and deleted files still
+  open use space no walk sees.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached

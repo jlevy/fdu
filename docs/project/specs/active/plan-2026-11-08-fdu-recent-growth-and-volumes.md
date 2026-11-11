@@ -476,7 +476,10 @@ Illustrative layout, with invented values:
 note: available space on an apfs volume is shared with the other volumes in its container
 ```
 
-Both new views join `--view full`, which shows every view but List and Files.
+`ages` joins `--view full`, which shows every view but List and Files. `volumes` does
+not: it describes the host, not the tree, so two full reports of an unchanged tree would
+differ, and a digest would make capacity calls a tree of the same request does not. A
+first version included it; the maintainer left it out on review F13 of #209.
 
 ### Selection coverage
 
@@ -597,7 +600,7 @@ before release; the items above record what was built and then superseded.
   until files were counted on their directory’s device.
   A one-filesystem walk touches only its root’s filesystem, since it never enters the
   mount points it retains.
-- [x] Rows, pooled-filesystem wording, text and machine renderers, `--view full`. Each
+- [x] Rows, pooled-filesystem wording, text and machine renderers. Each
   row is three lines on every platform, the pooled-space caveat on its available line
   rather than a separate note, so goldens pin one layout with named patterns.
 - [x] `make cross-lint`, since every source is behind a platform gate.

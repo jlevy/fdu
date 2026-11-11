@@ -29,13 +29,6 @@ patterns:
   FILE_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s'
   BYTE_RATE: '[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB)/s'
   SEP: '[/\\]'
-  # A volume row reads the host's filesystem, so its capacity, share in use, path, and
-  # type are matched; its three-line layout and what the report counted are not.
-  CAPACITY: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (?:B|KiB|MiB|GiB|TiB|PiB)'
-  IN_USE: '\s*(?:<1%|[0-9]{1,3}%|—) in use'
-  # The root's own row is `.`, as every view names it, then its type, if the host has one.
-  FS_TYPE: '(?:  \([^)\r\n]+\))?'
-  POOL: '(?:, shared with the other volumes of its pool)?'
 ---
 # Content Metrics CLI Contract
 
@@ -1114,17 +1107,13 @@ $ fdu --watch --view code content-project
 `--view full` renders what the requested analyzers support and names what it had to
 skip. It implies no analyzer, so `code` and `documents`, the views with no metadata-only
 projection, are the ones it can skip, and its tip names the analyzer value that includes
-them.
+them. It leaves `volumes` out: capacity describes the host, not the tree, so it is asked
+for by name.
 
 ```console
 $ fdu --cache off --color never --size apparent --view full --limit 2 content-project
 SUMMARY
      256 B  7 files, 4 directories
-
-VOLUMES
-[CAPACITY]  [IN_USE]  .[FS_TYPE]
-                         [CAPACITY] available[POOL]
-                         256 B counted by this report
 
 AGES
      256 B  100.0%  under 1h     7 files
@@ -1174,11 +1163,6 @@ names the value that keeps the code analysis already chosen.
 $ fdu --cache off --color never --size apparent --analyze code --view full --limit 2 content-project
 SUMMARY
      256 B  7 files, 4 directories
-
-VOLUMES
-[CAPACITY]  [IN_USE]  .[FS_TYPE]
-                         [CAPACITY] available[POOL]
-                         256 B counted by this report
 
 AGES
      256 B  100.0%  under 1h     7 files
@@ -1234,11 +1218,6 @@ With every analyzer enabled nothing is omitted, and no note appears.
 $ fdu --cache off --color never --size apparent --analyze all --view full --limit 2 content-project
 SUMMARY
      256 B  7 files, 4 directories
-
-VOLUMES
-[CAPACITY]  [IN_USE]  .[FS_TYPE]
-                         [CAPACITY] available[POOL]
-                         256 B counted by this report
 
 AGES
      256 B  100.0%  under 1h     7 files

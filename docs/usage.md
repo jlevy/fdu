@@ -145,7 +145,7 @@ repeated filesystem walks.
 | `largest` | Twenty largest regular files by default |
 | `recent` | Twenty most recently changed regular files by default |
 | `files` | Every selected entry in name order |
-| `full` | Every applicable view but `list` and `files` |
+| `full` | Every applicable view but `list`, `files`, and `volumes` |
 
 `largest` and `recent` are presets over `files`. `--sort` and `--limit` override their
 defaults. Use `--limit=all` where a bounded view should print every row.

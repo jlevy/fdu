@@ -385,10 +385,13 @@ impl ViewSpec {
 
     /// Whether this view belongs in `--view full`.
     ///
-    /// `full` is every *summary* view. `files` is an unbounded enumeration, and putting
-    /// one inside a digest destroys the digest.
+    /// `full` is every *summary* view of the tree. `files` is an unbounded enumeration,
+    /// and putting one inside a digest destroys the digest. `volumes` describes the host,
+    /// not the tree: it asks each filesystem's capacity when the report is read, so two
+    /// full reports of an unchanged tree would differ, and a digest would make capacity
+    /// calls a tree of the same request does not. It is asked for by name.
     pub const fn is_summary_view(self) -> bool {
-        !matches!(self, Self::List | Self::Files)
+        !matches!(self, Self::List | Self::Files | Self::Volumes)
     }
 }
 
