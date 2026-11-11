@@ -328,10 +328,11 @@ window is selected whole.
 Every report carries `Report.selected` and `Report.scanned`, each an `EntryTotals` of
 files, directories, and both byte metrics, so a filtered root’s 100% can be read against
 the whole scan without parsing a note.
-`View.AGES` returns an `AgesSection`: nine `AgeBand` values, newest first, each the
-files `kinds=(EntryKind.FILE,)` with the window it names would select, with an
+`View.AGES` returns an `AgesSection`: nine `AgeBand` values, newest first, each with an
 `AgeTally` of files, bytes, and the ignored part, a `cumulative` tally of it and every
 newer band, and a `total` equal to a summary of the same selection.
+Where the selection admits files alone, each band is also the files
+`kinds=(EntryKind.FILE,)` with the window it names would select.
 `View.VOLUMES` returns a `VolumesSection` of `VolumeRow` values: each filesystem the
 report touches, its capacity, available space, type, and whether it shares space in a
 pool, beside the `VolumeCounted` files and bytes this report counted there.

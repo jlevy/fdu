@@ -9,7 +9,7 @@ It is pre-built and distributed via PyPI and `uv` so you can run it right now wi
 `uvx fdu@latest`.
 
 For every directory in a file tree, fdu reports its size, file count, most recent
-change, file kinds, how much `.gitignore` files cover.
+change, file kinds, and how much `.gitignore` files cover.
 Optionally, it also analyzes lines of code by programming language or words, paragraphs,
 and pages in documents for Markdown or text.
 
@@ -493,7 +493,8 @@ paired runs on real trees, and the
 retains the experiments and their measured effects.
 
 The figures below are historical measurements of the builds named beside them.
-They are not measurements of the final 0.5.0 release.
+They are not measurements of the 0.5.0 or 0.6.0 releases; 0.6.0 has not been timed
+against these tools.
 In the 2026-10-10 Linux rerun, neither the 0.5.0 development build nor 0.4.0 showed a
 resolved lead over `pdu --max-depth 2` or diskus on the two real trees; the generated
 million-entry tree retained its leads.

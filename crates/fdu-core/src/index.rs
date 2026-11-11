@@ -166,16 +166,16 @@ pub struct ExtTally {
 /// counts directory blocks. The difference is small and constant per directory, and
 /// making it configurable is deferred rather than guessed at.
 ///
-/// `newest_mtime_ns` is the newest modification time among descendant **files**.
-/// Directory mtimes are excluded because they change on every child add or remove, which
-/// makes "what changed recently" answer with directories instead of the edits a user
-/// actually made.
+/// `newest_mtime_ns` and `newest_changed_ns` are the newest modification time and the
+/// newest change time among descendant **files**. Directories' own times are excluded
+/// because they change on every child add or remove, which makes "what changed recently"
+/// answer with directories instead of the edits a user actually made.
 ///
 /// A tree row's age asks the other question, the newest activity of any kind beneath a
 /// directory, directories' own times included. The index maintains that beside this
 /// roll-up for the tree to read per row, and keeps it out of this public type, whose
 /// fields every caller constructs and matches: its one reader is the report, which
-/// already carries it as each tree row's `mtime_ns`.
+/// already carries it as each tree row's `time`.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct RollUp {
     /// Descendant files.

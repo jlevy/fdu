@@ -1,7 +1,8 @@
 # Using fdu
 
-fdu scans one path and can answer several questions about it: directory sizes, totals,
-recent or large files, file kinds and languages, physical lines, standard lines of code,
+fdu scans a directory tree, or several as one report, and can answer several questions
+about it: directory sizes, totals, recent or large files, how the space divides by age,
+how full the disk is, file kinds and languages, physical lines, standard lines of code,
 and prose volume. The command keeps the scan, analysis, selection, and presentation
 choices separate so each option has one meaning.
 

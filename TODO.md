@@ -59,7 +59,7 @@ references.
 | Progress indicator | `fdu-vngp`, `fdu-2e8o` | [Progress plan](docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md): shipped indicator; remaining acceptance is recorded in the plan and linked beads. |
 | Rust quality | `fdu-dxee` | [Quality plan](docs/project/specs/active/plan-2026-08-09-fdu-rust-engineering-quality.md): parser/commit-failure state-machine coverage (`fdu-471a`). |
 | Disk checkpoints and allocation | `fdu-uwhl`, `fdu-8ybz`, `fdu-579b` | [Disk checkpoints](docs/project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md): probe and store design; unique hard-link accounting remains separate. Current allocation counts paths, not reclaimable bytes. |
-| Recent growth without a baseline | `fdu-tjsi` | [Recent growth, age profiles, and volume capacity](docs/project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md): the written-recently recipe is documented; change time, the `ages` view, and the `volumes` view await the plan’s open questions. |
+| Recent growth without a baseline | `fdu-tjsi` | [Recent growth, age profiles, and volume capacity](docs/project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md): change time as the report’s clock, the `ages` view, and the `volumes` view are implemented for 0.6.0. Open follow-ups: a paired timing of the both-clock roll-ups (`fdu-3dci`), counting entries timed by a stand-in change time (`fdu-mufo`), change-time moves that come only from hard links (`fdu-yl8u`), the macOS and hard-link recency measurements (`fdu-42ms`), and two automount cases (`fdu-kle7`, `fdu-vxji`). |
 | Deferred extensions | `fdu-x746` | [Post-phase-1 roadmap](docs/project/specs/future/plan-2026-08-09-fdu-post-phase-1-roadmap.md). |
 
 ## Performance and Evidence

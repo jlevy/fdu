@@ -569,7 +569,7 @@ impl Session {
     /// answer measures them from its own instant, so a tree's `3m` becomes `4m` with no
     /// change at all. The identity measures them from one fixed reference instead, the
     /// instant the session's request was built, which leaves each row's age a function
-    /// of its activity alone, and adds the exact `mtime_ns` and `complete` of every row
+    /// of its activity alone, and adds the exact time and `complete` of every row
     /// whose age `format` shows. So an idle tree repaints nothing while its ages roll
     /// over, and any change in a row's activity repaints, a touch that leaves its age in
     /// the same unit included.
