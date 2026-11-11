@@ -12,8 +12,9 @@
 //! work and engine lifecycle belong in Rust; Python should use coarse control/query calls
 //! and request the answers it needs, while complete materialization remains supported.
 //!
-//! `open()`, `scan()`, and the native reconciliation phase of `Index.refresh()` release
-//! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
+//! `open()`, `scan()`, the native reconciliation phase of `Index.refresh()`, and the
+//! capacity observation of an `Index.report` that names `volumes` release the GIL. One
+//! `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
 //! `PyO3`'s exclusive object borrow for the whole detached reconciliation, so an
 //! overlapping call on that same Python object is rejected by `PyO3`'s runtime borrow
 //! check rather than becoming an unsynchronized shared-index read. Calls on independent
@@ -563,11 +564,20 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        // A serving route: capacity is observed here, inside the native call, when the
-        // request names `volumes`, and passed to the pure reader. The observation reads the
-        // filesystem and waits as long as a filesystem takes to answer, so it runs without
-        // the GIL: a mount that answers slowly then delays this call, not every thread.
-        let capacity = py.detach(|| fdu_core::query::observe_volumes(&[&self.inner], &request));
+        // A serving route: capacity is observed here, inside the native call, and passed to
+        // the pure reader; `observe_volumes` makes no call for a request without `volumes`.
+        // For one that names it, the observation reads the filesystem and waits as long as a
+        // filesystem takes to answer, so it runs without the GIL: a mount that answers
+        // slowly then delays this call, not every thread. Released, the GIL lets another
+        // thread reach this index meanwhile, which PyO3's borrow check refuses
+        // (`RuntimeError: Already borrowed`), so only a report that names `volumes` opens
+        // that window; every other report holds the GIL throughout, as before.
+        let observe = || fdu_core::query::observe_volumes(&[&self.inner], &request);
+        let capacity = if request.query.views.contains(&ViewSpec::Volumes) {
+            py.detach(observe)
+        } else {
+            observe()
+        };
         fdu_core::query::report(&self.inner, &request, now, capacity.as_ref()).map_err(to_py_err)
     }
 }

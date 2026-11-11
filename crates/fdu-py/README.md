@@ -175,9 +175,11 @@ The index API (`Index`) returns whole selected results in bulk while retaining t
 inventory in Rust. The opened API below also supports continuation-based paging.
 Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
 unrelated Python threads and independent indexes can progress.
-Content analysis streams every eligible file through EOF. Binary data, invalid UTF-8,
-and unsupported SLOC languages remain visible as coverage without making the operation
-partial; I/O failures and files changed during a read remain operational errors.
+So does a report’s capacity observation, only when it asks for `View.VOLUMES`; every
+other `Index.report` holds the GIL. Content analysis streams every eligible file through
+EOF. Binary data, invalid UTF-8, and unsupported SLOC languages remain visible as
+coverage without making the operation partial; I/O failures and files changed during a
+read remain operational errors.
 One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
 that same object is rejected rather than becoming an unsynchronized shared-index access.
 The wheel enables the optional watch dependency and exposes `Index.watch()` as a
