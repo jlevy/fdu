@@ -116,6 +116,11 @@ pub struct VolumesSection {
 /// Why a row's capacity is unknown when the reader was given no observation.
 pub(crate) const NOT_OBSERVED: &str = "capacity was not observed";
 
+/// Why a row's capacity is unknown when the reader was given an observation that does not
+/// hold its filesystem: an opened root entered it after observing capacity and before the
+/// read, which takes its guard again.
+pub(crate) const NOT_IN_OBSERVATION: &str = "the filesystem was not observed";
+
 /// Why a row's capacity is unknown when the walk listed none of the directories where the
 /// report entered its filesystem, so no capacity call was made there.
 pub(crate) const NOT_LISTED: &str = "the walk did not list this directory";
@@ -482,7 +487,7 @@ pub(super) fn volumes_section(
                 },
                 None if !listed => (None, Some(NOT_LISTED.to_owned())),
                 None if observation.is_none() => (None, Some(NOT_OBSERVED.to_owned())),
-                None => (None, Some("the filesystem was not observed".to_owned())),
+                None => (None, Some(NOT_IN_OBSERVATION.to_owned())),
             };
             Some(VolumeRow {
                 device,
@@ -869,6 +874,37 @@ mod tests {
         };
         assert_eq!(root_key(&mounts, Some(1), still_mounted), Some(1));
         assert_eq!(root_key(&Index::new("/empty"), None, |_| None), None);
+    }
+
+    /// An opened root finds where it enters each filesystem under one guard, observes their
+    /// capacity with it released, and reads under another, so a filesystem it entered in
+    /// between has no observation. Its row says so, and borrows no other's capacity
+    /// (review F2; G8 on #209).
+    #[test]
+    fn a_filesystem_entered_after_capacity_was_observed_reads_as_not_observed() {
+        let index = mounted();
+        let observation = VolumesObservation {
+            root_devices: vec![Some(1)],
+            capacity: CapacityObservation {
+                observed_at: std::time::UNIX_EPOCH,
+                volumes: vec![crate::capacity::ObservedVolume {
+                    device: 1,
+                    path: PathBuf::from("/srv"),
+                    capacity: Ok(VolumeCapacity {
+                        capacity_bytes: 100,
+                        available_bytes: 50,
+                        filesystem: None,
+                    }),
+                }],
+            },
+        };
+        assert_eq!(
+            rows_of(&index, &observation),
+            [
+                (PathBuf::new(), 1, true, None),
+                (PathBuf::from("mnt"), 2, false, Some(NOT_IN_OBSERVATION.to_owned())),
+            ]
+        );
     }
 
     #[test]
