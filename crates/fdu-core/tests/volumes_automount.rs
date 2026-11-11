@@ -51,12 +51,14 @@ const CHILD_DEPTH: &str = "FDU_TEST_AUTOMOUNT_CHILD_DEPTH";
 /// Set when the child reports a second time from the index it walked, once its parent
 /// says so on its standard input.
 const CHILD_AGAIN: &str = "FDU_TEST_AUTOMOUNT_CHILD_AGAIN";
+// The three requests are typed `libc::Ioctl`, the type `ioctl` takes on this target:
+// `c_ulong` with glibc and `c_int` with musl, so the file builds for both.
 /// `AUTOFS_IOC_READY`: the request with this token is answered; the mount is in place.
-const AUTOFS_IOC_READY: libc::c_ulong = 0x9360;
+const AUTOFS_IOC_READY: libc::Ioctl = 0x9360;
 /// `AUTOFS_IOC_FAIL`: refuse the request with this token.
-const AUTOFS_IOC_FAIL: libc::c_ulong = 0x9361;
+const AUTOFS_IOC_FAIL: libc::Ioctl = 0x9361;
 /// `AUTOFS_IOC_CATATONIC`: stop sending requests, so every later access fails at once.
-const AUTOFS_IOC_CATATONIC: libc::c_ulong = 0x9362;
+const AUTOFS_IOC_CATATONIC: libc::Ioctl = 0x9362;
 /// How long one child walk may take before the test fails rather than waits.
 const CHILD_DEADLINE: Duration = Duration::from_secs(30);
 
@@ -260,7 +262,7 @@ fn bind(source: &Path, target: &Path) -> bool {
 }
 
 /// The automounter's answer for a mount that was, or was not, made.
-fn ready(mounted: bool) -> libc::c_ulong {
+fn ready(mounted: bool) -> libc::Ioctl {
     if mounted { AUTOFS_IOC_READY } else { AUTOFS_IOC_FAIL }
 }
 
