@@ -2019,6 +2019,7 @@ enum TestPoint {
     BeforeJournalWait,
     AfterRefreshVerification,
     DuringTreeProjection,
+    DuringCapacityObservation,
     #[cfg(feature = "watch")]
     BeforeObservationHandoff,
     #[cfg(feature = "watch")]
@@ -2039,6 +2040,7 @@ struct TestControls {
     before_journal_wait: TestGate,
     after_refresh_verification: TestGate,
     during_tree_projection: TestGate,
+    during_capacity_observation: TestGate,
     #[cfg(feature = "watch")]
     before_observation_handoff: TestGate,
     #[cfg(feature = "watch")]
@@ -2068,6 +2070,7 @@ impl TestControls {
             TestPoint::BeforeJournalWait => &self.before_journal_wait,
             TestPoint::AfterRefreshVerification => &self.after_refresh_verification,
             TestPoint::DuringTreeProjection => &self.during_tree_projection,
+            TestPoint::DuringCapacityObservation => &self.during_capacity_observation,
             #[cfg(feature = "watch")]
             TestPoint::BeforeObservationHandoff => &self.before_observation_handoff,
             #[cfg(feature = "watch")]
@@ -5233,6 +5236,59 @@ mod tests {
         let row = &volumes.rows[0];
         assert!(row.capacity.as_ref().is_some_and(|capacity| capacity.capacity_bytes > 0));
         assert_eq!(row.counted.files, 1);
+        opened.close().expect("close");
+    }
+
+    /// A report that names `volumes` observes capacity holding no index guard, so a
+    /// filesystem slow to answer delays that report alone, never a refresh or the readers
+    /// queued behind one (review F2 on #209).
+    #[test]
+    fn a_refresh_returns_while_a_report_observes_capacity() {
+        let controls = Arc::new(TestControls::default());
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("a.bin"), b"bytes").expect("fixture");
+        let opened =
+            OpenedIndex::open_for_test(root.path(), OpenOptions::default(), Arc::clone(&controls))
+                .expect("open live root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+        controls.gate(TestPoint::DuringCapacityObservation).arm();
+        let reader = opened.clone();
+        let report = thread::spawn(move || {
+            reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
+                    query: crate::query::Query {
+                        views: vec![crate::query::ViewSpec::Volumes],
+                        ..crate::query::Query::default()
+                    },
+                    now: std::time::SystemTime::now(),
+                    max_work: crate::MAX_PAGE_WORK,
+                })],
+                ..crate::ReadRequest::default()
+            })
+        });
+        controls.gate(TestPoint::DuringCapacityObservation).wait_reached();
+
+        std::fs::write(root.path().join("new.txt"), b"new").expect("new file");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let writer = opened.clone();
+        let refresh = thread::spawn(move || {
+            let _ = sender.send(writer.refresh(&[PathBuf::from("new.txt")]));
+        });
+        let refreshed = receiver.recv_timeout(TEST_GATE_TIMEOUT);
+        controls.gate(TestPoint::DuringCapacityObservation).release();
+        let refreshed = refreshed.expect("a refresh finished while capacity was observed");
+        assert_eq!(refreshed.expect("refresh").accepted, [PathBuf::from("new.txt")]);
+        refresh.join().expect("refresh thread");
+
+        let response = report.join().expect("report thread").expect("read");
+        let crate::ProjectionResult::Report(report) = &response.results[0] else {
+            panic!("expected a report, got {:?}", response.results[0]);
+        };
+        let crate::query::Section::Volumes(volumes) = &report.sections[0] else {
+            panic!("expected volumes")
+        };
+        assert!(volumes.rows[0].capacity.is_some(), "the observation reached the read");
+        assert_eq!(volumes.rows[0].counted.files, 2, "the read saw the refreshed file");
         opened.close().expect("close");
     }
 

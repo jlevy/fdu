@@ -28,6 +28,7 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
         });
     }
     validate_request(&request)?;
+    let capacity = observe_report_capacity(opened, &request)?;
 
     opened.state.index.read_with(|index| {
         let scope = index.scope();
@@ -194,7 +195,13 @@ pub(super) fn read(opened: &OpenedIndex, request: ReadRequest) -> Result<ReadRes
                     ));
                 }
                 crate::ReadProjection::Report(request) => {
-                    results.push(report_projection(index, &request, state, &mut work)?);
+                    results.push(report_projection(
+                        index,
+                        &request,
+                        state,
+                        capacity.as_ref(),
+                        &mut work,
+                    )?);
                 }
                 crate::ReadProjection::Diagnostics => {
                     results.push(ProjectionResult::Diagnostics(crate::ReadDiagnostics {
@@ -233,10 +240,53 @@ fn validate_request(request: &ReadRequest) -> Result<()> {
     Ok(())
 }
 
+/// Observe capacity for the report projections of `request` that name `volumes`, before
+/// the read takes the guard it projects under.
+///
+/// A capacity call reads the filesystem and waits as long as the filesystem takes to
+/// answer, which for an unreachable network mount is indefinitely, so none is made while
+/// an index guard is held: a writer would wait on it, and every later reader behind the
+/// writer. Under one short guard this finds where the root enters each filesystem, the
+/// calls follow with the guard released, and the coherent read is given what they
+/// observed. A filesystem the root enters between the two has no observation, and its row
+/// says so. A report the read's work allowance would refuse observes nothing.
+fn observe_report_capacity(
+    opened: &OpenedIndex,
+    request: &ReadRequest,
+) -> Result<Option<crate::query::VolumesObservation>> {
+    let reports: Vec<&crate::ReportRequest> = request
+        .projections
+        .iter()
+        .filter_map(|projection| match projection {
+            crate::ReadProjection::Report(report)
+                if report.query.views.contains(&crate::query::ViewSpec::Volumes) =>
+            {
+                Some(report)
+            }
+            _ => None,
+        })
+        .collect();
+    if reports.is_empty() {
+        return Ok(None);
+    }
+    let root_devices = crate::query::root_devices([opened.state.root.as_path()]);
+    let entries = opened.state.index.read_with(|index| {
+        reports
+            .iter()
+            .any(|report| report_work(index, &report.query).total() <= report.max_work)
+            .then(|| crate::query::volume_entries(&[index], &root_devices))
+    })?;
+    let Some(entries) = entries else { return Ok(None) };
+    #[cfg(test)]
+    opened.state.test_controls.reach(super::TestPoint::DuringCapacityObservation);
+    Ok(Some(crate::query::observe_entries(root_devices, &entries)))
+}
+
 fn report_projection(
     index: &crate::Index,
     request: &crate::ReportRequest,
     _state: crate::IndexState,
+    capacity: Option<&crate::query::VolumesObservation>,
     work: &mut Work,
 ) -> Result<ProjectionResult> {
     validate_report(request)?;
@@ -253,16 +303,16 @@ fn report_projection(
 
     // The same identity rule as every other projection: a report's selection inside an
     // opened read matches portable names, where a one-shot report matches native ones.
-    // Capacity is observed here, as every serving route observes it before it reads, and
-    // only when the report names `volumes`.
+    // Capacity was observed before this read took its guard
+    // ([`observe_report_capacity`]), and only a report that names `volumes` reads it.
     let read = read_request(request);
-    let capacity = crate::query::observe_volumes(&[index], &read);
+    let capacity = capacity.filter(|_| read.query.views.contains(&crate::query::ViewSpec::Volumes));
     let report = crate::query::report_in(
         index,
         &read,
         request.now,
         crate::query::NameIdentity::Portable,
-        capacity.as_ref(),
+        capacity,
     )?;
     work.rows_visited = work.rows_visited.saturating_add(charge.rows);
     work.maintained_index_work = work.maintained_index_work.saturating_add(charge.maintained);
@@ -321,6 +371,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
         let shaping = query.views.iter().fold(0_u64, |total, view| {
             let rows = match view {
                 crate::query::ViewSpec::Summary => 1,
+                crate::query::ViewSpec::Volumes => volumes_passes(entries),
                 crate::query::ViewSpec::List
                 | crate::query::ViewSpec::Tree
                 | crate::query::ViewSpec::Types
@@ -332,8 +383,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 | crate::query::ViewSpec::Files
                 | crate::query::ViewSpec::Largest
                 | crate::query::ViewSpec::Recent
-                | crate::query::ViewSpec::Ages
-                | crate::query::ViewSpec::Volumes => entries,
+                | crate::query::ViewSpec::Ages => entries,
             };
             total.saturating_add(rows)
         });
@@ -361,6 +411,9 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 // second time merely to price the query.
                 work.maintained = work.maintained.saturating_add(entries);
             }
+            crate::query::ViewSpec::Volumes => {
+                work.rows = work.rows.saturating_add(volumes_passes(entries));
+            }
             crate::query::ViewSpec::List
             | crate::query::ViewSpec::Tree
             | crate::query::ViewSpec::Types
@@ -371,13 +424,19 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
             | crate::query::ViewSpec::Files
             | crate::query::ViewSpec::Largest
             | crate::query::ViewSpec::Recent
-            | crate::query::ViewSpec::Ages
-            | crate::query::ViewSpec::Volumes => {
+            | crate::query::ViewSpec::Ages => {
                 work.rows = work.rows.saturating_add(entries);
             }
         }
         work
     })
+}
+
+/// What a `volumes` view reads of an index of `entries` entries: two passes, one before
+/// the capacity observation, under its own short guard, to find where the root enters
+/// each filesystem ([`observe_report_capacity`]), and the report's own, to count on each.
+fn volumes_passes(entries: u64) -> u64 {
+    entries.saturating_mul(2)
 }
 
 fn report_rows(report: &crate::query::Report) -> u64 {
@@ -1176,13 +1235,13 @@ mod tests {
         };
         let mut work = Work::default();
         assert!(matches!(
-            report_projection(&index, &request, state, &mut work).expect("bounded read"),
+            report_projection(&index, &request, state, None, &mut work).expect("bounded read"),
             ProjectionResult::Limit(_)
         ));
         request.max_work = charge;
         let mut work = Work::default();
         let ProjectionResult::Report(report) =
-            report_projection(&index, &request, state, &mut work).expect("exact read")
+            report_projection(&index, &request, state, None, &mut work).expect("exact read")
         else {
             panic!("report")
         };
@@ -1229,5 +1288,36 @@ mod tests {
             .join()
             .expect("the climb finished within a small stack");
         assert_eq!(next, None, "a chain has no second directory at its deepest level");
+    }
+
+    /// A `volumes` view is charged the two passes it makes: one, before capacity is
+    /// observed, to find where the root enters each filesystem, and the report's own
+    /// (review F2 on #209). Pinned, as the directory charge above is.
+    #[test]
+    fn a_volumes_report_is_charged_both_of_its_passes() {
+        let mut index = crate::Index::new("/root");
+        index.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: "a.bin".into(),
+                kind: crate::EntryKind::File,
+                attrs: crate::Attrs::default(),
+            },
+            crate::Op::Upsert {
+                path: "b.bin".into(),
+                kind: crate::EntryKind::File,
+                attrs: crate::Attrs::default(),
+            },
+        ]));
+        let views = |views: Vec<crate::query::ViewSpec>| crate::query::Query {
+            views,
+            ..crate::query::Query::default()
+        };
+        assert_eq!(report_work(&index, &views(vec![crate::query::ViewSpec::Volumes])).total(), 4);
+        // Under a selection walk: two passes for the walk, then the view's two.
+        let mut filtered = views(vec![crate::query::ViewSpec::Volumes]);
+        filtered.selection.kinds = vec![crate::EntryKind::File];
+        filtered.selection.min_size = Some(1);
+        assert!(filtered.needs_selection_walk());
+        assert_eq!(report_work(&index, &filtered).total(), 2 + 4);
     }
 }

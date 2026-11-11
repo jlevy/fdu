@@ -739,6 +739,11 @@ An opened `read()` captures one index guard, engine version, and lifecycle state
 It returns requested projections in request order with explicit bounds and a cursor that
 can resume changes after that version.
 It performs no filesystem I/O and no unbounded scan or sort while holding the guard.
+A report that names `volumes` needs the filesystem’s capacity, which is read from the
+filesystem and takes as long as a filesystem takes to answer, so it is observed before
+that guard: one short guard finds where the root enters each filesystem, the capacity
+calls follow with it released, and the coherent read is given what they observed.
+A filesystem the root enters between the two reads as not observed in its row.
 
 The native projection vocabulary stays smaller than any one application’s algebra:
 

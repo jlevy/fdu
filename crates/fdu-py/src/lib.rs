@@ -198,6 +198,7 @@ impl PyIndex {
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report_handle(
         &self,
+        py: Python<'_>,
         views: Option<Vec<String>>,
         format: Option<&str>,
         include: Option<Vec<String>>,
@@ -218,6 +219,7 @@ impl PyIndex {
         words_per_page: u64,
     ) -> PyResult<PyOneShot> {
         let report = self.build_report(
+            py,
             views,
             format,
             include,
@@ -502,6 +504,7 @@ impl PyIndex {
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn build_report(
         &self,
+        py: Python<'_>,
         views: Option<Vec<String>>,
         format: Option<&str>,
         include: Option<Vec<String>>,
@@ -547,8 +550,10 @@ impl PyIndex {
             words_per_page,
         )?;
         // A serving route: capacity is observed here, inside the native call, when the
-        // request names `volumes`, and passed to the pure reader.
-        let capacity = fdu_core::query::observe_volumes(&[&self.inner], &request);
+        // request names `volumes`, and passed to the pure reader. The observation reads the
+        // filesystem and waits as long as a filesystem takes to answer, so it runs without
+        // the GIL: a mount that answers slowly then delays this call, not every thread.
+        let capacity = py.detach(|| fdu_core::query::observe_volumes(&[&self.inner], &request));
         fdu_core::query::report_with_capacity(&self.inner, &request, now, capacity.as_ref())
             .map_err(to_py_err)
     }
@@ -777,10 +782,12 @@ impl PyWatch {
     /// Reporting does not consume pending events or update the originating `Index`.
     /// The returned snapshot renders the same answer on repeated calls; its ages use
     /// this report call's instant, while query selection windows remain fixed.
-    fn report(&self) -> PyResult<PyOneShot> {
+    fn report(&mut self, py: Python<'_>) -> PyResult<PyOneShot> {
         let session =
-            self.session.as_ref().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
-        let report = session.report(SystemTime::now()).map_err(to_py_err)?;
+            self.session.as_mut().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
+        // A report that names `volumes` observes capacity, which reads the filesystem and can
+        // wait on it, so the GIL is released for it as it is for a wait.
+        let report = py.detach(move || session.report(SystemTime::now())).map_err(to_py_err)?;
         Ok(PyOneShot { report })
     }
 
