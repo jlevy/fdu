@@ -1073,11 +1073,32 @@ fn verify_with_directory_times(
                     scan_config.exclude_special,
                 ) == crate::admission::Disposition::Retain
         })
-        .filter_map(|directory| match scan::observe_path(&root.join(&directory)) {
+        .filter_map(|directory| match scan::observe_path_entering(&root.join(&directory)) {
             // A directory that is gone, or no longer one, is reported by its own event or
             // by the failed verification of the path beneath it.
-            Ok((EntryKind::Dir, attrs)) => Some((directory, attrs)),
+            Ok((EntryKind::Dir, attrs, automount)) => Some((directory, attrs, automount)),
             Ok(_) | Err(_) => None,
+        })
+        .collect();
+    // Each is recorded as a walk records a directory it descends into, against the device
+    // the index holds for the directory above it, so an automount trigger whose mount has
+    // expired never has the trigger's device written over the filesystem's the walk counted
+    // there (review H5 on #209). The guard is taken for the devices alone and released
+    // before any directory is opened. Without an index no device is held, which compares
+    // with nothing, and the stat stands.
+    let above: Vec<u64> = match held {
+        None => vec![0; read.len()],
+        Some(index) => index.read_with(|index| {
+            read.iter().map(|(directory, _, _)| held_device_above(index, directory)).collect()
+        })?,
+    };
+    let read: Vec<_> = read
+        .into_iter()
+        .zip(above)
+        .map(|((directory, attrs, automount), above)| {
+            let attrs =
+                scan::entered_directory_attrs(attrs, above, automount, || root.join(&directory));
+            (directory, attrs)
         })
         .collect();
     match held {
@@ -1100,6 +1121,19 @@ fn verify_with_directory_times(
         })?,
     }
     Ok(Observation::from_ops(observed))
+}
+
+/// The device `index` holds for the directory that holds `path`: the root's as its walk
+/// recorded it, and any other's as its entry records it, or zero, which compares with
+/// nothing, where it holds none.
+fn held_device_above(index: &crate::Index, path: &Path) -> u64 {
+    match path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        None => index.root_device().unwrap_or(0),
+        Some(parent) => match index.expectation(parent).state {
+            PathState::Present { kind: EntryKind::Dir, attrs } => attrs.dev,
+            _ => 0,
+        },
+    }
 }
 
 /// Verify the paths one bounded intent names: stat once per path, never once per backend

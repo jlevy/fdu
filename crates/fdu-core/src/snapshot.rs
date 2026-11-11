@@ -96,7 +96,11 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 ///
 /// 6: the entry tier records ignored population and, when narrowed, the governing
 /// control policy. Narrowed scans cannot reuse broader metadata without projection.
-const FORMAT_VERSION: u32 = 6;
+///
+/// 7: the root's record carries the device the walk read the root on
+/// ([`Index::root_device`]), which a report keys the root's filesystem by. The layout is
+/// unchanged; an older image recorded none, and a report from it would have to guess.
+const FORMAT_VERSION: u32 = 7;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
 ///

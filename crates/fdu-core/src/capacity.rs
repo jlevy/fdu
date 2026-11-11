@@ -8,18 +8,25 @@
 //!
 //! One call per filesystem: `statfs` on Linux and macOS, which returns capacity and the
 //! filesystem type together, `statvfs` on other Unix systems, and `GetDiskFreeSpaceExW`
-//! with `GetVolumeInformationW` on Windows. No mount table is read; the walk already knows
-//! where the device changes.
+//! with `GetVolumeInformationW` on Windows. The walk knows where the device changes, so the
+//! mount table never names a row; it only decides which paths may be touched
+//! ([`MountTable`]).
 //!
-//! Each call resolves its path, so on an unmounted automount trigger it asks for the mount
-//! and waits for the answer, as a listing does. A caller therefore names only paths the
-//! walk listed where the filesystem it counted is still mounted
-//! ([`crate::query::observe_volumes`]), and never calls this while it holds an index
-//! guard: a filesystem that answers slowly, or never, then delays one report rather than
-//! every reader and writer of a root.
+//! Each call resolves its path, so on an unmounted automount trigger, or on a path through
+//! one, it asks for the mount and waits for the answer, as a listing does. A caller
+//! therefore names a root, which the user named, and below a root only a path the walk
+//! listed where the mount table lists a mount at exactly that path whose topmost
+//! filesystem is not an automount trigger, and where the stat that never mounts then finds
+//! the device the walk counted ([`crate::query::observe_volumes`]). And it never calls this
+//! while it holds an index guard: a filesystem that answers slowly, or never, then delays
+//! one report rather than every reader and writer of a root.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+mod mount_table;
+
+pub(crate) use mount_table::{MountAt, MountTable};
 
 #[cfg(unix)]
 #[allow(unsafe_code)]

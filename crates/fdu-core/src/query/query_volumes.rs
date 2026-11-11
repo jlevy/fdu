@@ -7,18 +7,27 @@
 //! serving route made just before it read ([`crate::capacity`]), and a reader given none
 //! reports it as unknown, never as zero.
 //!
-//! Capacity is asked only where the walk listed and the filesystem it counted is still
-//! mounted. A capacity call on an unmounted automount trigger mounts it and waits for the
-//! answer, as a listing would. Each root is asked: the user named it, and reading its
-//! device opens it in any case. A directory the walk kept without listing it (at the scan
-//! depth, or not yet reached by an opened root's discovery) keeps its row with capacity
-//! unknown and the reason ([`NOT_LISTED`]), never a call the walk itself would not have
-//! made. And a listing is a fact about a walk that may be hours old, while the call is made
-//! now: an automounter unmounts what it mounted once it sits idle, so every other directory
-//! is first read again with the stat that never mounts, and asked only where that stat
-//! still finds a directory on the device its row is keyed by. One that fails keeps its row
-//! with the reason ([`NOT_MOUNTED`]), and so does everything below it, which no path
-//! reaches without walking through it ([`NOT_REACHED`]).
+//! Capacity is asked only where the walk listed, and below a root only where touching the
+//! path mounts nothing. A capacity call resolves its path, and on an unmounted automount
+//! trigger, or on a path through one, it asks the automounter to mount it and waits for the
+//! answer, as a listing would. Each root is asked: the user named it, and reading its device
+//! opens it in any case. A directory the walk kept without listing it (at the scan depth, or
+//! not yet reached by an opened root's discovery) keeps its row with capacity unknown and
+//! the reason ([`NOT_LISTED`]), never a call the walk itself would not have made.
+//!
+//! And a listing is a fact about a walk that may be hours old, while the call is made now:
+//! an automounter unmounts what it mounted once it sits idle, and a remount or a reboot
+//! numbers many filesystems afresh. The stat that never mounts cannot tell which paths are
+//! safe to touch, since it covers only a path's last component, and only where that
+//! component exists. So every directory below a root is first looked up in the mount table,
+//! which resolves no path ([`MountTable`]), and asked only where the table lists a mount at
+//! exactly its path, visible there, whose topmost filesystem is not an automount trigger
+//! ([`NOT_A_MOUNT_POINT`], [`AUTOMOUNT_NOT_MOUNTED`]); then, the path being a mount point,
+//! the stat that never mounts confirms it is on the device the walk recorded
+//! ([`NOT_ON_RECORDED_DEVICE`]). One that fails keeps its row and its counts with the
+//! reason, and so does everything below it, which is never read at all ([`NOT_REACHED`]).
+//! A root is held to the same device rule: it is asked where it is still on the device its
+//! walk recorded, which keys its row ([`Index::root_device`]).
 //!
 //! No row is summed with another. Available space can be shared between volumes of one
 //! pool, and the bytes a report counted and the bytes in use never add to the capacity:
@@ -29,21 +38,16 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::EntryKind;
-use crate::capacity::{CapacityObservation, VolumeCapacity};
+use crate::capacity::{CapacityObservation, MountAt, MountTable, VolumeCapacity};
 use crate::index::{EntryId, Index};
 
 /// What a serving route observed for a report that names `volumes`: the device each root
 /// is keyed by, and the capacity of every filesystem the report touches.
-///
-/// The roots' devices are observed because an index does not hold them: a walk records
-/// every entry's attributes but the root's own. Like capacity, they are read when the
-/// report is, never stored.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VolumesObservation {
-    /// One device per root, in the roots' order, that the root's row is keyed by: the
-    /// device it is on, or for an index served without verification, the number the index
-    /// recorded for that filesystem ([`observe_volumes`]); `None` where the root could not
-    /// be read, which the reader then infers from the devices beneath it.
+    /// One device per root, in the roots' order, that the root's row is keyed by: the device
+    /// its walk recorded ([`Index::root_device`]), or for an index no walk built, which
+    /// recorded none, the device the root is on now; `None` where neither is known.
     pub root_devices: Vec<Option<u64>>,
     /// The capacity of each filesystem, by device.
     pub capacity: CapacityObservation,
@@ -75,7 +79,8 @@ pub struct VolumeEntry {
     /// Whether the walk listed the entry: a root always counts as listed, and a directory
     /// below one when its scope admitted descent into it and the index holds its listing.
     /// A capacity call is made only on a listed entry, and below a root only where the
-    /// stat that never mounts still finds it on [`Self::device`].
+    /// mount table lists a mount at exactly its path that is no automount trigger and the
+    /// stat that never mounts then finds it on [`Self::device`].
     pub listed: bool,
 }
 
@@ -125,14 +130,33 @@ pub(crate) const NOT_IN_OBSERVATION: &str = "the filesystem was not observed";
 /// report entered its filesystem, so no capacity call was made there.
 pub(crate) const NOT_LISTED: &str = "the walk did not list this directory";
 
-/// Why a row's capacity is unknown when the stat that never mounts found no directory on
-/// the row's device where the walk entered its filesystem: an automount that has expired
-/// since the walk, a filesystem unmounted or replaced, or a directory removed.
-pub(crate) const NOT_MOUNTED: &str = "the filesystem was no longer mounted here";
+/// Why a row's capacity is unknown when the device found at its path now is not the one the
+/// walk recorded there: the filesystem was unmounted, expired, replaced, or numbered afresh
+/// by a remount or a reboot, or the directory was removed. For a root, the device is its
+/// live one; below a root, the one the stat that never mounts finds at a mount point.
+pub(crate) const NOT_ON_RECORDED_DEVICE: &str =
+    "not found on the device the walk recorded (unmounted, expired, or renumbered since)";
+
+/// Why a row's capacity is unknown when the mount table lists no mount at the path where
+/// the walk entered its filesystem: an automount that has expired since the walk, whose
+/// directory the automounter may have removed, a filesystem unmounted, or a device boundary
+/// that is no mount point, such as a btrfs subvolume. The path is never touched: touching
+/// it could ask an automounter for it.
+pub(crate) const NOT_A_MOUNT_POINT: &str = "not a mount point now, so it was not asked";
+
+/// Why a row's capacity is unknown when the topmost filesystem the mount table lists at its
+/// path is autofs: a direct trigger whose mount has expired, which a call would ask the
+/// automounter for, or an indirect map's own directory, which holds no capacity of its own.
+pub(crate) const AUTOMOUNT_NOT_MOUNTED: &str =
+    "an automount point (autofs) is topmost here, so it was not asked";
+
+/// Why a row's capacity is unknown when the mount table could not be read, so no path below
+/// a root can be shown safe to touch.
+pub(crate) const NO_MOUNT_TABLE: &str = "the mount table could not be read, so it was not asked";
 
 /// Why a row's capacity is unknown when every path the walk entered its filesystem at lies
-/// below one where the filesystem was no longer mounted, so reaching it would mount that one.
-pub(crate) const NOT_REACHED: &str = "a filesystem above this directory was no longer mounted";
+/// below one that was not asked, so reaching it could walk through that one and mount it.
+pub(crate) const NOT_REACHED: &str = "a directory above this one was not asked, so it was not read";
 
 /// Where a walk entered one filesystem below a root: the device, the path relative to the
 /// root, and whether the walk listed that directory.
@@ -164,17 +188,16 @@ fn walk_listed(index: &Index, id: EntryId, path: &Path) -> bool {
 /// a row per layer. A bind-mounted file is counted on its directory's filesystem for the
 /// same reason. A directory with no device of its own (zero, which a Windows walker
 /// reports for an entry it could list but not open) is taken to be on its parent's.
+///
+/// The root is on `root_device`, the key an observation gave it, or else the device its
+/// walk recorded ([`Index::root_device`]).
 pub(super) fn devices(
     index: &Index,
     root_device: Option<u64>,
     counted: impl Fn(EntryId) -> bool,
 ) -> (Vec<Entered>, BTreeMap<u64, VolumeCounted>) {
-    let root_device = root_device
-        .filter(|device| *device != 0)
-        .or_else(|| {
-            index.attrs_of(EntryId::ROOT).map(|attrs| attrs.dev).filter(|device| *device != 0)
-        })
-        .unwrap_or_else(|| inferred_root_device(index));
+    let root_device =
+        root_device.filter(|device| *device != 0).or_else(|| index.root_device()).unwrap_or(0);
     // A one-filesystem walk retains each mount point it reached as a boundary and never
     // enters it, so the report touches no other filesystem.
     let crosses = !index.scope().one_filesystem;
@@ -208,30 +231,6 @@ pub(super) fn devices(
     (entries, tallies)
 }
 
-/// The device most of the root's directories are on, for a reader given no observation of
-/// the root's own: a walk does not record it, and a mount point is the exception among a
-/// directory's children. Zero when the root has no directory with a device.
-fn inferred_root_device(index: &Index) -> u64 {
-    let mut seen: Vec<(u64, usize)> = Vec::new();
-    for (_, child) in index.children_of(EntryId::ROOT).into_iter().flatten() {
-        let (Some(EntryKind::Dir), Some(attrs)) = (index.kind_of(child), index.attrs_of(child))
-        else {
-            continue;
-        };
-        if attrs.dev == 0 {
-            continue;
-        }
-        match seen.iter_mut().find(|(device, _)| *device == attrs.dev) {
-            Some((_, count)) => *count += 1,
-            None => seen.push((attrs.dev, 1)),
-        }
-    }
-    // The most common, and among equals the first seen, so the answer is stable.
-    seen.iter()
-        .fold((0, 0), |best, &(device, count)| if count > best.1 { (device, count) } else { best })
-        .0
-}
-
 /// `relative` under `root`, without the separator `join` adds for an empty path, so the
 /// root's own row reads `/srv`, not `/srv/`.
 fn absolute(root: &Path, relative: &Path) -> PathBuf {
@@ -241,8 +240,9 @@ fn absolute(root: &Path, relative: &Path) -> PathBuf {
 /// Where a report over `indexes` enters each filesystem, in the roots' order: what a
 /// serving route observes before it reads a report that names `volumes`.
 ///
-/// `root_devices` names the device each root is on, in the roots' order, as
-/// [`VolumesObservation::root_devices`] does; a root it leaves out is inferred.
+/// `root_devices` names the device each root's row is keyed by, in the roots' order, as
+/// [`VolumesObservation::root_devices`] does; a root it leaves out is keyed by the device
+/// its walk recorded.
 pub fn volume_entries(indexes: &[&Index], root_devices: &[Option<u64>]) -> Vec<VolumeEntry> {
     indexes
         .iter()
@@ -260,10 +260,10 @@ pub fn volume_entries(indexes: &[&Index], root_devices: &[Option<u64>]) -> Vec<V
         .collect()
 }
 
-/// The device each root is on, in the roots' order; `None` where a root cannot be read.
+/// The device each root is on now, in the roots' order; `None` where a root cannot be read.
 ///
-/// Read as the walk reads a root's device for `--one-filesystem`, so the two agree. This
-/// reads the filesystem, and an opened root calls it before it takes its index guard.
+/// Read as the walk reads a root's device, so the two agree. This reads the filesystem, and
+/// an opened root calls it before it takes its index guard.
 pub(crate) fn root_devices<'a>(roots: impl IntoIterator<Item = &'a Path>) -> Vec<Option<u64>> {
     roots
         .into_iter()
@@ -273,11 +273,23 @@ pub(crate) fn root_devices<'a>(roots: impl IntoIterator<Item = &'a Path>) -> Vec
         .collect()
 }
 
+/// The device each root's row is keyed by, in the roots' order: the device its walk
+/// recorded, or for an index that recorded none, the device it is on now (`live`).
+pub(crate) fn root_keys(indexes: &[&Index], live: &[Option<u64>]) -> Vec<Option<u64>> {
+    indexes
+        .iter()
+        .enumerate()
+        .map(|(at, index)| index.root_device().or_else(|| live.get(at).copied().flatten()))
+        .collect()
+}
+
 /// The device the stat that never mounts finds a directory at `path` on, or `None` where
 /// it finds no directory or cannot read one.
 ///
-/// [`crate::scan::observe_path`]: on Linux it passes `AT_NO_AUTOMOUNT`, so an unmounted
-/// trigger answers for itself, on the trigger's own device, and nothing is mounted.
+/// [`crate::scan::observe_path`], which on Linux passes `AT_NO_AUTOMOUNT`. That covers the
+/// path's last component, and only where it exists, so this is called only on a path the
+/// mount table lists as a mount point whose topmost filesystem is no automount trigger:
+/// every component then resolves through mounted filesystems, and nothing is mounted.
 fn directory_device(path: &Path) -> Option<u64> {
     match crate::scan::observe_path(path) {
         Ok((EntryKind::Dir, attrs)) if attrs.dev != 0 => Some(attrs.dev),
@@ -285,73 +297,115 @@ fn directory_device(path: &Path) -> Option<u64> {
     }
 }
 
-/// Observe the capacity of each filesystem `entries` enter, on the bytewise-first path the
-/// walk listed for it where the filesystem is still mounted; a filesystem entered only where
-/// the walk did not list, or where it is mounted no longer, is not asked.
+/// Observe the capacity of each filesystem `entries` enter, on the first path where touching
+/// it mounts nothing, given the device each root's row is keyed by (`root_devices`) and the
+/// device each root is on now (`live`); a filesystem entered nowhere it passes is not asked.
 pub(crate) fn observe_entries(
     root_devices: Vec<Option<u64>>,
+    live: &[Option<u64>],
     entries: &[VolumeEntry],
 ) -> VolumesObservation {
-    observe_entries_with(root_devices, entries, directory_device, |volumes| {
-        crate::capacity::observe_capacity(volumes)
-    })
+    observe_entries_with(
+        root_devices,
+        live,
+        entries,
+        |root| std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()),
+        &MountTable::read(),
+        directory_device,
+        |volumes| crate::capacity::observe_capacity(volumes),
+    )
 }
 
-/// [`observe_entries`], with each directory's current device read by `current_device` and
+/// [`observe_entries`], with each root's real path resolved by `real_path`, what is mounted
+/// where read from `mounts`, each mount point's current device read by `current_device`, and
 /// the capacity calls made by `observe`: the seams a test uses to see which paths would be
 /// read and asked.
 ///
-/// Entries are visited in the byte order of their absolute paths, so a directory comes
-/// before everything below it. A root is asked as it is. Any other entry is asked only where
-/// `current_device` finds it on the device its row is keyed by, which a walk records from
-/// the descriptor its listing opened ([`crate::scan::entered_directory_attrs`]), so the
-/// filesystem the walk counted is the one asked. An entry that fails is never asked, and no
-/// entry below it is read at all: resolving a path below an unmounted trigger walks through
-/// the trigger and mounts it. A filesystem no path passed for is observed as its reason.
+/// Entries are visited in the byte order of their real paths, so a directory comes before
+/// everything below it, and every listed entry is checked, one whose filesystem was already
+/// asked at an earlier path too. A root is asked where `live` finds it on the device its row
+/// is keyed by. Any other entry is looked up in `mounts`, under its root's real path, which
+/// the table names mount points by, and passes only where the table lists a mount at exactly
+/// that path whose topmost filesystem is no automount trigger, and `current_device` then
+/// finds it on its row's device, which a walk records from the descriptor it opens
+/// ([`crate::scan::entered_directory_attrs`]), so the filesystem the walk counted is the one
+/// asked. No entry below one that failed is looked at, let alone read: a path below an
+/// unmounted trigger resolves through the trigger and mounts it. One where autofs is topmost
+/// is not asked and blocks nothing: what the table lists below it hangs from it, as a
+/// mounted key hangs from its indirect map. A filesystem asked nowhere is observed as the
+/// first reason one of its paths failed with.
 fn observe_entries_with(
     root_devices: Vec<Option<u64>>,
+    live: &[Option<u64>],
     entries: &[VolumeEntry],
+    real_path: impl Fn(&Path) -> PathBuf,
+    mounts: &MountTable,
     current_device: impl Fn(&Path) -> Option<u64>,
     observe: impl for<'p> FnOnce(Vec<(u64, &'p Path)>) -> CapacityObservation,
 ) -> VolumesObservation {
-    let mut listed: Vec<&VolumeEntry> = entries.iter().filter(|entry| entry.listed).collect();
+    // Each root's real path, resolved once: the table names mount points by real path.
+    let mut real_roots: BTreeMap<usize, PathBuf> = BTreeMap::new();
+    for entry in entries.iter().filter(|entry| entry.path.as_os_str().is_empty()) {
+        real_roots.entry(entry.root).or_insert_with(|| real_path(&entry.absolute));
+    }
+    let mut listed: Vec<(&VolumeEntry, PathBuf)> = entries
+        .iter()
+        .filter(|entry| entry.listed)
+        .map(|entry| {
+            let real = real_roots
+                .get(&entry.root)
+                .map_or_else(|| entry.absolute.clone(), |root| absolute(root, &entry.path));
+            (entry, real)
+        })
+        .collect();
     listed.sort_by(|left, right| {
-        left.absolute
-            .as_os_str()
-            .as_encoded_bytes()
-            .cmp(right.absolute.as_os_str().as_encoded_bytes())
+        left.1.as_os_str().as_encoded_bytes().cmp(right.1.as_os_str().as_encoded_bytes())
     });
-    let mut asked: Vec<(u64, &Path)> = Vec::new();
-    let mut unmounted: Vec<&Path> = Vec::new();
-    let mut refused: Vec<(u64, &Path, &'static str)> = Vec::new();
-    for entry in listed {
-        let at = entry.absolute.as_path();
-        if entry.path.as_os_str().is_empty() {
-            asked.push((entry.device, at));
-            continue;
-        }
-        if asked.iter().any(|(device, _)| *device == entry.device) {
-            continue;
-        }
-        let reason = if unmounted.iter().any(|above| at.starts_with(above)) {
-            NOT_REACHED
-        } else if current_device(at) == Some(entry.device) {
-            asked.push((entry.device, at));
-            continue;
+    let mut asked: Vec<(u64, PathBuf)> = Vec::new();
+    let mut failed: Vec<PathBuf> = Vec::new();
+    let mut refused: Vec<(u64, PathBuf, &'static str)> = Vec::new();
+    for (entry, real) in listed {
+        let reason = if entry.path.as_os_str().is_empty() {
+            // A root, which the user named and whose device the walk read by opening it.
+            (live.get(entry.root).copied().flatten() != Some(entry.device))
+                .then_some(NOT_ON_RECORDED_DEVICE)
+        } else if failed.iter().any(|above| real.starts_with(above)) {
+            Some(NOT_REACHED)
         } else {
-            unmounted.push(at);
-            NOT_MOUNTED
+            let reason = match mounts.at(&real) {
+                None => Some(NO_MOUNT_TABLE),
+                Some(MountAt::NotMounted) => Some(NOT_A_MOUNT_POINT),
+                Some(MountAt::Automount) => Some(AUTOMOUNT_NOT_MOUNTED),
+                Some(MountAt::Mounted) => {
+                    (current_device(&real) != Some(entry.device)).then_some(NOT_ON_RECORDED_DEVICE)
+                }
+            };
+            // Autofs topmost blocks nothing below it: a mount the table lists there hangs
+            // from the autofs mount, as a mounted key of an indirect map does, and a lookup
+            // reaches it without a request; and below an expired trigger the table lists none.
+            if reason.is_some_and(|reason| reason != AUTOMOUNT_NOT_MOUNTED) {
+                failed.push(real.clone());
+            }
+            reason
         };
-        if !refused.iter().any(|(device, _, _)| *device == entry.device) {
-            refused.push((entry.device, at, reason));
+        match reason {
+            None if !asked.iter().any(|(device, _)| *device == entry.device) => {
+                asked.push((entry.device, real));
+            }
+            Some(reason) if !refused.iter().any(|(device, _, _)| *device == entry.device) => {
+                refused.push((entry.device, real, reason));
+            }
+            // A filesystem asked or refused at an earlier path keeps that answer.
+            None | Some(_) => {}
         }
     }
-    let mut capacity = observe(asked);
+    let mut capacity =
+        observe(asked.iter().map(|(device, path)| (*device, path.as_path())).collect());
     for (device, path, reason) in refused {
         if capacity.volume(device).is_none() {
             capacity.volumes.push(crate::capacity::ObservedVolume {
                 device,
-                path: path.to_path_buf(),
+                path,
                 capacity: Err(reason.to_owned()),
             });
         }
@@ -359,62 +413,13 @@ fn observe_entries_with(
     VolumesObservation { root_devices, capacity }
 }
 
-/// The device a report over `index` keys its root's row by, given the device the root is on
-/// now (`live`), with each directory's current device read by `current_device`.
-///
-/// An index verified against the tree was counted on the live device. One served without
-/// verification (`--stale-ok` from a snapshot) may be older than a remount or a reboot, and
-/// many filesystems are numbered when they are mounted (tmpfs, overlayfs, btrfs subvolumes,
-/// NFS, ZFS, FUSE), so the same tree can be on another number now. Keyed by that number,
-/// every directory beneath the root would read as a mount point, and a one-filesystem report
-/// would drop what they hold beside a summary that counts it (review G2 on #209). So for
-/// such an index the live device keys the root only where an entry directly beneath the root
-/// recorded it, or where none recorded a device at all. Otherwise each directory directly
-/// beneath the root is read again with the stat that never mounts, in path order, and the
-/// first one now on the root's live device is on the root's filesystem: the number the index
-/// recorded for it keys the root. A directory still on a device of its own is a mount point,
-/// and where every one is, the root keeps its live device.
-fn root_key(
-    index: &Index,
-    live: Option<u64>,
-    current_device: impl Fn(&Path) -> Option<u64>,
-) -> Option<u64> {
-    let live = live.filter(|device| *device != 0)?;
-    if index.state().source != crate::Source::Cached {
-        return Some(live);
-    }
-    let mut recorded = false;
-    let mut directories: Vec<(&std::ffi::OsStr, u64)> = Vec::new();
-    for (name, child) in index.children_of(EntryId::ROOT).into_iter().flatten() {
-        let Some(attrs) = index.attrs_of(child).filter(|attrs| attrs.dev != 0) else { continue };
-        if attrs.dev == live {
-            return Some(live);
-        }
-        recorded = true;
-        if index.kind_of(child) == Some(EntryKind::Dir) {
-            directories.push((name, attrs.dev));
-        }
-    }
-    if !recorded {
-        return Some(live);
-    }
-    directories.sort_by(|left, right| left.0.as_encoded_bytes().cmp(right.0.as_encoded_bytes()));
-    let root = index.root_path();
-    Some(
-        directories
-            .into_iter()
-            .find(|(name, _)| current_device(&root.join(name)) == Some(live))
-            .map_or(live, |(_, device)| device),
-    )
-}
-
 /// Observe the capacity of every filesystem a report of `request` over `indexes` touches,
 /// or nothing when the request names no `volumes` view.
 ///
-/// Each root is keyed by the device it is on, or for an index served without verification,
-/// by the number its own entries recorded for that filesystem, and each other filesystem is
-/// asked only where the walk listed it and the stat that never mounts still finds it there,
-/// as the module documentation describes.
+/// Each root is keyed by the device its walk recorded and asked where it is still on it,
+/// and each other filesystem is asked only where the walk listed it, the mount table shows
+/// touching it mounts nothing, and the stat that never mounts finds it on the device the
+/// walk recorded, as the module documentation describes.
 ///
 /// The one step a route that owns its indexes takes before it reads such a report, so that
 /// one-shot, retained, and watching routes observe the same filesystems the same way. An
@@ -424,14 +429,10 @@ pub fn observe_volumes(
     request: &crate::query::Request,
 ) -> Option<VolumesObservation> {
     request.query.views.contains(&crate::query::ViewSpec::Volumes).then(|| {
-        let root_devices: Vec<Option<u64>> =
-            root_devices(indexes.iter().map(|index| index.root_path()))
-                .into_iter()
-                .zip(indexes)
-                .map(|(live, index)| root_key(index, live, directory_device))
-                .collect();
+        let live = root_devices(indexes.iter().map(|index| index.root_path()));
+        let root_devices = root_keys(indexes, &live);
         let entries = volume_entries(indexes, &root_devices);
-        observe_entries(root_devices, &entries)
+        observe_entries(root_devices, &live, &entries)
     })
 }
 
@@ -562,41 +563,70 @@ mod tests {
     /// mounted where the walk entered it and a stand-in for the calls that answers every
     /// path it is given.
     fn asked_of(index: &Index) -> (Vec<(u64, PathBuf)>, VolumesObservation) {
-        let mounted: Vec<(PathBuf, u64)> = volume_entries(&[index], &[Some(1)])
-            .into_iter()
-            .map(|entry| (entry.absolute, entry.device))
-            .collect();
-        asked_with(index, |path| {
+        let entries = volume_entries(&[index], &[Some(1)]);
+        let mounts = mounted_at(entries.iter().map(|entry| (entry.absolute.clone(), false)));
+        let mounted: Vec<(PathBuf, u64)> =
+            entries.into_iter().map(|entry| (entry.absolute, entry.device)).collect();
+        asked_with(index, &mounts, |path| {
             mounted.iter().find(|(at, _)| at == path).map(|(_, device)| *device)
         })
     }
 
-    /// [`asked_of`], with `current` standing for the stat that never mounts: the device
-    /// each path is on now.
+    /// A mount table listing each path, and whether its topmost filesystem is an automount
+    /// trigger.
+    fn mounted_at(points: impl IntoIterator<Item = (PathBuf, bool)>) -> MountTable {
+        MountTable::Read(points.into_iter().collect())
+    }
+
+    /// [`asked_of`], with `mounts` standing for the mount table and `current` for the stat
+    /// that never mounts: what is mounted where, and the device each mount point is on now.
+    /// The root is on device 1 now, and its path is its real path.
     fn asked_with(
         index: &Index,
+        mounts: &MountTable,
         current: impl Fn(&Path) -> Option<u64>,
     ) -> (Vec<(u64, PathBuf)>, VolumesObservation) {
-        let entries = volume_entries(&[index], &[Some(1)]);
+        asked_live(index, Some(1), mounts, current)
+    }
+
+    /// [`asked_with`], with the root's device keyed as its walk recorded it, and `live` the
+    /// device the root is on now.
+    fn asked_live(
+        index: &Index,
+        live: Option<u64>,
+        mounts: &MountTable,
+        current: impl Fn(&Path) -> Option<u64>,
+    ) -> (Vec<(u64, PathBuf)>, VolumesObservation) {
+        let keys = root_keys(&[index], &[live]);
+        let entries = volume_entries(&[index], &keys);
         let mut asked = Vec::new();
-        let observation = observe_entries_with(vec![Some(1)], &entries, current, |volumes| {
-            asked = volumes.iter().map(|(device, path)| (*device, path.to_path_buf())).collect();
-            CapacityObservation {
-                observed_at: std::time::UNIX_EPOCH,
-                volumes: volumes
-                    .into_iter()
-                    .map(|(device, path)| crate::capacity::ObservedVolume {
-                        device,
-                        path: path.to_path_buf(),
-                        capacity: Ok(VolumeCapacity {
-                            capacity_bytes: 100,
-                            available_bytes: 50,
-                            filesystem: None,
-                        }),
-                    })
-                    .collect(),
-            }
-        });
+        let observation = observe_entries_with(
+            keys,
+            &[live],
+            &entries,
+            Path::to_path_buf,
+            mounts,
+            current,
+            |volumes| {
+                asked =
+                    volumes.iter().map(|(device, path)| (*device, path.to_path_buf())).collect();
+                CapacityObservation {
+                    observed_at: std::time::UNIX_EPOCH,
+                    volumes: volumes
+                        .into_iter()
+                        .map(|(device, path)| crate::capacity::ObservedVolume {
+                            device,
+                            path: path.to_path_buf(),
+                            capacity: Ok(VolumeCapacity {
+                                capacity_bytes: 100,
+                                available_bytes: 50,
+                                filesystem: None,
+                            }),
+                        })
+                        .collect(),
+                }
+            },
+        );
         (asked, observation)
     }
 
@@ -719,9 +749,12 @@ mod tests {
 
     /// A listing is a fact about a walk that may be hours old, and the capacity call is made
     /// now. An automounter unmounts what it mounted once it sits idle, so a call on a
-    /// directory the walk listed would mount it again and wait (review G1 on #209). Each
-    /// directory is read again with the stat that never mounts, and asked only where it is
-    /// still on its row's device; nothing below one that fails is read at all.
+    /// directory the walk listed would mount it again and wait (review G1 on #209), and the
+    /// stat that never mounts cannot say where it is safe to look: it covers only a path's
+    /// last component, where that exists (review H1). So each directory is looked up in the
+    /// mount table first, and asked only where the table lists a mount at exactly its path
+    /// that is no automount trigger, and the stat, safe there, finds the recorded device;
+    /// nothing below one that fails is looked at.
     #[test]
     fn a_filesystem_no_longer_mounted_where_the_walk_entered_it_is_never_asked() {
         let mut index = Index::new("/srv");
@@ -736,40 +769,66 @@ mod tests {
                 upsert("other/d.bin", EntryKind::File, 40, 4),
                 upsert("gone", EntryKind::Dir, 0, 5),
                 upsert("gone/e.bin", EntryKind::File, 50, 5),
+                upsert("gone/below", EntryKind::Dir, 0, 7),
+                upsert("gone/below/f.bin", EntryKind::File, 60, 7),
+                upsert("re", EntryKind::Dir, 0, 6),
+                upsert("re/g.bin", EntryKind::File, 70, 6),
+                upsert("re/in", EntryKind::Dir, 0, 8),
+                upsert("re/in/h.bin", EntryKind::File, 80, 8),
             ]))
             .expect("apply");
+        let at = |components: &[&str]| {
+            components.iter().fold(PathBuf::from("/srv"), |path, part| path.join(part))
+        };
+        let mounts = mounted_at([
+            // A direct trigger whose automount expired: the trigger is topmost again, and
+            // what was mounted below it is gone with it.
+            (at(&["mnt"]), true),
+            (at(&["other"]), false),
+            // Mounted again since, under a new number.
+            (at(&["re"]), false),
+            (at(&["re", "in"]), false),
+            // `gone` is no mount point now, and `gone/below` is mounted at no path.
+        ]);
         let read = std::cell::RefCell::new(Vec::new());
-        let (asked, observation) = asked_with(&index, |path| {
+        let (asked, observation) = asked_with(&index, &mounts, |path| {
             read.borrow_mut().push(path.to_path_buf());
-            // Compared by component, so a path joined with `\` matches on Windows.
-            if path == Path::new("/srv/mnt") {
-                // The automount expired: the trigger answers for itself, on its own device.
-                Some(9)
-            } else if path == Path::new("/srv/other") {
+            if path == at(&["other"]) {
                 Some(4)
-            } else if path == Path::new("/srv/gone") {
-                // Removed, or no longer a directory.
-                None
+            } else if path == at(&["re"]) {
+                Some(9)
             } else {
-                panic!("read below a filesystem that is no longer mounted: {path:?}")
+                panic!("read a path the table does not show safe to touch: {path:?}")
             }
         });
-        assert_eq!(asked, [(1, PathBuf::from("/srv")), (4, PathBuf::from("/srv/other"))]);
+        assert_eq!(asked, [(1, PathBuf::from("/srv")), (4, at(&["other"]))]);
         assert_eq!(
             read.into_inner(),
-            [PathBuf::from("/srv/gone"), PathBuf::from("/srv/mnt"), PathBuf::from("/srv/other")],
-            "the root is not read, and nothing below the expired trigger is"
+            [at(&["other"]), at(&["re"])],
+            "only mount points are read, never the root and never below one that failed"
         );
         assert_eq!(
             rows_of(&index, &observation),
             [
                 (PathBuf::new(), 1, true, None),
-                (PathBuf::from("gone"), 5, false, Some(NOT_MOUNTED.to_owned())),
-                (PathBuf::from("mnt"), 2, false, Some(NOT_MOUNTED.to_owned())),
-                (PathBuf::from("mnt/inner"), 3, false, Some(NOT_REACHED.to_owned())),
+                (PathBuf::from("gone"), 5, false, Some(NOT_A_MOUNT_POINT.to_owned())),
+                (["gone", "below"].iter().collect(), 7, false, Some(NOT_REACHED.to_owned())),
+                (PathBuf::from("mnt"), 2, false, Some(AUTOMOUNT_NOT_MOUNTED.to_owned())),
+                (["mnt", "inner"].iter().collect(), 3, false, Some(NOT_A_MOUNT_POINT.to_owned())),
                 (PathBuf::from("other"), 4, true, None),
+                (PathBuf::from("re"), 6, false, Some(NOT_ON_RECORDED_DEVICE.to_owned())),
+                (["re", "in"].iter().collect(), 8, false, Some(NOT_REACHED.to_owned())),
             ],
             "each keeps its row, with the counts the walk made, and says why"
+        );
+        // Where the table cannot be read, nothing below a root is shown safe to touch.
+        let (asked, observation) = asked_with(&index, &MountTable::Unreadable, |path| {
+            panic!("read {path:?} without a mount table")
+        });
+        assert_eq!(asked, [(1, PathBuf::from("/srv"))]);
+        assert_eq!(
+            rows_of(&index, &observation)[1],
+            (PathBuf::from("gone"), 5, false, Some(NO_MOUNT_TABLE.to_owned()))
         );
     }
 
@@ -786,94 +845,165 @@ mod tests {
                 upsert("b/g.bin", EntryKind::File, 5, 2),
             ]))
             .expect("apply");
+        let b = PathBuf::from("/srv").join("b");
         let (asked, observation) =
-            asked_with(&index, |path| (path == Path::new("/srv/b")).then_some(2));
-        assert_eq!(asked, [(1, PathBuf::from("/srv")), (2, PathBuf::from("/srv/b"))]);
+            asked_with(&index, &mounted_at([(b.clone(), false)]), |path| (path == b).then_some(2));
+        assert_eq!(asked, [(1, PathBuf::from("/srv")), (2, b)]);
         assert!(rows_of(&index, &observation)[1].2, "the second path answers for the row");
     }
 
-    /// An index served without verification keys its root by the number it recorded for the
-    /// root's filesystem, which a remount or a reboot may since have changed (review G2 on
-    /// #209); one that was verified, or whose own entries confirm the live number, keeps it.
+    /// Every entry is checked, one whose filesystem was already asked at an earlier path
+    /// too: skipped, it was never found unmounted, and a mount below it was read through it,
+    /// which mounted it again (review H1 case 3 on #209).
     #[test]
-    fn an_unverified_root_is_keyed_by_the_number_its_index_recorded() {
-        let renumbered = |scope: crate::ScanScope| {
-            let mut index = Index::new_with_scope("/srv", scope);
-            index
-                .apply(&Observation::new(vec![
-                    upsert("top.txt", EntryKind::File, 4, 5),
-                    upsert("alpha", EntryKind::Dir, 0, 5),
-                    upsert("alpha/a.bin", EntryKind::File, 30, 5),
-                    upsert("alpha/x", EntryKind::Dir, 0, 5),
-                    upsert("alpha/x/deep.bin", EntryKind::File, 20, 5),
-                    upsert("beta", EntryKind::Dir, 0, 5),
-                    upsert("beta/b.bin", EntryKind::File, 10, 5),
-                ]))
-                .expect("apply");
-            index
+    fn an_entry_whose_filesystem_was_asked_elsewhere_is_still_checked() {
+        let mut index = Index::new("/srv");
+        index
+            .apply(&Observation::new(vec![
+                upsert("a", EntryKind::Dir, 0, 2),
+                upsert("a/f.bin", EntryKind::File, 5, 2),
+                upsert("z", EntryKind::Dir, 0, 2),
+                upsert("z/inner", EntryKind::Dir, 0, 3),
+                upsert("z/inner/g.bin", EntryKind::File, 5, 3),
+            ]))
+            .expect("apply");
+        let at = |components: &[&str]| {
+            components.iter().fold(PathBuf::from("/srv"), |path, part| path.join(part))
         };
-        // The same tree, remounted: the root is on 7 now, and so is every directory in it.
-        let now_on_seven = |path: &Path| path.starts_with("/srv").then_some(7);
-        let verified = renumbered(crate::ScanScope::default());
+        // `z`, a second trigger for `a`'s filesystem, has expired, and `inner` with it.
+        let mounts = mounted_at([(at(&["a"]), false), (at(&["z"]), true)]);
+        let (asked, observation) = asked_with(&index, &mounts, |path| {
+            assert_eq!(path, at(&["a"]), "read below an expired trigger");
+            Some(2)
+        });
+        assert_eq!(asked, [(1, PathBuf::from("/srv")), (2, at(&["a"]))]);
         assert_eq!(
-            root_key(&verified, Some(7), |_| panic!("a verified index reads nothing")),
-            Some(7)
+            rows_of(&index, &observation)[2],
+            (["z", "inner"].iter().collect(), 3, false, Some(NOT_A_MOUNT_POINT.to_owned()))
         );
-        for scope in [
+    }
+
+    /// `/srv` as a walk recorded it on device `root`: `top.txt`, `alpha` with two files,
+    /// `beta`, and `gamma`, each file and directory on `root`, and `mount` at `name` on
+    /// `device` with two files of its own, which a one-filesystem walk keeps as a boundary.
+    fn walked(root: u64, mount: Option<(&str, u64)>, scope: crate::ScanScope) -> Index {
+        let mut index = Index::new_with_scope("/srv", scope);
+        let mut ops = vec![
+            Op::Upsert {
+                path: PathBuf::new(),
+                kind: EntryKind::Dir,
+                attrs: Index::root_attrs(root),
+            },
+            upsert("top.txt", EntryKind::File, 4, root),
+            upsert("alpha", EntryKind::Dir, 0, root),
+            upsert("alpha/a.bin", EntryKind::File, 30_000, root),
+            upsert("alpha/x", EntryKind::Dir, 0, root),
+            upsert("alpha/x/deep.bin", EntryKind::File, 20_000, root),
+            upsert("beta", EntryKind::Dir, 0, root),
+            upsert("beta/b.bin", EntryKind::File, 10_000, root),
+            upsert("gamma", EntryKind::Dir, 0, root),
+            upsert("gamma/g.txt", EntryKind::File, 2, root),
+        ];
+        if let Some((name, device)) = mount {
+            ops.push(upsert(name, EntryKind::Dir, 0, device));
+            if !scope.one_filesystem {
+                ops.push(upsert(&format!("{name}/m.bin"), EntryKind::File, 7, device));
+                ops.push(upsert(&format!("{name}/n.bin"), EntryKind::File, 9, device));
+            }
+        }
+        index.apply(&Observation::new(ops)).expect("apply");
+        index
+    }
+
+    /// A report keys its root by the device its walk recorded, on every route, however the
+    /// host has numbered the root since (review H2 on #209). Inferred from its children's
+    /// numbers, as it was, a root could take a mount's number, a number dealt again at a
+    /// remount, or the filesystem under an unplugged disk's mount point, and a
+    /// one-filesystem report then counted one file of five. And a root no longer on that
+    /// device keeps its row and its counts, capacity unknown, as a nested filesystem does
+    /// (review H6).
+    #[test]
+    fn a_root_is_keyed_by_the_device_its_walk_recorded() {
+        let scopes = [
             crate::ScanScope::default(),
             crate::ScanScope { one_filesystem: true, ..crate::ScanScope::default() },
-        ] {
-            let mut index = renumbered(scope);
-            index.set_applying_source(crate::Source::Cached, 1);
-            let key = root_key(&index, Some(7), now_on_seven);
-            assert_eq!(key, Some(5), "{scope:?}");
-            let (entries, tallies) = devices(&index, key, |_| true);
-            assert_eq!(entries, [(5, PathBuf::new(), true)], "one filesystem: {scope:?}");
-            assert_eq!(tallies[&5].files, 4, "every file counted, as the summary does: {scope:?}");
+        ];
+        let no_reads = |path: &Path| -> Option<u64> { panic!("read {path:?}, no mount point") };
+        // (a) The root was 40 and a mount at `zzz` 41; remounted, the root was dealt 41.
+        // (b) A mount at `aaa`, which sorts first, is gone, and the root was dealt 41.
+        // (c) The root's filesystem is not mounted: its path is on the one beneath, 65024.
+        for (case, mount, live) in
+            [("a", Some(("zzz", 41)), 41), ("b", Some(("aaa", 42)), 41), ("c", None, 65_024)]
+        {
+            for scope in scopes {
+                let index = walked(40, mount, scope);
+                let (asked, observation) =
+                    asked_live(&index, Some(live), &mounted_at([]), no_reads);
+                assert_eq!(observation.root_devices, [Some(40)], "({case}) {scope:?}");
+                assert!(asked.is_empty(), "({case}) nothing is asked: {asked:?}");
+                let rows = rows_of(&index, &observation);
+                assert_eq!(
+                    rows[0],
+                    (PathBuf::new(), 40, false, Some(NOT_ON_RECORDED_DEVICE.to_owned())),
+                    "({case}) {scope:?}"
+                );
+                let (entries, tallies) = devices(&index, observation.root_devices[0], |_| true);
+                assert_eq!(tallies[&40].files, 5, "({case}) the summary's five files: {scope:?}");
+                match (mount, scope.one_filesystem) {
+                    (Some((name, device)), false) => {
+                        assert_eq!(
+                            rows[1],
+                            (
+                                PathBuf::from(name),
+                                device,
+                                false,
+                                Some(NOT_A_MOUNT_POINT.to_owned())
+                            ),
+                            "({case})"
+                        );
+                        assert_eq!(tallies[&device].files, 2, "({case})");
+                    }
+                    _ => assert_eq!(entries, [(40, PathBuf::new(), true)], "({case}) {scope:?}"),
+                }
+            }
         }
 
-        // An entry beneath the root recorded the live number, so nothing is read again.
-        let mut confirmed = Index::new("/srv");
-        confirmed
-            .apply(&Observation::new(vec![
-                upsert("a.txt", EntryKind::File, 10, 1),
-                upsert("mnt", EntryKind::Dir, 0, 44),
-                upsert("mnt/b.bin", EntryKind::File, 20, 44),
-            ]))
-            .expect("apply");
-        confirmed.set_applying_source(crate::Source::Cached, 1);
-        assert_eq!(root_key(&confirmed, Some(1), |_| panic!("nothing to confirm")), Some(1));
-        // The recorded tmpfs at `mnt` is no longer mounted there: no capacity is asked of
-        // the filesystem now at that path, which is the root's.
-        let (asked, observation) = asked_with(&confirmed, |_| Some(1));
-        assert_eq!(asked, [(1, PathBuf::from("/srv"))]);
+        // (d) The root is an indirect map, mounted at 41, whose keys were mounted at the walk
+        // and have expired: the map is asked, as a root always is, and no key is touched.
+        let mut map = Index::new("/srv");
+        map.apply(&Observation::new(vec![
+            Op::Upsert { path: PathBuf::new(), kind: EntryKind::Dir, attrs: Index::root_attrs(41) },
+            upsert("alice", EntryKind::Dir, 0, 40),
+            upsert("alice/one.bin", EntryKind::File, 7, 40),
+            upsert("bob", EntryKind::Dir, 0, 43),
+            upsert("bob/two.bin", EntryKind::File, 9, 43),
+        ]))
+        .expect("apply");
+        let map_point = mounted_at([(PathBuf::from("/srv"), true)]);
+        let (asked, observation) = asked_live(&map, Some(41), &map_point, no_reads);
+        assert_eq!(asked, [(41, PathBuf::from("/srv"))]);
         assert_eq!(
-            rows_of(&confirmed, &observation)[1],
-            (PathBuf::from("mnt"), 44, false, Some(NOT_MOUNTED.to_owned()))
+            rows_of(&map, &observation),
+            [
+                (PathBuf::new(), 41, true, None),
+                (PathBuf::from("alice"), 40, false, Some(NOT_A_MOUNT_POINT.to_owned())),
+                (PathBuf::from("bob"), 43, false, Some(NOT_A_MOUNT_POINT.to_owned())),
+            ]
         );
 
-        // Every directory beneath the root is a mount point, each still on its own device:
-        // the root keeps its live number, as a cold walk would key it.
-        let mut mounts = Index::new("/srv");
-        mounts
-            .apply(&Observation::new(vec![
-                upsert("one", EntryKind::Dir, 0, 2),
-                upsert("one/f.bin", EntryKind::File, 1, 2),
-                upsert("two", EntryKind::Dir, 0, 3),
-            ]))
-            .expect("apply");
-        mounts.set_applying_source(crate::Source::Cached, 1);
-        let still_mounted = |path: &Path| {
-            if path == Path::new("/srv/one") {
-                Some(2)
-            } else if path == Path::new("/srv/two") {
-                Some(3)
-            } else {
-                None
-            }
-        };
-        assert_eq!(root_key(&mounts, Some(1), still_mounted), Some(1));
-        assert_eq!(root_key(&Index::new("/empty"), None, |_| None), None);
+        // Unchanged since the walk: the root is asked on the device it was walked on.
+        let index = walked(40, None, crate::ScanScope::default());
+        let (asked, observation) = asked_live(&index, Some(40), &mounted_at([]), no_reads);
+        assert_eq!(asked, [(40, PathBuf::from("/srv"))]);
+        assert_eq!(rows_of(&index, &observation), [(PathBuf::new(), 40, true, None)]);
+        // A root the reader is given no observation for is keyed by the same device.
+        assert_eq!(devices(&index, None, |_| true).0, [(40, PathBuf::new(), true)]);
+
+        // An index no walk built records no root device, and is keyed by the live one.
+        let hand_built = Index::new("/empty");
+        assert_eq!(hand_built.root_device(), None);
+        assert_eq!(root_keys(&[&hand_built], &[Some(3)]), [Some(3)]);
+        assert_eq!(root_keys(&[&hand_built], &[None]), [None]);
     }
 
     /// An opened root finds where it enters each filesystem under one guard, observes their
@@ -922,22 +1052,6 @@ mod tests {
         let (entries, tallies) = devices(&index, Some(1), |_| true);
         assert_eq!(entries, [(1, PathBuf::new(), true)], "the mount point was a boundary");
         assert_eq!(tallies.keys().copied().collect::<Vec<_>>(), [1]);
-    }
-
-    #[test]
-    fn an_unobserved_root_takes_the_device_most_of_its_directories_share() {
-        let index = mounted();
-        // `mnt` is on 2 and `layer` on 1: a tie, which the first-seen directory breaks.
-        let first = index
-            .children_of(EntryId::ROOT)
-            .expect("root")
-            .find_map(|(_, child)| {
-                (index.kind_of(child) == Some(EntryKind::Dir)).then(|| index.attrs_of(child))
-            })
-            .flatten()
-            .map(|attrs| attrs.dev);
-        assert_eq!(Some(inferred_root_device(&index)), first);
-        assert_eq!(inferred_root_device(&Index::new("/empty")), 0);
     }
 
     #[test]
@@ -990,6 +1104,7 @@ mod tests {
         let observed = observe_volumes(&[&index], &request).expect("the request names volumes");
         assert_eq!(observed.root_devices.len(), 1);
         assert!(observed.root_devices[0].is_some_and(|device| device != 0));
+        assert_eq!(observed.root_devices[0], index.root_device(), "keyed as the walk recorded");
         let report =
             crate::query::report(&index, &request, std::time::SystemTime::now(), Some(&observed))
                 .expect("report");

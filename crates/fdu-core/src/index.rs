@@ -2061,6 +2061,12 @@ impl DetachedIndexBuilder {
         self
     }
 
+    /// Record `device` as the one the walk read its root on ([`Index::root_device`]).
+    pub(crate) fn with_root_device(mut self, device: u64) -> Self {
+        self.index.record_root_device(device);
+        self
+    }
+
     /// Build a folded index ([`crate::execution::RetainedState::Tree`]): every directory,
     /// symlink, and other entry, but only the largest regular files `retention` names,
     /// and no extension tallies, which no tree reads (H176).
@@ -2638,6 +2644,34 @@ impl Index {
     /// The absolute path this index is rooted at.
     pub fn root_path(&self) -> &Path {
         &self.root_path
+    }
+
+    /// The device the walk that built this index read its root on, or `None` where none was
+    /// recorded: an index built from observations by hand, and not by a walk.
+    ///
+    /// Every walk records it as its root entry's attributes ([`Self::root_attrs`]), from the
+    /// descriptor it lists the root through (`scan::root_device`), and a snapshot keeps it,
+    /// so a report read later keys the root's filesystem by the number the walk counted it
+    /// on, however the host has numbered it since (review H2 on #209).
+    pub fn root_device(&self) -> Option<u64> {
+        self.try_entry(EntryId::ROOT).map(|root| root.attrs.dev).filter(|device| *device != 0)
+    }
+
+    /// The attributes a walk records for its root: the device it is on, and nothing else.
+    ///
+    /// The root's own times count toward no row, and are never read ([`Self::root_device`]
+    /// is what a report needs), so recording them would make every walk's root entry
+    /// differ from the last one's for a child created or removed, with nothing to show.
+    pub(crate) fn root_attrs(device: u64) -> Attrs {
+        Attrs { dev: device, ..Attrs::default() }
+    }
+
+    /// Record `device` as the one a walk read the root on, in an index under construction,
+    /// which no reader holds yet and no commit has published: a detached builder's, or an
+    /// opened root's before its discovery starts. Every later change of it is an
+    /// observation of the root, committed as any other.
+    pub(crate) fn record_root_device(&mut self, device: u64) {
+        self.entry_mut(EntryId::ROOT).attrs = Self::root_attrs(device);
     }
 
     /// Semantic scope represented by this index and any snapshot written from it.
@@ -5386,6 +5420,13 @@ impl Index {
             let op = &observed.op;
             let path = op.path();
             if path.as_os_str().is_empty() {
+                // A walk's first batch records the device it read its root on
+                // (`scan::root_device_op`). The root has no parent to prove, so that one
+                // batch takes the general lane, which applies a root upsert.
+                if matches!(op, Op::Upsert { kind: EntryKind::Dir, .. }) {
+                    replaces_kind = true;
+                    continue;
+                }
                 return Err(crate::Error::UnsupportedScanConfig(
                     "scanner batches cannot mutate the index root",
                 ));
@@ -5455,6 +5496,7 @@ impl Index {
         }
 
         if replaces_kind {
+            // A kind replacement, or the root's own record.
             return prepare_observation(&Observation::from_ops(ops));
         }
 

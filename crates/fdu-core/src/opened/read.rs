@@ -269,17 +269,21 @@ fn observe_report_capacity(
     if reports.is_empty() {
         return Ok(None);
     }
-    let root_devices = crate::query::root_devices([opened.state.root.as_path()]);
-    let entries = opened.state.index.read_with(|index| {
+    let live = crate::query::root_devices([opened.state.root.as_path()]);
+    let entered = opened.state.index.read_with(|index| {
         reports
             .iter()
             .any(|report| report_work(index, &report.query).total() <= report.max_work)
-            .then(|| crate::query::volume_entries(&[index], &root_devices))
+            .then(|| {
+                let root_devices = crate::query::root_keys(&[index], &live);
+                let entries = crate::query::volume_entries(&[index], &root_devices);
+                (root_devices, entries)
+            })
     })?;
-    let Some(entries) = entries else { return Ok(None) };
+    let Some((root_devices, entries)) = entered else { return Ok(None) };
     #[cfg(test)]
     opened.state.test_controls.reach(super::TestPoint::DuringCapacityObservation);
-    Ok(Some(crate::query::observe_entries(root_devices, &entries)))
+    Ok(Some(crate::query::observe_entries(root_devices, &live, &entries)))
 }
 
 fn report_projection(

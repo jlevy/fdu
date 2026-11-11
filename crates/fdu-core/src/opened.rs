@@ -1000,6 +1000,11 @@ fn bind_root(
         journal_capacity_bytes,
     );
     index.set_control_limits(scan.control_limits);
+    // The device the root is on, recorded as every walk records it, before any reader
+    // holds the index (`scan::root_device_op`); discovery lists the root next.
+    index.record_root_device(
+        crate::scan::root_device(&root, &metadata).map_err(|source| Error::io(&root, source))?,
+    );
     let index = IndexHandle::new(index);
     Ok((root, index, scan, budget))
 }
@@ -1301,8 +1306,8 @@ fn discover_directory(
             frontier.stop();
             return Ok(DiscoveryStep::Stopped);
         }
-        let (name, observed) = match item {
-            crate::scan::Listed::Child { name, observed } => (name, observed),
+        let (name, observed, automount) = match item {
+            crate::scan::Listed::Child { name, observed, automount } => (name, observed, automount),
             crate::scan::Listed::Failed(source) => {
                 retain_local_issue(
                     &mut issues,
@@ -1332,6 +1337,7 @@ fn discover_directory(
             &name,
             kind,
             attrs,
+            automount,
             root_dev,
             scan,
         ) else {

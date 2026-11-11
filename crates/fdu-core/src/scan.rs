@@ -1605,6 +1605,9 @@ pub(crate) enum Listed<'a> {
     Child {
         name: std::borrow::Cow<'a, OsStr>,
         observed: std::io::Result<Option<(EntryKind, Attrs)>>,
+        /// The child's stat flagged it a kernel automount point not mounted yet, which a
+        /// listing of it would mount; only the Linux reader reads the bit.
+        automount: bool,
     },
 }
 
@@ -1629,11 +1632,17 @@ impl<'r> Iterator for Listing<'r> {
             #[cfg(all(target_os = "linux", target_env = "gnu"))]
             Self::Native(listing) => {
                 let entry = listing.next()?;
-                let observed = match entry.outcome {
-                    linux_dents::Outcome::Observed { kind, attrs } => Ok(Some((kind, attrs))),
-                    linux_dents::Outcome::Failed(error) => Err(error),
+                let (observed, automount) = match entry.outcome {
+                    linux_dents::Outcome::Observed { kind, attrs, automount } => {
+                        (Ok(Some((kind, attrs))), automount)
+                    }
+                    linux_dents::Outcome::Failed(error) => (Err(error), false),
                 };
-                Some(Listed::Child { name: std::borrow::Cow::Borrowed(entry.name), observed })
+                Some(Listed::Child {
+                    name: std::borrow::Cow::Borrowed(entry.name),
+                    observed,
+                    automount,
+                })
             }
             Self::Portable { entries, policy, searchability, .. } => {
                 let item = match entries.next()? {
@@ -1642,7 +1651,11 @@ impl<'r> Iterator for Listing<'r> {
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let observed = listed_child_kind_and_attrs(&item, *policy, searchability);
-                Some(Listed::Child { name: std::borrow::Cow::Owned(item.file_name()), observed })
+                Some(Listed::Child {
+                    name: std::borrow::Cow::Owned(item.file_name()),
+                    observed,
+                    automount: false,
+                })
             }
         }
     }
@@ -1994,6 +2007,10 @@ fn scan_internal(
         ));
     }
     let root_dev = root_device(root, &root_meta).map_err(|error| Error::io(root, error))?;
+    if sink_mode == SinkMode::Retained {
+        // A consumer that keeps the observations keeps the root's device with them.
+        sink(ScannerBatch::new(vec![ObservationOp::unconditional(root_device_op(root_dev))]));
+    }
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     // Narrow populations need control admission before child enumeration. Keep one ordered
@@ -2087,8 +2104,8 @@ fn scan_internal(
         report.dirs_read += 1;
 
         for item in listing {
-            let (name, observed) = match item {
-                Listed::Child { name, observed } => (name, observed),
+            let (name, observed, automount) = match item {
+                Listed::Child { name, observed, automount } => (name, observed, automount),
                 Listed::Failed(e) => {
                     report.errors.push(Error::io(&abs_dir, e));
                     continue;
@@ -2142,9 +2159,9 @@ fn scan_internal(
                 }
                 continue;
             }
-            let descend = should_descend(kind, attrs, depth, root_dev, config);
+            let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
             let attrs = if descend {
-                entered_directory_attrs(attrs, dir_dev, || abs_dir.join(&name))
+                entered_directory_attrs(attrs, dir_dev, automount, || abs_dir.join(&name))
             } else {
                 attrs
             };
@@ -2972,7 +2989,7 @@ fn scan_concurrent_detached(
     policy: WorkerPolicyExperiment,
     retention: Option<TreeRetention>,
 ) -> Result<(ScanReport, DetachedIndexBuilder)> {
-    let mut builder = detached_builder(root, config, retention);
+    let mut builder = detached_builder(root, config, root_dev, retention);
     let mut build_error = None;
     let output = {
         let mut consume = |message| match message {
@@ -3214,6 +3231,7 @@ trait WalkEmission {
         name: &OsStr,
         kind: EntryKind,
         attrs: Attrs,
+        automount: bool,
         root_dev: u64,
         config: &ScanConfig,
         directory: &mut Self::Directory,
@@ -3440,6 +3458,7 @@ impl WalkEmission for StreamingEmission {
         name: &OsStr,
         kind: EntryKind,
         attrs: Attrs,
+        automount: bool,
         root_dev: u64,
         config: &ScanConfig,
         _directory: &mut Self::Directory,
@@ -3458,6 +3477,7 @@ impl WalkEmission for StreamingEmission {
             name,
             kind,
             attrs,
+            automount,
             root_dev,
             config,
             self,
@@ -3626,6 +3646,7 @@ impl WalkEmission for DetachedEmission {
         name: &OsStr,
         kind: EntryKind,
         attrs: Attrs,
+        automount: bool,
         root_dev: u64,
         config: &ScanConfig,
         directory: &mut Self::Directory,
@@ -3644,6 +3665,7 @@ impl WalkEmission for DetachedEmission {
             name,
             kind,
             attrs,
+            automount,
             root_dev,
             config,
             &mut directory.children,
@@ -3830,6 +3852,7 @@ fn walk_worker_with<E: WalkEmission>(
                             &entry.name,
                             entry.kind,
                             entry.attrs,
+                            false,
                             root_dev,
                             config,
                             &mut directory,
@@ -3875,8 +3898,10 @@ fn walk_worker_with<E: WalkEmission>(
                     }
                     report.dirs_read += 1;
                     for entry in listing {
-                        let (kind, attrs) = match entry.outcome {
-                            linux_dents::Outcome::Observed { kind, attrs } => (kind, attrs),
+                        let (kind, attrs, automount) = match entry.outcome {
+                            linux_dents::Outcome::Observed { kind, attrs, automount } => {
+                                (kind, attrs, automount)
+                            }
                             linux_dents::Outcome::Failed(error) => {
                                 // The same path std's `DirEntry::path` builds: the listing
                                 // path joined with the name.
@@ -3893,6 +3918,7 @@ fn walk_worker_with<E: WalkEmission>(
                             entry.name,
                             kind,
                             attrs,
+                            automount,
                             root_dev,
                             config,
                             &mut directory,
@@ -3966,6 +3992,8 @@ fn walk_worker_with<E: WalkEmission>(
                     &name,
                     kind,
                     attrs,
+                    // Std's stat does not say; only the Linux reader reads the bit.
+                    false,
                     root_dev,
                     config,
                     &mut directory,
@@ -4040,6 +4068,7 @@ fn record_detached_entry(
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
     children: &mut Vec<DetachedChild>,
@@ -4068,9 +4097,9 @@ fn record_detached_entry(
     if disposition != crate::admission::Disposition::Retain {
         return;
     }
-    let descend = should_descend(kind, attrs, depth, root_dev, config);
+    let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
     let attrs = if descend {
-        entered_directory_attrs(attrs, dir_dev, || root.join(rel_dir).join(name))
+        entered_directory_attrs(attrs, dir_dev, automount, || root.join(rel_dir).join(name))
     } else {
         attrs
     };
@@ -4116,11 +4145,12 @@ pub(crate) fn prepare_walk_entry(
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
 ) -> Option<PreparedWalkEntry> {
     prepare_walk_entry_reading(
-        root, rel_dir, depth, dir_dev, name, kind, attrs, root_dev, config, true,
+        root, rel_dir, depth, dir_dev, name, kind, attrs, automount, root_dev, config, true,
     )
 }
 
@@ -4138,6 +4168,7 @@ fn prepare_walk_entry_reading(
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
     read_control: bool,
@@ -4156,9 +4187,9 @@ fn prepare_walk_entry_reading(
         (None, None)
     };
     let retained = disposition == crate::admission::Disposition::Retain;
-    let descend = should_descend(kind, attrs, depth, root_dev, config);
+    let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
     let attrs = if retained && descend {
-        entered_directory_attrs(attrs, dir_dev, || root.join(&path))
+        entered_directory_attrs(attrs, dir_dev, automount, || root.join(&path))
     } else {
         attrs
     };
@@ -4190,6 +4221,7 @@ fn record_walk_entry(
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
     emission: &mut StreamingEmission,
@@ -4208,6 +4240,7 @@ fn record_walk_entry(
         name,
         kind,
         attrs,
+        automount,
         root_dev,
         config,
         read_control,
@@ -5244,14 +5277,17 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
 }
 
 /// The private builder a detached walk consumes its listings into: a full index, or with
-/// `retention` a folded one.
+/// `retention` a folded one, whose root records `root_dev`, the device the walk read the
+/// root on ([`Index::root_device`]).
 fn detached_builder(
     root: &Path,
     config: &ScanConfig,
+    root_dev: u64,
     retention: Option<TreeRetention>,
 ) -> DetachedIndexBuilder {
     let builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-        .with_control_limits(config.control_limits);
+        .with_control_limits(config.control_limits)
+        .with_root_device(root_dev);
     match retention {
         Some(retention) => builder.folding(retention),
         None => builder,
@@ -5293,7 +5329,7 @@ fn scan_detached_directories(
         }
         return Ok((
             ScanReport::default(),
-            detached_builder(root, config, retention),
+            detached_builder(root, config, root_dev, retention),
             diagnostics.as_ref().map(|value| value.finish()),
         ));
     }
@@ -5507,6 +5543,11 @@ pub fn revalidate(
     let mut tally = ProgressTally::new(config.progress.as_ref());
     let batch_limit = config.batch_size.max(1);
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
+    // The root's device as the walk reads it now, as a cold walk records it.
+    batch.push(ObservationOp::if_state(
+        root_device_op(root_dev),
+        index.relaxed_expectation(Path::new("")),
+    ));
     if config.max_depth == Some(0) {
         if let Some(children) = index.children(Path::new("")) {
             for (name, _) in children {
@@ -5578,8 +5619,8 @@ pub fn revalidate(
         let mut listing_complete = true;
         let listing = reconcile_listing(listing, &abs_dir);
         for item in listing {
-            let (name, observed) = match item {
-                Listed::Child { name, observed } => (name, observed),
+            let (name, observed, automount) = match item {
+                Listed::Child { name, observed, automount } => (name, observed, automount),
                 Listed::Failed(e) => {
                     listing_complete = false;
                     report.errors.push(Error::io(&abs_dir, e));
@@ -5661,9 +5702,9 @@ pub fn revalidate(
                 }
                 continue;
             }
-            let descend = should_descend(kind, attrs, depth, root_dev, config);
+            let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
             let attrs = if descend {
-                entered_directory_attrs(attrs, dir_dev, || abs_dir.join(&name))
+                entered_directory_attrs(attrs, dir_dev, automount, || abs_dir.join(&name))
             } else {
                 attrs
             };
@@ -6139,6 +6180,21 @@ fn reconcile_target_inner(
     let mut tally = ProgressTally::new(config.progress.as_ref());
     let mut retry_frontier = None;
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
+    if subtree.as_os_str().is_empty() {
+        // The root's device as the walk reads it now, as a cold walk records it. A
+        // reconciliation of a path below the root reads no part of the root, so it leaves
+        // the recorded device as it is.
+        let baseline = target.expectation(Path::new(""))?;
+        push_reconcile_upsert(
+            target,
+            Path::new(""),
+            EntryKind::Dir,
+            Index::root_attrs(root_dev),
+            baseline,
+            &mut batch,
+            &mut report,
+        );
+    }
 
     if config.max_depth == Some(0) {
         remove_known_children(target, Path::new(""), config, &mut batch, sink, &mut report)?;
@@ -6148,10 +6204,10 @@ fn reconcile_target_inner(
     // The device the walk's first directory is on, which its children are compared with.
     let mut subtree_dev = root_dev;
     if !subtree.as_os_str().is_empty() {
-        push_directory_attributes(target, &root, subtree, &mut batch)?;
+        push_directory_attributes(target, &root, root_dev, subtree, &mut batch)?;
         let baseline = target.expectation(subtree)?;
         let absolute = root.join(subtree);
-        let (kind, attrs) = match observe_path(&absolute) {
+        let (kind, attrs, automount) = match observe_path_entering(&absolute) {
             Ok(observed) => observed,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 batch.push(ObservationOp::if_state(
@@ -6207,13 +6263,17 @@ fn reconcile_target_inner(
             flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
             return Ok(report);
         }
-        let descend = should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config);
+        let descend =
+            should_descend(kind, attrs, automount, start_depth.saturating_sub(1), root_dev, config);
         // Read again where it is on another device than the directory holding it, as a
         // listing of that directory reads it before descending.
         let attrs = if descend {
-            entered_directory_attrs(attrs, held_device(target, subtree, root_dev)?, || {
-                absolute.clone()
-            })
+            entered_directory_attrs(
+                attrs,
+                held_device(target, subtree, root_dev)?,
+                automount,
+                || absolute.clone(),
+            )
         } else {
             attrs
         };
@@ -6241,12 +6301,19 @@ fn reconcile_target_inner(
         && config.population == crate::query::IgnoredEntries::Include
         && config.reconciliation_worker_threads() > 1
     {
+        // The root's record, where it moved, commits before the waves, which own no batch.
+        flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if let ReconcileTarget::Direct(index) = target {
             match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)?
             {
-                DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
+                DirectParallelOutcome::Complete(mut parallel) => {
+                    // What the root's own record counted.
+                    merge_reconcile_report(&mut parallel, report);
+                    return Ok(parallel);
+                }
                 DirectParallelOutcome::RetrySerial { prefix, remaining } => {
-                    report = prefix;
+                    let root_part = std::mem::replace(&mut report, prefix);
+                    merge_reconcile_report(&mut report, root_part);
                     report.reconcile_epoch = Some(started_at);
                     retry_frontier = Some(remaining);
                     // The wave workers reported the prefix themselves, and the wave
@@ -6317,6 +6384,7 @@ fn reconcile_target_inner(
         let process_entry = |name: OsString,
                              kind: EntryKind,
                              attrs: Attrs,
+                             automount: bool,
                              baseline: PathExpectation,
                              listed_control: &mut ListedControl,
                              target: &mut ReconcileTarget<'_>,
@@ -6359,9 +6427,9 @@ fn reconcile_target_inner(
                 }
                 return Ok(());
             }
-            let descend = should_descend(kind, attrs, depth, root_dev, config);
+            let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
             let attrs = if descend {
-                entered_directory_attrs(attrs, dir_dev, || abs_dir.join(&name))
+                entered_directory_attrs(attrs, dir_dev, automount, || abs_dir.join(&name))
             } else {
                 attrs
             };
@@ -6400,6 +6468,7 @@ fn reconcile_target_inner(
                     entry.name,
                     entry.kind,
                     entry.attrs,
+                    false,
                     baseline,
                     &mut listed_control,
                     target,
@@ -6436,8 +6505,10 @@ fn reconcile_target_inner(
             report.scan.dirs_read += 1;
             let listing = reconcile_listing(listing, &abs_dir);
             for item in listing {
-                let (name, observed) = match item {
-                    Listed::Child { name, observed } => (name.into_owned(), observed),
+                let (name, observed, automount) = match item {
+                    Listed::Child { name, observed, automount } => {
+                        (name.into_owned(), observed, automount)
+                    }
                     Listed::Failed(error) => {
                         listing_complete = false;
                         report.scan.errors.push(Error::io(&abs_dir, error));
@@ -6494,6 +6565,7 @@ fn reconcile_target_inner(
                     name,
                     kind,
                     attrs,
+                    automount,
                     baseline,
                     &mut listed_control,
                     target,
@@ -6769,6 +6841,7 @@ fn reconcile_wave_worker(
                     |name: OsString,
                      kind: EntryKind,
                      attrs: Attrs,
+                     automount: bool,
                      baseline: PathExpectation,
                      listed_control: &mut ListedControl| {
                         let rel_path = rel_dir.join(&name);
@@ -6825,9 +6898,12 @@ fn reconcile_wave_worker(
                             }
                             return;
                         }
-                        let descend = should_descend(kind, attrs, *depth, root_dev, config);
+                        let descend =
+                            should_descend(kind, attrs, automount, *depth, root_dev, config);
                         let attrs = if descend {
-                            entered_directory_attrs(attrs, *dir_dev, || abs_dir.join(&name))
+                            entered_directory_attrs(attrs, *dir_dev, automount, || {
+                                abs_dir.join(&name)
+                            })
                         } else {
                             attrs
                         };
@@ -6924,6 +7000,7 @@ fn reconcile_wave_worker(
                             entry.name,
                             entry.kind,
                             entry.attrs,
+                            false,
                             baseline,
                             &mut listed_control,
                         );
@@ -6948,8 +7025,10 @@ fn reconcile_wave_worker(
                         result.scan.dirs_read += 1;
                         let listing = reconcile_listing(listing, &abs_dir);
                         for item in listing {
-                            let (name, observed) = match item {
-                                Listed::Child { name, observed } => (name.into_owned(), observed),
+                            let (name, observed, automount) = match item {
+                                Listed::Child { name, observed, automount } => {
+                                    (name.into_owned(), observed, automount)
+                                }
                                 Listed::Failed(error) => {
                                     result.scan.errors.push(Error::io(&abs_dir, error));
                                     continue;
@@ -6974,7 +7053,14 @@ fn reconcile_wave_worker(
                                     continue;
                                 }
                             };
-                            process_entry(name, kind, attrs, baseline, &mut listed_control);
+                            process_entry(
+                                name,
+                                kind,
+                                attrs,
+                                automount,
+                                baseline,
+                                &mut listed_control,
+                            );
                         }
                     }
                 }
@@ -7382,19 +7468,6 @@ fn remove_known_children(
     flush_reconcile_batch(target, batch, sink, report)
 }
 
-/// Re-read the own attributes of the directory `subtree` lives in, without listing it.
-///
-/// Whatever happened at `subtree` (an entry created, removed, or moved in) moved that
-/// directory's own modification time, and the walk below never reads it: the directory
-/// is outside the subtree. So a refresh of a removed path, or a reconciliation of one a
-/// watch invalidated, left its directory aged by its old time, where a cold walk of the
-/// same tree reads it as just changed (B1 on #191). This joins the walk's first batch, so
-/// the directory's time commits with the subtree's facts.
-///
-/// Only a directory the index holds is refreshed, conditional on the entry it holds, and
-/// only when its attributes moved; a directory that is gone or no longer one is the
-/// business of a walk of it. The root is never read: its own time counts toward no row,
-/// and a cold walk does not record it.
 /// The device the index holds for the directory that holds `path`: the root's is
 /// `root_dev`, read when the walk began, and any other's is its recorded attributes', or
 /// zero, which compares with nothing, where it holds none.
@@ -7408,9 +7481,30 @@ fn held_device(target: &ReconcileTarget<'_>, path: &Path, root_dev: u64) -> Resu
     })
 }
 
+/// Re-read the own attributes of the directory `subtree` lives in, without listing it.
+///
+/// Whatever happened at `subtree` (an entry created, removed, or moved in) moved that
+/// directory's own modification time, and the walk below never reads it: the directory
+/// is outside the subtree. So a refresh of a removed path, or a reconciliation of one a
+/// watch invalidated, left its directory aged by its old time, where a cold walk of the
+/// same tree reads it as just changed (B1 on #191). This joins the walk's first batch, so
+/// the directory's time commits with the subtree's facts.
+///
+/// Only a directory the index holds is refreshed, conditional on the entry it holds, and
+/// only when its attributes moved; a directory that is gone or no longer one is the
+/// business of a walk of it. The root is never read: its own time counts toward no row,
+/// and a cold walk records only its device.
+///
+/// The directory is recorded as a walk records one it descends into
+/// ([`entered_directory_attrs`]), against the device the index holds for the directory
+/// above it: an automount trigger whose mount has expired stats as the trigger, and
+/// recorded so, it would write the trigger's device over the filesystem's the walk counted
+/// there (review H5 on #209). Reading it from its descriptor mounts nothing the subtree's
+/// own stat would not: that path resolves through this directory.
 fn push_directory_attributes(
     target: &ReconcileTarget<'_>,
     root: &Path,
+    root_dev: u64,
     subtree: &Path,
     batch: &mut Vec<ObservationOp>,
 ) -> Result<()> {
@@ -7421,7 +7515,14 @@ fn push_directory_attributes(
     let PathState::Present { kind: EntryKind::Dir, attrs: held } = baseline.state else {
         return Ok(());
     };
-    if let Ok((EntryKind::Dir, attrs)) = observe_path(&root.join(directory)) {
+    let absolute = root.join(directory);
+    if let Ok((EntryKind::Dir, attrs, automount)) = observe_path_entering(&absolute) {
+        let attrs = entered_directory_attrs(
+            attrs,
+            held_device(target, directory, root_dev)?,
+            automount,
+            || absolute,
+        );
         if attrs != held {
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: directory.to_path_buf(), kind: EntryKind::Dir, attrs },
@@ -7503,21 +7604,29 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.listed_incomplete.extend(addition.listed_incomplete);
 }
 
+/// Whether a listed entry with `attrs` is traversed as a directory, given whether its
+/// listing's stat flagged it a kernel automount point not mounted yet (`automount`).
+///
+/// Such a point is on its parent's device until its listing mounts another filesystem
+/// there, so a one-filesystem walk keeps it as a boundary, as it keeps a mount point,
+/// and never opens it.
 fn should_descend(
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     parent_depth: usize,
     root_dev: u64,
     config: &ScanConfig,
 ) -> bool {
-    crate::admission::should_descend(
-        kind,
-        attrs,
-        parent_depth,
-        root_dev,
-        config.max_depth,
-        config.one_filesystem,
-    )
+    !(automount && config.one_filesystem)
+        && crate::admission::should_descend(
+            kind,
+            attrs,
+            parent_depth,
+            root_dev,
+            config.max_depth,
+            config.one_filesystem,
+        )
 }
 
 pub(crate) fn normalize_subtree(path: &Path) -> Result<PathBuf> {
@@ -7650,7 +7759,7 @@ pub(crate) fn observe_dir_entry(
             if !linux_dents::statx_unavailable() {
                 crate::counters::bump(|c| c.stats += 1);
                 if let Some(observed) = linux_dents::stat_path(&entry.path()) {
-                    return missing_as_none(observed);
+                    return missing_as_none(observed.map(|(kind, attrs, _)| (kind, attrs)));
                 }
                 // `statx` has just been found unavailable: std answers, with `fstatat`.
             }
@@ -7663,19 +7772,34 @@ pub(crate) fn observe_dir_entry(
 }
 
 /// The non-following observation of `path` itself, as [`observe`] reads it from
-/// `symlink_metadata`, and on Linux one that never triggers an automount.
+/// `symlink_metadata`, and on Linux one that never mounts at the path's last component.
 ///
 /// For a path a route holds as an entry and verifies by itself: a reconciliation's
 /// subtree and the prefixes above it, a change the watch verifies, a control looked up
 /// by name. The walk root is not one; [`root_device`] says why.
+///
+/// `AT_NO_AUTOMOUNT` governs the last component alone, and only where it exists: every
+/// earlier component is resolved as any lookup is, and a name an indirect map does not hold
+/// (an expired key whose directory the automounter removed) is looked up and asks the
+/// automounter. So this mounts nothing only where nothing on the way to `path` is an
+/// unmounted trigger; a capacity observation consults the mount table before it calls it
+/// (`query_volumes::directory_device`), and a watch's verification of a removed name has
+/// no such guard yet (fdu-kle7).
 pub(crate) fn observe_path(path: &Path) -> std::io::Result<(EntryKind, Attrs)> {
+    observe_path_entering(path).map(|(kind, attrs, _)| (kind, attrs))
+}
+
+/// [`observe_path`], with whether `path` is a kernel automount point not mounted yet, which
+/// a route that descends into it reads from its descriptor as a walk does
+/// ([`entered_directory_attrs`]); only the Linux reader reads the bit.
+pub(crate) fn observe_path_entering(path: &Path) -> std::io::Result<(EntryKind, Attrs, bool)> {
     crate::counters::bump(|c| c.stats += 1);
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     if let Some(observed) = linux_dents::stat_path(path) {
         return observed;
     }
     let metadata = fs::symlink_metadata(path)?;
-    observe(path, &metadata)
+    observe(path, &metadata).map(|(kind, attrs)| (kind, attrs, false))
 }
 
 #[cfg(not(windows))]
@@ -7775,32 +7899,51 @@ pub(crate) fn root_device(root: &Path, meta: &fs::Metadata) -> std::io::Result<u
     }
 }
 
+/// The observation every walk that keeps its entries starts with: its root, on `root_dev`,
+/// the device [`root_device`] read it on ([`Index::root_device`]).
+///
+/// A report read later keys the root's filesystem by it. Read again when the report is,
+/// the root can be on another number by then, after a remount or a reboot, and every
+/// directory beneath it would read as a mount point (review H2 on #209).
+pub(crate) fn root_device_op(root_dev: u64) -> Op {
+    Op::Upsert { path: PathBuf::new(), kind: EntryKind::Dir, attrs: Index::root_attrs(root_dev) }
+}
+
 /// The attributes a walk records for a directory it is about to descend into, at `path`,
-/// given what its parent's listing observed of it (`observed`) and the device the parent
-/// is on (`parent_dev`).
+/// given what its parent's listing observed of it (`observed`), whether that stat flagged
+/// it a kernel automount point not mounted yet (`automount`), and the device the parent is
+/// on (`parent_dev`).
 ///
 /// A listed child's stat never mounts ([`observe_dir_entry`]), so at an unmounted
 /// automount trigger it answers for the trigger, and the listing that follows mounts the
 /// filesystem and finds its contents. Recorded as the stat found it, the directory would
 /// be on the trigger's device and everything beneath it on the filesystem's: two
 /// filesystems for one, and an identity no later read could compare with what is mounted
-/// there then (review G4 on #209). So where the stat put a directory on another device
-/// than its parent, which is where a mount can be, its attributes are read again from the
-/// descriptor the walk opens, as [`root_device`] reads the root's: the entry then carries
-/// the filesystem the listing finds. An ordinary mount point reads the same either way, and
-/// the walk lists the directory next in any case, so nothing is mounted that the listing
-/// would not mount. Where the open fails the stat stands, and the listing fails the same
-/// way. Windows walks never cross a mount, whose folder mounts are reparse points the walk
-/// records as symlinks, so there the stat always stands.
+/// there then (review G4 on #209). So where a mount can be, its attributes are read again
+/// from a descriptor the walk opens on it, as [`root_device`] reads the root's: the entry
+/// then carries the filesystem the listing finds. That is where the stat put a directory on
+/// another device than its parent, and where it flagged a kernel automount point, which
+/// stats on its parent's device until something resolves through it (review H4). An
+/// ordinary mount point reads the same either way, and the walk lists the directory next
+/// in any case, so nothing is mounted that the listing would not mount. Where the open
+/// fails the stat stands, and the listing fails the same way. Windows walks never cross a
+/// mount, whose folder mounts are reparse points the walk records as symlinks, so there the
+/// stat always stands.
 ///
-/// `path` builds the directory's absolute path, which only a device change needs, so the
+/// The descriptor is opened here, in the parent's listing, and closed again; the
+/// directory's own listing opens another. An autofs key of a browsable indirect map sits on
+/// its parent's device too, and its stat carries no flag, so it is recorded as the stat
+/// found it until a walk reads such directories where they are listed (fdu-vxji).
+///
+/// `path` builds the directory's absolute path, which only a crossing needs, so the
 /// ordinary directory costs the walk no allocation.
 pub(crate) fn entered_directory_attrs(
     observed: Attrs,
     parent_dev: u64,
+    automount: bool,
     path: impl FnOnce() -> PathBuf,
 ) -> Attrs {
-    if observed.dev == 0 || parent_dev == 0 || observed.dev == parent_dev {
+    if !automount && (observed.dev == 0 || parent_dev == 0 || observed.dev == parent_dev) {
         return observed;
     }
     #[cfg(unix)]
@@ -7897,17 +8040,23 @@ mod tests {
         fs::create_dir(&dir).expect("directory");
         let (_, opened) = observe_path(&dir).expect("stat");
         let trigger = Attrs { dev: opened.dev.wrapping_add(1), inode: 1, ..opened };
-        let entered = entered_directory_attrs(trigger, opened.dev, || dir.clone());
+        let entered = entered_directory_attrs(trigger, opened.dev, false, || dir.clone());
         assert_eq!((entered.dev, entered.inode), (opened.dev, opened.inode), "{entered:?}");
         // On its parent's device the stat stands, and the walk builds no path for it.
         let unbuilt = || -> PathBuf { panic!("a directory on its parent's device is not reread") };
-        assert_eq!(entered_directory_attrs(trigger, trigger.dev, unbuilt), trigger);
+        assert_eq!(entered_directory_attrs(trigger, trigger.dev, false, unbuilt), trigger);
+        // A kernel automount point stats on its parent's device, and is read again all the
+        // same.
+        let kernel = Attrs { dev: opened.dev, inode: 1, ..opened };
+        let entered = entered_directory_attrs(kernel, opened.dev, true, || dir.clone());
+        assert_eq!((entered.dev, entered.inode), (opened.dev, opened.inode), "{entered:?}");
         // An unavailable device on either side proves no crossing.
         let deviceless = Attrs { dev: 0, ..trigger };
-        assert_eq!(entered_directory_attrs(deviceless, opened.dev, unbuilt), deviceless);
-        assert_eq!(entered_directory_attrs(trigger, 0, unbuilt), trigger);
+        assert_eq!(entered_directory_attrs(deviceless, opened.dev, false, unbuilt), deviceless);
+        assert_eq!(entered_directory_attrs(trigger, 0, false, unbuilt), trigger);
         // Where the open fails the stat stands, and the listing fails the same way.
-        let absent = entered_directory_attrs(trigger, opened.dev, || root.path().join("absent"));
+        let absent =
+            entered_directory_attrs(trigger, opened.dev, false, || root.path().join("absent"));
         assert_eq!(absent, trigger);
         // The device a directory's children are compared with is its own, or its parent's.
         assert_eq!(listed_device(opened, 3), opened.dev);
@@ -8917,6 +9066,7 @@ mod tests {
                 OsStr::new(".gitignore"),
                 EntryKind::File,
                 Attrs::default(),
+                false,
                 0,
                 &config,
                 read_control,
@@ -9769,6 +9919,8 @@ mod tests {
         .expect("parallel scan");
 
         assert!(report.is_complete());
+        // The root is no entry the report counts; the walk records its device once.
+        assert_eq!(seen.remove(Path::new("")), Some(1), "the root's device, recorded once");
         assert_eq!(seen.len() as u64, report.entries, "entry count disagrees with the report");
         let duplicated: Vec<_> =
             seen.iter().filter(|(_path, count)| **count != 1).map(|(path, _)| path).collect();
@@ -11426,8 +11578,10 @@ mod tests {
     fn filesystem_boundary_is_part_of_the_shared_descent_policy() {
         let config = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
         let attrs = Attrs { dev: 22, ..Attrs::default() };
-        assert!(!should_descend(EntryKind::Dir, attrs, 0, 11, &config));
-        assert!(should_descend(EntryKind::Dir, Attrs { dev: 11, ..attrs }, 0, 11, &config,));
+        assert!(!should_descend(EntryKind::Dir, attrs, false, 0, 11, &config));
+        assert!(should_descend(EntryKind::Dir, Attrs { dev: 11, ..attrs }, false, 0, 11, &config));
+        // A kernel automount point on the root's device is a boundary all the same.
+        assert!(!should_descend(EntryKind::Dir, Attrs { dev: 11, ..attrs }, true, 0, 11, &config));
     }
 
     /// A cold scan's index records its own pass start, the stamp a snapshot of it writes:
@@ -11473,7 +11627,7 @@ mod tests {
 
         assert!(sizes.len() >= 3, "expected several batches, got {sizes:?}");
         assert!(sizes.iter().all(|&n| n <= 10));
-        assert_eq!(sizes.iter().sum::<usize>(), 25);
+        assert_eq!(sizes.iter().sum::<usize>(), 26, "25 files and the root's device");
     }
 
     #[test]
@@ -11567,7 +11721,7 @@ mod tests {
             unchanged += index.apply_ok(delta).unchanged;
         }
 
-        assert_eq!(unchanged, 5, "3 files + 2 dirs all already known");
+        assert_eq!(unchanged, 6, "the root, 3 files, and 2 dirs, all already known");
         assert_eq!(index.total(), before);
     }
 
@@ -11654,7 +11808,7 @@ mod tests {
         .expect("reconcile");
 
         assert!(report.is_complete());
-        assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
+        assert_eq!(report.apply.unchanged, 6, "the root, 3 files, and 2 dirs, all already known");
         assert_eq!(commits.len(), 2);
         assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(
@@ -12256,7 +12410,7 @@ mod tests {
         .expect("reconcile");
 
         assert!(report.is_complete());
-        assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
+        assert_eq!(report.apply.unchanged, 6, "the root, 3 files, and 2 dirs, all already known");
         assert_eq!(commits.len(), 2);
         assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(

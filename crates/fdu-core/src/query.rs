@@ -60,4 +60,4 @@ pub use query_volumes::{
     VolumeCounted, VolumeEntry, VolumeRow, VolumesObservation, VolumesSection, observe_volumes,
     volume_entries,
 };
-pub(crate) use query_volumes::{observe_entries, root_devices};
+pub(crate) use query_volumes::{observe_entries, root_devices, root_keys};
