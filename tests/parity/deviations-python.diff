@@ -1273,15 +1273,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -fdu: --view code needs code analysis, which --watch cannot keep current; use a one-shot report
 +fdu: view code needs code analysis; this index was opened with analyze none
   ✗ Every View One Walk Can Answer
-@@ -1,19 +1,19 @@
- SUMMARY
-      256 B  7 files, 4 directories
- VOLUMES
--[CAPACITY]  [IN_USE]  .[FS_TYPE]
--                         [CAPACITY] available[POOL]
-+[CAPACITY]  [IN_USE]  .[FS_TYPE]
-+                         [CAPACITY] available[POOL]
-                          256 B counted by this report
+@@ -4,11 +4,11 @@
  AGES
       256 B  100.0%  under 1h     7 files
  TREE
@@ -1294,7 +1286,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
        77 B   30.1%  code               2 files
-@@ -30,10 +30,10 @@
+@@ -25,10 +25,10 @@
        39 B   50.6%  Python  1 file
        38 B   49.4%  Rust    1 file
  LARGEST  (2 of 7)
@@ -1317,15 +1309,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -1,19 +1,19 @@
- SUMMARY
-      256 B  7 files, 4 directories
- VOLUMES
--[CAPACITY]  [IN_USE]  .[FS_TYPE]
--                         [CAPACITY] available[POOL]
-+[CAPACITY]  [IN_USE]  .[FS_TYPE]
-+                         [CAPACITY] available[POOL]
-                          256 B counted by this report
+@@ -4,11 +4,11 @@
  AGES
       256 B  100.0%  under 1h     7 files
  TREE
@@ -1338,7 +1322,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
-@@ -36,10 +36,10 @@
+@@ -31,10 +31,10 @@
           1   25.0%         1      1             1/1  Python   (0 gitignored)
           4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
  LARGEST  (2 of 7)
@@ -1362,15 +1346,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more: limit=all
 +tip: include them: analyze all
   ✗ Every View One Walk Can Answer
-@@ -1,19 +1,19 @@
- SUMMARY
-      256 B  7 files, 4 directories
- VOLUMES
--[CAPACITY]  [IN_USE]  .[FS_TYPE]
--                         [CAPACITY] available[POOL]
-+[CAPACITY]  [IN_USE]  .[FS_TYPE]
-+                         [CAPACITY] available[POOL]
-                          256 B counted by this report
+@@ -4,11 +4,11 @@
  AGES
       256 B  100.0%  under 1h     7 files
  TREE
@@ -1383,7 +1359,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  FAMILIES  (2 of 4)
        80 B   31.2%  binary             1 file
                                           1 binary
-@@ -47,10 +47,10 @@
+@@ -42,10 +42,10 @@
                                           3 words (0.0 pages)
                                           1 binary
  LARGEST  (2 of 7)
@@ -1713,7 +1689,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,319 +1,1 @@
+@@ -1,325 +1,1 @@
 -fdu — a fast du replacement, with .gitignore-aware sizes and code and
 -document counts, for the command line, Python, and Rust.
 -
@@ -1843,7 +1819,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Explicit bounds override it regardless of order. It leaves view, scan scope,
 -  population, and analysis unchanged. --view=full chooses views instead.
 -  --sort and --limit still override them. files alone is complete: every
--  matching entry, in name order. full combines applicable views, without list/files.
+-  matching entry, in name order. full combines applicable views, without list,
+-  files, or volumes.
 -
 -LIST FORMATS AND OLD BUILD DIRECTORIES
 -  The metadata default view is list; its default format is tree. These agree:
@@ -1918,17 +1895,21 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  volumes shows each filesystem the report touches: its capacity, the share in use,
 -  what is available, and what this report counted there. A walk without
 -  --one-filesystem can cross mounts below PATH, one row each. Capacity is read when
--  the report is, never cached. Rows never add up: available space can be shared
--  within an APFS container, btrfs filesystem, or ZFS pool, which the row says, and
--  snapshots, other volumes, and deleted files still open use space no walk sees.
+-  the report is, never cached, and only for filesystems the walk listed, so
+-  --view full, which describes the tree, leaves volumes out. Rows never add up:
+-  available space can be shared within an APFS container, btrfs filesystem, or ZFS
+-  pool, which the row says, and snapshots, other volumes, and deleted files still
+-  open use space no walk sees.
 -
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
 -  Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
 -             --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
 -  Content    --analyze none|lines|code|words|all        which file bodies are read
 -                                                        beyond what the views imply
--  Selection  --include, --exclude, --depth, --limit     which entries are considered
--             --breadth, --min-share
+-  Selection  --include, --exclude, --min-size, --kind   which entries are considered
+-             --since, --before, --time, --sort, --reverse
+-             --depth, --limit, --breadth, --min-share, --full
+-             --size
 -  View       list,summary,volumes,ages,tree,families,types,extensions,languages,code,
 -             documents,largest,recent,files,full
 -  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
@@ -1995,14 +1976,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  sizes stay exact, gitignored shares under that directory do not.
 -
 -OUTPUT AND AUTOMATION
--  Every machine report uses fdu.report/12; watch changes use fdu.stream/2.
+-  Every machine report uses fdu.report/12; watch changes use fdu.stream/3.
 -  A Files watch emits an initial ordinary report, then change records;
 -  aggregate views repaint reports. An invalidate change requires rebuilding
 -  or resynchronizing the inventory, not continuing from incomplete state.
 -  Before automating, check status.complete, errors and errors_omitted,
 -  provenance.freshness/source, tree truncation, and metric coverage.
 -  selected and scanned give what a selection admitted beside the whole scan; a
--  filtered text report ends with `note: selected N of M files, SIZE of SIZE`.
+-  filtered text report ends with `note: selected N of M files, SIZE of SIZE`, or,
+-  when a time bound admitted everything, `note: selected all M files, SIZE`.
 -  A multi-root report has root: null and roots; its tree section has tree: null,
 -  a combined total, and trees. Read the machine contract before parsing it.
 -  Cache status is its own document in every machine format: fdu.cache/3.
