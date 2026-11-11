@@ -293,6 +293,50 @@ that kept an older modification time is still new, or `TimeBasis.MODIFIED`, cont
 as `ls -l` shows. The `since`/`before` window, `SortKey.TIME`, every age, `recent`, and
 `ages` read it, and `Report.request.time` names it.
 
+## Recent Writes, Ages, and Volumes
+
+One walk says where the data written in a window now lives, how the selection divides
+by age, and how full each filesystem is:
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
+recent = index.report(
+    fdu.Query(
+        views=(fdu.View.TREE, fdu.View.AGES),
+        selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,), since="24h"),
+    )
+)
+print(f"{recent.selected.bytes} of {recent.scanned.bytes} bytes written in a day")
+for section in recent.sections:
+    if isinstance(section, fdu.AgesSection):
+        for band in section.bands:
+            print(band.band, band.tally.files, band.cumulative.bytes)
+
+disk = index.report(fdu.Query(views=(fdu.View.VOLUMES,)))
+for section in disk.sections:
+    if isinstance(section, fdu.VolumesSection):
+        for row in section.volumes:
+            print(row.path, row.capacity_bytes, row.available_bytes, row.counted.bytes)
+```
+
+Keep `EntryKind.FILE` with a window: without it a directory with any activity in the
+window is selected whole. Every report carries `Report.selected` and `Report.scanned`,
+each an `EntryTotals` of files, directories, and both byte metrics, so a filtered root’s
+100% can be read against the whole scan without parsing a note.
+`View.AGES` returns an `AgesSection`: nine `AgeBand` values, newest first, each the files
+`kinds=(EntryKind.FILE,)` with the window it names would select, with an `AgeTally` of
+files, bytes, and the ignored part, a `cumulative` tally of it and every newer band, and
+a `total` equal to a summary of the same selection.
+`View.VOLUMES` returns a `VolumesSection` of `VolumeRow` values: each filesystem the
+report touches, its capacity, available space, type, and whether it shares space in a
+pool, beside the `VolumeCounted` files and bytes this report counted there. Capacity is
+read when the report is, only for filesystems the walk listed, and is `None` with an
+`unknown_reason` otherwise; `View.FULL` leaves volumes out.
+
 Directory `FileRow` values carry subtree `bytes`, `allocated`, `files`, `dirs`,
 `complete`, `time_ns`, `age_ns`, and `time_at`; non-directory counts are `None`. A
 directory whose subtree was not listed in full has `complete=False`, lower-bound sizes,

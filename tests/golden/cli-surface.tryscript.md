@@ -1111,8 +1111,10 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
                                                         beyond what the views imply
-  Selection  --include, --exclude, --depth, --limit     which entries are considered
-             --breadth, --min-share
+  Selection  --include, --exclude, --min-size, --kind   which entries are considered
+             --since, --before, --time, --sort, --reverse
+             --depth, --limit, --breadth, --min-share, --full
+             --size
   View       list,summary,volumes,ages,tree,families,types,extensions,languages,code,
              documents,largest,recent,files,full
   Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long

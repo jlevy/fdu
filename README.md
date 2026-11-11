@@ -64,8 +64,15 @@ More on how it was built
 ## Key Features
 
 - **Extensive metrics:** Different `--view` options show total size, file count, age of
-  entire directories, tree overview, largest or or most recent files, and breakdowns by
+  entire directories, tree overview, largest or most recent files, and breakdowns by
   file type, family, extension, and programming language.
+- **What was written recently, with no baseline:** `fdu PATH --kind file --since 24h`
+  shows where the data written in the last day now lives, by folder, from one walk.
+  Every time reads change time by default, so copies and extracted archives that kept
+  old modification times still count as new (`--time modified` reads content age).
+  `--view ages` divides the selection into age bands, every window from one walk, and
+  `--view volumes` puts each filesystem’s capacity and free space beside what the tree
+  holds.
 - **`.gitignore`-aware sizes:** Rows show how much of their size the tree’s own
   `.gitignore` files cover, and `--ignored=exclude` or `--ignored=only` reports one
   side. Rules apply per directory, as git applies them; `.git/info/exclude` and global

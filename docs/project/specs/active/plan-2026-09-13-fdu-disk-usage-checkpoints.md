@@ -285,8 +285,9 @@ Keep the reports outside the measured root.
 Both sizes are already present in JSON. This supplies a baseline today, but both
 captures still scan the selected tree, the sums count hard links and clones in full, and
 fdu does not yet provide the comparison command.
-`--modified-since` filters present files; it cannot recover old sizes or deleted files,
-and it misses files that arrived with older modification times.
+`--since` filters present files; it cannot recover old sizes or deleted files.
+On its default change-time clock it does find files that arrived with older modification
+times, which `--time modified` misses.
 Where no report was saved, the
 [recent growth plan](plan-2026-11-08-fdu-recent-growth-and-volumes.md) answers a
 different question from one walk: where the data written in a window is now.

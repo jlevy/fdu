@@ -5,8 +5,9 @@
 **Author:** fdu project, with Claude Opus 5.5
 
 **Status:** Approved for implementation (2026-11-08). Phase 0 (documentation of what
-works today) shipped with this plan in #208. Phases 1–3 are being implemented in one
-pull request, with the [open questions](#open-questions) decided as recommended.
+works today) shipped with this plan in #208. Phases 1–4 are implemented in #209, with
+the [open questions](#open-questions) decided as recommended and the implementation
+amended by its reviews where each section below says so.
 Phase 4 (2026-11-09) replaces phase 1’s second time basis with one time that every
 report reasons in, before any of it is released; [the design](#one-time) below is phase
 4’s, and phase 1’s two-window design is recorded under
@@ -39,7 +40,7 @@ data. This plan:
    the bytes the report counted there, as a convenience rather than a `df` replacement
    (phase 3).
 
-The design adds three concepts and two flags.
+The design adds three concepts and three flags (`--since`, `--before`, and `--time`).
 Everything else is composition with the axes fdu already has.
 
 ## The Questions
@@ -243,7 +244,7 @@ retained index.
 | Concept | Model | Command line | Python |
 | --- | --- | --- | --- |
 | One time | `TimeBasis` (`Changed` by default, or `Modified`) on `Selection`, with one `Selection::window`; an entry’s `Times` holds both clocks (`Attrs::times`), and the index maintains both | `--since`, `--before`, `--time changed\|modified`, `--sort time` | `Selection(since=, before=, time=TimeBasis.MODIFIED)`, `SortKey.TIME` |
-| Age profile | `ViewSpec::Ages`: a partition of selected regular files by change-time band | `--view ages` | `View.AGES` |
+| Age profile | `ViewSpec::Ages`: a partition of selected regular files by age band on the report’s clock | `--view ages` | `View.AGES` |
 | Volume capacity | `ViewSpec::Volumes`: a join of the bytes counted per filesystem with capacity observed at report time | `--view volumes` | `View.VOLUMES` |
 
 One further change is not a concept: every filtered report says how much of the scanned
@@ -699,7 +700,7 @@ Decided in implementation:
   change was not observed, though its time on the change clock is its modification time,
   so the substitution is visible per row as well as in the note, and a symlink’s row
   agrees with its watch record (review F8 on #209).
-- `FileRow` stays at 192 bytes: `times` and a crate-private `status_observed` flag
+- `FileRow` stays at 192 bytes: `times` and a public `status_observed` flag (review E4)
   replace `mtime_ns` and `changed_ns`.
 
 ## Testing Strategy
@@ -745,7 +746,9 @@ Exact nanosecond edges and unknown change times use synthetic entry facts.
 
 Phase 0 changes only discovery text: the skill, `--help`, and `--docs`. Phases 1–3 add
 flags, views, and machine fields under one schema bump.
-No existing value changes; filtered reports gain one note on stderr.
+Phases 1–3 changed no existing value; filtered reports gained one note on stderr.
+Phase 4 does change existing values: every time is change time unless `--time modified`
+is given, so the tree’s age column, `recent`, and every age read change time.
 The skill describes only what the installed executable supports, so it changes with each
 phase, not before.
 

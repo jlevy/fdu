@@ -83,10 +83,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rust: `observe_capacity`, `CapacityObservation`, and `VolumeCapacity` in
   `fdu_core::capacity`; `query::observe_volumes` observes what a request needs, and
   `report` and `report_roots` take that observation as their last argument, reporting
-  capacity as unknown, with a note, when given `None`. The sections and their parts are `AgeProfile`, `AgeBand`, and `AgeTally`, and
-  `VolumesSection`, `VolumeRow`, and `VolumeCounted`; `observe_volumes` returns a
-  `VolumesObservation`, `volume_entries` lists the `VolumeEntry` values it observes, and
-  `CapacityObservation` holds one `ObservedVolume` per filesystem.
+  capacity as unknown, with a note, when given `None`. The sections and their parts are
+  `AgeProfile`, `AgeBand`, and `AgeTally`, and `VolumesSection`, `VolumeRow`, and
+  `VolumeCounted`; `observe_volumes` returns a `VolumesObservation`, `volume_entries`
+  lists the `VolumeEntry` values it observes, each saying whether the walk listed it,
+  and `CapacityObservation` holds one `ObservedVolume` per filesystem.
+- Python: `View.AGES` reports an `AgesSection` of `AgeBand` values with `AgeTally`
+  tallies, and `View.VOLUMES` a `VolumesSection` of `VolumeRow` values, each with what
+  the report counted there as a `VolumeCounted`.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
   is not read as the whole tree. A time-bounded selection that admitted every file says
