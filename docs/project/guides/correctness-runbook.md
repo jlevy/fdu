@@ -290,6 +290,16 @@ The three automount tests passed as root, among them the one whose automounter m
 tmpfs and expires it.
 The refusal pass and the breaks were again not run, for the same reason.
 
+On 2026-11-11, the fixes for review H (capacity below a root is gated on the mount
+table, a walk records its root’s device and a snapshot keeps it, and a kernel automount
+point is read as its listing finds it) were checked the same way, in the same regime, at
+a build of `9d74ace1`. `warm_cold.py` served 30 of 30 cases `cache_only`, with 0 answer
+mismatches, 0 mechanism failures, and 0 stale reference instants, and `cross_warm.py`
+matched 72 of 72 pairs, 17 of them held to serving, with 0 violations.
+The seven automount tests passed as root, none skipped: among them an indirect map whose
+expired key is removed, a report rooted at an indirect map, and debugfs’s `tracing`. The
+refusal pass and the breaks were again not run, for the same reason.
+
 ### Previous Run: 0.5.0 Candidate on macOS
 
 On 2026-10-12, against the 0.5.0 preparation tree `67e3ca0f` (commit `d08624879`), all
