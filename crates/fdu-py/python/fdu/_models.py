@@ -1255,7 +1255,10 @@ class Report:
     #: selection reports. A filtered root is 100% of this, not of :attr:`scanned`.
     selected: EntryTotals
     #: Everything the scan retained, the unfiltered root totals; equal to
-    #: :attr:`selected` when the selection filters nothing.
+    #: :attr:`selected` when the selection filters nothing. A scan of a narrowed
+    #: :class:`IgnoredEntries` population retained only that part of the tree, and this is
+    #: what it retained of it: under ``ONLY``, the ignored entries, not the directories
+    #: walked to reach them or the ``.gitignore`` files read.
     scanned: EntryTotals
     #: The instant every age in the report is measured from, in epoch nanoseconds, or
     #: ``None`` when it cannot be represented.

@@ -1634,14 +1634,14 @@ pub struct Report {
 ///
 /// Both tallies are the root totals over every root of the report: `selected` is what a
 /// summary of the same selection reports, the files the selection admits or covers, and
-/// `scanned` is the unfiltered root roll-up the index already maintains, so the pair
-/// costs nothing a report did not already compute. They are equal for a selection that
-/// filters nothing.
+/// `scanned` is the unfiltered root roll-up the index already maintains, of the scan's
+/// own population (under `--ignored=only`, its ignored part), so the pair costs nothing a
+/// report did not already compute. They are equal for a selection that filters nothing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SelectionCoverage {
     /// What the selection admitted or covers.
     pub selected: EntryTotals,
-    /// Everything the scan retained.
+    /// Everything the scan retained of its population.
     pub scanned: EntryTotals,
 }
 
@@ -1661,6 +1661,27 @@ pub struct EntryTotals {
 impl EntryTotals {
     fn of(row: &SummaryRow) -> Self {
         Self { files: row.files, dirs: row.dirs, bytes: row.bytes, allocated: row.allocated }
+    }
+
+    /// What a scan of `population` retained of it, from the index's maintained roll-up.
+    ///
+    /// An `--ignored=only` scan also holds the unignored directories it walks through to
+    /// reach what is ignored, and the `.gitignore` files it reads, which its population
+    /// does not admit: counting them, `scanned` read as more than a selection of the same
+    /// ignored state could ever select, a narrowing no note mentioned (review G7 on
+    /// #209). So its tally is the index's ignored part, an `--ignored=exclude` scan's the
+    /// unignored part, which is all it holds, and a full scan's everything. A selection by
+    /// the same ignored state then selects exactly this.
+    fn of_population(index: &Index, population: IgnoredEntries) -> Self {
+        let Some((all, unignored)) = index.partition_scalars_of(EntryId::ROOT) else {
+            return Self::default();
+        };
+        let held = match population {
+            IgnoredEntries::Include => return Self::of(&summary_from_scalars(all)),
+            IgnoredEntries::Exclude => return Self::of(&summary_from_scalars(unignored)),
+            IgnoredEntries::Only => IgnoredTally::between(all, unignored),
+        };
+        Self { files: held.files, dirs: held.dirs, bytes: held.bytes, allocated: held.allocated }
     }
 
     fn add(self, other: Self) -> Self {
@@ -2379,17 +2400,13 @@ fn read_roots(
         }
     }
     tips.extend(retained_refusals_tip(query, &ignore_rules));
+    let population = request.basis.scope.population;
     let selection =
         reads.iter().fold(SelectionCoverage::default(), |total, read| SelectionCoverage {
             selected: total.selected.add(EntryTotals::of(&read.summary())),
-            scanned: total.scanned.add(EntryTotals::of(&unfiltered_summary(
-                read.index,
-                EntryId::ROOT,
-                Path::new(""),
-            ))),
+            scanned: total.scanned.add(EntryTotals::of_population(read.index, population)),
         });
     // A selection by the ignored state the scan already kept narrows nothing it retained.
-    let population = request.basis.scope.population;
     if query.selection.narrows(population) {
         notes.extend(selection.note(
             query.selection.size,
@@ -5603,6 +5620,60 @@ mod tests {
         // A display bound is not a selection, and has its own note.
         let bounded = reported(Selection { depth: Some(Bound::Limit(1)), ..Selection::default() });
         assert!(!bounded.notes.iter().any(|note| note.contains("selected")));
+    }
+
+    /// A scan that keeps part of the tree counts only that part as `scanned`. An
+    /// `--ignored=only` scan also holds the unignored directories it walks through to
+    /// reach what is ignored and the `.gitignore` files it reads, which its population
+    /// does not admit; counted, they made `scanned` more than a selection of the same
+    /// ignored state could select, a narrowing no note mentioned (review G7 on #209).
+    #[test]
+    fn a_narrowed_scan_counts_only_its_own_population_as_scanned() {
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir_all(root.path().join("build/out")).expect("build");
+        fs::create_dir_all(root.path().join("src/deep")).expect("src");
+        fs::write(root.path().join(".gitignore"), "build/\n*.log\n").expect("rules");
+        fs::write(root.path().join("build/out/a.o"), vec![0_u8; 2_000]).expect("object");
+        fs::write(root.path().join("src/x.log"), vec![0_u8; 300]).expect("log");
+        fs::write(root.path().join("src/main.rs"), "fn main() {}\n").expect("source");
+        let summary = |index: &Index, selection: Selection| {
+            run(
+                index,
+                &query(&[ViewSpec::Summary], Selection { size: SizeMetric::Apparent, ..selection }),
+            )
+        };
+        for (population, files, bytes) in
+            [(IgnoredEntries::Exclude, 2, 26), (IgnoredEntries::Only, 2, 2_300)]
+        {
+            let config = crate::ScanConfig { population, ..crate::ScanConfig::default() };
+            let (index, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+            let same = summary(&index, Selection { ignored: population, ..Selection::default() });
+            assert_eq!(same.selection.selected, same.selection.scanned, "{population:?}");
+            assert_eq!(
+                (same.selection.scanned.files, same.selection.scanned.bytes),
+                (files, bytes),
+                "{population:?}"
+            );
+            assert!(!same.notes.iter().any(|note| note.contains("selected")), "{:?}", same.notes);
+        }
+        // A narrower selection is measured against the ignored files alone.
+        let config =
+            crate::ScanConfig { population: IgnoredEntries::Only, ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+        let objects = summary(
+            &index,
+            Selection {
+                ignored: IgnoredEntries::Only,
+                include: vec![pattern("*.o")],
+                ..Selection::default()
+            },
+        );
+        assert!(
+            objects.notes.iter().any(|note| note
+                == "note: selected 1 of the 2 files an ignored=only scan retained, 1.9 KiB of 2.2 KiB"),
+            "{:?}",
+            objects.notes
+        );
     }
 
     /// The plan's identities for `ages`, on each clock: the bands partition `summary`, and

@@ -17,12 +17,15 @@ the default, the newer of modification and status change, or `modified`. `select
 admits or covers, and `scanned` is everything the scan retained.
 They are equal when the selection filters nothing.
 Under `--ignored=exclude` or `--ignored=only` the scan itself keeps only that part of
-the tree, so `scanned` is what that scan retained, not the whole tree, and the note
-names the scan:
-`note: selected 12 of the 4,296 files an --ignored=exclude scan retained, …`. A
-selection by the same ignored state the scan applied narrows nothing it retained.
-A filtered tree’s root row is 100% of `selected`, not of the tree; text reports say so
-in `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB` when the two differ, and a
+the tree, so `scanned` is what that scan retained of it, not the whole tree, and the
+note names the scan:
+`note: selected 12 of the 4,296 files an --ignored=exclude scan retained, …`. Under
+`--ignored=only` that is the ignored entries alone, not the unignored directories the
+scan walks through to reach them or the `.gitignore` files it reads.
+A selection by the same ignored state the scan applied narrows nothing it retained, and
+`selected` then equals `scanned`. A filtered tree’s root row is 100% of `selected`, not
+of the tree; text reports say so in
+`note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB` when the two differ, and a
 time-bounded selection that admitted everything says so too, as
 `note: selected all 2 files, 98 KiB`.
 

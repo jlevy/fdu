@@ -111,8 +111,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `{files, dirs, bytes, allocated}`; Python `Report.selected` and `Report.scanned` are
   `EntryTotals`, and Rust `Report::selection` is a `SelectionCoverage` of two
   `EntryTotals`. Under `--ignored=exclude` or `--ignored=only` the population is the
-  scan’s scope: `scanned` is what that scan retained, selecting by the same ignored
-  state narrows nothing, and a narrower selection’s note names the scope, as in
+  scan’s scope: `scanned` is what that scan retained of it (under `--ignored=only`, the
+  ignored entries, not the directories walked to reach them or the `.gitignore` files
+  read), selecting by the same ignored state narrows nothing, so `selected` equals
+  `scanned`, and a narrower selection’s note names the scope, as in
   `note: selected 12 of the 4,296 files an --ignored=exclude scan retained, …`.
 
 ### Changed
