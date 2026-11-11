@@ -83,8 +83,8 @@ Apply these roles consistently across human report views.
 
 ## Grouped Rows
 
-The grouped views (`types`, `families`, `languages`, and `documents`) share one row
-layout. A row’s first line holds its size, share, label, and file count.
+The grouped views (`types`, `families`, `languages`, `documents`, and `ages`) share one
+row layout. A row’s first line holds its size, share, label, and file count.
 Each further measure goes on its own line below, in a fixed order: lines with their
 breakdown, words with pages, the generated and vendored counts, then each coverage
 reason other than analyzed.
@@ -114,6 +114,36 @@ to the section’s widest label.
 The code overview is a table with a column per measure, so neither its rows nor its
 TOTAL row stack; the grouped views print no total row in text.
 Stacking is human output only: machine formats keep one record per row.
+In `ages` the label is the band (`under 1h`, `1h to 1d`, … `over 3y`), newest first in a
+fixed order rather than by size, and text leaves empty bands out; machine output keeps
+every band.
+
+## Volume Rows
+
+Each filesystem in `volumes` is three lines on every platform, whatever is known of it:
+
+```text
+   251 GiB   96% in use  .  (ext2/3/4)
+                         10 GiB available
+                         318 MiB counted by this report
+    unknown               trig
+                         capacity unknown: the walk did not list this directory
+                         0 B counted by this report
+```
+
+The first line holds the capacity, the share in use, the path where the report entered
+the filesystem, named as every view names its rows (`.` for a root, after its label over
+several roots), and the filesystem’s type, gray, in parentheses.
+The second line gives the available space, followed on an APFS, btrfs, or ZFS row by
+`, shared with the other volumes of its pool`, gray.
+The third gives what this report counted there.
+Unlike a grouped row’s, the continuation lines are not a breakdown of the first: each is
+its own fact about the filesystem, and no line adds to another row’s, which is why the
+section has no total.
+Where capacity is unknown, the capacity cell reads `unknown`, gray, the share cell is
+empty, and the second line gives the reason; a share of a zero-sized filesystem reads
+`—`, as every undefined share does.
+The layout never varies, so a golden pins it with named patterns for the host’s values.
 
 ## Content Reports and Names
 
@@ -273,6 +303,24 @@ warn: stale answer: served from the snapshot without filesystem verification; dr
 A verified answer, cold or warm, carries none.
 The performance footer’s `cache only` restates the same fact as execution cost, and
 quiet removes it, so it cannot be the marker.
+
+The engine’s own notes follow the notes the epilogue derives from the result (what
+totals include, what percentages measure, display limits), in this order where several
+apply. Five belong to selection, time, and capacity:
+
+1. Selection coverage, when a selection narrowed what the scan retained, or a time bound
+   admitted everything: `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, or
+   `note: selected all 2 files, 98 KiB`.
+2. A `volumes` read given no capacity observation, which only a library caller can make:
+   `note: capacity unknown: this read was given no capacity observation (pass what observe_volumes observed to the reader)`.
+3. A filesystem entered at more than one path:
+   `note: the filesystem at . was also entered at t1`, naming up to three others and
+   counting more.
+4. Files a change-time window or `ages` timed by modification, because their status
+   change was not observed:
+   `note: 3 files have no observed status change, so their modification time stands for their change time`.
+5. A time sort beside rows that carry no time:
+   `note: type and extension rows carry no time, so they keep size order`.
 
 Apply color using stderr’s terminal state for diagnostics and stdout’s terminal state
 for results.

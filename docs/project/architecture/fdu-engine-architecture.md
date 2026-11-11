@@ -259,6 +259,8 @@ The target models are in
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
 | Measured value | What each metric means, and how coverage is decided | The `METRICS` registry and per-unit outcomes in `FileAnalysis`; `ReportMetricValues` and per-unit coverage in `MetricRow`; `document_words` and `pages` in `query_report.rs` | Yes. The registry owns metric names and units, each requested unit records its own outcome, and absent units stay absent from reports |
 | Provenance | Source, freshness, observation time, completeness, errors | `TreeStatus` and `ReportProvenance`, including per-tier `TierState`; per-entry `Provenance` in `engine_contract.rs` | Yes. Report status, delivery provenance, and retained-tier provenance are separate values; an unavailable observation time is `None` rather than an invented timestamp |
+| Time basis | Which clock every time in one report reads | `TimeBasis` (`Changed` by default, or `Modified`) on `Selection`, `Times` on each entry and tier, and `Attrs::times`, which applies the substitution for an unobserved status change (`engine_contract.rs`); `TimeBasis::ALL` is the vocabulary each surface states | Yes. The clock is applied only where a value leaves the engine: the window predicate, the time sort, the age profile, and the writers; every tier keeps both clocks, so either request reads the same fast paths |
+| Capacity observation | How full each filesystem a `volumes` report touches is, at read time | `VolumesObservation`, `CapacityObservation`, and `observe_capacity` (`capacity.rs`, `query/query_volumes.rs`); `observe_volumes` composes the roots’ devices, the entries the walk listed (`volume_entries`), and the calls | Yes. Never stored in any tier or served from one; every serving route observes it with the same step, only on roots and directories the walk listed, outside any index guard, and passes it to the pure readers, which report capacity as unknown when given none |
 | Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants, field-presence rules, and the shared machine-output walk in `report_format.rs` | Yes. JSON, JSON Lines, and YAML consume one field walk, while each document family keeps its own schema identity |
 
 ### Core Values and Ownership
@@ -780,9 +782,13 @@ can already request a recent-files report.
 An opened root maintains a newest-first order of regular files for one, and the page
 that serves it must meet this contract.
 Ranked recency has a selection order and a presentation order, and they differ.
-Rows are selected by ignored state, then modification time descending, then canonical
-path ascending; the page that survives is returned in modification time descending, then
-that same path ascending.
+Rows are selected by ignored state, then time descending, then canonical path ascending;
+the page that survives is returned in time descending, then that same path ascending.
+The time is the report’s clock (`Selection::time`): change time unless the request asks
+for modification time, as the `recent` view reads it on every route.
+The maintained order an opened root keeps today is keyed by modification time alone, and
+no projection reads it; a page that serves from it must first key it by the request’s
+clock, or keep one order per clock.
 The path is the final key in both, which is what makes each total.
 
 Ignored entries rank last during selection because installing dependencies writes

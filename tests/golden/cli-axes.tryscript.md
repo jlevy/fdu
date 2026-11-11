@@ -855,8 +855,8 @@ The fixture created the top-level directories moments ago, so each of them has r
 activity of its own and covers everything beneath it: the summary counts every file in
 the tree, where `--kind file --time modified` counts only the one file whose content was
 written recently.
-A time bound that selected everything says so, so the whole tree is not read as written
-in the window.
+A time bound that selected everything says so, so the whole tree is not
+read as written in the window.
 
 ```console
 $ fdu --cache off --size apparent --since 30d --view summary builds

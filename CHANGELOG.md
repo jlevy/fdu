@@ -36,10 +36,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Machine output: the request echo names its `time`; every list row, tree node, and
   total gives its time as `time_ns`, `time_at`, and `age_ns`; summary and tree rows give
   `newest_file_time_ns`; and list rows also give both raw clocks, `mtime_ns` and
-  `changed_ns` (null where an entry’s status change was not observed), so an arrival that
-  carries old content is a row with a recent `changed_ns` and an old `mtime_ns`. Python
-  `FileRow`, `TreeNode`, `TreeTotal`, `SummaryRow`, and `ReportRequest` carry the same
-  names, and Rust `FileRow` has `status_observed` and `FileRow::changed_ns`.
+  `changed_ns` (null where an entry’s status change was not observed), so an arrival
+  that carries old content is a row with a recent `changed_ns` and an old `mtime_ns`.
+  Python `FileRow`, `TreeNode`, `TreeTotal`, `SummaryRow`, and `ReportRequest` carry the
+  same names, and Rust `FileRow` has `status_observed` and `FileRow::changed_ns`.
 - Watch change records (`fdu.stream/3`) give an upsert’s `changed_ns` beside its
   `mtime_ns`, absent where the status change was not observed, so a `--since --watch`
   tail shows the time that admitted an entry.
@@ -93,9 +93,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the report counted there as a `VolumeCounted`.
 - Selection coverage: a report whose selection narrows the scanned files ends with
   `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
-  is not read as the whole tree. A time-bounded selection that admitted every file says
-  so, as `note: selected all 2 files, 98 KiB`, since a window without `--kind file`
-  admits a directory, and everything in it, whenever anything in it is recent.
+  is not read as the whole tree.
+  A time-bounded selection that admitted every file says so, as
+  `note: selected all 2 files, 98 KiB`, since a window without `--kind file` admits a
+  directory, and everything in it, whenever anything in it is recent.
   Every report’s envelope carries `selected` and `scanned`, each
   `{files, dirs, bytes, allocated}`; Python `Report.selected` and `Report.scanned` are
   `EntryTotals`, and Rust `Report::selection` is a `SelectionCoverage` of two

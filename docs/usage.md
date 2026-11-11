@@ -136,6 +136,8 @@ repeated filesystem walks.
 | `list` | Matching entries; directory tree by default, flat paths or details on request |
 | `tree` | The directory hierarchy, in structured output too |
 | `summary` | One total for the selected tree |
+| `ages` | The selected regular files in nine age bands on the report’s clock, newest first; the bands add up to `summary` |
+| `volumes` | Each filesystem the report touches: capacity, share in use, available space, and what the report counted there |
 | `families` | Broad code, prose, markup, data, binary, and unknown groups |
 | `types` | Detected file types |
 | `extensions` | Raw filename extensions; extensionless names use `(none)` |

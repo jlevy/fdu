@@ -102,6 +102,12 @@ changes, a run returns one of four outcomes, compared on content and tree status
 For one request, delivery, and history, every route and surface returns the same kind of
 outcome, and every machine format parses back to the same value.
 
+A filesystem’s capacity is the one part of an answer’s content the request does not
+determine: `--view volumes` reports what the host has free when the report is read, an
+observation of the host like `generated_at`, never stored in any tier and never served
+from one. Every route observes it the same way, on the same filesystems, and the
+comparisons that hold routes to the cold answer set its available space aside.
+
 That invariant follows from modeling the request and stored state explicitly, and it has
 concrete consequences:
 
@@ -380,8 +386,8 @@ on an unmounted trigger mounts it and waits for the automounter, exactly as a li
 would; what macOS does for its triggers is untested.
 So `volumes` asks only where the walk listed, on every route: each root, and each
 directory below one that the walk listed.
-A filesystem the report entered only at a directory the walk kept without listing it,
-at the scan depth or not yet reached by an opened root’s discovery, keeps its row with
+A filesystem the report entered only at a directory the walk kept without listing it, at
+the scan depth or not yet reached by an opened root’s discovery, keeps its row with
 capacity unknown and the reason that the walk did not list it.
 `--view volumes` then mounts nothing a tree of the same request would not, and
 `--view full` leaves `volumes` out and makes no capacity call at all.
@@ -538,7 +544,7 @@ Every option belongs to exactly one axis:
 | Scope | What is scanned and cached? | `PATH...`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read beyond what the views imply, and which metrics are measured? | `--analyze` |
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--since`, `--before`, `--time`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
+| View | Which roll-up is reported? | `--view list,summary,volumes,ages,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color`, `--progress` |
 | Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--workers`, `--allow-partial` |
 
@@ -690,16 +696,24 @@ recorded exception under “Truncate Freely; Never Truncate Silently”.
 
 The delta contract stands: `scan` and `watch` produce observations, the index consumes
 them, and views only read.
-`report()` is a pure reader of an index, a validated request, and an explicit generation
-instant: no filesystem access or mutation, and the same inputs produce the same report.
+`report()` is a pure reader of an index, a validated request, an explicit generation
+instant, and an explicit capacity observation: no filesystem access or mutation, and the
+same inputs produce the same report.
 The one-shot execution planner sits before that reader boundary: it chooses what state
 must be retained, then constructs the same immutable `Report` shape.
-It never changes `report(index, request, generated_at)` or lets a view reach into the
-filesystem.
+It never changes `report(index, request, generated_at, capacity)` or lets a view reach
+into the filesystem.
 
 The generation instant is an explicit argument rather than sampled inside the reader;
 provenance is derived from retained state and the request.
 This keeps the goldens meaningful.
+Capacity is an argument for the same reason: it is a fact about the host, not the tree,
+so the serving route observes it with `observe_volumes` just before it reads a request
+that names `volumes`, and passes `None` otherwise, which a `volumes` view reports as
+unknown with a note.
+The routes that observe are the one-shot run (`prepare_report` and its several-root
+form), each watch repaint, an opened root’s `read`, which observes before it takes its
+index guard, and Python’s `Index.report`, with the GIL released.
 
 Purity at this boundary is necessary but not sufficient.
 An index is shaped by the requests that built it, so a reader that sees only the index
@@ -709,9 +723,9 @@ index retains beyond that request is projected away by the stored-state model be
 anything is rendered.
 
 A report over several roots reads several indexes, one per root, and is still one pure
-reader: `report_roots(indexes, roots, request, generated_at)`. Each section accumulates
-over every index and finalizes once, so shares and bounds are taken over the union, and
-a report over one root is the same reader with one input.
+reader: `report_roots(indexes, roots, request, generated_at, capacity)`. Each section
+accumulates over every index and finalizes once, so shares and bounds are taken over the
+union, and a report over one root is the same reader with one input.
 Pooled statistics such as logical words merge as sufficient statistics inside the
 reader, which is why two rendered reports cannot simply be added afterwards.
 

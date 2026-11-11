@@ -272,8 +272,9 @@ On 2026-11-11, the same pull request’s fixes for its review F were checked the
 in the same regime, at a build of `e2f451e7` with four cases added for one report time:
 `ages`, a `--kind file --since 1h` window, `--time modified`, and `volumes`.
 `warm_cold.py` served 30 of 30 cases `cache_only`, with 0 answer mismatches, 0 mechanism
-failures, and 0 stale reference instants, and `cross_warm.py` matched 72 of 72 pairs,
-17 of them held to serving, with 0 violations. The automount test passed as root.
+failures, and 0 stale reference instants, and `cross_warm.py` matched 72 of 72 pairs, 17
+of them held to serving, with 0 violations.
+The automount test passed as root.
 The refusal pass and the breaks were again not run, for the same reason.
 
 ### Previous Run: 0.5.0 Candidate on macOS
