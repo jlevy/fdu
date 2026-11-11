@@ -476,7 +476,7 @@ The share in use is `(capacity − available) / capacity`, the figure that matte
 space runs out and what `duf` shows, not the volume’s own used count, which `df` shows
 and which differs on APFS. A walk without `--one-filesystem` can cross mounts below the
 path, and each is a row; a filesystem reached at several paths is named by the first,
-with a note counting the others.
+with a note naming up to three of the others, or counting them when there are more.
 The type is a name on macOS and Windows, and on Linux, which gives a number, the common
 ones by the name `mount` gives them (`ext2/3/4`, which share one number, `xfs`, `btrfs`,
 `zfs`, `tmpfs`, `overlay`, `nfs`, `fuse`, and others) and any other as its number.

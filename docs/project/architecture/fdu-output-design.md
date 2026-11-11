@@ -126,7 +126,7 @@ Each filesystem in `volumes` is three lines on every platform, whatever is known
    251 GiB   96% in use  .  (ext2/3/4)
                          10 GiB available
                          318 MiB counted by this report
-    unknown               trig
+   unknown               trig
                          capacity unknown: the walk did not list this directory
                          0 B counted by this report
 ```

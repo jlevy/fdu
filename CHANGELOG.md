@@ -94,11 +94,12 @@ details.
     relative to its root and `.` for the root itself, never by the canonical path the
     capacity call used (`\\?\C:\…` on Windows, `/private/var` for `/var` on macOS). A
     filesystem entered at several paths is one row, named by the first, with a note
-    naming the others; machine output lists every one in the row’s `also_entered`. Each
-    row names its filesystem’s type: on Linux, which gives a number, the common ones by
-    the name `mount` gives them (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`, `fuse`,
-    and others), and any other by its number.
-    An APFS, btrfs, or ZFS row says its available space is shared within its pool.
+    naming up to three of the others, or counting them when there are more; machine
+    output lists every one in the row’s `also_entered`. Each row names its filesystem’s
+    type: on Linux, which gives a number, the common ones by the name `mount` gives them
+    (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`, `fuse`, and others), and any other by
+    its number. An APFS, btrfs, or ZFS row says its available space is shared within its
+    pool.
   - **Capacity** is observed when the report is read, by one `statfs` per filesystem on
     Linux and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so
     `--stale-ok` shows current capacity.
