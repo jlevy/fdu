@@ -2274,7 +2274,9 @@ mod tests {
                 .index
                 .read_with(|index| match index.expectation(std::path::Path::new(path)).state {
                     crate::engine_contract::PathState::Present { attrs, .. } => attrs,
-                    state => panic!("{path} is held: {state:?}"),
+                    state @ crate::engine_contract::PathState::Absent => {
+                        panic!("{path} is held: {state:?}")
+                    }
                 })
                 .expect("read the session's index")
         };
