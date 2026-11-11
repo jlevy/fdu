@@ -14,6 +14,22 @@ import json
 
 # Root fields that legitimately differ between two runs of one request.
 DELIVERY_FIELDS = frozenset({"provenance", "age_reference_ns", "age_reference_at"})
+# Fields at any depth that are read at each run rather than from the tree: a row's age,
+# an age band's edges as instants, which follow the reference instant, and a volume's
+# available space and when it was observed, which the host decides. A band's tallies and
+# a volume's capacity and counted bytes are the tree's, so they are compared.
+PER_READ_FIELDS = frozenset(
+    {
+        "age_ns",
+        "since_ns",
+        "before_ns",
+        "since_at",
+        "before_at",
+        "available_bytes",
+        "observed_at",
+        "observed_at_ns",
+    }
+)
 
 
 def parse(out: str) -> dict | None:
@@ -25,19 +41,19 @@ def parse(out: str) -> dict | None:
 
 
 def answer(out: str) -> object:
-    """The report without its delivery fields and row ages, or the raw text if not JSON."""
+    """The report without its delivery and per-read fields, or the raw text if not JSON."""
     doc = parse(out)
     if doc is None:
         return out
 
-    def strip_ages(node: object) -> object:
+    def strip_per_read(node: object) -> object:
         if isinstance(node, dict):
-            return {k: strip_ages(v) for k, v in node.items() if k != "age_ns"}
+            return {k: strip_per_read(v) for k, v in node.items() if k not in PER_READ_FIELDS}
         if isinstance(node, list):
-            return [strip_ages(item) for item in node]
+            return [strip_per_read(item) for item in node]
         return node
 
-    return strip_ages({k: v for k, v in doc.items() if k not in DELIVERY_FIELDS})
+    return strip_per_read({k: v for k, v in doc.items() if k not in DELIVERY_FIELDS})
 
 
 def age_problems(out: str) -> list[str]:

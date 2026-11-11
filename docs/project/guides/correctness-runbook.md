@@ -85,6 +85,14 @@ FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py /tmp/fdu-correct
 FDU_BIN=target/debug/fdu python3 tests/correctness/cross_warm.py /tmp/fdu-correctness/served
 ```
 
+As root, also run the test that mounts a real autofs trigger and holds `volumes` to
+asking capacity only where the walk listed; CI runs unprivileged, so there it says it
+skipped:
+
+```shell
+FDU_TEST_ALLOW_NO_PERMISSION_BITS=1 cargo test --locked -p fdu-core --test volumes_automount
+```
+
 **The serving proof needs a tree without refusals.** An unreadable file or unlistable
 directory makes every answer partial for an unprivileged user, and a partial scan never
 writes the entry tier: a snapshot missing an entry would be served as the tree’s totals
@@ -103,6 +111,10 @@ A tree node that counts no entry, or whose subtree was not listed in full, must 
 null age.
 `age_reference_at`, the same instant rendered, is set aside with it; each row’s
 `time_at` is compared like any other field.
+An age band’s edges as instants (`since_ns`, `before_ns`, `since_at`, `before_at`) and a
+volume’s `available_bytes` and `observed_at` are set aside too, since each is read at
+the run rather than from the tree; a band’s tallies and a volume’s capacity and counted
+bytes are compared.
 
 Keep the socket path short.
 A Unix socket path is limited to about 104 bytes on macOS, so a tree under a long
@@ -255,6 +267,14 @@ failures, and 0 stale reference instants.
 The refusal pass and the deliberate breaks were not run.
 This sandbox gives even `nobody` read access to a mode-000 file, so no user there can
 experience a refusal; the next release’s `make release-stability` runs both.
+
+On 2026-11-11, the same pull request’s fixes for its review F were checked the same way,
+in the same regime, at a build of `e2f451e7` with four cases added for one report time:
+`ages`, a `--kind file --since 1h` window, `--time modified`, and `volumes`.
+`warm_cold.py` served 30 of 30 cases `cache_only`, with 0 answer mismatches, 0 mechanism
+failures, and 0 stale reference instants, and `cross_warm.py` matched 72 of 72 pairs,
+17 of them held to serving, with 0 violations. The automount test passed as root.
+The refusal pass and the breaks were again not run, for the same reason.
 
 ### Previous Run: 0.5.0 Candidate on macOS
 

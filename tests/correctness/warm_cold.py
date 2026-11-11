@@ -70,6 +70,12 @@ CASES: list[tuple[str, list[str]]] = [
     ("view-code", ["--view", "code"]),
     ("view-documents", ["--view", "documents"]),
     ("view-code-documents", ["--view", "code,documents"]),
+    # One report time: an age profile, a window that admits files alone, the
+    # modification clock, and capacity, which is observed per read and never stored.
+    ("ages", ["--view", "ages"]),
+    ("since-kind-file", ["--kind", "file", "--since", "1h"]),
+    ("time-modified", ["--time", "modified"]),
+    ("volumes", ["--view", "volumes"]),
 ]
 
 
