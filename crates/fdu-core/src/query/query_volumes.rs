@@ -7,6 +7,13 @@
 //! serving route made just before it read ([`crate::capacity`]), and a reader given none
 //! reports it as unknown, never as zero.
 //!
+//! Capacity is asked only where the walk listed: of each root, which the user named and
+//! whose listing mounts it in any case, and of each directory the walk listed. A capacity
+//! call on an unmounted automount trigger mounts it and waits for the answer, as a listing
+//! would, so a directory the walk kept without listing it (at the scan depth, or not yet
+//! reached by an opened root's discovery) keeps its row with capacity unknown and the
+//! reason ([`NOT_LISTED`]), never a call the walk itself would not have made.
+//!
 //! No row is summed with another. Available space can be shared between volumes of one
 //! pool, and the bytes a report counted and the bytes in use never add to the capacity:
 //! snapshots, other volumes, purgeable space, and deleted files still open all take space
@@ -57,6 +64,10 @@ pub struct VolumeEntry {
     pub path: PathBuf,
     /// The entry's absolute path, which a capacity call is made on.
     pub absolute: PathBuf,
+    /// Whether the walk listed the entry: a root always counts as listed, and a directory
+    /// below one when its scope admitted descent into it and the index holds its listing.
+    /// A capacity call is made only on a listed entry.
+    pub listed: bool,
 }
 
 /// One filesystem a report touches.
@@ -94,8 +105,32 @@ pub struct VolumesSection {
 /// Why a row's capacity is unknown when the reader was given no observation.
 pub(crate) const NOT_OBSERVED: &str = "capacity was not observed";
 
-/// One pass over `index`: where it enters each filesystem, and what the regular files
-/// `counted` admits hold on each.
+/// Why a row's capacity is unknown when the walk listed none of the directories where the
+/// report entered its filesystem, so no capacity call was made there.
+pub(crate) const NOT_LISTED: &str = "the walk did not list this directory";
+
+/// Where a walk entered one filesystem below a root: the device, the path relative to the
+/// root, and whether the walk listed that directory.
+pub(super) type Entered = (u64, PathBuf, bool);
+
+/// Whether the walk that built `index` listed directory `id` at `path`, the condition for
+/// asking its filesystem's capacity.
+///
+/// Listed: its scope admitted descent into it, as the walk decides it
+/// ([`crate::admission::should_descend`]: a directory at the scan depth is kept and not
+/// listed), and the index holds its listing: it is complete, or it holds an entry, which a
+/// walk reaches only through its directory. A directory an opened root's discovery has
+/// kept and not yet listed is neither, and neither is one whose listing failed, where a
+/// second call would wait on the same mount again.
+fn walk_listed(index: &Index, id: EntryId, path: &Path) -> bool {
+    let depth = path.components().count();
+    index.scope().max_depth.is_none_or(|maximum| depth < maximum)
+        && (index.directory_complete_of(id) == Some(true)
+            || index.children_of(id).is_some_and(|children| children.len() > 0))
+}
+
+/// One pass over `index`: where it enters each filesystem, whether the walk listed each
+/// such directory, and what the regular files `counted` admits hold on each.
 ///
 /// Only a directory's device starts a filesystem, and every other entry is counted on its
 /// directory's. A mount point is a directory, and a file's own device can name something
@@ -108,7 +143,7 @@ pub(super) fn devices(
     index: &Index,
     root_device: Option<u64>,
     counted: impl Fn(EntryId) -> bool,
-) -> (Vec<(u64, PathBuf)>, BTreeMap<u64, VolumeCounted>) {
+) -> (Vec<Entered>, BTreeMap<u64, VolumeCounted>) {
     let root_device = root_device
         .filter(|device| *device != 0)
         .or_else(|| {
@@ -118,7 +153,7 @@ pub(super) fn devices(
     // A one-filesystem walk retains each mount point it reached as a boundary and never
     // enters it, so the report touches no other filesystem.
     let crosses = !index.scope().one_filesystem;
-    let mut entries = vec![(root_device, PathBuf::new())];
+    let mut entries = vec![(root_device, PathBuf::new(), true)];
     let mut tallies: BTreeMap<u64, VolumeCounted> = BTreeMap::new();
     let mut stack = vec![(EntryId::ROOT, PathBuf::new(), root_device)];
     while let Some((id, path, device)) = stack.pop() {
@@ -139,7 +174,7 @@ pub(super) fn devices(
                     if !crosses {
                         continue;
                     }
-                    entries.push((own, child_path.clone()));
+                    entries.push((own, child_path.clone(), walk_listed(index, child, &child_path)));
                 }
                 stack.push((child, child_path, own));
             }
@@ -189,57 +224,84 @@ pub fn volume_entries(indexes: &[&Index], root_devices: &[Option<u64>]) -> Vec<V
         .enumerate()
         .flat_map(|(root, index)| {
             let (entries, _) = devices(index, root_devices.get(root).copied().flatten(), |_| false);
-            entries.into_iter().map(move |(device, path)| VolumeEntry {
+            entries.into_iter().map(move |(device, path, listed)| VolumeEntry {
                 root,
                 device,
                 absolute: absolute(index.root_path(), &path),
                 path,
+                listed,
             })
         })
         .collect()
 }
 
-/// Observe the capacity every filesystem a report of `request` over `indexes` touches,
+/// The device each root is on, in the roots' order; `None` where a root cannot be read.
+///
+/// Read as the walk reads a root's device for `--one-filesystem`, so the two agree. This
+/// reads the filesystem, and an opened root calls it before it takes its index guard.
+pub(crate) fn root_devices<'a>(roots: impl IntoIterator<Item = &'a Path>) -> Vec<Option<u64>> {
+    roots
+        .into_iter()
+        .map(|root| {
+            std::fs::metadata(root).and_then(|meta| crate::scan::root_device(root, &meta)).ok()
+        })
+        .collect()
+}
+
+/// Observe the capacity of each filesystem `entries` enter, on the bytewise-first path the
+/// walk listed for it; a filesystem entered only where the walk did not list is not asked.
+pub(crate) fn observe_entries(
+    root_devices: Vec<Option<u64>>,
+    entries: &[VolumeEntry],
+) -> VolumesObservation {
+    observe_entries_with(root_devices, entries, |volumes| {
+        crate::capacity::observe_capacity(volumes)
+    })
+}
+
+/// [`observe_entries`], with the capacity calls made by `observe`: the seam a test uses to
+/// see which paths would be asked.
+fn observe_entries_with(
+    root_devices: Vec<Option<u64>>,
+    entries: &[VolumeEntry],
+    observe: impl for<'p> FnOnce(Vec<(u64, &'p Path)>) -> CapacityObservation,
+) -> VolumesObservation {
+    let mut listed: Vec<&VolumeEntry> = entries.iter().filter(|entry| entry.listed).collect();
+    listed.sort_by(|left, right| {
+        left.absolute
+            .as_os_str()
+            .as_encoded_bytes()
+            .cmp(right.absolute.as_os_str().as_encoded_bytes())
+    });
+    let capacity =
+        observe(listed.into_iter().map(|entry| (entry.device, entry.absolute.as_path())).collect());
+    VolumesObservation { root_devices, capacity }
+}
+
+/// Observe the capacity of every filesystem a report of `request` over `indexes` touches,
 /// or nothing when the request names no `volumes` view.
 ///
-/// The one step a serving route takes before it reads such a report, so that each route,
-/// one-shot, retained, opened, or watching, observes the same filesystems the same way.
+/// The one step a route that owns its indexes takes before it reads such a report, so that
+/// one-shot, retained, and watching routes observe the same filesystems the same way. An
+/// opened root takes the same steps with its guard released around the calls.
 pub fn observe_volumes(
     indexes: &[&Index],
     request: &crate::query::Request,
 ) -> Option<VolumesObservation> {
     request.query.views.contains(&crate::query::ViewSpec::Volumes).then(|| {
-        // Read as the walk reads a root's device for `--one-filesystem`, so the two agree.
-        let root_devices: Vec<Option<u64>> = indexes
-            .iter()
-            .map(|index| {
-                let root = index.root_path();
-                std::fs::metadata(root).and_then(|meta| crate::scan::root_device(root, &meta)).ok()
-            })
-            .collect();
+        let root_devices = root_devices(indexes.iter().map(|index| index.root_path()));
         let entries = volume_entries(indexes, &root_devices);
-        let mut ordered: Vec<&VolumeEntry> = entries.iter().collect();
-        ordered.sort_by(|left, right| {
-            left.absolute
-                .as_os_str()
-                .as_encoded_bytes()
-                .cmp(right.absolute.as_os_str().as_encoded_bytes())
-        });
-        let capacity = crate::capacity::observe_capacity(
-            ordered.into_iter().map(|entry| (entry.device, entry.absolute.as_path())),
-        );
-        VolumesObservation { root_devices, capacity }
+        observe_entries(root_devices, &entries)
     })
 }
 
 /// One root's part of a volumes section: its position, its path, and what [`devices`]
 /// found under it.
-pub(super) type RootDevices<'a> =
-    (usize, &'a Path, Vec<(u64, PathBuf)>, BTreeMap<u64, VolumeCounted>);
+pub(super) type RootDevices<'a> = (usize, &'a Path, Vec<Entered>, BTreeMap<u64, VolumeCounted>);
 
-/// Every path a report entered one device at, as (absolute, root, relative), with what it
-/// counted there.
-type Reached = (Vec<(PathBuf, usize, PathBuf)>, VolumeCounted);
+/// Every path a report entered one device at, as (absolute, root, relative, listed), with
+/// what it counted there.
+type Reached = (Vec<(PathBuf, usize, PathBuf, bool)>, VolumeCounted);
 
 /// The rows of a volumes section: every root's devices joined with `observation`.
 pub(super) fn volumes_section(
@@ -249,8 +311,13 @@ pub(super) fn volumes_section(
     let observation = observation.map(|seen| &seen.capacity);
     let mut by_device: BTreeMap<u64, Reached> = BTreeMap::new();
     for (root, root_path, entries, tallies) in parts {
-        for (device, path) in entries {
-            by_device.entry(device).or_default().0.push((absolute(root_path, &path), root, path));
+        for (device, path, listed) in entries {
+            by_device.entry(device).or_default().0.push((
+                absolute(root_path, &path),
+                root,
+                path,
+                listed,
+            ));
         }
         for (device, tally) in tallies {
             let total = &mut by_device.entry(device).or_default().1;
@@ -266,14 +333,20 @@ pub(super) fn volumes_section(
                 left.0.as_os_str().as_encoded_bytes().cmp(right.0.as_os_str().as_encoded_bytes())
             });
             let other_paths = entries.len().saturating_sub(1) as u64;
-            let (absolute, root, path) = entries.into_iter().next()?;
-            let (capacity, unknown_reason) = match observation.map(|seen| seen.volume(device)) {
-                None => (None, Some(NOT_OBSERVED.to_owned())),
-                Some(None) => (None, Some("the filesystem was not observed".to_owned())),
-                Some(Some(volume)) => match &volume.capacity {
+            let listed = entries.iter().any(|entry| entry.3);
+            let (absolute, root, path, _) = entries.into_iter().next()?;
+            // The observation answers where it holds the device. Otherwise the reason is
+            // the walk's, when no path it entered the filesystem at was listed and so none
+            // was asked; else no observation was made, or the filesystem appeared after it.
+            let (capacity, unknown_reason) = match observation.and_then(|seen| seen.volume(device))
+            {
+                Some(volume) => match &volume.capacity {
                     Ok(capacity) => (Some(capacity.clone()), None),
                     Err(reason) => (None, Some(reason.clone())),
                 },
+                None if !listed => (None, Some(NOT_LISTED.to_owned())),
+                None if observation.is_none() => (None, Some(NOT_OBSERVED.to_owned())),
+                None => (None, Some("the filesystem was not observed".to_owned())),
             };
             Some(VolumeRow {
                 device,
@@ -332,7 +405,7 @@ mod tests {
     fn only_a_directory_starts_a_filesystem_and_files_count_on_their_directorys() {
         let index = mounted();
         let (entries, tallies) = devices(&index, Some(1), |_| true);
-        assert_eq!(entries, [(1, PathBuf::new()), (2, PathBuf::from("mnt"))]);
+        assert_eq!(entries, [(1, PathBuf::new(), true), (2, PathBuf::from("mnt"), true)]);
         // `mnt/sub` has no device of its own and stays on `mnt`'s; `layer/d.bin` reports
         // a layer's device and counts on its directory's.
         assert_eq!(tallies[&1], VolumeCounted { files: 2, bytes: 50, allocated: 50 });
@@ -341,6 +414,128 @@ mod tests {
         let (entries, tallies) = devices(&index, Some(1), |_| false);
         assert_eq!(entries.len(), 2);
         assert!(tallies.is_empty());
+    }
+
+    /// The paths `observe_entries` would ask capacity of for a report over `index`, whose
+    /// root is on device 1, and the observation it would make, with a stand-in for the
+    /// calls that answers every path it is given.
+    fn asked_of(index: &Index) -> (Vec<(u64, PathBuf)>, VolumesObservation) {
+        let entries = volume_entries(&[index], &[Some(1)]);
+        let mut asked = Vec::new();
+        let observation = observe_entries_with(vec![Some(1)], &entries, |volumes| {
+            asked = volumes.iter().map(|(device, path)| (*device, path.to_path_buf())).collect();
+            CapacityObservation {
+                observed_at: std::time::UNIX_EPOCH,
+                volumes: volumes
+                    .into_iter()
+                    .map(|(device, path)| crate::capacity::ObservedVolume {
+                        device,
+                        path: path.to_path_buf(),
+                        capacity: Ok(VolumeCapacity {
+                            capacity_bytes: 100,
+                            available_bytes: 50,
+                            filesystem: None,
+                        }),
+                    })
+                    .collect(),
+            }
+        });
+        (asked, observation)
+    }
+
+    /// The volume rows of a report over `index` given `observation`, as (path, device,
+    /// whether capacity is known, the reason it is not).
+    fn rows_of(
+        index: &Index,
+        observation: &VolumesObservation,
+    ) -> Vec<(PathBuf, u64, bool, Option<String>)> {
+        use crate::query::{Query, Request, Section, ViewSpec};
+        let request = Request::new(
+            crate::query::Basis::held_by(index),
+            Query { views: vec![ViewSpec::Volumes], ..Query::default() },
+            std::time::UNIX_EPOCH,
+        );
+        let report = crate::query::report_with_capacity(
+            index,
+            &request,
+            std::time::UNIX_EPOCH,
+            Some(observation),
+        )
+        .expect("report");
+        let Section::Volumes(volumes) = &report.sections[0] else { panic!("volumes") };
+        volumes
+            .rows
+            .iter()
+            .map(|row| {
+                (row.path.clone(), row.device, row.capacity.is_some(), row.unknown_reason.clone())
+            })
+            .collect()
+    }
+
+    /// A capacity call on an unmounted automount trigger asks the kernel to mount it and
+    /// waits for the automounter, as a listing would, so it is made only where the walk
+    /// listed: never on a directory it kept at the scan depth, or one an opened root's
+    /// discovery has not reached (review F1 on #209). The root is always asked.
+    #[test]
+    fn a_filesystem_entered_where_the_walk_did_not_list_is_never_asked() {
+        // `--scan-depth 1`: the walk listed the root and kept `mnt`, a mount point at the
+        // scan depth, without listing it.
+        let mut shallow = Index::new_with_scope(
+            "/srv",
+            crate::ScanScope { max_depth: Some(1), ..crate::ScanScope::default() },
+        );
+        shallow
+            .apply(&Observation::new(vec![
+                upsert("a.txt", EntryKind::File, 10, 1),
+                upsert("mnt", EntryKind::Dir, 0, 2),
+            ]))
+            .expect("apply");
+        let (asked, observation) = asked_of(&shallow);
+        assert_eq!(asked, [(1, PathBuf::from("/srv"))], "only the root is asked");
+        assert_eq!(
+            rows_of(&shallow, &observation),
+            [
+                (PathBuf::new(), 1, true, None),
+                (PathBuf::from("mnt"), 2, false, Some(NOT_LISTED.to_owned())),
+            ],
+            "the unlisted mount keeps its row, capacity unknown, with the walk's reason"
+        );
+
+        // An opened root mid-discovery: it has listed `mnt`, which holds what it found
+        // there, and kept `later` from the root's listing without listing it yet.
+        let mut discovering = Index::new("/srv");
+        discovering
+            .apply(&Observation::new(vec![
+                upsert("mnt", EntryKind::Dir, 0, 2),
+                upsert("mnt/b.bin", EntryKind::File, 20, 2),
+                upsert("later", EntryKind::Dir, 0, 3),
+            ]))
+            .expect("apply");
+        let (asked, observation) = asked_of(&discovering);
+        assert_eq!(asked, [(1, PathBuf::from("/srv")), (2, PathBuf::from("/srv/mnt"))]);
+        let rows = rows_of(&discovering, &observation);
+        assert_eq!(rows[1], (PathBuf::from("later"), 3, false, Some(NOT_LISTED.to_owned())));
+        assert!(rows[2].2, "the listed mount's capacity is known: {rows:?}");
+    }
+
+    /// A filesystem entered at a listed path and an unlisted one is asked on the listed
+    /// path, whichever path labels its row.
+    #[test]
+    fn a_filesystem_entered_twice_is_asked_where_the_walk_listed_it() {
+        let mut index = Index::new("/srv");
+        index
+            .apply(&Observation::new(vec![
+                upsert("a", EntryKind::Dir, 0, 2),
+                upsert("b", EntryKind::Dir, 0, 1),
+                upsert("b/mnt", EntryKind::Dir, 0, 2),
+                upsert("b/mnt/c.bin", EntryKind::File, 5, 2),
+            ]))
+            .expect("apply");
+        let (asked, observation) = asked_of(&index);
+        assert_eq!(asked, [(1, PathBuf::from("/srv")), (2, PathBuf::from("/srv/b/mnt"))]);
+        let rows = rows_of(&index, &observation);
+        assert_eq!(rows[1].0, PathBuf::from("a"), "the bytewise-first path labels the row");
+        assert!(rows[1].2, "and its capacity is the listed path's: {rows:?}");
     }
 
     #[test]
@@ -356,7 +551,7 @@ mod tests {
             ]))
             .expect("apply");
         let (entries, tallies) = devices(&index, Some(1), |_| true);
-        assert_eq!(entries, [(1, PathBuf::new())], "the mount point was a boundary");
+        assert_eq!(entries, [(1, PathBuf::new(), true)], "the mount point was a boundary");
         assert_eq!(tallies.keys().copied().collect::<Vec<_>>(), [1]);
     }
 

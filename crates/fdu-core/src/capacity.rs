@@ -10,6 +10,12 @@
 //! filesystem type together, `statvfs` on other Unix systems, and `GetDiskFreeSpaceExW`
 //! with `GetVolumeInformationW` on Windows. No mount table is read; the walk already knows
 //! where the device changes.
+//!
+//! Each call resolves its path, so on an unmounted automount trigger it asks for the mount
+//! and waits for the answer, as a listing does. A caller therefore names only paths the
+//! walk listed ([`crate::query::observe_volumes`]), and never calls this while it holds an
+//! index guard: a filesystem that answers slowly, or never, then delays one report rather
+//! than every reader and writer of a root.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;

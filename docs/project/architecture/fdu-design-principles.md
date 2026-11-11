@@ -374,6 +374,19 @@ one route’s stat mounted and another’s did not, the same request answered di
 worker count, and by whether a directory happened to be read natively or portably.
 The mechanism is in `scan/linux_dents.rs` and at `scan::root_device`.
 
+A capacity observation is the one call that takes no such flag.
+`statfs` and `GetDiskFreeSpaceExW` resolve the path they are given, so on Linux a call
+on an unmounted trigger mounts it and waits for the automounter, exactly as a listing
+would; what macOS does for its triggers is untested.
+So `volumes` asks only where the walk listed, on every route: each root, and each
+directory below one that the walk listed.
+A filesystem the report entered only at a directory the walk kept without listing it,
+at the scan depth or not yet reached by an opened root’s discovery, keeps its row with
+capacity unknown and the reason that the walk did not list it.
+`--view full`, which includes `volumes`, then mounts nothing a tree of the same request
+would not. The rule is `query_volumes::walk_listed`, and a root-only test mounts a real
+trigger to hold it (`tests/volumes_automount.rs`).
+
 ## Data Structures
 
 ### Partial-Friendly as Well as Commit-Friendly
