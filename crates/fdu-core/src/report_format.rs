@@ -2724,8 +2724,10 @@ fn render_text_volumes(
         if let Some(capacity) = &row.capacity {
             let used = capacity.capacity_bytes.saturating_sub(capacity.available_bytes);
             let in_use = format!("{} in use", human_percentage(used, capacity.capacity_bytes, 0));
+            // The type is the host's: on macOS and Windows a user-space filesystem's mounter
+            // chooses it, so it is escaped as every other host label on this line is.
             let kind = capacity.filesystem.as_deref().map_or_else(String::new, |name| {
-                format!("  {}", detail(&format!("({name})"), color))
+                format!("  {}", detail(&format!("({})", escaped_human(name)), color))
             });
             let _ = writeln!(
                 out,
@@ -5906,6 +5908,44 @@ mod tests {
              \x20                        0 B available\n\
              \x20                        2.0 KiB counted by this report\n"
         );
+    }
+
+    /// A filesystem's type name is the host's, and a user-space filesystem's mounter can
+    /// choose it (macFUSE's `fstypename`, `WinFsp`'s `FileSystemName`), so text escapes its
+    /// control characters, as it does the path beside it, rather than pass them to a
+    /// terminal; machine output escapes it as a string.
+    #[test]
+    fn a_volume_rows_filesystem_name_is_escaped_in_text() {
+        use crate::capacity::VolumeCapacity;
+        use crate::query::{VolumeCounted, VolumeRow, VolumesSection};
+        let volumes = VolumesSection {
+            observed_at_ns: Some(0),
+            rows: vec![VolumeRow {
+                device: 1,
+                root: 0,
+                path: PathBuf::from("mnt\x1b"),
+                absolute: PathBuf::from("/mnt"),
+                also_entered: Vec::new(),
+                capacity: Some(VolumeCapacity {
+                    capacity_bytes: 4 << 30,
+                    available_bytes: 1 << 30,
+                    filesystem: Some("fuse\x1b[2J\x07".into()),
+                }),
+                unknown_reason: None,
+                counted: VolumeCounted::default(),
+            }],
+        };
+        for color in [false, true] {
+            let mut out = String::new();
+            render_text_volumes(&mut out, &volumes, None, SizeMetric::Apparent, color);
+            let first = out.lines().next().expect("a capacity line");
+            assert!(first.contains("mnt\\u{1b}"), "{first:?}");
+            assert!(first.contains("(fuse\\u{1b}[2J\\u{7})"), "{first:?}");
+            // Color adds its own escapes, so only the plain row is free of every one.
+            if !color {
+                assert!(!out.contains(['\x1b', '\x07']), "{out:?}");
+            }
+        }
     }
 
     /// Machine output names every other path a filesystem was entered at, as a row's path
