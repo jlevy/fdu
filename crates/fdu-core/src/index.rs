@@ -18,7 +18,8 @@
 //! - **Non-invertible** ([`RollUp::newest_mtime_ns`], and the newest activity of any kind
 //!   that a tree row's age reads) absorb *additions* in O(depth) by taking a max, but a
 //!   *removal* may need the directory's value rebuilt from its direct children — standard
-//!   incremental-view-maintenance behaviour. Metabrowser's
+//!   incremental-view-maintenance behaviour. A batch rebuilds each such directory once,
+//!   after its last operation, however many removals it held. Metabrowser's
 //!   per-parent newest-mtime heaps are exactly this workaround, hand-written for one
 //!   metric.
 //!
@@ -30,7 +31,7 @@
 //! delta contract being the only mutation path means escalating later to epoch or
 //! arc-swap snapshots stays contained rather than becoming a rewrite.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -279,7 +280,7 @@ struct InternedPartitionRollUp {
     /// with the rest of that partition whenever a control change reclassifies entries.
     ///
     /// A maximum, so it absorbs additions on merge and is left stale on unmerge, repaired
-    /// by [`Index::recompute_newest_upward`] exactly as `newest_mtime_ns` is.
+    /// by [`Index::repair_stale_maxima`] exactly as `newest_mtime_ns` is.
     newest_activity: Times,
 }
 
@@ -322,7 +323,7 @@ impl InternedPartitionRollUp {
     }
 
     /// Remove another contribution's invertible reducers; `newest_activity` is left
-    /// stale for [`Index::recompute_newest_upward`], as `newest_mtime_ns` is.
+    /// stale for [`Index::repair_stale_maxima`], as `newest_mtime_ns` is.
     fn unmerge(&mut self, other: &Self) {
         self.all.unmerge(&other.all);
         self.unignored.unmerge(&other.unignored);
@@ -672,7 +673,7 @@ impl InternedRollUp {
     /// Remove another roll-up's contribution from this one.
     ///
     /// Only the invertible reducers are corrected here. The newest file times are left stale
-    /// on purpose and repaired by [`Index::recompute_newest_upward`], because a max
+    /// on purpose and repaired by [`Index::repair_stale_maxima`], because a max
     /// cannot be un-merged without knowing what else contributed it.
     fn unmerge(&mut self, other: &InternedRollUp) {
         self.files = self.files.saturating_sub(other.files);
@@ -1212,6 +1213,10 @@ pub struct Index {
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
+    /// Directories whose maxima this batch's removals or earlier times may have left
+    /// stale, each rebuilt with every ancestor once its last operation has applied
+    /// ([`Self::repair_stale_maxima`]). Empty at every batch boundary.
+    stale_maxima: BTreeSet<EntryId>,
     /// Source recorded on entries that incoming deltas create or update.
     ///
     /// Producers do not carry provenance in the delta itself — an observation says
@@ -2443,6 +2448,7 @@ impl Index {
             journal_capacity_bytes,
             journal_floor: Clock::ZERO,
             pending_invalidations: Vec::new(),
+            stale_maxima: BTreeSet::new(),
             freshness_epoch: 0,
             freshness_marks: BTreeMap::new(),
             state: IndexState::default(),
@@ -3093,6 +3099,9 @@ impl Index {
         track_file_progress: bool,
         effects: &mut C,
     ) {
+        // First, so that nothing after the operations reads a stale maximum and no reader,
+        // who takes the guard this batch holds, ever can.
+        self.repair_stale_maxima();
         self.apply_control_transition(projected_controls, stats, effects);
         let mut discovery = discovery;
         if stats.resource_refused > 0 {
@@ -6349,7 +6358,9 @@ impl Index {
     /// Stops at the first ancestor that already holds it or later: each directory's
     /// activity is at least each child directory's, so nothing above that one can be
     /// earlier. Only a directory's own time changes this way; every other entry's moves
-    /// through its contribution.
+    /// through its contribution. Within a batch the ancestor that stops it may hold a
+    /// stale value; then it and every ancestor above it are rebuilt before the batch ends
+    /// ([`Self::may_hold_maximum`]).
     fn raise_activity_upward(&mut self, from_parent: Option<EntryId>, times: Times) {
         let mut current = from_parent;
         while let Some(id) = current {
@@ -6366,16 +6377,23 @@ impl Index {
 
     /// Whether taking `old`, one child's contribution, out of `parent` may leave one of the
     /// maxima `parent` and its ancestors hold stale: only when `old` held one, so that no
-    /// other entry beneath `parent` is newer in that maximum.
+    /// other entry beneath `parent` is newer in that maximum. Read before `old` is
+    /// unmerged; where it holds, the caller queues `parent` in [`Self::stale_maxima`].
     ///
-    /// The maxima are exact at every operation boundary and each ancestor's is at least
-    /// its child directory's, so a parent already newer than `old` in all three (activity,
-    /// and the newest file in each partition) took none of them from it, and neither did
-    /// any ancestor. [`Self::recompute_newest_upward`], which reads every child of every
-    /// ancestor, is then skipped; a `tar -x` or `rsync -a` into a watched tree repairs only
-    /// where an older time replaced a maximum (review C13 on #191). A tie repairs, since
-    /// another entry of the same time cannot be told from `old`. Read before `old` is
-    /// unmerged.
+    /// The maxima are exact at every batch boundary, which is the only one a reader sees,
+    /// since a reader takes the guard a batch holds. Within a batch a maximum is stale only
+    /// in a queued directory or an ancestor of one, and never below the exact value, since
+    /// an unmerge leaves a maximum where it was. Outside those, the values read here are
+    /// exact and each ancestor's is at least its child directory's, so a parent already
+    /// newer than `old` in all three (activity, and the newest file in each partition) took
+    /// none of them from it, and neither did any ancestor. Inside them, a stale value can
+    /// only answer no where the parent is rebuilt anyway; a queued directory that the batch
+    /// then removes hands its queue place to its parent ([`Self::remove_entry`]).
+    ///
+    /// A no skips the repair, which reads every child of every directory it rebuilds; a
+    /// `tar -x` or `rsync -a` into a watched tree queues only where an older time replaced
+    /// a maximum (review C13 on #191). A tie queues, since another entry of the same time
+    /// cannot be told from `old`.
     fn may_hold_maximum(&self, parent: EntryId, old: &InternedPartitionRollUp) -> bool {
         let held = self.entry(parent).rollup();
         let newest_file = |old: &InternedRollUp, held: &InternedRollUp| {
@@ -6389,20 +6407,58 @@ impl Index {
             || newest_file(&old.unignored, &held.unignored)
     }
 
-    /// Rebuild the newest file times and `newest_activity` from direct children, walking to
-    /// the root.
+    /// Rebuild every directory in [`Self::stale_maxima`] and every ancestor of each from
+    /// its direct children, each once and deepest first, so that every directory is rebuilt
+    /// from children that are already exact.
     ///
-    /// Every ancestor must be visited even when the nearest directory is already
-    /// correct. Differential unmerge/re-merge can repair a single-child directory as
-    /// it goes while leaving an ancestor with other contributors holding the removed
-    /// maximum. Stopping at the first unchanged directory therefore strands a stale
-    /// value higher in the tree.
+    /// Every ancestor is rebuilt even when the nearest directory is already correct.
+    /// Differential unmerge/re-merge can repair a single-child directory as it goes while
+    /// leaving an ancestor with other contributors holding the removed maximum, and a
+    /// stale value the batch's checks could not see lives in an ancestor. Stopping at the
+    /// first unchanged directory therefore strands a stale value higher in the tree.
+    ///
+    /// Once per batch rather than once per operation, because a rebuild reads every child:
+    /// repaired per removal, removing k files from one directory newest first on either
+    /// clock read it k times under the write guard, which is quadratic in a wide directory
+    /// (review K2 on #209). Batched, it is read once per batch, as is each ancestor.
+    fn repair_stale_maxima(&mut self) {
+        if self.stale_maxima.is_empty() {
+            return;
+        }
+        let mut queued = std::mem::take(&mut self.stale_maxima);
+        let mut deepest_first: BinaryHeap<(usize, EntryId)> =
+            queued.iter().map(|&id| (self.depth_of(id), id)).collect();
+        // A parent is one level shallower than its child, so every directory deeper than
+        // it, its queued descendants included, is rebuilt before it is popped.
+        while let Some((depth, id)) = deepest_first.pop() {
+            self.rebuild_maxima(id);
+            if let Some(parent) = self.entry(id).parent {
+                if queued.insert(parent) {
+                    deepest_first.push((depth - 1, parent));
+                }
+            }
+        }
+    }
+
+    /// How many ancestors a live entry has: zero for the root.
+    fn depth_of(&self, id: EntryId) -> usize {
+        let mut depth = 0;
+        let mut current = self.entry(id).parent;
+        while let Some(parent) = current {
+            depth += 1;
+            current = self.entry(parent).parent;
+        }
+        depth
+    }
+
+    /// Rebuild one directory's newest file time in each partition and its newest activity
+    /// from its direct children, in one pass over them, whose own values must already be
+    /// exact.
     ///
     /// Direct children are enough because only an index that keeps every file is ever
     /// mutated: a folded index's roll-ups also count files it holds no entry for, and it
     /// answers one report and is dropped ([`Self::is_folded`]).
-    fn recompute_newest_upward(&mut self, from: Option<EntryId>) {
-        let mut current = from;
+    fn rebuild_maxima(&mut self, id: EntryId) {
         let file_times = |rollup: &InternedRollUp| {
             (rollup.files > 0).then_some(Times {
                 modified: rollup.newest_mtime_ns,
@@ -6413,47 +6469,44 @@ impl Index {
             (Some(newest), Some(candidate)) => Some(newest.max(candidate)),
             (newest, candidate) => newest.or(candidate),
         };
-        while let Some(id) = current {
-            let mut newest: Option<Times> = None;
-            let mut activity = NO_ACTIVITY;
-            for child in self.child_ids(id) {
-                let child_entry = self.entry(child);
-                let own = child_entry.attrs.times();
-                let (candidate, active) = match child_entry.kind {
-                    EntryKind::Dir => (
-                        file_times(&child_entry.rollup().all),
-                        own.max(child_entry.rollup().newest_activity),
-                    ),
-                    EntryKind::File => (Some(own), own),
-                    EntryKind::Symlink | EntryKind::Other => (None, own),
-                };
-                newest = newer(newest, candidate);
-                activity = activity.max(active);
+        let mut newest: Option<Times> = None;
+        let mut newest_unignored: Option<Times> = None;
+        let mut activity = NO_ACTIVITY;
+        let mut reads = 0_u64;
+        for child in self.child_ids(id) {
+            reads += 1;
+            let child_entry = self.entry(child);
+            let own = child_entry.attrs.times();
+            let (candidate, unignored, active) = match child_entry.kind {
+                EntryKind::Dir => {
+                    let rollup = child_entry.rollup();
+                    (
+                        file_times(&rollup.all),
+                        file_times(&rollup.unignored),
+                        own.max(rollup.newest_activity),
+                    )
+                }
+                EntryKind::File => (Some(own), Some(own), own),
+                EntryKind::Symlink | EntryKind::Other => (None, None, own),
+            };
+            newest = newer(newest, candidate);
+            if !child_entry.ignored {
+                newest_unignored = newer(newest_unignored, unignored);
             }
-            let newest = newest.unwrap_or(Times { modified: 0, changed: 0 });
-            let rollup = self.entry_mut(id).rollup_mut();
-            rollup.all.newest_mtime_ns = newest.modified;
-            rollup.all.newest_changed_ns = newest.changed;
-            rollup.newest_activity = activity;
-
-            let mut newest_unignored: Option<Times> = None;
-            for child in self.child_ids(id) {
-                let child_entry = self.entry(child);
-                let candidate = match child_entry.kind {
-                    EntryKind::Dir if !child_entry.ignored => {
-                        file_times(&child_entry.rollup().unignored)
-                    }
-                    EntryKind::File if !child_entry.ignored => Some(child_entry.attrs.times()),
-                    _ => None,
-                };
-                newest_unignored = newer(newest_unignored, candidate);
-            }
-            let newest_unignored = newest_unignored.unwrap_or(Times { modified: 0, changed: 0 });
-            let entry = self.entry_mut(id);
-            entry.rollup_mut().unignored.newest_mtime_ns = newest_unignored.modified;
-            entry.rollup_mut().unignored.newest_changed_ns = newest_unignored.changed;
-            current = entry.parent;
+            activity = activity.max(active);
         }
+        crate::counters::bump(|c| {
+            c.maximum_repairs += 1;
+            c.maximum_repair_reads += reads;
+        });
+        let none = Times { modified: 0, changed: 0 };
+        let (newest, newest_unignored) = (newest.unwrap_or(none), newest_unignored.unwrap_or(none));
+        let rollup = self.entry_mut(id).rollup_mut();
+        rollup.all.newest_mtime_ns = newest.modified;
+        rollup.all.newest_changed_ns = newest.changed;
+        rollup.unignored.newest_mtime_ns = newest_unignored.modified;
+        rollup.unignored.newest_changed_ns = newest_unignored.changed;
+        rollup.newest_activity = activity;
     }
 
     /// Resolve a parent chain already proved by [`Self::validate_known_ancestry`].
@@ -6573,7 +6626,8 @@ impl Index {
                     Self::bump_revision(entry);
                     // Each clock moves on its own: a later time raises the ancestors'
                     // activity, and only an earlier time that was the parent's maximum can
-                    // have left one stale ([`Self::may_hold_maximum`]).
+                    // have left one stale ([`Self::may_hold_maximum`]), which queues the
+                    // parent for the batch's repair.
                     let (now, before) = (attrs.times(), previous.times());
                     let held = self.entry(parent).rollup().newest_activity;
                     let stale = (now.modified < before.modified
@@ -6583,7 +6637,7 @@ impl Index {
                         self.raise_activity_upward(Some(parent), now);
                     }
                     if stale {
-                        self.recompute_newest_upward(Some(parent));
+                        self.stale_maxima.insert(parent);
                     }
                     stats.updated += 1;
                     effects.change(|| EffectiveChange::Updated {
@@ -6619,7 +6673,7 @@ impl Index {
                         || new.newest_activity.modified < old.newest_activity.modified
                         || new.newest_activity.changed < old.newest_activity.changed)
                 {
-                    self.recompute_newest_upward(Some(parent));
+                    self.stale_maxima.insert(parent);
                 }
                 stats.updated += 1;
                 effects.change(|| EffectiveChange::Updated {
@@ -6755,7 +6809,7 @@ impl Index {
         let parent = self.entry(id).parent;
         let name = self.entry(id).name.clone();
         let contribution = self.contribution(id);
-        let held_maximum =
+        let mut held_maximum =
             parent.is_some_and(|parent| self.may_hold_maximum(parent, &contribution));
 
         self.unmerge_upward(parent, &contribution);
@@ -6786,13 +6840,20 @@ impl Index {
             if let Some(ext_id) = ext_id {
                 self.release_ext(ext_id);
             }
+            // A directory this batch queued for repair goes with the subtree, and with it
+            // the queue's hold on every ancestor above it, which may still carry a value
+            // only it was keeping honest; the parent takes its place. The check above
+            // cannot stand in: a stale value it reads can answer no (`may_hold_maximum`).
+            if kind.is_dir() && self.stale_maxima.remove(&node) {
+                held_maximum = true;
+            }
             self.free(node);
             stats.removed += 1;
         }
 
         // The max may have lived in what was just removed.
-        if held_maximum {
-            self.recompute_newest_upward(parent);
+        if let Some(parent) = parent.filter(|_| held_maximum) {
+            self.stale_maxima.insert(parent);
         }
     }
 
@@ -9680,7 +9741,7 @@ mod tests {
     /// another file holds their newest modification time, so neither clock's maximum is
     /// one entry's pair; a symlink's change counts as activity only, and a directory's own
     /// time only above it. Replacing the copy with one whose change time is older leaves
-    /// the held change-time maxima stale until [`Index::recompute_newest_upward`] rebuilds
+    /// the held change-time maxima stale until [`Index::repair_stale_maxima`] rebuilds
     /// them, and a directory's own change time raised and lowered back moves its
     /// ancestors' change clock alone. At every step the roll-ups agree with a pass over
     /// the entries ([`crate::query::assert_maintained_activity`]), and a tree reads both
@@ -9776,6 +9837,340 @@ mod tests {
         // Removing the newest modification leaves each clock its own next newest.
         step(&mut index, "edit removed", vec![Op::Remove { path: PathBuf::from("src/edit.rs") }]);
         assert_eq!(clocks(&index), (at(5, 8), at(5, 60), at(30, 60), (30, 30)));
+    }
+
+    /// Hold every live directory's maxima to a recomputation from the entries alone: the
+    /// newest file on both clocks in each partition, and the newest activity.
+    ///
+    /// [`crate::query::assert_maintained_activity`] checks activity against the query
+    /// layer's pass; this adds the files-only maxima of both partitions, which a summary
+    /// and a directory's recency read.
+    fn assert_exact_maxima(index: &Index, label: &str) {
+        fn newer(left: Option<Times>, right: Option<Times>) -> Option<Times> {
+            match (left, right) {
+                (Some(left), Some(right)) => Some(left.max(right)),
+                (left, right) => left.or(right),
+            }
+        }
+        fn held_files(rollup: &InternedRollUp) -> Option<Times> {
+            (rollup.files > 0).then_some(Times {
+                modified: rollup.newest_mtime_ns,
+                changed: rollup.newest_changed_ns,
+            })
+        }
+        // The newest file, the newest unignored file, and the newest activity beneath `id`.
+        fn walk(
+            index: &Index,
+            id: EntryId,
+            path: &Path,
+            label: &str,
+        ) -> (Option<Times>, Option<Times>, Times) {
+            let (mut all, mut unignored, mut activity) = (None, None, NO_ACTIVITY);
+            for (name, child) in index.children_of(id).expect("a live directory") {
+                let entry = index.entry(child);
+                let own = entry.attrs.times();
+                let (files, unignored_files, below) = match entry.kind {
+                    EntryKind::Dir => walk(index, child, &path.join(name), label),
+                    EntryKind::File => (Some(own), Some(own), NO_ACTIVITY),
+                    EntryKind::Symlink | EntryKind::Other => (None, None, NO_ACTIVITY),
+                };
+                all = newer(all, files);
+                if !entry.ignored {
+                    unignored = newer(unignored, unignored_files);
+                }
+                activity = activity.max(own).max(below);
+            }
+            let held = index.entry(id).rollup();
+            assert_eq!(
+                (held_files(&held.all), held_files(&held.unignored), held.newest_activity),
+                (all, unignored, activity),
+                "{label}: maintained and recomputed maxima at {:?}",
+                path.display()
+            );
+            (all, unignored, activity)
+        }
+        assert!(index.stale_maxima.is_empty(), "{label}: a batch left its repair queued");
+        walk(index, EntryId::ROOT, Path::new(""), label);
+    }
+
+    /// Counts index work on this test's thread while it lives, serialized against every
+    /// other test that turns counting on.
+    struct CountingOnThisThread {
+        _serial: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl CountingOnThisThread {
+        fn start() -> Self {
+            let serial = crate::counters::test_serial();
+            crate::counters::enable(true);
+            crate::counters::test_thread_reset();
+            Self { _serial: serial }
+        }
+    }
+
+    impl Drop for CountingOnThisThread {
+        fn drop(&mut self) {
+            crate::counters::enable(false);
+            crate::counters::test_thread_reset();
+        }
+    }
+
+    /// Remove `paths` through [`Index::apply`] in batches of `batch`, holding every
+    /// maximum to a recomputation after each, and return the repair work counted: the
+    /// directories rebuilt, and the children those rebuilds read.
+    fn remove_in_batches(
+        index: &mut Index,
+        paths: &[PathBuf],
+        batch: usize,
+        label: &str,
+    ) -> (u64, u64) {
+        let before = crate::counters::test_thread_snapshot();
+        for chunk in paths.chunks(batch) {
+            let ops = chunk.iter().map(|path| Op::Remove { path: path.clone() }).collect();
+            index.apply_ok(&Observation::new(ops));
+            assert_exact_maxima(index, label);
+        }
+        let after = crate::counters::test_thread_snapshot();
+        (
+            after.maximum_repairs - before.maximum_repairs,
+            after.maximum_repair_reads - before.maximum_repair_reads,
+        )
+    }
+
+    /// The files of one wide directory three levels down, `a/b/d/f00000` on, each timed
+    /// by `times(i)` as (modification, change), every third one a `.log`, returned in
+    /// name order.
+    fn wide_directory(
+        index: &mut Index,
+        files: i64,
+        times: impl Fn(i64) -> (i64, i64),
+    ) -> Vec<PathBuf> {
+        let mut ops = vec![
+            upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("a/b", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("a/b/d", EntryKind::Dir, file_attrs(0, 1)),
+        ];
+        let mut paths = Vec::new();
+        for i in 0..files {
+            let (modified, changed) = times(i);
+            let name =
+                if i % 3 == 0 { format!("a/b/d/f{i:05}.log") } else { format!("a/b/d/f{i:05}.rs") };
+            let path = PathBuf::from(name);
+            ops.push(Op::Upsert {
+                path: path.clone(),
+                kind: EntryKind::File,
+                attrs: Attrs { ctime_ns: changed, ..file_attrs(10, modified) },
+            });
+            paths.push(path);
+        }
+        index.apply_ok(&Observation::new(ops));
+        paths
+    }
+
+    /// Removing every file of one wide directory rebuilds each stale maximum once per
+    /// batch, whatever order the two clocks put the files in.
+    ///
+    /// Repaired per removal, the directory was read in full once for each file removed
+    /// newest first on either clock. An extracted or `cp -p` tree, whose change times run
+    /// in arrival order, deleted newest arrival first as `rm -rf` deletes on tmpfs, cost
+    /// the square of its size under the write guard (review K2 on #209). Batched, each
+    /// batch rebuilds the directory and its three ancestors once, reading what is left of
+    /// the directory and one child of each ancestor.
+    #[test]
+    fn removing_a_wide_directory_repairs_each_maximum_once_per_batch() {
+        // A label, and each file's (modification, change) time by its place in name order.
+        type Order = (&'static str, fn(i64) -> (i64, i64));
+        const FILES: i64 = 2_000;
+        const BATCH: usize = 256;
+        let _counting = CountingOnThisThread::start();
+        let orders: [Order; 4] = [
+            ("both clocks ascending", |i| (1_000 + i, 1_000 + i)),
+            ("both clocks descending", |i| (1_000 + FILES - i, 1_000 + FILES - i)),
+            ("modified ascending, changed descending", |i| (1_000 + i, 10_000_000 + FILES - i)),
+            ("modified scattered, changed descending", |i| {
+                (1_000 + (i * 7_919) % FILES, 10_000_000 + FILES - i)
+            }),
+        ];
+        for (label, times) in orders {
+            let mut index = Index::new("/root");
+            let paths = wide_directory(&mut index, FILES, times);
+            assert_exact_maxima(&index, label);
+            let (repairs, reads) = remove_in_batches(&mut index, &paths, BATCH, label);
+            let batches = u64::try_from(paths.len().div_ceil(BATCH)).expect("small");
+            let files = u64::try_from(FILES).expect("small");
+            assert!(repairs <= 4 * batches, "{label}: {repairs} repairs over {batches} batches");
+            assert!(
+                reads <= batches * (files + 3),
+                "{label}: {reads} children read over {batches} batches"
+            );
+            assert_eq!(index.total().files, 0, "{label}");
+        }
+    }
+
+    /// The adverse order at the size review K2 measured, with every third file ignored and
+    /// a file beside the directory at each level above it, so each partition's maximum on
+    /// each clock falls back to a different file as the batches go: after every batch,
+    /// every maximum agrees with a recomputation from the entries, and the work stays one
+    /// pass over each rebuilt directory per batch.
+    #[test]
+    fn twenty_thousand_removals_newest_change_first_keep_every_maximum_exact() {
+        const FILES: i64 = 20_000;
+        const BATCH: usize = 256;
+        let _counting = CountingOnThisThread::start();
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+        ]));
+        let paths = wide_directory(&mut index, FILES, |i| (1_000 + i, 10_000_000 + FILES - i));
+        let stamped = |modified, changed| Attrs { ctime_ns: changed, ..file_attrs(10, modified) };
+        index.apply_ok(&Observation::new(vec![
+            // Newer than half the directory on the change clock, so `b`'s falls back to it
+            // midway, and older than all of it on the modification clock.
+            upsert("a/b/keep.rs", EntryKind::File, stamped(10, 10_000_000 + FILES / 2)),
+            // Ignored, and the newest modification above the directory, so `a`'s and the
+            // root's `all` and `unignored` maxima differ on that clock.
+            upsert("a/old.log", EntryKind::File, stamped(5_000_000, 5_000_000)),
+        ]));
+        assert_exact_maxima(&index, "initial");
+        crate::query::assert_maintained_activity(&index, "initial");
+
+        let (repairs, reads) = remove_in_batches(&mut index, &paths, BATCH, "adverse order");
+        let batches = u64::try_from(paths.len().div_ceil(BATCH)).expect("small");
+        let files = u64::try_from(FILES).expect("small");
+        assert!(repairs <= 4 * batches, "{repairs} repairs over {batches} batches");
+        // What is left of `d`, and `b`, `a`, and the root hold two children each.
+        assert!(reads <= batches * (files + 6), "{reads} children read over {batches} batches");
+        crate::query::assert_maintained_activity(&index, "emptied");
+        let partitions = index.partition_total().expect("control state observed");
+        assert_eq!(partitions.all.files, 3);
+        assert_eq!(partitions.all.newest_mtime_ns, 5_000_000, "the ignored file");
+        assert_eq!(partitions.unignored.newest_mtime_ns, 10, "the kept file");
+        assert_eq!(partitions.unignored.newest_changed_ns, 10_000_000 + FILES / 2);
+    }
+
+    /// A directory a batch has queued for repair can leave in the same batch, taking the
+    /// queue's only hold on the ancestors above it. Here `p/r` is queued when its newest
+    /// file goes, holds a far older one when it is removed, and so takes nothing from
+    /// `p` by its own contribution, whose activity the symlink holds; `p` still holds
+    /// the removed file's time as its newest file and must be rebuilt.
+    #[test]
+    fn a_batch_repairs_the_ancestors_of_a_queued_directory_it_removes() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("p", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("p/r", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("p/r/f", EntryKind::File, file_attrs(1, 100)),
+            upsert("p/h", EntryKind::File, file_attrs(1, 50)),
+            upsert("p/s", EntryKind::Symlink, file_attrs(0, 200)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            Op::Remove { path: PathBuf::from("p/r/f") },
+            upsert("p/r/g", EntryKind::File, file_attrs(1, 10)),
+            Op::Remove { path: PathBuf::from("p/r") },
+        ]));
+        assert_exact_maxima(&index, "queued directory removed");
+        assert_eq!(index.total().newest_mtime_ns, 50);
+    }
+
+    /// One batch queues `a/b/c` three levels down and `d` one level down, and the stale
+    /// value `d` holds is the root's newest: the repair must rebuild every directory after
+    /// the queued ones beneath it, `d` before the root, and `c` before `b` and `a`, which
+    /// holds a stale value of its own that no check queued.
+    #[test]
+    fn a_batch_repairs_deeper_queued_directories_before_their_ancestors() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("a/b", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("a/b/c", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("a/b/c/f1", EntryKind::File, file_attrs(1, 60)),
+            upsert("a/b/c/f2", EntryKind::File, file_attrs(1, 5)),
+            upsert("a/h", EntryKind::File, file_attrs(1, 50)),
+            upsert("d", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("d/g1", EntryKind::File, file_attrs(1, 100)),
+            upsert("d/g2", EntryKind::File, file_attrs(1, 7)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            Op::Remove { path: PathBuf::from("a/b/c/f1") },
+            Op::Remove { path: PathBuf::from("a/h") },
+            Op::Remove { path: PathBuf::from("d/g1") },
+        ]));
+        assert_exact_maxima(&index, "two depths queued");
+        assert_eq!(index.total().newest_mtime_ns, 7);
+    }
+
+    /// Random mixed batches over a small tree: removals of files and directories, kind
+    /// changes, earlier and later times on either clock for files and directories, and
+    /// ignored and unignored files, many to a batch, so a batch often lowers, removes,
+    /// and re-raises one maximum before it ends. Every maximum is exact after each batch.
+    #[test]
+    fn mixed_batches_leave_every_maximum_exact_at_each_boundary() {
+        const PATHS: [&str; 14] = [
+            "a",
+            "a/b",
+            "a/b/c",
+            "a/x",
+            "a/y.log",
+            "a/b/x",
+            "a/b/y.log",
+            "a/b/c/x",
+            "a/b/c/z.log",
+            "d",
+            "d/x",
+            "d/y.log",
+            "x",
+            "y.log",
+        ];
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = move |bound: usize| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            usize::try_from(state >> 33).expect("31 bits") % bound
+        };
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, file_attrs(6, 1)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+        ]));
+        for round in 0..600 {
+            // What each path holds as the batch is generated, so every upsert's parent is a
+            // directory by the time it applies.
+            let mut kinds: BTreeMap<PathBuf, EntryKind> = PATHS
+                .iter()
+                .filter_map(|path| {
+                    index.kind(Path::new(path)).map(|kind| (PathBuf::from(path), kind))
+                })
+                .collect();
+            let mut ops = Vec::new();
+            for _ in 0..=next(12) {
+                let path = PathBuf::from(PATHS[next(PATHS.len())]);
+                if next(3) == 0 {
+                    kinds.retain(|held, _| !held.starts_with(&path));
+                    ops.push(Op::Remove { path });
+                    continue;
+                }
+                let parent = path.parent().expect("a relative path");
+                if !parent.as_os_str().is_empty() && kinds.get(parent) != Some(&EntryKind::Dir) {
+                    continue;
+                }
+                let kind =
+                    [EntryKind::File, EntryKind::File, EntryKind::Dir, EntryKind::Symlink][next(4)];
+                if kinds.get(&path).is_some_and(|held| *held != kind) {
+                    kinds.retain(|held, _| !held.starts_with(&path));
+                }
+                kinds.insert(path.clone(), kind);
+                let modified = i64::try_from(next(24)).expect("small");
+                let changed = i64::try_from(next(24)).expect("small");
+                let attrs = Attrs { ctime_ns: changed, ..file_attrs(10, modified) };
+                ops.push(Op::Upsert { path, kind, attrs });
+            }
+            index.apply_ok(&Observation::new(ops));
+            let label = format!("round {round}");
+            assert_exact_maxima(&index, &label);
+            crate::query::assert_maintained_activity(&index, &label);
+        }
     }
 
     #[test]
