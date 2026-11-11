@@ -61,7 +61,8 @@ details.
 - Watch change records (`fdu.stream/3`) give an upsert’s `changed_ns` beside its
   `mtime_ns`, absent where the status change was not observed, so a `--since --watch`
   tail shows the time that admitted an entry.
-  Rust `Change::changed_ns`, Python `Change.changed_ns`.
+  Rust `Change::changed_ns`; Python `Change.changed_ns`, on a watch’s records and on
+  `Index.since()` upserts alike.
 - The index maintains each directory’s newest time on both clocks, so either value of
   `--time` reads the same fast paths.
   Public `RollUp` and `RollUpSummary`, and Python `RollUp` and opened-root

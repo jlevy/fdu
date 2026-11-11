@@ -445,6 +445,12 @@ impl PyIndex {
     /// `truncated` is the field that matters: when it is true the caller has fallen
     /// further behind than the retained journal and must re-read state instead of
     /// trusting the returned ops. Ignoring it is how an index silently diverges.
+    ///
+    /// Each upsert carries the entry's change time beside its modification time, as a
+    /// watch's records do. The root's own entry, which holds only the device its walk read
+    /// it on and which no report counts, is never upserted or removed here, as a watch
+    /// never lists it either; an invalidation of the whole tree still is (review I4 on
+    /// #209).
     #[pyo3(signature = (clock))]
     fn since<'py>(&self, py: Python<'py>, clock: u64) -> PyResult<Bound<'py, PyDict>> {
         let since = self.inner.since(fdu_core::Clock(clock));
@@ -452,6 +458,13 @@ impl PyIndex {
         for commit in &since.commits {
             for change in &commit.changes {
                 let item = match change {
+                    fdu_core::EffectiveChange::Inserted { path, .. }
+                    | fdu_core::EffectiveChange::Updated { path, .. }
+                    | fdu_core::EffectiveChange::Removed { path, .. }
+                        if path.as_os_str().is_empty() =>
+                    {
+                        continue;
+                    }
                     fdu_core::EffectiveChange::Inserted { path, kind, attrs }
                     | fdu_core::EffectiveChange::Updated { path, kind, current: attrs, .. } => {
                         let item = PyDict::new(py);
@@ -461,6 +474,7 @@ impl PyIndex {
                         item.set_item("kind", entry_kind_label(*kind))?;
                         item.set_item("bytes", attrs.size)?;
                         item.set_item("mtime_ns", attrs.mtime_ns)?;
+                        item.set_item("changed_ns", attrs.change_time_ns())?;
                         item
                     }
                     fdu_core::EffectiveChange::Removed { path, .. } => {
