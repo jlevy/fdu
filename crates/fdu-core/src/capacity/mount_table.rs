@@ -28,6 +28,8 @@
 //! - Anywhere else, and wherever the table cannot be read, nothing below a root is asked.
 
 use std::collections::BTreeMap;
+#[cfg(any(target_os = "linux", all(unix, test)))]
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// What the mount table says is mounted at exactly one path.
@@ -141,74 +143,119 @@ impl MountTable {
     /// The table `mounts` describes, each naming the mount it hangs from.
     #[cfg(any(target_os = "linux", all(unix, test)))]
     fn from_mounts(mounts: &[Mount]) -> Self {
+        Self::from_mounts_counting(mounts).0
+    }
+
+    /// [`Self::from_mounts`], and how many steps it took: each mount of a stack visited to
+    /// find its top or base, each comparison of two mount points, and each point decided.
+    ///
+    /// Each count is bounded by a small multiple of the mounts, so a table costs about what
+    /// sorting its mount points costs, which grows with the table's bytes, however long its
+    /// paths. Walking each mount's whole parent chain afresh, as this did before, made a
+    /// chain of mounts nested in one another cost the cube of its length: any user can make
+    /// one with FUSE, up to fusermount's `mount_max` (1,000 by default), and every report on
+    /// the host that named `volumes` then spent seconds of CPU on it (review L2 on #209).
+    #[cfg(any(target_os = "linux", all(unix, test)))]
+    fn from_mounts_counting(mounts: &[Mount]) -> (Self, usize) {
+        let mut steps = 0_usize;
+        // Every mount point in path order, with the mounts at it in table order. Path order
+        // puts every point below one right after it, and each point after every point above.
         let mut at: BTreeMap<&Path, Vec<usize>> = BTreeMap::new();
         for (position, mount) in mounts.iter().enumerate() {
             at.entry(mount.point.as_path()).or_default().push(position);
         }
+        let points: Vec<(&Path, Vec<usize>)> = at.into_iter().collect();
+        let mut point_of = vec![0; mounts.len()];
+        for (point, (_, stack)) in points.iter().enumerate() {
+            for &position in stack {
+                point_of[position] = point;
+            }
+        }
         let by_id: BTreeMap<u64, usize> =
             mounts.iter().enumerate().map(|(position, mount)| (mount.id, position)).collect();
+        // Each point with the ID of every mount there, and with every ID a mount there hangs
+        // from.
+        let ids: BTreeSet<(usize, u64)> = mounts
+            .iter()
+            .enumerate()
+            .map(|(position, mount)| (point_of[position], mount.id))
+            .collect();
+        let hung_from: BTreeSet<(usize, u64)> = mounts
+            .iter()
+            .enumerate()
+            .filter_map(|(position, mount)| mount.parent.map(|parent| (point_of[position], parent)))
+            .collect();
         // The topmost of a stack is the mount no other at its path hangs from; the base is
         // the one that hangs from a mount elsewhere. Each falls back to table order, later
         // on top, should a table name neither.
-        let top = |stack: &[usize]| {
-            stack
-                .iter()
-                .rev()
-                .find(|&&position| {
-                    !stack.iter().any(|&other| mounts[other].parent == Some(mounts[position].id))
-                })
-                .or_else(|| stack.last())
-                .copied()
-        };
-        let base = |stack: &[usize]| {
-            stack
-                .iter()
-                .find(|&&position| {
-                    !stack.iter().any(|&other| Some(mounts[other].id) == mounts[position].parent)
-                })
-                .or_else(|| stack.first())
-                .copied()
-        };
+        let mut top: Vec<Option<usize>> = Vec::with_capacity(points.len());
+        let mut base: Vec<Option<usize>> = Vec::with_capacity(points.len());
+        for (point, (_, stack)) in points.iter().enumerate() {
+            top.push(
+                stack
+                    .iter()
+                    .rev()
+                    .find(|&&position| {
+                        steps += 1;
+                        !hung_from.contains(&(point, mounts[position].id))
+                    })
+                    .or_else(|| stack.last())
+                    .copied(),
+            );
+            base.push(
+                stack
+                    .iter()
+                    .find(|&&position| {
+                        steps += 1;
+                        mounts[position].parent.is_none_or(|parent| !ids.contains(&(point, parent)))
+                    })
+                    .or_else(|| stack.first())
+                    .copied(),
+            );
+        }
+        // The nearest point above each: the stack of points above the last one, less those
+        // the next one is not below, ends with the next one's nearest.
+        let mut nearest: Vec<Option<usize>> = Vec::with_capacity(points.len());
+        let mut above: Vec<usize> = Vec::new();
+        for (point, (path, _)) in points.iter().enumerate() {
+            while let Some(&last) = above.last() {
+                steps += 1;
+                if path.starts_with(points[last].0) {
+                    break;
+                }
+                above.pop();
+            }
+            nearest.push(above.last().copied());
+            above.push(point);
+        }
         // Reachable: the mount a stack hangs from is the topmost at its own path, no mount
-        // lies between the two paths to cross into instead, and the same holds above.
-        let visible = |point: &Path| {
-            let mut point = point;
-            // A chain no longer than the table, so a table whose parents loop ends.
-            for _ in 0..=mounts.len() {
-                let Some(base) = at.get(point).and_then(|stack| base(stack)) else { return false };
+        // lies between the two paths to cross into instead (that path is the nearest point
+        // above), and the same holds above. A parent's point is above, so it sorts first and
+        // is decided first: one pass in path order decides every point from its nearest.
+        let mut visible = vec![false; points.len()];
+        for point in 0..points.len() {
+            steps += 1;
+            let Some(base) = base[point] else { continue };
+            visible[point] = match mounts[base].parent.and_then(|parent| by_id.get(&parent)) {
                 // A mount whose parent is not listed, or is itself, is the root of what this
                 // process sees.
-                let Some(&parent) = mounts[base].parent.and_then(|parent| by_id.get(&parent))
-                else {
-                    return true;
-                };
-                if parent == base {
-                    return true;
+                None => true,
+                Some(&parent) if parent == base => true,
+                Some(&parent) => {
+                    let above = point_of[parent];
+                    nearest[point] == Some(above) && top[above] == Some(parent) && visible[above]
                 }
-                let above = mounts[parent].point.as_path();
-                if above == point
-                    || !point.starts_with(above)
-                    || at.get(above).and_then(|stack| top(stack)) != Some(parent)
-                    || point
-                        .ancestors()
-                        .skip(1)
-                        .take_while(|between| *between != above)
-                        .any(|between| at.contains_key(between))
-                {
-                    return false;
-                }
-                point = above;
-            }
-            false
-        };
-        Self::Read(
-            at.iter()
-                .filter(|(point, _)| visible(point))
-                .filter_map(|(point, stack)| {
-                    top(stack).map(|topmost| (point.to_path_buf(), mounts[topmost].automount))
-                })
-                .collect(),
-        )
+            };
+        }
+        let table = points
+            .iter()
+            .enumerate()
+            .filter(|(point, _)| visible[*point])
+            .filter_map(|(point, (path, _))| {
+                top[point].map(|topmost| (path.to_path_buf(), mounts[topmost].automount))
+            })
+            .collect();
+        (Self::Read(table), steps)
     }
 }
 
@@ -360,6 +407,173 @@ a malformed line\n\
         assert_eq!(at(&["cover", "hidden"]), Some(MountAt::NotMounted), "covered from above");
         assert_eq!(at(&["missing", "separator"]), Some(MountAt::NotMounted), "unparsed");
         assert_eq!(unescape(b"a\\134b\\011c\\0"), b"a\\b\tc\\0", "a partial escape stays");
+    }
+
+    /// The rule [`MountTable::from_mounts`] applied before review L2 on #209, walking each
+    /// mount point's whole parent chain afresh: kept to hold the single pass to the same
+    /// answer.
+    #[cfg(unix)]
+    fn walked_chain_by_chain(mounts: &[Mount]) -> MountTable {
+        let mut at: BTreeMap<&Path, Vec<usize>> = BTreeMap::new();
+        for (position, mount) in mounts.iter().enumerate() {
+            at.entry(mount.point.as_path()).or_default().push(position);
+        }
+        let by_id: BTreeMap<u64, usize> =
+            mounts.iter().enumerate().map(|(position, mount)| (mount.id, position)).collect();
+        let top = |stack: &[usize]| {
+            stack
+                .iter()
+                .rev()
+                .find(|&&position| {
+                    !stack.iter().any(|&other| mounts[other].parent == Some(mounts[position].id))
+                })
+                .or_else(|| stack.last())
+                .copied()
+        };
+        let base = |stack: &[usize]| {
+            stack
+                .iter()
+                .find(|&&position| {
+                    !stack.iter().any(|&other| Some(mounts[other].id) == mounts[position].parent)
+                })
+                .or_else(|| stack.first())
+                .copied()
+        };
+        let visible = |point: &Path| {
+            let mut point = point;
+            for _ in 0..=mounts.len() {
+                let Some(base) = at.get(point).and_then(|stack| base(stack)) else { return false };
+                let Some(&parent) = mounts[base].parent.and_then(|parent| by_id.get(&parent))
+                else {
+                    return true;
+                };
+                if parent == base {
+                    return true;
+                }
+                let above = mounts[parent].point.as_path();
+                if above == point
+                    || !point.starts_with(above)
+                    || at.get(above).and_then(|stack| top(stack)) != Some(parent)
+                    || point
+                        .ancestors()
+                        .skip(1)
+                        .take_while(|between| *between != above)
+                        .any(|between| at.contains_key(between))
+                {
+                    return false;
+                }
+                point = above;
+            }
+            false
+        };
+        MountTable::Read(
+            at.iter()
+                .filter(|(point, _)| visible(point))
+                .filter_map(|(point, stack)| {
+                    top(stack).map(|topmost| (point.to_path_buf(), mounts[topmost].automount))
+                })
+                .collect(),
+        )
+    }
+
+    /// One pass in path order decides every mount point as walking its chain did, on every
+    /// table of up to a dozen mounts drawn from a few paths, odd spellings, and relative
+    /// ones included: stacked, covered, overmounted ancestors (where a stack's top and base
+    /// fall back to table order), duplicate and missing IDs, self-parents, and loops.
+    #[cfg(unix)]
+    #[test]
+    fn one_pass_decides_each_point_as_walking_its_chain_did() {
+        const POINTS: [&str; 16] = [
+            "/", "/a", "/a/b", "/a/b/c", "/a/b/c/d", "/a-b", "/a/c", "/b", "/b/a", "/a//b",
+            "/a/b/", "/c", "a", "", ".", "./a",
+        ];
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        for _ in 0..40_000 {
+            let count = 1 + next(12);
+            let mounts: Vec<Mount> = (0..count)
+                .map(|_| Mount {
+                    id: 1 + next(count + 2),
+                    parent: (next(10) != 0).then(|| next(count + 3)),
+                    point: PathBuf::from(POINTS[usize::try_from(next(16)).expect("small")]),
+                    automount: next(3) == 0,
+                })
+                .collect();
+            let table = MountTable::from_mounts(&mounts);
+            assert_eq!(table, walked_chain_by_chain(&mounts), "{:?}", described(&mounts));
+        }
+        // And so is a chain of nested mounts, whole and covered from above part of the way.
+        for mounts in [nested(64, None), nested(64, Some(30))] {
+            assert_eq!(MountTable::from_mounts(&mounts), walked_chain_by_chain(&mounts));
+        }
+    }
+
+    #[cfg(unix)]
+    fn described(mounts: &[Mount]) -> Vec<(u64, Option<u64>, &Path, bool)> {
+        mounts
+            .iter()
+            .map(|mount| (mount.id, mount.parent, mount.point.as_path(), mount.automount))
+            .collect()
+    }
+
+    /// The root, `/home/user` on it, and `depth` mounts below that, each nested in the one
+    /// before, as fusermount lets any user make up to its `mount_max`; and, if `cover` names
+    /// one of them, a later mount at its path that hangs from the root's.
+    #[cfg(unix)]
+    fn nested(depth: u64, cover: Option<u64>) -> Vec<Mount> {
+        let mut point = PathBuf::from("/home/user");
+        let mut mounts = vec![
+            Mount { id: 1, parent: Some(0), point: PathBuf::from("/"), automount: false },
+            Mount { id: 2, parent: Some(1), point: point.clone(), automount: false },
+        ];
+        for level in 0..depth {
+            point.push("m");
+            mounts.push(Mount {
+                id: 3 + level,
+                parent: Some(2 + level),
+                point: point.clone(),
+                automount: false,
+            });
+        }
+        if let Some(level) = cover {
+            let point = mounts[usize::try_from(level + 2).expect("small")].point.clone();
+            mounts.push(Mount { id: 3 + depth, parent: Some(1), point, automount: true });
+        }
+        mounts
+    }
+
+    /// A table of 2,000 mounts nested in one another, which any local user can make with
+    /// FUSE, is decided in steps bounded by a small multiple of its mounts: walking each
+    /// mount's chain afresh took about two million (review L2 on #209). Every one is visible
+    /// and mounted; covered from above at one level, that level is topped by what covers
+    /// it, and nothing below it is visible.
+    #[cfg(unix)]
+    #[test]
+    fn a_table_of_nested_mounts_takes_steps_linear_in_its_mounts() {
+        const DEPTH: u64 = 2_000;
+        let mounts = nested(DEPTH, None);
+        let (table, steps) = MountTable::from_mounts_counting(&mounts);
+        assert!(steps <= 5 * mounts.len(), "{steps} steps for {} mounts", mounts.len());
+        let MountTable::Read(points) = &table else { panic!("read") };
+        assert_eq!(points.len(), mounts.len(), "every nested mount is visible");
+        let deepest = mounts.last().map(|mount| mount.point.clone()).expect("mounts");
+        assert_eq!(table.at(&deepest), Some(MountAt::Mounted));
+
+        let covered = nested(DEPTH, Some(1_000));
+        let (table, steps) = MountTable::from_mounts_counting(&covered);
+        assert!(steps <= 5 * covered.len(), "{steps} steps for {} mounts", covered.len());
+        let level = |level: usize| covered[level + 2].point.as_path();
+        assert_eq!(table.at(level(999)), Some(MountAt::Mounted));
+        assert_eq!(table.at(level(1_000)), Some(MountAt::Automount), "topped by its cover");
+        assert_eq!(table.at(level(1_001)), Some(MountAt::NotMounted), "hidden below it");
+        assert_eq!(table.at(&deepest), Some(MountAt::NotMounted));
+        let MountTable::Read(points) = &table else { panic!("read") };
+        assert_eq!(points.len(), 2 + 1_001, "the root, the home, and levels 0 to 1,000");
     }
 
     #[test]
