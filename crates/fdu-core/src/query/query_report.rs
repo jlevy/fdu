@@ -5819,11 +5819,14 @@ mod tests {
                 .collect();
             (rows, report.notes)
         };
+        // Rows name paths with the platform's separator.
+        let native =
+            |parts: &[&str]| parts.iter().collect::<PathBuf>().to_string_lossy().into_owned();
         let expected = [
-            ("d".to_owned(), Some(60)),
-            ("d/blind-link".to_owned(), None),
-            ("d/blind.bin".to_owned(), None),
-            ("d/seen-link".to_owned(), Some(60)),
+            (native(&["d"]), Some(60)),
+            (native(&["d", "blind-link"]), None),
+            (native(&["d", "blind.bin"]), None),
+            (native(&["d", "seen-link"]), Some(60)),
         ];
         // Unfiltered, from every entry; and walked, by a selection that filters nothing.
         for selection in
