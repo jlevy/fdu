@@ -484,9 +484,13 @@ ones by the name `mount` gives them (`ext2/3/4`, which share one number, `xfs`, 
 Capacity is read when the report is, with one `statfs` call per filesystem on Linux and
 macOS and `GetDiskFreeSpaceExW` on Windows, and is never stored in the cache, so
 `--stale-ok` still shows current capacity beside a stale tree.
-Such a call mounts an unmounted automount trigger and waits for it, as a listing does,
-and so does any path through one, or a name an indirect map such as `/home` or `/net` no
-longer holds once its key has expired.
+Each call waits for its filesystem to answer, so a network filesystem that does not,
+such as a hard NFS mount whose server is gone, delays a `volumes` report until it does,
+`--stale-ok` included, though `--stale-ok` answers every other view from the snapshot
+without waiting.
+Such a call mounts an unmounted automount trigger and waits for it, as a
+listing does, and so does any path through one, or a name an indirect map such as
+`/home` or `/net` no longer holds once its key has expired.
 So below the root fdu asks only where the walk listed, and where the operating system’s
 mount table, which it reads without touching any path, lists a mount at exactly that
 directory that is not an automount trigger (autofs); the device found there must then be
