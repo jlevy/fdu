@@ -312,7 +312,8 @@ def main() -> None:
     stats = index.refresh()
     assert stats["inserted"] == 1, stats
     assert stats["removed"] == 1, stats
-    assert stats["unchanged"] == 2, stats
+    # The root, whose device the refresh records again, and the two untouched entries.
+    assert stats["unchanged"] == 3, stats
     assert stats["complete"] is True, stats
     assert index.freshness == "fresh", index.freshness
     assert stats["errors"] == [] and stats["errors_omitted"] == 0, stats

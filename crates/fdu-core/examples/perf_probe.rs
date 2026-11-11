@@ -2116,9 +2116,13 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
 impl Summary {
     fn observe(&mut self, observation: &Observation) {
         for observed in &observation.ops {
-            let Op::Upsert { kind, attrs, .. } = &observed.op else {
+            let Op::Upsert { path, kind, attrs } = &observed.op else {
                 continue;
             };
+            // The walk's record of its root's device; the root is counted once, after.
+            if path.as_os_str().is_empty() {
+                continue;
+            }
             self.observe_entry(*kind, attrs);
         }
     }
@@ -2215,7 +2219,13 @@ fn normalized_path(path: &Path) -> ProbeResult<String> {
     Ok(normalized)
 }
 
+/// One entry's record in the engine digest, as the reference tree's oracle encodes it.
+///
+/// The root's record carries only the device its walk read it on, which names the host's
+/// numbering, not the tree, so the digest encodes the root with no attributes, as the
+/// oracle always has.
 fn engine_record(path: &str, kind: EntryKind, attrs: &Attrs) -> ProbeResult<Vec<u8>> {
+    let attrs = if path == "." { &Attrs::default() } else { attrs };
     let path_len = u32::try_from(path.len())
         .map_err(|_| ProbeError("engine digest path exceeds u32".into()))?;
     let mut record = Vec::with_capacity(path.len().saturating_add(53));

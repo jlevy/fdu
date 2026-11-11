@@ -924,10 +924,12 @@ mod tests {
     /// (review H6).
     #[test]
     fn a_root_is_keyed_by_the_device_its_walk_recorded() {
-        let scopes = [
-            crate::ScanScope::default(),
-            crate::ScanScope { one_filesystem: true, ..crate::ScanScope::default() },
-        ];
+        // A one-filesystem request needs platform device identity, which Windows refuses.
+        let one_filesystem =
+            crate::ScanScope { one_filesystem: true, ..crate::ScanScope::default() };
+        let scopes: Vec<crate::ScanScope> = std::iter::once(crate::ScanScope::default())
+            .chain(cfg!(unix).then_some(one_filesystem))
+            .collect();
         let no_reads = |path: &Path| -> Option<u64> { panic!("read {path:?}, no mount point") };
         // (a) The root was 40 and a mount at `zzz` 41; remounted, the root was dealt 41.
         // (b) A mount at `aaa`, which sorts first, is gone, and the root was dealt 41.
@@ -935,7 +937,7 @@ mod tests {
         for (case, mount, live) in
             [("a", Some(("zzz", 41)), 41), ("b", Some(("aaa", 42)), 41), ("c", None, 65_024)]
         {
-            for scope in scopes {
+            for scope in scopes.iter().copied() {
                 let index = walked(40, mount, scope);
                 let (asked, observation) =
                     asked_live(&index, Some(live), &mounted_at([]), no_reads);
