@@ -655,10 +655,10 @@ In Python, `fdu.scan` keeps the walk in memory and writes no cache, and each
 
 Exact net change, deletions included, needs a report saved before the window began,
 written outside PATH:
-`fdu PATH --one-filesystem --cache off --view tree --depth all --limit all --format json > before.json`
-keeps every directory and file at or above 1% of the root and stays small, and a later
-one is compared with it by path.
-With none saved, the written-data answer above is the one available.
+`fdu PATH --one-filesystem --cache off --view tree,volumes --depth all --limit all --format json > before.json`
+keeps every directory and file at or above 1% of the root, beside the filesystem’s
+capacity and available space at that moment, and stays small; a later one is compared
+with it by path. With none saved, the written-data answer above is the one available.
 
 `--view ages` answers every window at once: the selected files by age, in fixed bands
 (`future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`,

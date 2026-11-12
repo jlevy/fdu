@@ -44,6 +44,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     name `--cache-dir` for a nearly full volume, with a measured snapshot size.
     The cache sections say that a snapshot is written only from a complete scan, so
     `--allow-partial` over a partly unreadable tree leaves nothing for `--stale-ok`.
+  - The saved-report recipe for exact net change asks for `--view tree,volumes`, so the
+    file also holds the filesystem’s capacity and available space when it was written.
 
 ### Fixed
 

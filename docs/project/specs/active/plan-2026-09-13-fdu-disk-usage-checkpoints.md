@@ -275,11 +275,13 @@ An immediately usable interim workflow is to save complete, dated directory repo
 
 ```bash
 fdu "$HOME/.cache" --one-filesystem --cache off \
-  --view tree --depth all --limit all --format json > cache-before.json
+  --view tree,volumes --depth all --limit all --format json > cache-before.json
 ```
 
 Repeat to a different output path later and compare directory records by path, including
 paths present in only one report.
+The `volumes` section holds the filesystem’s `capacity_bytes` and `available_bytes` when
+the report was written, so the change in free space reads beside the change in the tree.
 Check `complete` and `errors` before subtraction.
 Keep the reports outside the measured root.
 Both sizes are already present in JSON. This supplies a baseline today, but both

@@ -444,9 +444,9 @@ for window in ("1h", "24h", "7d"):
 
 Exact net change, with deletions, needs a report saved before the window began; the
 [checkpoint design](project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md#interim-workflow)
-describes saving and comparing one.
-`--view ages` and `--view volumes`, below, profile every window at once and put the
-disk’s free space beside the tree; the
+describes saving one, with the disk’s free space in the same file, and comparing it with
+a later one. `--view ages` and `--view volumes`, below, profile every window at once and
+put the disk’s free space beside the tree; the
 [recent growth design](project/specs/active/plan-2026-11-08-fdu-recent-growth-and-volumes.md)
 records how they were chosen.
 
