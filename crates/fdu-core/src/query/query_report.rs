@@ -7811,6 +7811,49 @@ mod tests {
             "the incomplete `half` stays below a threshold it does not reach, as its child does"
         );
 
+        // The two size metrics can disagree about one row, and the note follows the one
+        // the report answers in. Each tree holds a file and an incomplete directory whose
+        // own file is a small share of one metric and a large share of the other; under
+        // `--depth 1` the directory is the only incomplete row. A reading that took the
+        // row's size from one metric and the root's from the other would flip an answer.
+        for (file, directory_file, below_in) in [
+            // 100 of 10,000 apparent bytes, 4,096 of 4,608 allocated.
+            ((9_900, 512), (100, 4_096), SizeMetric::Apparent),
+            // 4,096 of 4,608 apparent bytes, 512 of 20,992 allocated.
+            ((512, 20_480), (4_096, 512), SizeMetric::Allocated),
+        ] {
+            let sized = |(size, allocated): (u64, u64)| Attrs { allocated, ..attrs(size, 50) };
+            let mut index = Index::new("/root");
+            index.apply_ok(&Observation::new(vec![
+                upsert("large", EntryKind::File, sized(file)),
+                upsert("part", EntryKind::Dir, attrs(0, 5)),
+                upsert("part/file", EntryKind::File, sized(directory_file)),
+                upsert("part/denied", EntryKind::Dir, attrs(0, 5)),
+            ]));
+            index.set_initial_scan_freshness(&[denied("/root", "part/denied")]);
+            for size in [SizeMetric::Apparent, SizeMetric::Allocated] {
+                let selection = Selection {
+                    size,
+                    depth: Some(Bound::Limit(1)),
+                    min_share: share("5%"),
+                    ..Selection::default()
+                };
+                let report = run(&index, &query(&[ViewSpec::Tree], selection));
+                let root = tree_of(&report);
+                assert!(
+                    root.children
+                        .iter()
+                        .any(|row| row.name == "part" && row.complete == Some(false)),
+                    "the incomplete directory is a row on either metric ({size:?})"
+                );
+                assert_eq!(
+                    report.notes.iter().any(|note| note == NOTE),
+                    size == below_in,
+                    "`part` is below 5% of the root only in {below_in:?} bytes ({size:?})"
+                );
+            }
+        }
+
         // Several roots: a root's own row is there because its caller named it, whatever
         // its share and however incomplete, so only a row below a root can need the note.
         let docs = rooted("/docs", &[("guide.md", EntryKind::File, 9_999, 30)]);
