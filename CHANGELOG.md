@@ -183,7 +183,8 @@ details.
   `Selection` holds that string in `sort`, and Rust `query::parse_sort` refuses `mtime`
   with it too, in the flag or field names of the axis it is given.
   `SortKey.MTIME` and `Selection(modified_since=, modified_before=)` fail with Python’s
-  own `AttributeError` and `TypeError`, which name no replacement.
+  own `AttributeError` and `TypeError`, which do not say that the clock changed with the
+  name.
 - **Breaking:** a time sort is refused where no sorted view carries a time:
   `--sort time` with only `types`, `extensions`, `families`, `languages`, `documents`,
   `summary`, `ages`, or `volumes` exits 2, naming the views that do.
