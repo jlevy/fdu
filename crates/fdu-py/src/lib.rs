@@ -12,8 +12,9 @@
 //! work and engine lifecycle belong in Rust; Python should use coarse control/query calls
 //! and request the answers it needs, while complete materialization remains supported.
 //!
-//! `open()`, `scan()`, and the native reconciliation phase of `Index.refresh()` release
-//! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
+//! `open()`, `scan()`, the native reconciliation phase of `Index.refresh()`, and the
+//! capacity observation of an `Index.report` that names `volumes` release the GIL. One
+//! `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
 //! `PyO3`'s exclusive object borrow for the whole detached reconciliation, so an
 //! overlapping call on that same Python object is rejected by `PyO3`'s runtime borrow
 //! check rather than becoming an unsynchronized shared-index read. Calls on independent
@@ -79,6 +80,7 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
     dict.set_item("bytes", roll.bytes)?;
     dict.set_item("allocated", roll.allocated)?;
     dict.set_item("newest_mtime_ns", roll.newest_mtime_ns)?;
+    dict.set_item("newest_changed_ns", roll.newest_changed_ns)?;
 
     let by_ext = PyDict::new(py);
     for (ext, tally) in &roll.by_ext {
@@ -180,8 +182,9 @@ impl PyIndex {
         include = None,
         exclude = None,
         min_size = None,
-        modified_since = None,
-        modified_before = None,
+        since = None,
+        before = None,
+        time = None,
         kind = None,
         ignored = None,
         depth = None,
@@ -196,13 +199,15 @@ impl PyIndex {
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report_handle(
         &self,
+        py: Python<'_>,
         views: Option<Vec<String>>,
         format: Option<&str>,
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
         min_size: Option<&str>,
-        modified_since: Option<&str>,
-        modified_before: Option<&str>,
+        since: Option<&str>,
+        before: Option<&str>,
+        time: Option<&str>,
         kind: Option<Vec<String>>,
         ignored: Option<&str>,
         depth: Option<&str>,
@@ -215,13 +220,15 @@ impl PyIndex {
         words_per_page: u64,
     ) -> PyResult<PyOneShot> {
         let report = self.build_report(
+            py,
             views,
             format,
             include,
             exclude,
             min_size,
-            modified_since,
-            modified_before,
+            since,
+            before,
+            time,
             kind,
             ignored,
             depth,
@@ -248,8 +255,9 @@ impl PyIndex {
         include = None,
         exclude = None,
         min_size = None,
-        modified_since = None,
-        modified_before = None,
+        since = None,
+        before = None,
+        time = None,
         kind = None,
         ignored = None,
         depth = None,
@@ -270,8 +278,9 @@ impl PyIndex {
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
         min_size: Option<&str>,
-        modified_since: Option<&str>,
-        modified_before: Option<&str>,
+        since: Option<&str>,
+        before: Option<&str>,
+        time: Option<&str>,
         kind: Option<Vec<String>>,
         ignored: Option<&str>,
         depth: Option<&str>,
@@ -294,8 +303,9 @@ impl PyIndex {
             include,
             exclude,
             min_size,
-            modified_since,
-            modified_before,
+            since,
+            before,
+            time,
             kind,
             ignored,
             depth,
@@ -436,6 +446,12 @@ impl PyIndex {
     /// `truncated` is the field that matters: when it is true the caller has fallen
     /// further behind than the retained journal and must re-read state instead of
     /// trusting the returned ops. Ignoring it is how an index silently diverges.
+    ///
+    /// Each upsert carries the entry's change time beside its modification time, as a
+    /// watch's records do. The root's own entry, which holds only the device its walk read
+    /// it on and which no report counts, is never upserted or removed here, as a watch
+    /// never lists it either; an invalidation of the whole tree still is (review I4 on
+    /// #209).
     #[pyo3(signature = (clock))]
     fn since<'py>(&self, py: Python<'py>, clock: u64) -> PyResult<Bound<'py, PyDict>> {
         let since = self.inner.since(fdu_core::Clock(clock));
@@ -443,6 +459,13 @@ impl PyIndex {
         for commit in &since.commits {
             for change in &commit.changes {
                 let item = match change {
+                    fdu_core::EffectiveChange::Inserted { path, .. }
+                    | fdu_core::EffectiveChange::Updated { path, .. }
+                    | fdu_core::EffectiveChange::Removed { path, .. }
+                        if path.as_os_str().is_empty() =>
+                    {
+                        continue;
+                    }
                     fdu_core::EffectiveChange::Inserted { path, kind, attrs }
                     | fdu_core::EffectiveChange::Updated { path, kind, current: attrs, .. } => {
                         let item = PyDict::new(py);
@@ -452,6 +475,7 @@ impl PyIndex {
                         item.set_item("kind", entry_kind_label(*kind))?;
                         item.set_item("bytes", attrs.size)?;
                         item.set_item("mtime_ns", attrs.mtime_ns)?;
+                        item.set_item("changed_ns", attrs.change_time_ns())?;
                         item
                     }
                     fdu_core::EffectiveChange::Removed { path, .. } => {
@@ -495,13 +519,15 @@ impl PyIndex {
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn build_report(
         &self,
+        py: Python<'_>,
         views: Option<Vec<String>>,
         format: Option<&str>,
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
         min_size: Option<&str>,
-        modified_since: Option<&str>,
-        modified_before: Option<&str>,
+        since: Option<&str>,
+        before: Option<&str>,
+        time: Option<&str>,
         kind: Option<Vec<String>>,
         ignored: Option<&str>,
         depth: Option<&str>,
@@ -524,8 +550,9 @@ impl PyIndex {
             include,
             exclude,
             min_size,
-            modified_since,
-            modified_before,
+            since,
+            before,
+            time,
             kind,
             ignored,
             depth,
@@ -537,7 +564,21 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        fdu_core::query::report(&self.inner, &request, now).map_err(to_py_err)
+        // A serving route: capacity is observed here, inside the native call, and passed to
+        // the pure reader; `observe_volumes` makes no call for a request without `volumes`.
+        // For one that names it, the observation reads the filesystem and waits as long as a
+        // filesystem takes to answer, so it runs without the GIL: a mount that answers
+        // slowly then delays this call, not every thread. Released, the GIL lets another
+        // thread reach this index meanwhile, which PyO3's borrow check refuses
+        // (`RuntimeError: Already borrowed`), so only a report that names `volumes` opens
+        // that window; every other report holds the GIL throughout, as before.
+        let observe = || fdu_core::query::observe_volumes(&[&self.inner], &request);
+        let capacity = if request.query.views.contains(&ViewSpec::Volumes) {
+            py.detach(observe)
+        } else {
+            observe()
+        };
+        fdu_core::query::report(&self.inner, &request, now, capacity.as_ref()).map_err(to_py_err)
     }
 }
 
@@ -762,12 +803,15 @@ impl PyWatch {
     /// Snapshot the latest state applied by this query-bound session's iterator.
     ///
     /// Reporting does not consume pending events or update the originating `Index`.
-    /// The returned snapshot renders the same answer on repeated calls; its ages use
-    /// this report call's instant, while query selection windows remain fixed.
-    fn report(&self) -> PyResult<PyOneShot> {
+    /// The returned snapshot renders the same answer on repeated calls; its ages, the
+    /// tree's and the `ages` bands, use this report call's instant, while query selection
+    /// windows remain fixed, so a file crosses a band edge in the answer of the next call.
+    fn report(&mut self, py: Python<'_>) -> PyResult<PyOneShot> {
         let session =
-            self.session.as_ref().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
-        let report = session.report(SystemTime::now()).map_err(to_py_err)?;
+            self.session.as_mut().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
+        // A report that names `volumes` observes capacity, which reads the filesystem and can
+        // wait on it, so the GIL is released for it as it is for a wait.
+        let report = py.detach(move || session.report(SystemTime::now())).map_err(to_py_err)?;
         Ok(PyOneShot { report })
     }
 
@@ -810,6 +854,7 @@ impl PyWatch {
                 dict.set_item("bytes", change.bytes)?;
                 dict.set_item("allocated", change.allocated)?;
                 dict.set_item("mtime_ns", change.mtime_ns)?;
+                dict.set_item("changed_ns", change.changed_ns)?;
                 dict.set_item("ignored", change.ignored)?;
                 list.append(dict)?;
             }
@@ -858,8 +903,9 @@ fn build_request(
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     min_size: Option<&str>,
-    modified_since: Option<&str>,
-    modified_before: Option<&str>,
+    since: Option<&str>,
+    before: Option<&str>,
+    time: Option<&str>,
     kind: Option<Vec<String>>,
     ignored: Option<&str>,
     depth: Option<&str>,
@@ -891,8 +937,9 @@ fn build_request(
         include: &include,
         exclude: &exclude,
         min_size,
-        modified_since,
-        modified_before,
+        since,
+        before,
+        time,
         kinds: kinds.as_deref(),
         ignored,
         depth,
@@ -998,8 +1045,9 @@ impl PyOneShot {
     include = None,
     exclude = None,
     min_size = None,
-    modified_since = None,
-    modified_before = None,
+    since = None,
+    before = None,
+    time = None,
     kind = None,
     ignored = None,
     depth = None,
@@ -1034,8 +1082,9 @@ fn report_once(
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     min_size: Option<&str>,
-    modified_since: Option<&str>,
-    modified_before: Option<&str>,
+    since: Option<&str>,
+    before: Option<&str>,
+    time: Option<&str>,
     kind: Option<Vec<String>>,
     ignored: Option<&str>,
     depth: Option<&str>,
@@ -1073,8 +1122,9 @@ fn report_once(
         include,
         exclude,
         min_size,
-        modified_since,
-        modified_before,
+        since,
+        before,
+        time,
         kind,
         ignored,
         depth,
@@ -1147,7 +1197,7 @@ fn watch_rule(at_nanos: i64) -> String {
 /// record: `Change` carries exactly these, and a parity session pins that the two surfaces
 /// emit the same line.
 #[pyfunction]
-#[pyo3(signature = (path, op, clock, kind = None, bytes = None, allocated = None, mtime_ns = None, ignored = None, format = "jsonl"))]
+#[pyo3(signature = (path, op, clock, kind = None, bytes = None, allocated = None, mtime_ns = None, changed_ns = None, ignored = None, format = "jsonl"))]
 #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 fn render_change(
     path: PathBuf,
@@ -1157,6 +1207,7 @@ fn render_change(
     bytes: Option<u64>,
     allocated: Option<u64>,
     mtime_ns: Option<i64>,
+    changed_ns: Option<i64>,
     ignored: Option<bool>,
     format: &str,
 ) -> PyResult<String> {
@@ -1179,6 +1230,7 @@ fn render_change(
         bytes,
         allocated,
         mtime_ns,
+        changed_ns,
         ignored,
         clock,
     };
@@ -1482,7 +1534,10 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("formats", fdu_core::report_format::Format::ALL)?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
-    let sort_keys: Vec<_> = ["size", "count", "mtime", "name"]
+    let time_bases: Vec<&str> =
+        fdu_core::TimeBasis::ALL.iter().map(|basis| basis.label()).collect();
+    contract.set_item("time_bases", time_bases)?;
+    let sort_keys: Vec<_> = ["size", "count", "time", "name"]
         .into_iter()
         .chain(fdu_core::content::METRICS.iter().map(|metric| metric.name))
         .collect();

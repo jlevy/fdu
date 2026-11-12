@@ -102,6 +102,12 @@ changes, a run returns one of four outcomes, compared on content and tree status
 For one request, delivery, and history, every route and surface returns the same kind of
 outcome, and every machine format parses back to the same value.
 
+A filesystem’s capacity is the one part of an answer’s content the request does not
+determine: `--view volumes` reports what the host has free when the report is read, an
+observation of the host like `generated_at`, never stored in any tier and never served
+from one. Every route observes it the same way, on the same filesystems, and the
+comparisons that hold routes to the cold answer set its available space aside.
+
 That invariant follows from modeling the request and stored state explicitly, and it has
 concrete consequences:
 
@@ -342,6 +348,22 @@ Every maintenance test had compared the index with itself or with a model fed th
 operations, which cannot see a fact no operation carried, so a property test now holds a
 watched tree to a cold walk of the same tree after every generated step.
 
+One fact moves that no event carries and no directory re-read finds: a hard link.
+A link count is the file’s own metadata, so making or removing any name of a file moves
+the status change of every other name it has, while the backend names only the name made
+or removed.
+A link made inside the tree updates that name and its directory and no other,
+and one made outside the tree sends no event at all.
+So under the default clock, change time, a watch and an observing opened root keep a
+linked file’s other names at their old change time until something reads them again (a
+change to them, a refresh, or a cold walk), where a cold report reads the new one.
+Package stores that install by linking (`uv`, `pnpm`), `cp -l`, and `git clone --local`
+do this routinely; `--time modified` reads a clock no link moves.
+Reading every other name of a linked file would need an index by inode the engine does
+not keep, so the limit is documented, pinned by a test that holds it as it is
+(`a_hard_link_moves_a_change_time_the_watch_reads_only_where_an_event_names_it`), and
+tracked as a design question.
+
 ### Concurrency Guards
 
 Conditional observations carry generation and revision guards.
@@ -363,16 +385,120 @@ would never descend into, and report the mounted root’s identity where `lstat`
 
 fdu’s stat of a listed child never mounts, on any route or delivery: the native reader
 and the portable fallback, the serial and concurrent walks, revalidation and
-reconciliation, opened discovery, watch verification, and control lookups all pass the
-flag, and a musl build never had the problem.
-The walk root alone is resolved: the user named it, listing it mounts it in any case,
-and `--one-filesystem` must bound the walk to the filesystem the listing finds, so its
+reconciliation, and opened discovery all pass the flag, and a musl build never had the
+problem. The flag says less than its name, though: it governs a path’s last component,
+and only where that component exists.
+Every earlier component is resolved as any lookup is, through whatever trigger lies on
+the way, and a name an indirect map does not hold (an expired key, whose directory
+automount(8) removed) is looked up, which asks the automounter.
+A listed child exists and is looked up by name beside its listing, so its stat is safe;
+a path a route stats by itself is safe only where nothing on the way is an unmounted
+trigger. Watch verification and control lookups pass the flag, and verifying a name that
+has just been removed from an indirect map asks for it all the same (fdu-kle7). The walk
+root alone is resolved: the user named it, listing it mounts it in any case, and
+`--one-filesystem` must bound the walk to the filesystem the listing finds, so its
 device is read from an opened descriptor rather than from a stat that might have
 answered for the trigger.
 This is a consequence of the rule above that every route returns the same answer: when
 one route’s stat mounted and another’s did not, the same request answered differently by
 worker count, and by whether a directory happened to be read natively or portably.
 The mechanism is in `scan/linux_dents.rs` and at `scan::root_device`.
+
+A directory the walk descends into is listed next, which mounts a trigger as it mounts
+the root, so where a mount can be, the walk reads its attributes again from a descriptor
+it opens on it, as it does for the root.
+That is where the stat put a directory on another device than its parent, and where the
+stat flagged a kernel automount point (`STATX_ATTR_AUTOMOUNT`: tracefs under debugfs, an
+NFS nested export or referral), which is on its parent’s device until something resolves
+through it. The directory then carries the filesystem its listing found.
+Recorded as the stat found it, a trigger the walk mounted was on the trigger’s own
+device and everything beneath it on the filesystem’s: one filesystem reported as two,
+and two cold runs over an unchanged tree disagreeing on which held what, because the
+second found the filesystem already mounted.
+An ordinary mount point reads the same either way, and a boundary the walk does not
+descend into, under `--one-filesystem` or at the scan depth, is never opened; a
+one-filesystem walk keeps a kernel automount point as such a boundary.
+The rule is `scan::entered_directory_attrs`, applied on every route that lists, and by a
+reconciliation and a watch to the directory above what they verify.
+The descriptor is opened in the parent’s listing and closed again, and a key of a
+browsable indirect map, which is on its parent’s device and carries no flag, is still
+recorded as the stat found it; reading each directory where its own listing opens it
+would close both gaps (fdu-vxji).
+
+A capacity observation is the one call that takes no such flag.
+`statfs` and `GetDiskFreeSpaceExW` resolve the path they are given, so on Linux a call
+on an unmounted trigger, or on a path through one, mounts it and waits for the
+automounter, exactly as a listing would; what macOS does for its triggers is untested.
+So `volumes` asks only where the walk listed, and below a root only where touching the
+path mounts nothing, as far as the mount table read for the report can tell.
+Each root is asked: the user named it, and reading its device opens it in any case.
+A filesystem the report entered only at a directory the walk kept without listing it, at
+the scan depth or not yet reached by an opened root’s discovery, keeps its row with
+capacity unknown and the reason that the walk did not list it.
+And a listing is a fact about a walk that may be hours old, while the call is made when
+the report is read: under `--stale-ok`, at a watch’s repaint, from a retained index, or
+by an opened root’s read.
+An automounter unmounts what it mounted once it sits idle, and a remount or a reboot
+numbers many filesystems afresh, so a directory the walk listed can be an unmounted
+trigger, a removed key, or another filesystem by then, and no stat can say so safely.
+The operating system’s mount table can, without resolving any path:
+`/proc/self/mountinfo` on Linux, and `getfsstat` with `MNT_NOWAIT` on macOS, which
+answers from what the kernel holds.
+It never names a row; it only decides which paths may be touched.
+Every directory other than a root is looked up in it, in path order, and asked only
+where the table lists a mount at exactly its path, reachable there and not covered by a
+later mount above it, whose topmost filesystem is not autofs; then the stat, safe
+because every component resolves through mounted filesystems, must find the device the
+walk recorded. One that fails keeps its row with the counts the walk made, capacity
+unknown, and the reason: not a mount point now (an expired key or submount, an unmounted
+filesystem, or a device boundary that is no mount point, such as a btrfs subvolume),
+autofs topmost, or not on the device the walk recorded.
+One that fails blocks nothing below it: the lookup is what makes a path safe, so every
+listed directory is looked up on its own, one whose filesystem was asked at another path
+too, and a mount the table lists below a device boundary that is no mount point (a btrfs
+subvolume, or a macOS firmlink such as `/Volumes` seen from `/`) is asked like any
+other. What the table lists is reachable through mounted filesystems alone; a mount
+covered from above is not visible and is not touched, and below an expired trigger or a
+filesystem unmounted since, the table lists nothing.
+Where autofs is topmost, nothing is asked there: what the table lists below an indirect
+map hangs from it, as a mounted key does.
+Windows has no automount and keeps no such table, so there every path passes to the
+stat, and where the table cannot be read nothing below a root is asked.
+`--view volumes` then mounts nothing a tree of the same request would not, on a route
+that walked or one that did not, and `--view full` leaves `volumes` out and makes no
+capacity call at all.
+That gate is exact for the mount table as it was read when the report was read, and no
+further.
+The table is read once, and each directory is then checked and asked in turn, by
+path, so a mount that expires between that read and its own check or call (an idle
+autofs key, an NFS submount) can be asked for again and mounted: the stat and the
+capacity call resolve the path afresh, and `statfs` resolves it with automounting on.
+The window is as long as the checks and capacity calls made before it, so one slow
+network filesystem earlier in the same report stretches it from microseconds to that
+server’s latency. Opening each path that passes the table at once and making the check
+and the call on that descriptor would hold its mount busy throughout; that is deferred
+(fdu-pxd2). The rules are `query_volumes::walk_listed`,
+`query_volumes::observe_entries`, and `capacity::MountTable`, and root-only tests mount
+real triggers to hold them (`tests/volumes_automount.rs`): a direct trigger whose
+automounter refuses every request, one that mounts a filesystem and expires it, one with
+a second filesystem mounted below it, an indirect map whose keys are made on request and
+removed on expiry, with the report rooted below it and at it, and debugfs’s `tracing`,
+which needs no automounter.
+
+A walk records the device it read its root on, as the root entry’s attributes, on every
+route, and a snapshot keeps it, so a report keys the root’s filesystem by the number its
+walk counted it on. An index served without verification, from a snapshot under
+`--stale-ok`, may be older than a remount or a reboot, and many filesystems are numbered
+when they are mounted: tmpfs, overlayfs, btrfs subvolumes, NFS, ZFS, and FUSE. Keyed by
+the root’s number when the report is read, every directory beneath a renumbered root
+read as a mount point, and a one-filesystem report dropped what they held beside a
+summary that counted it; inferred from its children’s numbers, the root could take a
+mount’s number, a number dealt again at the remount, or the filesystem under an
+unplugged disk’s mount point.
+The root and every nested row follow one rule: where the device found at its path now
+(the root’s live device; a nested row’s, at a mount point the table lists) is not the
+one the walk recorded, the row keeps its key and its counts, and its capacity is
+unknown, because it was not found on the device the walk recorded.
 
 ## Data Structures
 
@@ -512,7 +638,7 @@ directory, which may contain millions of entries, was meant to be scanned.
 The concrete test for “no more complexity”: before adding a view or a flag, show it
 cannot be expressed as a composition of what exists.
 `largest` and `recent` pass that test only as named presets over `files`
-(`files --sort size --limit 20` and `files --sort mtime --limit 20`, restricted to
+(`files --sort size --limit 20` and `files --sort time --limit 20`, restricted to
 regular files), never as separate machinery.
 
 ### Six Axes, No One-Off Flags
@@ -523,8 +649,8 @@ Every option belongs to exactly one axis:
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH...`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read beyond what the views imply, and which metrics are measured? | `--analyze` |
-| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
+| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--since`, `--before`, `--time`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
+| View | Which roll-up is reported? | `--view list,summary,volumes,ages,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color`, `--progress` |
 | Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--workers`, `--allow-partial` |
 
@@ -676,16 +802,24 @@ recorded exception under “Truncate Freely; Never Truncate Silently”.
 
 The delta contract stands: `scan` and `watch` produce observations, the index consumes
 them, and views only read.
-`report()` is a pure reader of an index, a validated request, and an explicit generation
-instant: no filesystem access or mutation, and the same inputs produce the same report.
+`report()` is a pure reader of an index, a validated request, an explicit generation
+instant, and an explicit capacity observation: no filesystem access or mutation, and the
+same inputs produce the same report.
 The one-shot execution planner sits before that reader boundary: it chooses what state
 must be retained, then constructs the same immutable `Report` shape.
-It never changes `report(index, request, generated_at)` or lets a view reach into the
-filesystem.
+It never changes `report(index, request, generated_at, capacity)` or lets a view reach
+into the filesystem.
 
 The generation instant is an explicit argument rather than sampled inside the reader;
 provenance is derived from retained state and the request.
 This keeps the goldens meaningful.
+Capacity is an argument for the same reason: it is a fact about the host, not the tree,
+so the serving route observes it with `observe_volumes` just before it reads a request
+that names `volumes`, and passes `None` otherwise, which a `volumes` view reports as
+unknown with a note.
+The routes that observe are the one-shot run (`prepare_report` and its several-root
+form), each watch repaint, an opened root’s `read`, which observes before it takes its
+index guard, and Python’s `Index.report`, with the GIL released.
 
 Purity at this boundary is necessary but not sufficient.
 An index is shaped by the requests that built it, so a reader that sees only the index
@@ -695,9 +829,9 @@ index retains beyond that request is projected away by the stored-state model be
 anything is rendered.
 
 A report over several roots reads several indexes, one per root, and is still one pure
-reader: `report_roots(indexes, roots, request, generated_at)`. Each section accumulates
-over every index and finalizes once, so shares and bounds are taken over the union, and
-a report over one root is the same reader with one input.
+reader: `report_roots(indexes, roots, request, generated_at, capacity)`. Each section
+accumulates over every index and finalizes once, so shares and bounds are taken over the
+union, and a report over one root is the same reader with one input.
 Pooled statistics such as logical words merge as sufficient statistics inside the
 reader, which is why two rendered reports cannot simply be added afterwards.
 
@@ -753,7 +887,8 @@ Each of these must be one invocation:
 | `du -a --max-depth 3` | `fdu --depth 3 -n all PATH` |
 | `fd -e rs`, `find -name` | `fdu --view files --include '*.rs' PATH` |
 | biggest files | `fdu --view files --sort size -n 100 PATH` |
-| `find -mmin -60` | `fdu --view files --kind file --modified-since 1h PATH` |
+| `find -cmin -60` | `fdu --view files --kind file --since 1h PATH` |
+| `find -mmin -60` | `fdu --view files --kind file --since 1h --time modified PATH` |
 | `du` by type | `fdu --view types PATH` |
 | two reports, one scan | `fdu --view types,tree PATH` |
 | `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` |
@@ -833,8 +968,8 @@ notes, tips, and warnings written beside it, and the exact activity of every row
 age the format shows.
 So an idle tree repaints nothing while its ages roll over; a touch repaints a tree,
 whose rows show activity, even when the age it shows stays in the same unit, and
-repaints no text summary, which shows only sizes, while machine output that carries the
-modification time repaints; and a change of status or freshness, or a new note, repaints
+repaints no text summary, which shows only sizes, while machine output carrying each
+row’s exact time repaints; and a change of status or freshness, or a new note, repaints
 on every format. Overflow and subtree invalidation appear explicitly in the stream and
 are never dropped, because they say the consumer’s own view may have gaps; change
 records are never deduplicated, only repaints.

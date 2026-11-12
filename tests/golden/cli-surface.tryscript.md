@@ -58,33 +58,32 @@ SCOPE
                                      include]
 
 SELECTION
-      --include <GLOB>          Report only entries matching this glob; repeatable
-      --exclude <GLOB>          Exclude entries matching this glob; repeatable, and wins over
-                                --include
-      --min-size <SIZE>         Report only entries at least this large, as 512, 10M, or 1.5GiB
-      --modified-since <WHEN>   Report only entries modified at or after this time, as 2h or an RFC
-                                3339 stamp
-      --modified-before <WHEN>  Report only entries modified before this time
-      --kind <LIST>             Entry kinds to report: file, dir, symlink, other
-  -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all`
-                                [tree default: 5]
-  -n, --limit <N>               Maximum data rows per section. Accepts `all` [default: all;
-                                largest/recent: 20]
-      --breadth <N>             Maximum children per directory. Accepts `all` [default: all]
-      --min-share <PERCENT>     Minimum percentage of the selected root measure [tree default: 1%]
-      --full                    Show all rows: --depth=all --breadth=all --limit=all --min-share=0%.
-                                Explicit bounds override this shorthand
-      --sort <KEY>              Order results: size, count, mtime, name, or a requested metric such
-                                as `code_lines`
-      --reverse                 Reverse the ordering
-      --size <METRIC>           Which size metric to report: allocated or apparent [default:
-                                allocated]
+      --include <GLOB>       Report only entries matching this glob; repeatable
+      --exclude <GLOB>       Exclude entries matching this glob; repeatable, and wins over --include
+      --min-size <SIZE>      Report only entries at least this large, as 512, 10M, or 1.5GiB
+      --since <WHEN>         Report only entries whose time is at or after this, as 2h or an RFC
+                             3339 stamp
+      --before <WHEN>        Report only entries whose time is before this
+      --time <CLOCK>         Which clock every time reads: changed (default) or modified
+      --kind <LIST>          Entry kinds to report: file, dir, symlink, other
+  -d, --depth <N>            Directory levels to show; does not limit scanning. Accepts `all` [tree
+                             default: 5]
+  -n, --limit <N>            Maximum data rows per section. Accepts `all` [default: all;
+                             largest/recent: 20]
+      --breadth <N>          Maximum children per directory. Accepts `all` [default: all]
+      --min-share <PERCENT>  Minimum percentage of the selected root measure [tree default: 1%]
+      --full                 Show all rows: --depth=all --breadth=all --limit=all --min-share=0%.
+                             Explicit bounds override this shorthand
+      --sort <KEY>           Order results: size, count, time, name, or a requested metric such as
+                             `code_lines`
+      --reverse              Reverse the ordering
+      --size <METRIC>        Which size metric to report: allocated or apparent [default: allocated]
 
 VIEWS
       --view <LIST>         Views: list, tree, files, extensions, types, families, languages, code,
-                            documents, largest, recent, summary, or full. Defaults to list with no
-                            analysis, otherwise to a view that displays the requested analysis. code
-                            and documents read file contents: each runs its analyzer
+                            documents, largest, recent, summary, ages, volumes, or full. Defaults to
+                            list with no analysis, otherwise to a view that displays the requested
+                            analysis. code and documents read file contents: each runs its analyzer
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
 CONTENT ANALYSIS
@@ -96,7 +95,7 @@ OUTPUT
       --format <FORMAT>  Format: tree (list default), paths, long (size/age/path), json, jsonl,
                          yaml, or automatic text [default: text]
       --tree             Display the list as the default directory tree
-      --long             Display flat matching paths with size and modification age
+      --long             Display flat matching paths with size and age
       --color <WHEN>     Colorize human output: auto, always, or never [default: auto]
       --progress <WHEN>  Show a progress line on stderr while a report runs: auto, always, or never.
                          Drawn only at an interactive terminal: always, unlike --color, never draws
@@ -140,10 +139,10 @@ Examples:
   fdu . --view=code,documents   lines of code by language, words by document type
   fdu . --ignored=exclude       omit entries covered by .gitignore
   fdu . --view=summary          one total for the tree
-  fdu . --kind file --modified-since 24h
-  fdu . --kind dir --include .venv --modified-before 7d --long
-  fdu . --kind dir --include node_modules --modified-before 30d --long
-  fdu . --kind dir --include target --modified-before 30d --format paths
+  fdu . --kind file --since 24h
+  fdu . --kind dir --include .venv --before 7d --long
+  fdu . --kind dir --include node_modules --before 30d --long
+  fdu . --kind dir --include target --before 30d --format paths
 
 Run `fdu --docs` for setup, libraries, more commands, cache behavior, and the full usage guide.
 ? 0
@@ -201,7 +200,7 @@ executable’s skill with `fdu --skill`.
 If no local executable is available, use this exact release only after it is published:
 
 ```bash
-uvx --isolated --no-build fdu@0.5.0 . --format=json --view=tree --depth=2 --limit=20
+uvx --isolated --no-build fdu@0.6.0 . --format=json --view=tree --depth=2 --limit=20
 ```
 
 For a development-generated skill (`-dev` in its generation stamp), require the matching
@@ -212,11 +211,11 @@ silently compile or change versions.
 `--isolated` prevents an installed uv tool from replacing the requested version, and
 `--no-build` requires a published wheel instead of compiling Rust.
 For persistent installation after publication, use
-`uv tool install --no-build fdu==0.5.0` or
-`cargo install --locked fdu@0.5.0`. The Cargo command compiles
+`uv tool install --no-build fdu==0.6.0` or
+`cargo install --locked fdu@0.6.0`. The Cargo command compiles
 locally.
 
-Generated by fdu `0.5.0[DEV_REVISION]`; if `fdu --version` differs, re-run
+Generated by fdu `0.6.0[DEV_REVISION]`; if `fdu --version` differs, re-run
 `fdu --install-skill` so this file describes the installed command.
 
 More reports, each from one scan:
@@ -230,8 +229,8 @@ fdu . --view=summary                       # one total with its ignored share
 fdu . --view=languages                     # detected language sizes; metadata only
 fdu . --view=families,types,extensions     # three file-kind breakdowns
 fdu . --view=largest --limit=10            # ten largest files
-fdu . --view=recent --limit=10             # ten most recently modified files
-fdu . --kind=file --modified-since=24h     # files written in the last day, by folder
+fdu . --view=recent --limit=10             # ten most recently changed files
+fdu . --kind=file --since=24h              # files written in the last day, by folder
 ```
 
 `--view` chooses what is printed, and `--analyze` adds what may be read beyond it.
@@ -324,8 +323,22 @@ An age is `unknown` where part of the subtree was not listed, and `—` on a row
 counts nothing.
 With no filter a directory’s age matches its `--long` age; under a filter
 each row ages only what it counts.
-`--sort mtime` orders tree rows by this age.
-Time bounds take days: `--modified-before 60d`, not `2mo`.
+`--sort time` orders tree rows by this age.
+Time bounds take days: `--before 60d`, not `2mo`.
+
+Every time fdu reads is on one clock.
+By default it is **change time**, the newer of modification and status change, which the
+operating system sets whenever a file’s data or metadata is written, so a copy or an
+extracted archive that kept an old modification time is still new.
+`--time modified` reads **modification time** instead, content age as `ls -l` shows, for
+every age, window, sort, `recent`, and `ages` in the report at once.
+Use it when a bulk `chmod`, `chown`, SELinux relabel, or sync client moved every status
+change at once, or to compare with `ls -l`. Use it too where files are hard-linked from
+elsewhere: a link count is the file’s own metadata, so making or removing any link to a
+file moves the change time of every other name it has, and package managers that link
+from a shared store (`uv`, `pnpm`), `cp -l`, and `git clone --local` do that routinely,
+so installing one project can make another’s `.venv` or `node_modules` read as just
+written.
 
 Color is on only when the output is a terminal or `--color=always` is given, so piped
 tree bars are plain: `█` for usage and `░` for unused width.
@@ -388,8 +401,8 @@ There are no subcommands: the grammar is always “report on a path”.
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH...`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
 | Content | Which file bodies are read beyond what the views imply? | `--analyze none\|lines\|code\|words\|all` |
-| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
+| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--since`, `--before`, `--time`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
+| View | Which roll-up is reported? | `--view list,summary,volumes,ages,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
 | Mode | How is work performed? | `--cache auto\|on\|off`, `--stale-ok`, `--cache-dir DIR`, `--watch`, `--workers N` |
 
@@ -436,14 +449,15 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view documents` for words and pages by document format; it runs words analysis
   itself and is the default view for that analyzer.
 - `--view largest` for the 20 largest regular files, and `--view recent` for the 20 most
-  recently modified. Both are presets over `files`, not separate machinery: `largest` is
-  `files --sort size --limit 20` and `recent` is `files --sort mtime --limit 20`, each
+  recently changed. Both are presets over `files`, not separate machinery: `largest` is
+  `files --sort size --limit 20` and `recent` is `files --sort time --limit 20`, each
   restricted to regular files, and `--sort` and `--limit` still override them.
 - `--view files` for a complete flat listing: every matching entry, in name order.
   One-shot text adds the performance footer described below; use a machine format when
   output is consumed programmatically.
 - `--view summary` for one aggregate row.
-- `--view full` for the bounded digest of every view but List and Files.
+- `--view full` for the bounded digest of every view but List, Files, and Volumes, which
+  describes the host rather than the tree and is asked for by name.
 - Several views in one run share one scan: `--view summary,types,families`. Text then
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
@@ -523,9 +537,9 @@ Common shapes are compositions rather than dedicated flags:
 
 ```bash
 fdu --view largest -n 100 PATH                        # the 100 largest files
-fdu --kind file --modified-since 2h PATH              # files modified in the last two hours
+fdu --kind file --since 2h PATH                       # files changed in the last two hours
 fdu --view files --include '*.{rs,toml}' PATH         # by pattern
-fdu --view tree --sort mtime PATH                     # an activity map
+fdu --view tree --sort time PATH                      # an activity map
 ```
 
 Tree output defaults to depth 5 and a minimum share of 1% of the selected root size.
@@ -538,25 +552,40 @@ presets. A `note: display limits:` line names each bound that hid rows, and one
 
 Use `--full`, or `--min-share=0% --depth=all --breadth=all --limit=all`, to remove every
 display bound. Numeric content sorts such as `--sort=code_lines` require their analyzer.
-Extensions supports metadata sorts only; use a metric-capable view for content ranking.
-`--scan-depth` changes what is scanned and retained; display bounds only shorten output.
+Extensions sorts by size, count, and name only; use a metric-capable view for content
+ranking. `--sort time` orders tree, list, and code rows by their time.
+Types, extensions, families, languages, and documents carry none: beside a view that
+does, as in `--view full`, they keep size order and a note says so.
+Summary, ages, and volumes have a fixed order; with only these views, the sort is
+refused.
+`--scan-depth` changes what is scanned and retained; display bounds only shorten
+output.
 
 ## Find What Was Written Recently
 
 When free space drops, look for the data written since it was last fine.
-fdu keeps no history of past sizes, but every file records when it was last modified, so
-one scan, with no earlier state, finds what was written in a window:
+fdu keeps no history of past sizes, but every file records when it last changed, so one
+scan, with no earlier state, finds what was written in a window:
 
 ```bash
-fdu PATH --kind file --modified-since 24h                  # by folder, largest first
-fdu PATH --kind file --modified-since 24h --view summary   # their total
-fdu PATH --view largest --modified-since 24h --limit 20    # the largest of them
+fdu PATH --kind file --since 24h                  # by folder, largest first
+fdu PATH --kind file --since 24h --view summary   # their total
+fdu PATH --view largest --since 24h --limit 20    # the largest of them
 ```
+
+The window reads change time, so it catches data that arrived carrying an older
+modification time, which modification time misses: copies made with `cp -p`, `rsync -a`,
+Finder, or Explorer, files moved with `mv` from another filesystem, extracted archives,
+downloads that take the server’s time (wget does by default), and Cargo’s crate sources,
+which Cargo stamps with a 2006 time.
+Machine list rows carry both clocks, `mtime_ns` and `changed_ns`, so such arrivals are
+the rows whose `changed_ns` is recent and whose `mtime_ns` is old.
 
 Keep `--kind file`. A time bound tests a directory’s whole subtree, so without it every
 directory with any activity in the window is admitted at its full size.
 With it, each folder counts only the files written in the window, and percentages are
-shares of their total; `fdu PATH --view summary` gives the whole tree to compare.
+shares of their total; the `note: selected … of …` line gives the whole tree to compare,
+and machine output carries both as `selected` and `scanned`.
 
 Read the result as data written, not as net growth:
 
@@ -564,14 +593,12 @@ Read the result as data written, not as net growth:
   counts 10 GB. The total is an upper bound on the growth those files caused.
 - Deleted files do not appear, and a file that shrank counts at its new size, so space
   freed in the window is not subtracted and the total can exceed the space lost.
-- Data that arrived with an older modification time is missed: copies made with `cp -p`,
-  `rsync -a`, Finder, or Explorer, files moved with `mv` from another filesystem,
-  extracted archives, downloads that take the server’s time (wget does by default), and
-  Cargo’s crate sources, which Cargo stamps with a 2006 time.
-  Their inode change time is still current, but fdu does not select by it.
-  Where the total falls short of the space lost,
-  `find PATH -type f -cmin -1440 -exec du -k {} + | sort -n | tail -20` lists the
-  largest files whose inode changed in the last day, these included.
+- A `chmod` or `chown` changes a file without growing it, so such a file counts too, and
+  so does a file another name of which was linked or unlinked, as a `uv` or `pnpm`
+  install elsewhere does to every file it shares; `--time modified` leaves both out.
+- A file whose status change was not observed, such as a Windows file fdu could not
+  open, is timed by its modification time, and a note counts such files whenever a
+  window or `ages` counted one.
 - Space outside PATH, in filesystem snapshots, or in deleted files still held open is in
   no walk. fdu reports what the tree holds; `df PATH` reports the volume’s free space.
 
@@ -581,12 +608,39 @@ likely: the project, `~/.cache`, `~/Library/Caches`, agent state such as `~/.cla
 `~/.codex`, and the temporary directory.
 Each window is one scan on the command line; to ask several windows or drill into
 folders without walking again, walk the tree once with Python’s `fdu.scan`, which writes
-no cache, and ask each `index.report` with its own `modified_since`. Exact net change,
-deletions included, needs a report saved before the window began, written outside PATH:
+no cache, and ask each `index.report` with its own `since`. Exact net change, deletions
+included, needs a report saved before the window began, written outside PATH:
 `fdu PATH --one-filesystem --cache off --view tree --depth all --limit all --format json > before.json`
 keeps every directory and file at or above 1% of the root and stays small, and a later
 one is compared with it by path.
 With none saved, the written-data answer above is the one available.
+
+`--view ages` answers every window at once: the selected files by age, in fixed bands
+(`future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`,
+`1y to 3y`, `over 3y`), from one scan.
+
+```bash
+fdu PATH --view ages                             # how much arrived when
+fdu PATH --view tree,ages --kind file --since 7d # where this week's data is
+```
+
+The rows add up to `--view summary`. Where the selection admits files alone (no filter,
+an ignored state, `--kind file`, or patterns no directory matches), each row is what
+`--kind file` with the `--since`/`--before` window it names selects; a size, pattern, or
+kind a directory satisfies covers its contents, in the bands as in `summary`. Without
+`--kind file` a window admits whole directories, which the bands never do.
+`future` holds a time at or after the report’s instant, which is taken before the walk,
+so a file written while the walk runs is there too.
+JSON adds each band’s edges and a `cumulative` total of it and every newer band: the
+answer to “how much changed within 30 days?”
+without adding rows.
+
+`--view volumes` puts the disk beside the tree: each filesystem the report touches, its
+capacity, the share in use, what is available, and what this report counted there.
+`fdu PATH --view volumes --scan-depth 0` reads capacity alone, walking nothing.
+Rows never add up: available space can be shared within an APFS container, btrfs
+filesystem, or ZFS pool, and snapshots or deleted files still open use space no walk
+sees, so a gap between the volume’s use and the tree’s total is expected.
 
 ## Find Environments and Build Outputs
 
@@ -603,22 +657,23 @@ revalidating it. Keep the root, cache destination, and scan population the same.
 The third command combines flat rows and Summary in one machine report.
 Ignored directories are included by default.
 
-To select old environments by modification activity:
+To select old environments by their latest activity:
 
 ```bash
-fdu PATH --kind dir --include .venv --modified-before 7d --long
-fdu PATH --kind dir --include node_modules --modified-before 30d --long
-fdu PATH --kind dir --include target --modified-before 30d --format paths
-fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
-fdu PATH --kind dir --include .venv --modified-before 30d --format json
+fdu PATH --kind dir --include .venv --before 7d --long
+fdu PATH --kind dir --include node_modules --before 30d --long
+fdu PATH --kind dir --include target --before 30d --format paths
+fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --before 30d --long --sort time --reverse
+fdu PATH --kind dir --include .venv --before 30d --format json
 ```
 
-Kind, basename/relative-path patterns, size, and modification age are filters.
+Kind, basename/relative-path patterns, size, and age are filters.
 Repeated includes form a union.
 Directory bytes sum eligible regular-file contents; recency is the newest root or
-eligible descendant mtime, including directories and symlinks.
-Empty directories use their own mtime.
-This is modification activity, not access or last use.
+eligible descendant time, including directories and symlinks.
+Empty directories use their own time.
+This is change activity, not access or last use: an environment copied in yesterday is a
+day old however old its files, so it is never called stale.
 Directory names such as Cargo’s `target` are conventions, not proof of ownership.
 Allocated bytes are counted per path; separate hard links are not deduplicated and
 clones can share physical blocks.
@@ -638,13 +693,18 @@ bounds displayed levels.
 None changes measured totals.
 Paths escapes control characters only and keeps stdout to paths; bound and rule notices
 go to stderr. Long adds size and signed age.
-Machine rows retain exact `mtime_ns`, `age_ns`, directory `files`/`dirs`, and the
+Machine rows retain exact `time_ns`, `age_ns`, directory `files`/`dirs`, and the
 report’s `age_reference_ns`; unknown ages are null.
-Tree nodes carry the same `mtime_ns`, `complete`, and `age_ns` as the text column,
-beside `newest_mtime_ns`, the newest regular file alone.
-`modified_at` and the envelope’s `age_reference_at` are the same instants in RFC 3339
-UTC; `modified_at` is null wherever the time is only a lower bound.
+The request’s `time` names the clock.
+List rows also carry both raw clocks, `mtime_ns` and `changed_ns`. Tree nodes carry the
+same `time_ns`, `complete`, and `age_ns` as the text column, beside
+`newest_file_time_ns`, the newest regular file alone.
+`time_at` and the envelope’s `age_reference_at` are the same instants in RFC 3339 UTC;
+`time_at` is null wherever the time is only a lower bound.
 A `--watch` repaint measures its ages from its own instant.
+A watch reads a file’s change time again only where an event names it, so a hard link
+made outside the tree, or to another name inside it, leaves the file’s other names with
+their old change time until something reads them again; a new run reads them all.
 
 Tree/Paths/Long require one compatible list view.
 Use automatic Text or machine output for grouped/mixed views and Full.
@@ -702,30 +762,30 @@ re-read a listing after a rule edit if the bit matters.
   with an offset (`2026-08-10T18:22:31Z`), or `@` epoch seconds.
   Calendar units and fractional ages are rejected with the spelling to use instead; a
   bare local date-time is rejected because resolving it needs a time-zone database.
-- `--modified-since` is inclusive and `--modified-before` is exclusive.
+- `--since` is inclusive and `--before` exclusive.
 
 ## Select Files by a Scan’s Start Time
 
 Every report carries `provenance.scan_started_at`. Use it as a conservative lower bound
-for a later selection by modification time:
+for a later selection:
 
 ```bash
 fdu --view summary --format json PATH              # record provenance.scan_started_at
-fdu --view files --kind file --format jsonl --modified-since <that> PATH
+fdu --view files --kind file --format jsonl --since <that> PATH
 ```
 
-Use the scan’s *start*, not its end: a file modified mid-scan may have been observed
-before the modification, so only the start bound is conservative.
-This selects existing entries by mtime; it cannot detect deletions or copied/restored
-files whose older mtimes were preserved.
+Use the scan’s *start*, not its end: a file changed mid-scan may have been observed
+before the change, so only the start bound is conservative.
+By change time this catches copied and restored files that kept older modification times
+too; it cannot detect deletions.
 Use a retained index and reconciliation when maintaining an inventory.
 
 ## Validate Every Automated Result
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: reports carry `fdu.report/11`, watch change
-  records carry `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. A Files
+- `schema` before parsing anything else: reports carry `fdu.report/12`, watch change
+  records carry `fdu.stream/3`, and `--cache-status` carries `fdu.cache/3`. A Files
   watch first emits an ordinary report, then change records; aggregate views repaint
   reports. An `invalidate` change requires rebuilding or resynchronizing the inventory.
   Treat unknown schemas as unsupported instead of guessing at fields.
@@ -907,8 +967,8 @@ START HERE
     fdu . --view=summary                       one total for the tree
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
-    fdu . --view=recent --limit=10             ten most recently modified files
-    fdu . --kind=file --modified-since=24h     files written in the last day, by folder
+    fdu . --view=recent --limit=10             ten most recently changed files
+    fdu . --kind=file --since=24h              files written in the last day, by folder
     fdu docs src                               several paths as one report, with a total
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
@@ -965,7 +1025,7 @@ MORE COMPOSITIONS
   fdu PATH --kind dir --full --format json                  recursive directory totals
   fdu PATH --kind file --full --format paths                find/fd-style file inventory
   fdu PATH --view=largest --limit=100                        the 100 largest files
-  fdu PATH --view=files --kind=file --modified-since=1h      files modified lately
+  fdu PATH --view=files --kind=file --since=1h               files changed lately
   fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
   fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 
@@ -975,12 +1035,13 @@ MORE COMPOSITIONS
 
   largest and recent are presets over files, not more views to learn:
     largest = files --sort size --limit 20, regular files only
-    recent  = files --sort mtime --limit 20, regular files only
+    recent  = files --sort time --limit 20, regular files only
   --full expands to --depth=all --breadth=all --limit=all --min-share=0%.
   Explicit bounds override it regardless of order. It leaves view, scan scope,
   population, and analysis unchanged. --view=full chooses views instead.
   --sort and --limit still override them. files alone is complete: every
-  matching entry, in name order. full combines applicable views, without list/files.
+  matching entry, in name order. full combines applicable views, without list,
+  files, or volumes.
 
 LIST FORMATS AND OLD BUILD DIRECTORIES
   The metadata default view is list; its default format is tree. These agree:
@@ -991,9 +1052,9 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   --breadth caps children per directory; --limit caps data rows per section.
   Both default to all. --depth all expands levels. Omission notes name each bound.
   Display bounds never change totals or limit the filesystem scan.
-  A tree row's age is its newest counted change, of files, directories, and symlinks;
+  A tree row's age is its newest counted time, of files, directories, and symlinks;
   unknown where a subtree was not listed. Ages read s, m, h, d, mo (30.44 days), and
-  y (365.25 days); time bounds take days. --sort mtime orders rows by that age.
+  y (365.25 days); time bounds take days. --sort time orders rows by that age.
 
   --format paths gives matching paths only; --long adds size, age, and path.
   Flat lists are complete and size-ranked by default; --sort name lists by name.
@@ -1003,41 +1064,83 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   files keeps name order; the tree view keeps structured tree output.
   Explicit paths/long overrides the tree presentation. Format flags conflict.
 
-  fdu PATH --kind dir --include .venv --modified-before 7d --long
-  fdu PATH --kind dir --include node_modules --modified-before 30d --format long
-  fdu PATH --kind dir --include target --modified-before 30d --format paths
-  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
-  fdu PATH --kind dir --include .venv --modified-before 30d --format json
+  fdu PATH --kind dir --include .venv --before 7d --long
+  fdu PATH --kind dir --include node_modules --before 30d --format long
+  fdu PATH --kind dir --include target --before 30d --format paths
+  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --before 30d --long --sort time --reverse
+  fdu PATH --kind dir --include .venv --before 30d --format json
 
   Kind, name/path, size, and age are filters. Repeated includes form a union.
   Directory sizes sum eligible regular-file contents, excluding inode/symlink bytes.
-  Age uses the newest modification of the root or an eligible descendant, including
+  Age uses the newest time of the root or an eligible descendant, including
   directories and symlinks. Empty directories use their own time; future age is negative.
-  This is modification activity, not access or last use. target is a naming convention.
+  This is change activity, not access or last use: a copy that arrived yesterday is a
+  day old however old its content, so it is never called stale. target is a naming
+  convention.
   Exclusions win throughout the subtree before size/age filtering. Nested matching
   roots can overlap; aggregate views count the covered contents once. --size apparent
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 WHAT WAS WRITTEN RECENTLY
-  fdu PATH --kind file --modified-since 24h
-  fdu PATH --view largest --modified-since 24h --limit 20
+  fdu PATH --kind file --since 24h
+  fdu PATH --view largest --since 24h --limit 20
 
   Each finds what was written in the last day, by folder or by file, in one scan
-  with no saved state. Keep --kind file: without it a directory with any activity
-  in the window counts at its full size. A file written in the window counts in
-  full, deleted files do not appear, and data that kept an older modification time
-  (cp -p, rsync -a, Finder or Explorer copies, mv from another filesystem,
-  archives, some downloads, Cargo's crate sources) is missed.
+  with no saved state. Every time fdu reads is change time: the newer of
+  modification and status change, so data that kept an older modification time
+  still counts: cp -p, rsync -a, Finder or Explorer copies, mv from another
+  filesystem, archives, some downloads, and Cargo's crate sources. Keep --kind file:
+  without it a directory with any activity in the window counts at its full size.
+  This is data written, not net growth: a file written in the window counts in
+  full, deleted files do not appear, and a chmod changes a file that did not grow.
+
+  --time modified reads modification time everywhere instead: windows, --sort time,
+  the tree's ages, recent, and ages. That is content age, as ls -l shows, and the
+  clock to use after a bulk chmod, chown, or relabel moved every status change, and
+  where files are hard-linked: making or removing any link moves the change time of
+  every other name of the file, as uv and pnpm installs from a shared store, cp -l,
+  and a git clone of a local repository do. A watch reads a name again only when an
+  event names it.
+  Machine list rows carry both clocks, mtime_ns and changed_ns.
+
+  fdu PATH --view ages
+  fdu PATH --view tree,ages --kind file --since 7d
+
+  ages shows the selected files by age, every window from one scan: future,
+  under 1h, 1h to 1d, 1d to 7d, 7d to 30d, 30d to 90d, 90d to 1y, 1y to 3y, and
+  over 3y. future also holds files written while the scan runs. The rows add up to
+  --view summary, and where the selection admits files alone each is what --kind
+  file with the --since/--before window it names selects. Machine output adds each
+  band's edges and the cumulative total of it and every newer band. Without --kind
+  file a window admits whole directories, which the bands never do.
+
+HOW FULL THE DISK IS
+  fdu PATH --view volumes
+  fdu PATH --view volumes --scan-depth 0     capacity alone, walking nothing
+
+  volumes shows each filesystem the report touches: its capacity, the share in use,
+  what is available, and what this report counted there. A walk without
+  --one-filesystem can cross mounts below PATH, one row each. Capacity is read when
+  the report is, never cached, and below PATH only where the walk listed and the
+  mount table shows a mounted filesystem, not an automount trigger, at exactly that
+  path, so reading it mounts nothing, unless an automount expires between that read
+  of the table and the call, a window as long as the calls before it; any other row
+  reads capacity unknown and says why. --view full, which describes the tree, leaves
+  volumes out. Rows never add up: available space can be shared within an APFS
+  container, btrfs filesystem, or ZFS pool, which the row says, and snapshots, other
+  volumes, and deleted files still open use space no walk sees.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
                                                         beyond what the views imply
-  Selection  --include, --exclude, --depth, --limit     which entries are considered
-             --breadth, --min-share
-  View       list,summary,tree,families,types,extensions,languages,code,documents,
-             largest,recent,files,full
+  Selection  --include, --exclude, --min-size, --kind   which entries are considered
+             --since, --before, --time, --sort, --reverse
+             --depth, --limit, --breadth, --min-share, --full
+             --size
+  View       list,summary,volumes,ages,tree,families,types,extensions,languages,code,
+             documents,largest,recent,files,full
   Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
              --color, --progress
   Mode       --cache, --watch, --workers
@@ -1102,12 +1205,15 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/12; watch changes use fdu.stream/3.
   A Files watch emits an initial ordinary report, then change records;
   aggregate views repaint reports. An invalidate change requires rebuilding
   or resynchronizing the inventory, not continuing from incomplete state.
   Before automating, check status.complete, errors and errors_omitted,
   provenance.freshness/source, tree truncation, and metric coverage.
+  selected and scanned give what a selection admitted beside the whole scan; a
+  filtered text report ends with `note: selected N of M files, SIZE of SIZE`, or,
+  when a time bound admitted everything, `note: selected all M files, SIZE`.
   A multi-root report has root: null and roots; its tree section has tree: null,
   a combined total, and trees. Read the machine contract before parsing it.
   Cache status is its own document in every machine format: fdu.cache/3.
@@ -1148,7 +1254,7 @@ and is matched by pattern.
 
 ```console
 $ fdu --version
-fdu 0.5.0[DEV_REVISION]
+fdu 0.6.0[DEV_REVISION]
 ? 0
 ```
 
@@ -1188,8 +1294,8 @@ Silently dropping the bound would run the query with no time filter at all while
 user believed one was active, which is worse than refusing the flag.
 
 ```console
-$ fdu --modified-since 2300-01-01T00:00:00Z .
-! fdu: invalid --modified-since "2300-01-01T00:00:00Z": that time is outside the range fdu can represent (about 1677 to 2262)
+$ fdu --since 2300-01-01T00:00:00Z .
+! fdu: invalid --since "2300-01-01T00:00:00Z": that time is outside the range fdu can represent (about 1677 to 2262)
 ? 2
 ```
 
@@ -1206,7 +1312,7 @@ same on every platform.
 
 ```console
 $ fdu --watch --scan-depth 2 .
-! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
+! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
 

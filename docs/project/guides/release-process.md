@@ -400,7 +400,7 @@ a patch. The tool version is inventoried in
 like any executable dependency.
 The Python API has no such check, so review still holds it.
 A machine-output field change requires a version bump of the schema that carries it: the
-report (`fdu.report/11`), the watch stream (`fdu.stream/2`), and cache status
+report (`fdu.report/12`), the watch stream (`fdu.stream/3`), and cache status
 (`fdu.cache/3`) each version independently, as
 [the surface architecture](../architecture/fdu-surface-architecture.md#machine-output-schemas)
 lists. The bump rule protects consumers of a released schema.
@@ -531,10 +531,12 @@ One pull request prepares the release, and its merge commit is the release commi
 ### Stability Pass
 
 `make release-stability` runs the whole pass on the release commit and writes its
-record. It reads `COMMIT` and `RELEASE` as the other steps do, works in
-`$RELEASE/stability`, which like `RELEASE` must be outside any checkout, and takes its
-trees from the QA playbook’s
-[Local Fixtures](../../../tests/qa/cli-installed-e2e.qa.md#local-fixtures) variables:
+record. The [Linux host gate](linux-host-gate.md) runs the same pass on a pull request’s
+head before it merges.
+It reads `COMMIT` and `RELEASE` as the other steps do, works in `$RELEASE/stability`,
+which like `RELEASE` must be outside any checkout, and takes its trees from the QA
+playbook’s [Local Fixtures](../../../tests/qa/cli-installed-e2e.qa.md#local-fixtures)
+variables:
 
 ```shell
 export FDU_QA_SMALL=<a checkout of this repository> FDU_QA_MEDIUM=<a larger tree>

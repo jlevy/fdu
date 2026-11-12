@@ -45,6 +45,11 @@ _EXTENSION_HISTOGRAM_LIMIT = 24
 #: document. Anything deeper is folded into the final bucket.
 _MAX_DEPTH_BUCKET = 32
 
+#: Whether ``st_ctime_ns`` is a status change time. On Windows Python reports the
+#: creation time there instead, which is not the clock the engine reads, so a fingerprint
+#: taken on Windows records no change-clock time rather than a wrong one.
+_STATUS_CHANGE_OBSERVABLE = os.name == "posix"
+
 
 class ReferenceTreeError(RuntimeError):
     """A reference tree could not be observed, or changed while it was observed."""
@@ -72,6 +77,8 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
     # that sum every entry's blocks include them. The root is a directory like any other.
     directory_allocated_bytes = _allocated_bytes(os.lstat(absolute))
     newest_file_mtime_ns: Optional[int] = None
+    # The same newest file on the change clock an fdu report reads by default.
+    newest_file_changed_ns: Optional[int] = None
     linked_files: Dict[Tuple[int, int], Tuple[int, int, int]] = {}
     depths: Dict[int, int] = {0: 1}
     extensions: Dict[str, int] = {}
@@ -96,6 +103,12 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
                 mtime_ns
                 if newest_file_mtime_ns is None
                 else max(newest_file_mtime_ns, mtime_ns)
+            )
+            changed_ns = _change_time_ns(metadata)
+            newest_file_changed_ns = (
+                changed_ns
+                if newest_file_changed_ns is None
+                else max(newest_file_changed_ns, changed_ns)
             )
             if int(metadata.st_nlink) > 1:
                 key = (int(metadata.st_dev), int(metadata.st_ino))
@@ -126,7 +139,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
             "cannot prove the tree is unchanged"
         )
 
-    return {
+    document: Dict[str, Any] = {
         "counts": counts,
         "engine_digest": engine.finish(),
         "engine_digest_algorithm": ENGINE_DIGEST_ALGORITHM,
@@ -145,6 +158,24 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         "newest_file_mtime_ns": newest_file_mtime_ns,
         "depth_histogram": {str(key): depths[key] for key in sorted(depths)},
     }
+    # Additive, so the schema stays: a fingerprint without it is one recorded before the
+    # change clock existed, and a summary check skips that one time rather than fail.
+    if _STATUS_CHANGE_OBSERVABLE:
+        document["newest_file_changed_ns"] = newest_file_changed_ns
+    return document
+
+
+def _change_time_ns(metadata: Any) -> int:
+    """A file's time on fdu's change clock, computed as the engine computes it.
+
+    The newer of its modification time and its status change time, so a file whose
+    modification time was set into the future still reads by it. A zero status change
+    time is unobserved, never 1970, and the modification time stands in for it, as the
+    engine's ``Attrs::times`` does.
+    """
+    mtime_ns = int(metadata.st_mtime_ns)
+    ctime_ns = int(getattr(metadata, "st_ctime_ns", 0))
+    return mtime_ns if ctime_ns == 0 else max(mtime_ns, ctime_ns)
 
 
 def _allocated_bytes(metadata: Any) -> int:

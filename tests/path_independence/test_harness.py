@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import registry
 from fixture import build_fixture, copy_fixture
 from runner import (
+    CLOCK_MISMATCH,
     Invocation,
     _read_jsonl_report,
     case_key,
@@ -32,7 +34,7 @@ from runner import (
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/11",
+        "schema": "fdu.report/12",
         "request": {
             "scope": {"read_controls": True},
             "analyze": [],
@@ -160,7 +162,7 @@ class CompareTests(unittest.TestCase):
         envelope["request"]["views"] = ["summary", "types"]
         summary = {"view": "summary", "summary": {"files": 1}}
         types = {"view": "types", "metrics": {"rows": []}}
-        later_change = {"schema": "fdu.stream/2", "record": "change"}
+        later_change = {"schema": "fdu.stream/3", "record": "change"}
         stream = StringIO(
             "\n".join(json.dumps(value) for value in (envelope, summary, types, later_change))
             + "\n"
@@ -188,7 +190,9 @@ class CompareTests(unittest.TestCase):
         def timed(reference: int, age: int) -> dict[str, Any]:
             return answer(
                 age_reference_ns=reference,
-                reports=[{"files": [{"path": "env", "mtime_ns": -10, "age_ns": age}]}],
+                reports=[
+                    {"files": [{"path": "env", "time_ns": -10, "mtime_ns": -10, "age_ns": age}]}
+                ],
             )
 
         earlier = timed(100, 110)
@@ -200,10 +204,150 @@ class CompareTests(unittest.TestCase):
             compare(cli(earlier), cli(wrong), policy="auto").paths, ("reports[].files[].age_ns",)
         )
 
+    def test_a_change_time_is_compared_by_what_a_copy_can_keep(self) -> None:
+        # Two copies of one tree have their own change times; what must agree is whether
+        # one is known and that it is never older than the modification time. The row's
+        # time is on the change clock, so it is its change time, or its modification time
+        # where none was observed.
+        def changed(value: int | None) -> dict[str, Any]:
+            time = 50 if value is None else value
+            row = {"path": "a", "time_ns": time, "mtime_ns": 50, "changed_ns": value}
+            return answer(reports=[{"files": [row]}])
+
+        self.assertEqual(compare(cli(changed(60)), cli(changed(90)), policy="auto").kind, "same")
+        self.assertEqual(
+            compare(cli(changed(60)), cli(changed(None)), policy="auto").paths,
+            ("reports[].files[].changed_ns",),
+        )
+        # Older than its modification time, the change time is wrong as the row's time too.
+        self.assertEqual(
+            compare(cli(changed(60)), cli(changed(40)), policy="auto").paths,
+            ("reports[].files[].changed_ns", "reports[].files[].time_ns"),
+        )
+
+    def test_a_row_read_on_the_wrong_clock_differs_where_masking_would_accept_it(self) -> None:
+        # A route that answers the change clock with modification times gives each time
+        # that is never older than the modification time, which the masking accepts; the
+        # row's own raw clocks show its time is not the one its request reads.
+        def read(time: int) -> dict[str, Any]:
+            row = {"path": "a", "time_ns": time, "mtime_ns": 1000, "changed_ns": 9000}
+            tree = {"name": ".", "time_ns": time, "newest_file_time_ns": time, "children": []}
+            return answer(
+                request={"time": "changed"},
+                reports=[{"view": "files", "files": [row]}, {"view": "tree", "tree": tree}],
+            )
+
+        verdict = compare(cli(read(9000)), cli(read(1000)), policy="auto")
+        self.assertEqual(verdict.kind, "differs")
+        # A tree node carries no raw clock to hold its time to; the change-clock windows,
+        # bounded between the fixture's modification times and its copies, cover it.
+        self.assertEqual(verdict.paths, ("reports[].files[].time_ns",))
+        measured, _ = normalize(read(1000))
+        self.assertEqual(measured["reports"][0]["files"][0]["time_ns"], CLOCK_MISMATCH)
+
+    def test_correct_change_clock_rows_agree_across_copies_with_their_own_change_times(
+        self,
+    ) -> None:
+        def copy(change: int) -> dict[str, Any]:
+            rows = [
+                {"path": "a", "time_ns": change, "mtime_ns": 1000, "changed_ns": change},
+                # A status change that was not observed is timed by modification time.
+                {"path": "b", "time_ns": 2000, "mtime_ns": 2000, "changed_ns": None},
+            ]
+            return answer(request={"time": "changed"}, reports=[{"view": "files", "files": rows}])
+
+        self.assertEqual(compare(cli(copy(9000)), cli(copy(7000)), policy="auto").kind, "same")
+
+    def test_a_modification_clock_row_whose_time_is_not_its_mtime_differs(self) -> None:
+        def read(time: int) -> dict[str, Any]:
+            row = {"path": "a", "time_ns": time, "mtime_ns": 1000, "changed_ns": 9000}
+            return answer(request={"time": "modified"}, reports=[{"view": "files", "files": [row]}])
+
+        self.assertEqual(compare(cli(read(1000)), cli(read(1000)), policy="auto").kind, "same")
+        verdict = compare(cli(read(1000)), cli(read(9000)), policy="auto")
+        self.assertEqual(verdict.paths, ("reports[].files[].time_ns",))
+        measured, _ = normalize(read(9000))
+        self.assertEqual(measured["reports"][0]["files"][0]["time_ns"], CLOCK_MISMATCH)
+
+    def test_band_edges_and_free_space_are_read_time_facts_and_counts_are_content(self) -> None:
+        # A band's instants move with the reference and free space with the host; the
+        # files a band counts, and what each filesystem holds and the report counted on
+        # it, are what the tree decides.
+        def read(instant: int, files: int, available: int, counted: int) -> dict[str, Any]:
+            band = {
+                "band": "under 1h",
+                "since_age_ns": 3600,
+                "before_age_ns": 0,
+                "since_ns": instant - 3600,
+                "before_ns": instant,
+                "since_at": str(instant - 3600),
+                "before_at": str(instant),
+                "files": files,
+            }
+            volume = {
+                "device": 1,
+                "capacity_bytes": 100,
+                "available_bytes": available,
+                "counted": {"files": counted},
+            }
+            return answer(
+                reports=[
+                    {"view": "ages", "bands": [band]},
+                    {
+                        "view": "volumes",
+                        "observed_at_ns": instant,
+                        "observed_at": str(instant),
+                        "volumes": [volume],
+                    },
+                ]
+            )
+
+        self.assertEqual(
+            compare(cli(read(100, 2, 40, 2)), cli(read(900, 2, 30, 2)), policy="auto").kind,
+            "same",
+        )
+        self.assertEqual(
+            compare(cli(read(100, 2, 40, 2)), cli(read(100, 3, 40, 2)), policy="auto").paths,
+            ("reports[].bands[].files",),
+        )
+        self.assertEqual(
+            compare(cli(read(100, 2, 40, 2)), cli(read(100, 2, 40, 1)), policy="auto").paths,
+            ("reports[].volumes[].counted.files",),
+        )
+
+    def test_a_change_time_differs_by_copy_and_a_modification_time_never_does(self) -> None:
+        # Each copy of the fixture is written at its own instant, so a tree read by change
+        # time differs between two copies in its times alone; read by modification time,
+        # which a copy keeps, the same difference is a real one.
+        def read(clock: str, newest: int) -> dict[str, Any]:
+            tree = {"name": ".", "time_ns": newest, "newest_file_time_ns": newest, "children": []}
+            return answer(request={"time": clock}, reports=[{"tree": tree}])
+
+        changed = compare(cli(read("changed", 100)), cli(read("changed", 900)), policy="auto")
+        self.assertEqual(changed.kind, "same")
+        modified = compare(cli(read("modified", 100)), cli(read("modified", 900)), policy="auto")
+        self.assertEqual(
+            modified.paths, ("reports[].tree.newest_file_time_ns", "reports[].tree.time_ns")
+        )
+
+    def test_recent_order_is_compared_only_on_the_clock_a_copy_keeps(self) -> None:
+        def read(clock: str, order: list[str]) -> dict[str, Any]:
+            rows = [{"path": path, "time_ns": 5, "mtime_ns": 5} for path in order]
+            return answer(request={"time": clock}, reports=[{"view": "recent", "files": rows}])
+
+        changed = compare(
+            cli(read("changed", ["a", "b"])), cli(read("changed", ["b", "a"])), policy="auto"
+        )
+        self.assertEqual(changed.kind, "same")
+        modified = compare(
+            cli(read("modified", ["a", "b"])), cli(read("modified", ["b", "a"])), policy="auto"
+        )
+        self.assertEqual(modified.kind, "differs")
+
     def test_tree_node_ages_are_compared_as_residuals_at_every_depth(self) -> None:
         def timed(reference: int, root_age: int | None, leaf_age: int) -> dict[str, Any]:
-            leaf = {"name": "f", "mtime_ns": 30, "age_ns": leaf_age, "children": []}
-            tree = {"name": ".", "mtime_ns": 40, "age_ns": root_age, "children": [leaf]}
+            leaf = {"name": "f", "time_ns": 30, "age_ns": leaf_age, "children": []}
+            tree = {"name": ".", "time_ns": 40, "age_ns": root_age, "children": [leaf]}
             return answer(
                 age_reference_ns=reference,
                 age_reference_at=f"read at {reference}",
@@ -498,8 +642,8 @@ def node(name: str, **fields: Any) -> dict[str, Any]:
         "files": 1,
         "dirs": 0,
         "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
-        "newest_mtime_ns": 5,
-        "mtime_ns": 7,
+        "newest_file_time_ns": 5,
+        "time_ns": 7,
         "complete": True,
         "age_ns": 0,
         "children": [],
@@ -512,11 +656,15 @@ class MergeOracleTests(unittest.TestCase):
     """The merge a report over several roots is held to, from single-root answers."""
 
     def test_a_summary_sums_and_an_unknown_ignored_share_stays_unknown(self) -> None:
-        row = {"files": 2, "dirs": 1, "bytes": 30, "allocated": 1024, "newest_mtime_ns": 4}
+        row = {"files": 2, "dirs": 1, "bytes": 30, "allocated": 1024, "newest_file_time_ns": 4}
         known = {**row, "ignored": {"files": 1, "dirs": 0, "bytes": 5, "allocated": 512}}
         single = lambda summary: {"reports": [{"summary": summary}]}  # noqa: E731
-        merged = merged_facts("r_summary", [single(known), single({**known, "newest_mtime_ns": 9})])
-        self.assertEqual((merged["files"], merged["bytes"], merged["newest_mtime_ns"]), (4, 60, 9))
+        merged = merged_facts(
+            "r_summary", [single(known), single({**known, "newest_file_time_ns": 9})]
+        )
+        self.assertEqual(
+            (merged["files"], merged["bytes"], merged["newest_file_time_ns"]), (4, 60, 9)
+        )
         self.assertEqual(merged["ignored"], {"files": 2, "dirs": 0, "bytes": 10, "allocated": 1024})
         unknown = merged_facts("r_summary", [single(known), single({**row, "ignored": None})])
         self.assertIsNone(unknown["ignored"])
@@ -531,23 +679,23 @@ class MergeOracleTests(unittest.TestCase):
             [{"root": 0, "path": "a"}, {"root": 0, "path": "b"}, {"root": 1, "path": "a"}],
         )
         trees = [
-            {"reports": [{"tree": node(".", mtime_ns=3)}]},
+            {"reports": [{"tree": node(".", time_ns=3)}]},
             {"reports": [{"tree": node(".", complete=False)}]},
         ]
         merged = merged_facts("r_full_tree", trees)
         self.assertIsNone(merged["tree"])
         self.assertEqual(merged["total"]["bytes"], 20)
-        self.assertEqual(merged["total"]["mtime_ns"], 7, "the newest under any root")
+        self.assertEqual(merged["total"]["time_ns"], 7, "the newest under any root")
         self.assertFalse(merged["total"]["complete"], "complete only when every root is")
         self.assertEqual(merged["trees"]["1"]["name"], "<root:1>")
         several = {
             "reports": [
                 {
                     "tree": None,
-                    "total": {**merged["total"], "age_ns": 4, "modified_at": "x"},
+                    "total": {**merged["total"], "age_ns": 4, "time_at": "x"},
                     "trees": [
                         {"root": 1, "tree": node("<root:1>", complete=False)},
-                        {"root": 0, "tree": node("<root:0>", mtime_ns=3)},
+                        {"root": 0, "tree": node("<root:0>", time_ns=3)},
                     ],
                 }
             ]
@@ -740,6 +888,25 @@ class FixtureTests(unittest.TestCase):
             facts = build_fixture(Path(scratch) / "fixture")
             copy_fixture(facts, Path(scratch) / "copy")
             self.assertEqual(self.snapshot(facts.root), self.snapshot(Path(scratch) / "copy"))
+
+    def test_the_change_windows_fall_between_every_mtime_and_any_copy(self) -> None:
+        # Only there do the two clocks select different files, so only there can a window
+        # catch a route that read the modification clock where the change clock was asked.
+        import matrix
+
+        bound = int(datetime.fromisoformat(matrix.CHANGE_WINDOW_BOUND).timestamp()) * 10**9
+        for name in ("chgsince", "chgbefore"):
+            selection = matrix.REQUESTS[name]["sel"]
+            self.assertNotIn("time", selection, f"{name} reads the default change clock")
+            self.assertIn(matrix.CHANGE_WINDOW_BOUND, selection.values())
+        with tempfile.TemporaryDirectory() as scratch:
+            facts = build_fixture(Path(scratch) / "fixture")
+            copy = Path(scratch) / "copy"
+            copy_fixture(facts, copy)
+            for path in [copy, *copy.rglob("*")]:
+                stat = path.lstat()
+                self.assertLess(stat.st_mtime_ns, bound, path)
+                self.assertGreater(stat.st_ctime_ns, bound, path)
 
 
 if __name__ == "__main__":

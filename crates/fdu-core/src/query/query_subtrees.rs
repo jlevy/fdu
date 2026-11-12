@@ -3,17 +3,27 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::index::{EntryId, Index, newer};
+use crate::index::{EntryId, Index};
 use crate::query::query_selection::NameIdentity;
 use crate::query::{Candidate, IgnoredEntries, Selection};
-use crate::{Attrs, Coverage, EntryKind};
+use crate::{Attrs, Coverage, EntryKind, Times};
+
+/// The later of two optional times, on each clock.
+pub(crate) fn newer_times(left: Option<Times>, right: Option<Times>) -> Option<Times> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (left, right) => left.or(right),
+    }
+}
 
 /// Directory bytes and activity after exclusions, independent of positive predicates.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SubtreeValues {
     pub bytes: u64,
     pub allocated: u64,
-    pub mtime_ns: i64,
+    /// The newest time on each clock of any entry counted, the directory's own included
+    /// when the selection admits it, or [`Times::NONE`] when the subtree counts none.
+    pub times: Times,
     pub files: u64,
     pub dirs: u64,
     /// Whether every eligible directory in the subtree, this one included, was listed in
@@ -23,7 +33,7 @@ pub(super) struct SubtreeValues {
     /// listed; in an opened root, for a directory discovery has not listed yet; and
     /// under a failed cold-walk boundary. Verified siblings retain their completeness.
     /// An unscoped walk failure leaves the whole tree incomplete. A lower-bound maximum
-    /// is not an age, so the reader turns the mtime into an unknown age rather than
+    /// is not an age, so the reader turns the time into an unknown age rather than
     /// reporting a directory as old because its newest activity was never seen.
     pub complete: bool,
 }
@@ -34,6 +44,7 @@ pub(super) fn with_candidate<T>(
     path: &Path,
     kind: EntryKind,
     attrs: Attrs,
+    times: Times,
     ignored: bool,
     identity: NameIdentity,
     evaluate: impl FnOnce(Candidate<'_>) -> T,
@@ -48,7 +59,7 @@ pub(super) fn with_candidate<T>(
         kind,
         bytes: attrs.size,
         allocated: attrs.allocated,
-        mtime_ns: attrs.mtime_ns,
+        times,
         ignored,
     })
 }
@@ -98,7 +109,7 @@ pub(super) fn measure(
                         total.dirs += subtree.dirs;
                         total.bytes += subtree.bytes;
                         total.allocated += subtree.allocated;
-                        total.mtime_ns = total.mtime_ns.max(subtree.mtime_ns);
+                        total.times = total.times.max(subtree.times);
                         total.complete &= subtree.complete;
                     }
                 }
@@ -118,11 +129,8 @@ pub(super) fn measure(
             && (own_ignored.is_some()
                 || selection.ignored == crate::query::IgnoredEntries::Include)
             && selection.ignored.admits(own_ignored.unwrap_or(false));
-        let own_time = if own_admitted {
-            index.attrs_of(id).map_or(i64::MIN, |attrs| attrs.mtime_ns)
-        } else {
-            i64::MIN
-        };
+        let own_attrs = if own_admitted { index.attrs_of(id) } else { None };
+        let own_time = own_attrs.map_or(Times::NONE, Attrs::times);
         // A directory at the scan-depth boundary was retained but never listed, so its
         // children are unknown whatever the index says about coverage.
         let listed = coverage_complete || index.directory_complete_of(id).unwrap_or(false);
@@ -130,7 +138,7 @@ pub(super) fn measure(
         let mut total = SubtreeValues {
             bytes: 0,
             allocated: 0,
-            mtime_ns: own_time,
+            times: own_time,
             files: 0,
             dirs: 0,
             complete: listed && !at_boundary,
@@ -148,9 +156,15 @@ pub(super) fn measure(
                 let admitted = (classification.is_some()
                     || selection.ignored == crate::query::IgnoredEntries::Include)
                     && selection.ignored.admits(ignored);
-                if with_candidate(&child_path, kind, *attrs, ignored, identity, |candidate| {
-                    pruned(selection, &candidate)
-                }) {
+                if with_candidate(
+                    &child_path,
+                    kind,
+                    *attrs,
+                    attrs.times(),
+                    ignored,
+                    identity,
+                    |candidate| pruned(selection, &candidate),
+                ) {
                     continue;
                 }
                 if kind == EntryKind::Dir {
@@ -159,7 +173,7 @@ pub(super) fn measure(
                     }
                     stack.push((child, child_path, false));
                 } else if admitted {
-                    total.mtime_ns = total.mtime_ns.max(attrs.mtime_ns);
+                    total.times = total.times.max(attrs.times());
                     if kind == EntryKind::File {
                         total.files += 1;
                         total.bytes += attrs.size;
@@ -177,10 +191,10 @@ pub(super) fn measure(
 /// for a selection that admits everything.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct DirectoryActivity {
-    /// The newest modification time of any entry in the subtree, of any kind, the
+    /// The newest time on each clock of any entry in the subtree, of any kind, the
     /// directory's own included unless it is the report root; `None` when the subtree
     /// holds no entry at all.
-    pub newest_ns: Option<i64>,
+    pub newest: Option<Times>,
     /// Whether every directory in the subtree, this one included, was listed in full, by
     /// [`SubtreeValues::complete`]'s rule.
     pub complete: bool,
@@ -253,12 +267,12 @@ pub(super) fn activity(index: &Index) -> ActivityTable {
             let Some(parent) = parent else { continue };
             let done = slots[id.slot()].expect("a finished directory has its value");
             let into = slots[parent.slot()].as_mut().expect("a parent finishes after its children");
-            into.newest_ns = newer(into.newest_ns, done.newest_ns);
+            into.newest = newer_times(into.newest, done.newest);
             into.complete &= done.complete;
             continue;
         }
-        let own = (id != EntryId::ROOT).then(|| index.attrs_of(id).map(|attrs| attrs.mtime_ns));
-        let mut newest = newer(own.flatten(), index.newest_file_of(id));
+        let own = (id != EntryId::ROOT).then(|| index.attrs_of(id).map(Attrs::times));
+        let mut newest = newer_times(own.flatten(), index.newest_file_of(id));
         let listed = coverage_complete || index.directory_complete_of(id).unwrap_or(false);
         let at_boundary = boundary.is_some_and(|limit| depth >= limit);
         stack.push((id, parent, depth, true));
@@ -267,14 +281,13 @@ pub(super) fn activity(index: &Index) -> ActivityTable {
                 match index.kind_of(child) {
                     Some(EntryKind::Dir) => stack.push((child, Some(id), depth + 1, false)),
                     Some(_) => {
-                        newest = newer(newest, index.attrs_of(child).map(|attrs| attrs.mtime_ns));
+                        newest = newer_times(newest, index.attrs_of(child).map(Attrs::times));
                     }
                     None => {}
                 }
             }
         }
-        slots[id.slot()] =
-            Some(DirectoryActivity { newest_ns: newest, complete: listed && !at_boundary });
+        slots[id.slot()] = Some(DirectoryActivity { newest, complete: listed && !at_boundary });
     }
     ActivityTable { slots }
 }
@@ -295,9 +308,9 @@ pub(super) fn every_subtree_listed(index: &Index) -> bool {
 /// report, and the pass cost each one a traversal of the whole index, whose entries an
 /// opened root's incrementally built arena scatters; reading only the rows a tree shows
 /// keeps those reports at the cost of their rows.
-pub(super) fn maintained_activity(index: &Index, id: EntryId) -> Option<i64> {
-    let own = (id != EntryId::ROOT).then(|| index.attrs_of(id).map(|attrs| attrs.mtime_ns));
-    newer(own.flatten(), index.newest_activity_below(id))
+pub(super) fn maintained_activity(index: &Index, id: EntryId) -> Option<Times> {
+    let own = (id != EntryId::ROOT).then(|| index.attrs_of(id).map(Attrs::times));
+    newer_times(own.flatten(), index.newest_activity_below(id))
 }
 
 /// Assert that the activity `index` maintains is [`activity`]'s on every live directory
@@ -314,13 +327,13 @@ pub(crate) fn assert_maintained_activity(index: &Index, label: &str) {
     let mut stack = vec![(PathBuf::new(), EntryId::ROOT)];
     while let Some((path, id)) = stack.pop() {
         let maintained = maintained_activity(index, id);
-        let passed = table.get(id).expect("every live directory has a value").newest_ns;
+        let passed = table.get(id).expect("every live directory has a value").newest;
         assert_eq!(maintained, passed, "{label}: maintained and pass at {}", path.display());
         if let Some(values) = &measured {
-            let value = values[&id].mtime_ns;
+            let value = values[&id].times;
             assert_eq!(
                 maintained,
-                (value != i64::MIN).then_some(value),
+                (value != Times::NONE).then_some(value),
                 "{label}: maintained and measured at {}",
                 path.display()
             );
@@ -341,8 +354,9 @@ struct HeldEntry {
     mtime_ns: i64,
     /// A regular file's apparent size; a directory's varies by reader and filesystem.
     size: Option<u64>,
-    /// A directory's tree-row activity, its maintained `mtime_ns`; `None` for any other kind.
-    activity: Option<i64>,
+    /// A directory's tree-row activity on both clocks, as maintained; `None` for any other
+    /// kind.
+    activity: Option<Times>,
 }
 
 #[cfg(test)]
@@ -450,8 +464,8 @@ mod tests {
             .into_iter()
             .map(|(path, id)| {
                 let value = values[&id];
-                let newest_ns = (value.mtime_ns != i64::MIN).then_some(value.mtime_ns);
-                (path, DirectoryActivity { newest_ns, complete: value.complete })
+                let newest = (value.times != Times::NONE).then_some(value.times);
+                (path, DirectoryActivity { newest, complete: value.complete })
             })
             .collect()
     }
@@ -466,15 +480,20 @@ mod tests {
     }
 
     /// The activity every directory maintains with its roll-up, by path.
-    fn maintained(index: &Index) -> BTreeMap<PathBuf, Option<i64>> {
+    fn maintained(index: &Index) -> BTreeMap<PathBuf, Option<Times>> {
         directories(index)
             .into_iter()
             .map(|(path, id)| (path, maintained_activity(index, id)))
             .collect()
     }
 
+    /// A directory's activity where every entry is stamped alike on both clocks, as
+    /// [`attrs`] stamps them.
     fn at(newest_ns: i64, complete: bool) -> DirectoryActivity {
-        DirectoryActivity { newest_ns: Some(newest_ns), complete }
+        DirectoryActivity {
+            newest: Some(Times { modified: newest_ns, changed: newest_ns }),
+            complete,
+        }
     }
 
     /// Empty directories, a symlink, an other entry, and a directory whose own time is
@@ -522,10 +541,8 @@ mod tests {
         // A root holding nothing has no activity: its own time is not one.
         let mut empty = Index::new("/empty");
         empty.set_initial_freshness(true);
-        let root = BTreeMap::from([(
-            PathBuf::new(),
-            DirectoryActivity { newest_ns: None, complete: true },
-        )]);
+        let root =
+            BTreeMap::from([(PathBuf::new(), DirectoryActivity { newest: None, complete: true })]);
         assert_eq!(fast(&empty), root);
         assert_eq!(measured(&empty), root);
     }
@@ -613,7 +630,12 @@ mod tests {
         }
         fn newest(index: &Index, path: &str) -> Option<i64> {
             let id = index.lookup(Path::new(path)).expect("a live directory");
-            maintained_activity(index, id)
+            let times = maintained_activity(index, id)?;
+            assert_eq!(
+                times.modified, times.changed,
+                "every entry is stamped alike on both clocks"
+            );
+            Some(times.modified)
         }
         let mut index = Index::new("/root");
         step(
@@ -803,7 +825,8 @@ mod tests {
             let (full, _) = crate::scan::scan_into_index(&canonical, &crate::ScanConfig::default())
                 .expect("full index");
             let values = fast(&full);
-            let newest = |path: &str| values[Path::new(path)].newest_ns.expect("activity");
+            // The fixture stamps modification times; its change times are its writes.
+            let newest = |path: &str| values[Path::new(path)].newest.expect("activity").modified;
             assert_eq!(newest("a"), 9_200 * 1_000_000_000, "a/b/c's tiny file is newest in a");
             assert_eq!(newest("d"), 99_000 * 1_000_000_000, "d's own time is its newest");
         }

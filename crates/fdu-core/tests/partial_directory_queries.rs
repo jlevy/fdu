@@ -8,9 +8,9 @@ use std::time::SystemTime;
 
 use fdu_core::content::AnalysisSet;
 use fdu_core::query::{
-    Basis, Delivery, ModifiedWindow, Query, Request, Scope, Section, Selection, ViewSpec,
+    Basis, Delivery, Query, Request, Scope, Section, Selection, TimeWindow, ViewSpec,
 };
-use fdu_core::{CachePolicy, EntryKind};
+use fdu_core::{CachePolicy, EntryKind, TimeBasis};
 
 #[test]
 fn partial_cold_list_keeps_healthy_age_and_refuses_unknown_modification_times() {
@@ -56,7 +56,7 @@ fn partial_cold_list_keeps_healthy_age_and_refuses_unknown_modification_times() 
         },
         now,
     );
-    let answer = fdu_core::query::report(&index, &request, now).expect("list report");
+    let answer = fdu_core::query::report(&index, &request, now, None).expect("list report");
     assert!(!answer.status.complete, "root remains partial");
     let Section::Files { rows, .. } = &answer.sections[0] else {
         panic!("flat list section");
@@ -71,17 +71,21 @@ fn partial_cold_list_keeps_healthy_age_and_refuses_unknown_modification_times() 
     assert_eq!(healthy.complete, Some(true));
     assert!(healthy.age_ns.is_some());
     assert_eq!(healthy.files, Some(1));
-    for modified in [
-        ModifiedWindow { since: Some(0), before: None },
-        ModifiedWindow { since: None, before: Some(i64::MAX) },
-    ] {
-        request.query.selection.modified = modified;
-        let filtered = fdu_core::query::report(&index, &request, now).expect("time-bounded list");
-        let Section::Files { rows, .. } = &filtered.sections[0] else {
-            panic!("flat list section");
-        };
-        assert_eq!(rows.len(), 1, "unknown times cannot satisfy either bound");
-        assert_eq!(rows[0].path, Path::new("healthy"));
+    for time in [TimeBasis::Changed, TimeBasis::Modified] {
+        for window in [
+            TimeWindow { since: Some(0), before: None },
+            TimeWindow { since: None, before: Some(i64::MAX) },
+        ] {
+            request.query.selection.window = window;
+            request.query.selection.time = time;
+            let filtered =
+                fdu_core::query::report(&index, &request, now, None).expect("time-bounded list");
+            let Section::Files { rows, .. } = &filtered.sections[0] else {
+                panic!("flat list section");
+            };
+            assert_eq!(rows.len(), 1, "unknown times cannot satisfy either bound ({time:?})");
+            assert_eq!(rows[0].path, Path::new("healthy"));
+        }
     }
 }
 
@@ -147,7 +151,7 @@ fn cached_partial_directory_rows_match_cold_and_pruned_subtrees_remain_complete(
         );
         assert!(!report.is_complete());
         request.query.selection.exclude.clear();
-        let answer = fdu_core::query::report(&index, &request, now).expect("rows");
+        let answer = fdu_core::query::report(&index, &request, now, None).expect("rows");
         let Section::Files { rows, .. } = &answer.sections[0] else {
             panic!("list");
         };
@@ -162,7 +166,7 @@ fn cached_partial_directory_rows_match_cold_and_pruned_subtrees_remain_complete(
             .selection
             .exclude
             .push(fdu_core::query::Pattern::parse("blocked").expect("pattern"));
-        let pruned = fdu_core::query::report(&index, &request, now).expect("pruned rows");
+        let pruned = fdu_core::query::report(&index, &request, now, None).expect("pruned rows");
         assert!(!pruned.status.complete, "query pruning does not change root coverage");
         let Section::Files { rows, .. } = &pruned.sections[0] else {
             panic!("list");

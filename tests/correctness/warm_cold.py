@@ -52,7 +52,7 @@ CASES: list[tuple[str, list[str]]] = [
     ("files", ["--view", "files"]),
     ("size-apparent", ["--size", "apparent"]),
     ("size-allocated", ["--size", "allocated"]),
-    ("sort-mtime", ["--sort", "mtime"]),
+    ("sort-time", ["--sort", "time"]),
     ("sort-name", ["--sort", "name"]),
     ("depth-1", ["--view", "tree", "-d", "1"]),
     ("scan-depth-2", ["--scan-depth", "2"]),
@@ -70,6 +70,12 @@ CASES: list[tuple[str, list[str]]] = [
     ("view-code", ["--view", "code"]),
     ("view-documents", ["--view", "documents"]),
     ("view-code-documents", ["--view", "code,documents"]),
+    # One report time: an age profile, a window that admits files alone, the
+    # modification clock, and capacity, which is observed per read and never stored.
+    ("ages", ["--view", "ages"]),
+    ("since-kind-file", ["--kind", "file", "--since", "1h"]),
+    ("time-modified", ["--time", "modified"]),
+    ("volumes", ["--view", "volumes"]),
 ]
 
 

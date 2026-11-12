@@ -215,6 +215,14 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
             Section::Summary(row) => {
                 ignored_subset_shown |= row.ignored.is_some_and(|share| share.files > 0);
             }
+            // Each band prints its gitignored part as a summary row does, so the bands'
+            // sizes include it in the same sense.
+            Section::Ages(profile) => {
+                ignored_subset_shown |= profile
+                    .bands
+                    .iter()
+                    .any(|band| band.tally.ignored.is_some_and(|share| share.files > 0));
+            }
             Section::Metrics { view, summary } => {
                 share_hidden(&mut limits_hit, &mut reason, summary.share_omitted, section, single);
                 if let Some(label) = super::share_metric_label(summary.share_metric) {
@@ -232,7 +240,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                 }
                 code_coverage(&mut coverage, overview);
             }
-            Section::Files { .. } => {}
+            Section::Files { .. } | Section::Volumes(_) => {}
         }
     }
     let mut includes = Vec::new();

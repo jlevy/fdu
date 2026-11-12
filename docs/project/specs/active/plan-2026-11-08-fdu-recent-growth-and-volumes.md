@@ -4,9 +4,14 @@
 
 **Author:** fdu project, with Claude Opus 5.5
 
-**Status:** Proposed.
-Phase 0 (documentation of what works today) ships with this plan; phases 1–3 need the
-[open questions](#open-questions) answered first.
+**Status:** Approved for implementation (2026-11-08). Phase 0 (documentation of what
+works today) shipped with this plan in #208. Phases 1–4 are implemented in #209, with
+the [open questions](#open-questions) decided as recommended and the implementation
+amended by its reviews where each section below says so.
+Phase 4 (2026-11-09) replaces phase 1’s second time basis with one time that every
+report reasons in, before any of it is released; [the design](#one-time) below is phase
+4’s, and phase 1’s two-window design is recorded under
+[alternatives](#alternatives-considered).
 
 ## Overview
 
@@ -26,26 +31,27 @@ data. This plan:
 
 1. Documents the recipe that works now, with its limits, in the skill, `--docs`, the
    README, and the usage guide (phase 0).
-2. Adds **change time**, a second time basis that copies and extractions made through
-   ordinary file APIs do not hide from, as a selection window and a sort key (phase 1).
+2. Makes **change time**, which copies and extractions made through ordinary file APIs
+   do not hide from, the time every report reasons in: windows, sort, the tree’s age
+   column, `recent`, and `ages`, with modification time one flag away (phases 1 and 4).
 3. Adds an **`ages` view**: the selected bytes partitioned by when they were last
    written, every window from one walk (phase 2).
 4. Adds a **`volumes` view**: the capacity of each filesystem the report touches, beside
    the bytes the report counted there, as a convenience rather than a `df` replacement
    (phase 3).
 
-The design adds three concepts and two flags.
+The design adds three concepts and three flags (`--since`, `--before`, and `--time`).
 Everything else is composition with the axes fdu already has.
 
 ## The Questions
 
 | Question | Today | After this plan |
 | --- | --- | --- |
-| Where are the files written in the last day, by folder? | `fdu PATH --kind file --modified-since 24h` (misses copies that kept older times) | `fdu PATH --kind file --changed-since 24h` |
+| Where are the files written in the last day, by folder? | `fdu PATH --kind file --modified-since 24h` (misses copies that kept older times) | `fdu PATH --kind file --since 24h` |
 | How much was written in the last day? | Add `--view summary` | The same, or one row of `--view ages` |
-| Which files are they? | `fdu PATH --view largest --modified-since 24h` | `--view largest --changed-since 24h` |
+| Which files are they? | `fdu PATH --view largest --modified-since 24h` | `--view largest --since 24h` |
 | How is this tree’s space spread over time? | One run per window, or one Python index queried per window | `fdu PATH --view ages` |
-| Which folders account for one window, and what does that window hold? | Two runs | `fdu PATH --kind file --changed-since 7d --view tree,ages` |
+| Which folders account for one window, and what does that window hold? | Two runs | `fdu PATH --kind file --since 7d --view tree,ages` |
 | How full is the volume, and how much of it does this tree account for? | `df` beside fdu | `fdu PATH --view summary,volumes` |
 | How full is the volume, quickly? | `df PATH` | `fdu PATH --view volumes --scan-depth 0` |
 | What changed between two moments, deletions included? | Two saved JSON reports, diffed by hand | Unchanged: checkpoints (`fdu-8ybz`) |
@@ -237,8 +243,8 @@ retained index.
 
 | Concept | Model | Command line | Python |
 | --- | --- | --- | --- |
-| Change time | `TimeBasis::{Modified, Changed}`; an entry’s change time is `max(mtime, ctime)` | `--changed-since`, `--changed-before`, `--sort changed` | `Selection(changed_since=, changed_before=)`, `SortKey.CHANGED` |
-| Age profile | `ViewSpec::Ages`: a partition of selected regular files by change-time band | `--view ages` | `View.AGES` |
+| One time | `TimeBasis` (`Changed` by default, or `Modified`) on `Selection`, with one `Selection::window`; an entry’s `Times` holds both clocks (`Attrs::times`), and the index maintains both | `--since`, `--before`, `--time changed\|modified`, `--sort time` | `Selection(since=, before=, time=TimeBasis.MODIFIED)`, `SortKey.TIME` |
+| Age profile | `ViewSpec::Ages`: a partition of selected regular files by age band on the report’s clock | `--view ages` | `View.AGES` |
 | Volume capacity | `ViewSpec::Volumes`: a join of the bytes counted per filesystem with capacity observed at report time | `--view volumes` | `View.VOLUMES` |
 
 One further change is not a concept: every filtered report says how much of the scanned
@@ -246,11 +252,23 @@ tree it admitted ([Selection coverage](#selection-coverage)).
 
 #### Alternatives considered
 
-- **A global time-basis switch (`--time changed`).** One flag would move the age column,
-  `--modified-*`, `--sort mtime`, and `recent` together.
-  It was rejected because every existing time flag says “modified”, so under the switch
-  `--modified-since` would mean something its name denies.
-  A second window composes with the first and reads literally.
+- **A second window beside the first (phase 1’s design).** `--changed-since` and
+  `--changed-before` beside `--modified-*`, `--sort changed` beside `--sort mtime`, and
+  `ages` by change time while the tree’s age column and `recent` stayed modification
+  time. It was chosen to keep released flags meaning what their names say, and replaced
+  before release (phase 4), because the cost was a report in two clocks:
+  `--view tree,ages` showed a copied Cargo crate as `20y` in the tree and `under 1h` in
+  `ages`; `--sort changed` had to be refused wherever rows render as a tree; four window
+  flags and two sort keys named near-synonyms, and fd’s `--changed-within` already means
+  modification time. What it offered alone, composing the two windows to list arrivals
+  carrying old content, remains in every list row, which carries both clocks.
+- **Modification time as the one time.** The released meaning, but it misses exactly the
+  arrivals measured above, and its errors point the unsafe way for both questions this
+  plan answers ([one time](#one-time)).
+- **One time with no opt-out.** A bulk `chmod -R`, `chown -R`, or SELinux relabel, or a
+  sync client writing extended attributes, moves every status-change time at once, and
+  then only modification time still tells content age; `--time modified` is that escape,
+  and the same axis takes birth or access time later as a value, not a flag family.
 - **ctime alone.** On Unix, `max(mtime, ctime)` equals `ctime` except for an entry whose
   modification time was set into the future.
   The maximum keeps that entry visible rather than letting a future modification time
@@ -271,55 +289,83 @@ retain it in the validity fingerprint:
 | macOS | `getattrlistbulk` with `ATTR_CMN_CHGTIME`, in `REQUIRED_COMMON` | None today; if `fdu-f6n7` narrows the attribute set, the plan must keep it whenever change time is requested |
 | Windows | `FILE_BASIC_INFO.ChangeTime` on the handle each entry is opened with | None; an entry that cannot be opened (`observe_listed`) has no change time |
 
-An entry whose change time was not observed has an **unknown** change time.
-It is never admitted by a change-time bound, it is counted in an `unknown` band in
-`ages`, and a note counts such entries, so a Windows `hiberfil.sys` is never silently
-treated as old. This follows the rule that an unmeasured value is unknown, never zero.
+An entry whose status-change time was not observed (on Windows, one fdu could list but
+not open, such as `pagefile.sys`) is timed by its modification time on the change-time
+clock, which is a lower bound of its change time, never a zero.
+A note counts the files so timed whenever a window or `ages` counted one, so the
+substitution is never silent.
+Treating them as unknown instead, as phase 1 did, would blank the age of every ancestor
+of such a file, the root of `C:\` included, while a directory’s time is the newest of
+everything beneath it, which one lower bound almost never moves.
 
-A directory’s change time is the newest change time in its eligible subtree, matching
-how its modification time is defined for `--modified-*` today.
+A directory’s time on either clock is the newest of that clock in its eligible subtree,
+its own included unless it is the report root, as the tree’s age column has always been
+defined.
 
-### Change-time windows and sort
+### One time
 
-`--changed-since T` and `--changed-before T` select by change time with the same value
-grammar and the same half-open interval as `--modified-since` and `--modified-before`.
-Both windows may be given, and an entry must satisfy both.
-That composition has a use of its own: `--changed-since 1d --modified-before 365d` lists
-data that arrived today carrying an old modification time, which is usually a copy or an
-extracted archive.
+Every report reasons in one time: an entry’s **change time** by default, or its
+**modification time** under `--time modified`. Windows, `--sort time`, the tree’s age
+column, `recent`, `ages`, and every row’s `age_ns` read the same clock, so one report
+never mixes two.
 
-`--sort changed` orders rows by change time, newest first, as `--sort mtime` orders by
-modification time. Machine rows that carry `mtime_ns` also carry `changed_ns` and
-`changed_at`, or null where unknown.
+|  | Change time (default) | Modification time (`--time modified`) |
+| --- | --- | --- |
+| Is | `max(mtime, ctime)`: when the entry last changed in any way, its content or its metadata, arriving by copy or extraction included | `mtime`: when its content was last written, as `ls -l` shows |
+| “What is new since yesterday?” | Can over-include: a `chmod` looks new | Omits copies, extractions, and restores that keep old times |
+| “What is old enough to delete?” | Errs safe: a just-restored backup is not called stale | Calls a just-arrived copy of old content stale |
+| Fails when | A bulk `chmod`/`chown`/relabel moved every status change | Content arrived carrying old times |
 
-The name follows POSIX: `stat` labels `ctime` “Change”, and `find -ctime` and
-`du --time=ctime` use the same word.
-fd’s `--changed-within` tests modification time; fdu already calls that “modified”, and
-phase 1’s documentation says so wherever it compares fdu with fd.
+Change time is the default because its errors point the safe way for both questions: it
+over-includes rather than omits when asked what is new, and it holds back rather than
+condemns when asked what is old.
+
+`--since T` and `--before T` select by the report’s time, with the value grammar and
+half-open interval the `--modified-*` flags had.
+`--sort time` orders rows newest first wherever a row carries a time, trees included,
+since each carries the same clock its column shows: tree, list, files, largest, recent,
+and code rows. Type, extension, family, language, and document rows carry no time.
+Beside a view the sort orders, as in `--view full`, they keep size order and a note says
+so; a request in which the sort would order nothing is refused rather than falling back
+to name order. `--time` takes `changed` or `modified`.
+
+The index maintains a directory’s newest time on both clocks, for its regular files and
+for every entry beneath it, beside its other roll-ups, so either value of `--time` reads
+the same fast paths; a directory grows by 24 bytes.
+Both clocks come from the same `stat` result, so maintaining the second adds no system
+call to any walk or mutation.
+
+Machine output names the request’s `time`, and every row and node gives its time as
+`time_ns`, `time_at`, and `age_ns`; a summary or tree row’s newest regular file is
+`newest_file_time_ns`. List rows also carry both raw clocks, `mtime_ns` and
+`changed_ns`, so a caller can still find arrivals that carry old content (`changed_ns`
+recent, `mtime_ns` old) in one listing.
+
+The name `changed` follows POSIX, where `stat` labels `ctime` “Change”; the value names
+the clock, not the query, and `--since` reads the same under either.
 
 ### The `ages` view
 
-`--view ages` partitions the selected regular files by how long ago they last changed,
+`--view ages` partitions the selected regular files by their age in the report’s time,
 newest first. Edges are hours and days, and a year is 365.25 days, as in the tree’s age
 column. The time grammar takes no calendar units, so each edge is spelled the way a
 window flag accepts it, and every row is one window query over the same selection and
 instant:
 
-| Band | Change-time age | Window that selects exactly this row |
+| Band | Age | Window that selects exactly this row |
 | --- | --- | --- |
-| `future` | Zero or below: clock skew or a timestamp set ahead | `--changed-since now` |
-| `under 1h` | Over 0, to 1 hour | `--changed-since 1h --changed-before now` |
-| `1h to 1d` | Over 1 hour, to 1 day | `--changed-since 24h --changed-before 1h` |
-| `1d to 7d` | Over 1 day, to 7 days | `--changed-since 7d --changed-before 24h` |
-| `7d to 30d` | Over 7 days, to 30 days | `--changed-since 30d --changed-before 7d` |
-| `30d to 90d` | Over 30 days, to 90 days | `--changed-since 90d --changed-before 30d` |
-| `90d to 1y` | Over 90 days, to 365.25 days | `--changed-since 365d6h --changed-before 90d` |
-| `1y to 3y` | Over 1 year, to 3 years | `--changed-since 1095d18h --changed-before 365d6h` |
-| `over 3y` | Over 3 years | `--changed-before 1095d18h` |
-| `unknown` | Change time not observed | None; no window admits it |
+| `future` | Zero or below: clock skew or a timestamp set ahead | `--since now` |
+| `under 1h` | Over 0, to 1 hour | `--since 1h --before now` |
+| `1h to 1d` | Over 1 hour, to 1 day | `--since 24h --before 1h` |
+| `1d to 7d` | Over 1 day, to 7 days | `--since 7d --before 24h` |
+| `7d to 30d` | Over 7 days, to 30 days | `--since 30d --before 7d` |
+| `30d to 90d` | Over 30 days, to 90 days | `--since 90d --before 30d` |
+| `90d to 1y` | Over 90 days, to 365.25 days | `--since 365d6h --before 90d` |
+| `1y to 3y` | Over 1 year, to 3 years | `--since 1095d18h --before 365d6h` |
+| `over 3y` | Over 3 years | `--before 1095d18h` |
 
 Windows are half-open, `[since, before)`, so an entry exactly on an edge falls in the
-newer band: `--changed-since` is inclusive.
+newer band: `--since` is inclusive.
 That includes the zero edge, so an entry stamped at the request instant itself counts as
 `future`.
 
@@ -340,7 +386,6 @@ from the `lstat` script):
    552 MiB    5.6%  90d to 1y        7,147 files
    2.1 GiB   21.4%  1y to 3y         54,225 files
    848 MiB    8.5%  over 3y          37,542 files
-note: ages are by change time: the newer of modification and status change
 ```
 
 The rules it obeys:
@@ -357,14 +402,14 @@ The rules it obeys:
   one walk.
 - **It is metadata-only.** Like `largest` and `recent`, it implies no analyzer.
 - **Bands are relative to the request instant.** A `--watch` repaint resolves them from
-  its own instant, as its ages do, so a file can move to an older band with no
-  filesystem change; the repaint rule for the tree’s ages
+  its own instant, as its ages do, so a file can move to an older band at a repaint that
+  another change caused; the repaint rule for the tree’s ages
   ([multiple paths and tree age](plan-2026-10-09-fdu-multiple-paths-and-tree-age.md))
   extends to band edges.
 
 Machine output gives each band its exact edges as ages and as instants, its `files`,
 `bytes`, `allocated`, and `ignored` tallies, and a `cumulative` object with the same
-tallies. The section names its `basis`: `changed`.
+tallies; the request’s `time` names the clock.
 
 ### The `volumes` view
 
@@ -377,30 +422,48 @@ It is the thin capacity join `fdu-eas0` describes, promoted to a plan:
   Without `--one-filesystem` a walk can enter mounted filesystems below the root, so a
   report can have several rows.
 - **Capacity, observed by the serving layer, read by the reader.** The engine gains one
-  observation step, `observe_capacity(devices) -> CapacityObservation`, with one call
-  per filesystem and an `observed_at`: `statfs` on Linux and macOS, which returns
-  capacity and the filesystem type together, and `GetDiskFreeSpaceExW` with
-  `GetVolumeInformationW` on Windows.
-  The pure readers `report(index, request, generated_at)` and `report_roots(...)` gain
-  one argument, the observation as an `Option`, so they never touch the filesystem
-  ([views are readers](../../architecture/fdu-design-principles.md#views-are-readers)).
-  That changes their public signatures, which the 0.x minor version allows.
-  Every serving route observes before it reads when the request names `volumes`:
-  `prepare_report` for one-shot reports, `OpenedIndex::read`, each watch repaint, and
-  Python’s `Index.report`, inside the native call.
-  `--stale-ok` observes now, so its capacity tier is current while its tree tier is
-  stale, and each tier is labeled.
+  observation step, `observe_capacity(volumes) -> CapacityObservation`, given each
+  filesystem’s device and a path on it, with one call per filesystem and an
+  `observed_at`: `statfs` on Linux and macOS, which returns capacity and the filesystem
+  type together, and `GetDiskFreeSpaceExW` with `GetVolumeInformationW` on Windows.
+  The pure readers take the observation as an argument, so they never touch the
+  filesystem
+  ([views are readers](../../architecture/fdu-design-principles.md#views-are-readers)):
+  `report` and `report_roots` take it as their last argument, `None` where nothing was
+  observed. Every serving route observes before it reads when the request names
+  `volumes`, through `query::observe_volumes`: `prepare_report` for one-shot reports,
+  `OpenedIndex::read` (before it takes its index guard), each watch repaint, and
+  Python’s `Index.report`, inside the native call with the GIL released.
+  A capacity call is made only on a root or on a directory the walk listed, since on an
+  unmounted automount trigger it mounts as a listing would (review F1 on #209). A
+  listing may be hours old when a report is read, and an automount may have expired
+  since, so a listed directory below a root is asked only where touching it mounts
+  nothing (review G1). The stat that never mounts cannot decide that: it covers a path’s
+  last component, only where it exists, so an expired indirect-map key or a path through
+  a trigger asked the automounter all the same (review H1). The operating system’s mount
+  table decides it, read without resolving any path: a directory is asked only where the
+  table lists a reachable mount at exactly its path whose topmost filesystem is not
+  autofs, and the stat, safe there, then finds the device the walk recorded.
+  Every listed directory is checked on its own, and one that fails blocks nothing below
+  it, so a mount the table lists below a btrfs subvolume is asked (review I1). Every
+  walk records the device it read its root on as the root entry’s attributes, and the
+  snapshot keeps it (format 7), so the root is keyed by the number its walk counted it
+  on, whatever a remount or a reboot has numbered it since (reviews G2 and H2). The root
+  and every nested row follow one rule: where the device found now is not the one the
+  walk recorded, the row keeps its counts and its capacity is unknown (review H6).
+  `--stale-ok` observes now, so its capacity is current while its tree is stale, and the
+  section’s `observed_at` says when capacity was read.
   A caller of the pure reader that passes no observation gets every capacity field as
-  unknown (null), with a note naming `observe_capacity`; it is never zero.
+  unknown (null), with a note naming `observe_volumes`; it is never zero.
   A request without `volumes` observes nothing.
-  Capacity is never stored in a snapshot or served from the cache, and provenance gains
-  a `capacity` tier with its own `observed_at`.
+  Capacity is never stored in a snapshot or served from the cache.
 - **Columns.** Capacity, the share in use, the path where the report entered the
   filesystem (a root, or the directory where the walk crossed onto it), available bytes,
   and the bytes this report counted there.
-  No mount table is read: the walk already knows where the device changes.
-  When the walk reaches one filesystem at several paths, the row is labeled by the
-  bytewise-first of them, and a note says how many others there are.
+  The mount table never names a row: the walk already knows where the device changes.
+  It only decides which paths a capacity call may touch (review H1 on #209). When the
+  walk reaches one filesystem at several paths, the row is labeled by the bytewise-first
+  of them, and a note says how many others there are.
   The type comes from the same call: by name on macOS and Windows, and on Linux as
   `f_type`, a number, which a short table maps to names for the filesystems the notes
   need (btrfs, ZFS); any other number is shown as itself.
@@ -426,7 +489,11 @@ Illustrative layout, with invented values:
 note: available space on an apfs volume is shared with the other volumes in its container
 ```
 
-Both new views join `--view full`, which shows every view but List and Files.
+`ages` joins `--view full`, which shows every view but List and Files.
+`volumes` does not: it describes the host, not the tree, so two full reports of an
+unchanged tree would differ, and a digest would make capacity calls a tree of the same
+request does not. A first version included it; the maintainer left it out on review F13
+of #209.
 
 ### Selection coverage
 
@@ -440,8 +507,10 @@ suppresses it with the other notes; the machine fields are always present.
 note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB
 ```
 
-The scanned totals are the unfiltered root roll-up, already maintained, so the note
-costs nothing. Machine output carries the same two tallies.
+The scanned totals are the index’s maintained roll-up of the scan’s own population (the
+ignored part under `--ignored=only`, the unignored part under `--ignored=exclude`, and
+everything otherwise), so the note costs nothing and a narrowed scan’s note compares
+like with like (review G7 on #209). Machine output carries the same two tallies.
 This follows the output rule that a note is added wherever the displayed facts can be
 misread
 ([output design](../../architecture/fdu-output-design.md#streams-and-categories)), and
@@ -484,26 +553,41 @@ from `fdu.report/11`.
 
 ### Phase 1: Change time (`fdu-bo9q`, `fdu-xk3c`)
 
-- [ ] `TimeBasis` in the request model; `Selection` gains a change-time window beside
-  the modification window; `SortKey::Changed`.
-- [ ] `SubtreeValues` gains the newest change time and its unknown count; directory
-  matching follows the existing modification-time rule.
-- [ ] Unknown change time is typed through selection, rows, and notes.
-- [ ] `--changed-since`, `--changed-before`, `--sort changed`; Python `changed_since`,
+- [x] `Selection` gains a change-time window beside the modification window, one
+  `TimeWindow` type for both (`ModifiedWindow` remains as an alias); `SortKey::Changed`.
+  No separate `TimeBasis` type: the selection already names its basis per window.
+- [x] `SubtreeValues` gains the newest change time and whether every counted entry had
+  one; directory matching follows the existing modification-time rule.
+- [x] Unknown change time is typed through selection and rows (`Option<i64>`); the note
+  is below.
+- [x] `--changed-since`, `--changed-before`, `--sort changed`; Python `changed_since`,
   `changed_before`, and `SortKey.CHANGED`.
-- [ ] `changed_ns` and `changed_at` on rows and tree nodes that carry `mtime_ns`.
-- [ ] The selection-coverage note and its machine fields.
-- [ ] The skill and docs switch the recipe to `--changed-since`.
-- [ ] Once “changed” names change time, reword the places that use it for modification
+- [x] `changed_ns` and `changed_at` on list rows; tree nodes carry none (see phase 1’s
+  change-time windows, superseded by [one time](#one-time)).
+- [x] The selection-coverage note and its machine fields (`selected` and `scanned` on
+  every envelope, each `{files, dirs, bytes, allocated}`).
+- [x] The skill and docs switch the recipe to `--changed-since`.
+- [x] Once “changed” names change time, reword the places that use it for modification
   activity, such as the tree’s age (“how long ago anything it counts last changed”) in
   the skill, `--docs`, the usage guide, and the README.
 
+Phase 4 replaces this phase’s second window, its sort key, and its unknown change time
+before release; the items above record what was built and then superseded.
+
 ### Phase 2: The `ages` view (`fdu-5079`, `fdu-alw7`)
 
-- [ ] `ViewSpec::Ages` over the index: band assignment from change time and the request
-  instant, partition and cumulative tallies, the ignored split, several roots.
-- [ ] Text renderer on the grouped-row layout; JSON, JSONL, and YAML records.
-- [ ] Inclusion in `--view full`.
+- [x] `ViewSpec::Ages` over the index: band assignment from change time and the request
+  instant, partition and cumulative tallies, the ignored split, several roots
+  (`query_ages.rs`). It profiles the files a summary of the same selection counts, so a
+  directory match profiles what it covers; the window identity holds for selections that
+  compose with `--kind file`, and the partition for every selection.
+- [x] Text renderer on the grouped-row layout; JSON, JSONL, and YAML records.
+  A watch’s repaint identity measures band instants from its fixed reference, so an
+  answer whose bands moved differs and one whose clock alone moved does not.
+  A watch asks for an answer when its tree changes, so it re-bands at each repaint, not
+  at each edge: in an idle tree a file keeps its band until something else changes
+  (review F7 on #209).
+- [x] Inclusion in `--view full`.
 - [ ] A performance-loop experiment for a derived route: an unfiltered `--view ages`
   (alone or with `summary`) can count bands as the walk reports entries, with no index,
   as unfiltered `summary` already does.
@@ -511,16 +595,147 @@ from `fdu.report/11`.
 
 ### Phase 3: The `volumes` view (`fdu-eas0`)
 
-- [ ] `observe_capacity` per distinct device in the report’s scope, called by every
-  serving route listed under [the `volumes` view](#the-volumes-view); the optional
-  observation argument on `report` and `report_roots`; unknown capacity with a note when
-  none is passed; a `capacity` provenance tier.
-- [ ] Each row labeled by the bytewise-first path where the report entered the
+- [x] `observe_capacity` per distinct device in the report’s scope, called by every
+  serving route listed under [the `volumes` view](#the-volumes-view), through
+  `query::observe_volumes`; unknown capacity with a note when none is passed.
+  Amended in implementation:
+  - `report` and `report_roots` take the observation as their last argument, `None`
+    where nothing was observed, so no caller silently gains filesystem reads.
+    A first version kept their signatures beside two `_with_capacity` readers; review F9
+    on #209 collapsed each pair, since the project owes no caller of the older shape.
+  - Capacity is asked only of the roots and of directories the walk listed, and an
+    opened read observes before it takes its guard (review F1 and F2 on #209).
+  - A walk records a directory it descends into across a device from a descriptor it
+    opens on it, so a trigger the walk mounted carries the filesystem its listing found
+    and two cold walks agree (review G4); a kernel automount point, which stats on its
+    parent’s device, is read the same way, and a one-filesystem walk keeps it as a
+    boundary (review H4). A reconciliation and a watch record the directory above what
+    they verify by the same rule (review H5). A browsable autofs key, on its parent’s
+    device with no flag, and reading each directory where its own listing opens it
+    (review H8) are deferred to `fdu-vxji`.
+  - Below a root, a listed directory is asked only where the mount table lists a
+    reachable mount at exactly its path that is not autofs, and the stat then finds the
+    recorded device: `/proc/self/mountinfo` on Linux, `getfsstat` with `MNT_NOWAIT` on
+    macOS, and on Windows, which has no automount, every path passes to the stat
+    (reviews G1 and H1). One that fails keeps its row and counts with the reason and
+    blocks nothing below it: the lookup is what makes a path safe, so a mount the table
+    lists below a device boundary that is no mount point, such as a btrfs subvolume, is
+    asked (review I1). Asking the boundary itself is deferred to `fdu-3sv9`.
+  - The root is keyed by the device its walk recorded, which every walk route records as
+    the root entry’s attributes and a snapshot keeps (format 7), and asked where it is
+    still on it (reviews G2, H2, and H6). A first fix inferred it from the root’s
+    children for an unverified index, which four ordinary situations made it guess
+    wrong. `VolumesObservation` carries the key per root.
+  - When capacity was observed is the section’s `observed_at`, not a provenance tier: it
+    labels the capacity beside a stale tree just as well and leaves every other envelope
+    unchanged.
+- [x] Each row labeled by the bytewise-first path where the report entered the
   filesystem, from the walk’s own device changes, with a note when there are others; the
-  type from the same call, with Linux `f_type` mapped for btrfs and ZFS. No mount-table
-  parsing.
-- [ ] Rows, notes for pooled filesystems, text and machine renderers, `--view full`.
-- [ ] `make cross-lint`, since every source is behind a platform gate.
+  type from the same call, with Linux `f_type` mapped for btrfs and ZFS. The mount table
+  names no row; it only gates capacity calls.
+  Only a directory starts a filesystem: overlayfs, which containers run on, reports each
+  file’s underlying layer, which split one filesystem into a row per layer until files
+  were counted on their directory’s device.
+  A one-filesystem walk touches only its root’s filesystem, since it never enters the
+  mount points it retains.
+- [x] Rows, pooled-filesystem wording, text and machine renderers.
+  Each row is three lines on every platform, the pooled-space caveat on its available
+  line rather than a separate note, so goldens pin one layout with named patterns.
+- [x] `make cross-lint`, since every source is behind a platform gate.
+
+### Phase 4: One time basis (`fdu-14k4`)
+
+Decided 2026-11-09 by the maintainer, after phases 1–3 were built and before any of it
+was released: one time that every report reasons in, replacing phase 1’s second window.
+The release is a minor version, so names change where the design is better for it, not
+where compatibility alone would keep them.
+The design is [one time](#one-time).
+
+**Engine: both clocks, one maintained shape (`fdu-hw1m`).**
+
+- [x] `TimeBasis` (`Changed`, the default, and `Modified`) and `Times` (`modified`,
+  `changed`, nanoseconds) in `engine_contract`, re-exported from `query`.
+  `Attrs::times()` times an unobserved status change by modification, and
+  `Attrs::change_time_ns` keeps reporting whether one was observed.
+- [x] `InternedRollUp`’s newest regular file and `InternedPartitionRollUp`’s newest
+  activity become `Times`; `merge`, `recompute_newest_upward`, `raise_activity_upward`,
+  the folded scan, the summary fold in `execution.rs`, and every snapshot load maintain
+  both. Roll-ups are rebuilt from entry attributes on load, so the snapshot format is
+  unchanged.
+- [x] Public `RollUp` and `RollUpSummary` gain `newest_changed_ns` beside
+  `newest_mtime_ns`; the index-level API keeps raw clocks, since it answers no request.
+- [x] The size tests record the larger directory roll-up.
+
+**Query: one window, one basis (`fdu-h3t9`).**
+
+- [x] `Selection::window` and `Selection::time` replace `modified` and `changed`;
+  `ModifiedWindow` goes.
+  `Candidate`, `SubtreeValues`, the `ActivityTable`, and the maintained activity carry
+  `Times`, and every predicate and row reads the request’s basis.
+- [x] `SortKey::Time` replaces `Mtime` and `Changed` and is valid in every view, so the
+  tree refusal goes; with no unknown time, `--reverse` reverses it as it does every
+  other key.
+- [x] `recent`, `ages`, the tree, grouped rows, list rows, and the summary read the
+  basis. `ages` loses its `unknown` band and its basis note.
+- [x] The note for files timed by modification replaces the unknown-change-time note:
+  counted where a window or `ages` counted such a file, and only under `changed`.
+- [x] `ReadSpec::since`, `before`, and `time`; `AxisNames` names them per surface;
+  `parse_time_basis`; `parse_sort` takes `time` and no longer `mtime` or `changed`.
+
+**Report schema (`fdu-wtoc`).**
+
+- [x] Every row and node gives `time_ns`, `time_at`, and `age_ns`; summary and tree rows
+  give `newest_file_time_ns`; list rows also give raw `mtime_ns` and `changed_ns`.
+  `modified_at`, `changed_at`, and a node’s `mtime_ns` and `newest_mtime_ns` go.
+- [x] The request echo gives `time`, and `Report` carries it for renderers.
+- [x] The `ages` section drops `basis`; it has nine bands.
+- [x] The schema stays `fdu.report/12`, which is unreleased.
+
+**Surfaces (`fdu-0ace`).**
+
+- [x] Command line: `--since`, `--before`, `--time changed|modified`, `--sort time`.
+- [x] Python: `Selection(since=, before=, time=)`, `TimeBasis`, `SortKey.TIME`, model
+  fields renamed with the schema, and `RollUp.newest_changed_ns`.
+
+**Docs (`fdu-khwo`).**
+
+- [x] The skill, `--help`, `--docs`, both READMEs, `docs/usage.md`,
+  `docs/machine-output.md`, the architecture docs that name the age column or the old
+  flags, and the CHANGELOG, which states every rename and the age column’s new default.
+
+**Tests (`fdu-xff5`).**
+
+- [x] Goldens move to `--since`, `--before`, and `--sort time`. A session over a
+  backdated fixture passes `--time modified`, since `touch -d` cannot backdate a change
+  time.
+- [x] Engine tests: both clocks in maintained and walked roll-ups agree; the fallback
+  timing and its note; `--sort time` over trees and grouped rows; `--time modified`
+  reproduces the released modification-time answers.
+- [x] Path independence compares a change-time answer by each row’s age residual and
+  masks the clocks a fixture copy cannot carry, and adds `--time modified` requests that
+  compare exactly.
+- [x] Parity re-recorded; the `--time` and window flags are surface-label deviations.
+
+Decided in implementation:
+
+- Type, extension, family, language, and document rows carry no time, so under
+  `--sort time` they keep size order beside a view the sort orders, with a note, and a
+  request of only those views is refused rather than silently keeping name order; tree,
+  list, and code rows sort by it.
+  Review E found that refusing them outright refused `--view full --sort time`.
+- Rust `FileRow::status_observed` is public, with `FileRow::changed_ns` beside it, so a
+  library caller can tell an observed change time from the modification-time stand-in as
+  machine output and Python can.
+- Watch upserts carry `changed_ns` beside `mtime_ns`, so a stream under the default
+  clock shows the time that admitted each entry.
+- `ages` is refused for a request whose instant cannot be represented, where no age can
+  be measured, rather than keeping an `unknown` band for that case alone.
+- A list row’s raw `changed_ns` is null for an entry other than a directory whose status
+  change was not observed, though its time on the change clock is its modification time,
+  so the substitution is visible per row as well as in the note, and a symlink’s row
+  agrees with its watch record (review F8 on #209).
+- `FileRow` stays at 192 bytes: `times` and a public `status_observed` flag (review E4)
+  replace `mtime_ns` and `changed_ns`.
 
 ## Testing Strategy
 
@@ -545,15 +760,24 @@ Exact nanosecond edges and unknown change times use synthetic entry facts.
   later instants and check every band and window, including entries that are old by both
   clocks, which neither the CLI nor Python can produce.
 - **Identities:** the `ages` rows sum to `summary`; each row equals its window query in
-  the band table; cumulative tallies equal `--changed-since <edge> --view summary`; a
-  `--changed-*` window over an index equals a cold run (path independence).
-- **Unknown change time:** an index with an unobserved change time keeps that entry out
-  of every change-time bound and puts it in the `unknown` band.
+  the band table; cumulative tallies equal `--since <edge> --view summary`; a window
+  over an index equals a cold run (path independence).
+- **Unobserved status change:** an entry with none is timed by modification on the
+  change-time clock, and the note counts it when a window or `ages` counted it.
 - **Clock edges:** future timestamps fall in `future`; an entry exactly on a band edge
-  falls in the newer band, because `--changed-since` is inclusive.
+  falls in the newer band, because `--since` is inclusive.
 - **Volumes:** a root on one filesystem gives one row; a fixture with a mount below the
   root gives two (Linux CI, where mounting a tmpfs is possible), and `--one-filesystem`
   gives one; capacity never appears in a snapshot.
+  Root-only tests (`tests/volumes_automount.rs`) mount real automounts and count the
+  automounter’s requests: a direct trigger kept at the scan depth, one that expires
+  after the walk, one with a filesystem mounted below it whose filesystem is also
+  mounted plainly elsewhere, an indirect map whose expired key is removed, a report
+  rooted at an indirect map, and debugfs’s `tracing`, a kernel automount that needs no
+  automounter. Engine tests feed a synthetic mount table and a synthetic stat, and hold
+  the root to the device its walk recorded through a renumbered root, a mount gone from
+  a directory that sorts first, an unmounted root filesystem, and an expired indirect
+  map.
 - **Parity and goldens:** every new flag, view, and field goes through the shared golden
   corpus and Python parity.
   Capacity and band contents vary by host, so goldens pin layout with named patterns,
@@ -565,13 +789,21 @@ Exact nanosecond edges and unknown change times use synthetic entry facts.
 
 Phase 0 changes only discovery text: the skill, `--help`, and `--docs`. Phases 1–3 add
 flags, views, and machine fields under one schema bump.
-No existing value changes; filtered reports gain one note on stderr.
+Phases 1–3 changed no existing value; filtered reports gained one note on stderr.
+Phase 4 does change existing values: every time is change time unless `--time modified`
+is given, so the tree’s age column, `recent`, and every age read change time.
 The skill describes only what the installed executable supports, so it changes with each
 phase, not before.
 
 ## Open Questions
 
-These need the maintainer’s decision; the design above follows each recommendation.
+**Decided 2026-11-08:** after #208 merged, the maintainer asked for the plan to be
+implemented as written, so each question below takes its recommendation, which the
+design above already follows.
+Any of them can be reopened in the implementation pull request’s review.
+**Reopened 2026-11-09:** phase 4 settles questions 1, 3, and 4 differently: one time,
+change time by default, named `--since`, `--before`, `--time`, and `--sort time`, and
+the tree’s age column follows it.
 
 1. **Basis of `ages`.** Recommendation: change time, because the view’s question is when
    space arrived, and change time is conservative for both growth and staleness.
@@ -604,7 +836,7 @@ These need the maintainer’s decision; the design above follows each recommenda
    Alternative: notes only.
 7. **Cumulative tallies in text `ages`.** Recommendation: machine output only, so text
    keeps the grouped-row layout unchanged; “how much changed within 30 days?”
-   is one `--changed-since 30d --view summary` away.
+   is one `--since 30d --view summary` away.
    Case against: that is the question the view exists for, and a reader has to add rows
    to answer it. Alternative: a second share column of cumulative share, which needs the
    output design’s grouped-row rule amended first, since a continuation line may only

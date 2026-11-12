@@ -36,7 +36,16 @@ def _build(spec: dict[str, Any]) -> tuple[Any, Any, Any]:
     for name in ("include", "exclude"):
         if name in selection:
             fields[name] = tuple(selection[name])
-    for name in ("min_size", "modified_since", "depth", "limit", "breadth", "min_share", "reverse"):
+    for name in (
+        "min_size",
+        "since",
+        "before",
+        "depth",
+        "limit",
+        "breadth",
+        "min_share",
+        "reverse",
+    ):
         if name in selection:
             fields[name] = selection[name]
     if "kind" in selection:
@@ -45,6 +54,8 @@ def _build(spec: dict[str, Any]) -> tuple[Any, Any, Any]:
         fields["ignored"] = fdu.IgnoredEntries(selection["ignored"])
     if "sort" in selection:
         fields["sort"] = fdu.SortKey(selection["sort"])
+    if "time" in selection:
+        fields["time"] = fdu.TimeBasis(selection["time"])
     if "size" in selection:
         fields["size"] = fdu.SizeMetric(selection["size"])
     views = tuple(fdu.View(view) for view in spec.get("views", []))

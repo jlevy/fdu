@@ -61,6 +61,7 @@
 
 pub mod admission;
 pub mod cache;
+pub mod capacity;
 pub mod classify;
 pub mod content;
 pub mod control;
@@ -109,6 +110,7 @@ pub use crate::cache::{
     ContentStatus, LeftoverKind, SnapshotInfo, StaleReason, cache_status, clear_all_caches,
     clear_cache, list_caches,
 };
+pub use crate::capacity::{CapacityObservation, ObservedVolume, VolumeCapacity, observe_capacity};
 pub use crate::control::{
     CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlLimits,
     ControlMatcher, ControlObservation, ControlRefusalReason, ControlTable, DEFAULT_CONTROL_BUDGET,
@@ -126,7 +128,7 @@ pub use crate::engine_contract::{
     ProjectionRefusal, ProjectionResult, Provenance, QueryLimit, ReadDiagnostics, ReadProjection,
     ReadRequest, ReadResponse, RefreshRejection, RefreshResult, RejectedRefreshPath, ReportRequest,
     Result, RowShape, ScanScope, SemanticIdentity, SessionId, Source, StateTransition, Status,
-    TreePage, Work,
+    TimeBasis, Times, TreePage, Work,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, DEFAULT_JOURNAL_CAPACITY_BYTES, EntryId, ExtTally,

@@ -610,7 +610,7 @@ fn report_for_render(arguments: &Arguments) -> ProbeResult<(Index, fdu_core::que
         query,
         now,
     );
-    let report = fdu_core::query::report(&index, &request, now)?;
+    let report = fdu_core::query::report(&index, &request, now, None)?;
     Ok((index, report))
 }
 
@@ -784,11 +784,13 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     );
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("report"));
+        black_box(
+            fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH, None).expect("report"),
+        );
     }
     let component = started.elapsed();
     let oracle_report =
-        fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("oracle report");
+        fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH, None).expect("oracle report");
     verify_content_query_report(&index, &read, &oracle_report)?;
     let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
@@ -828,7 +830,7 @@ fn verify_content_query_report(
         let mut independent = request.clone();
         independent.query.views = vec![view];
         independent.query.omitted_views.clear();
-        let expected = fdu_core::query::report(index, &independent, std::time::UNIX_EPOCH)?;
+        let expected = fdu_core::query::report(index, &independent, std::time::UNIX_EPOCH, None)?;
         let Some(expected) = expected.sections.first() else {
             return Err(ProbeError(format!("content-query independent {view:?} report was empty")));
         };
@@ -992,7 +994,7 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         dirs: row.dirs,
         apparent_bytes: u128::from(row.bytes),
         allocated_bytes: u128::from(row.allocated),
-        newest_file_mtime_ns: row.newest_mtime_ns,
+        newest_file_mtime_ns: row.newest_file.map(|times| times.modified),
         // Deliberately absent rather than zero: this tier never observed an index, and a
         // zero digest would read as "no entries" to an oracle rather than "not offered".
         engine_digest: None,
@@ -1079,7 +1081,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         dirs: root.dirs,
         apparent_bytes: u128::from(root.bytes),
         allocated_bytes: u128::from(root.allocated),
-        newest_file_mtime_ns: root.newest_mtime_ns,
+        newest_file_mtime_ns: root.newest_file.map(|times| times.modified),
         // Absent rather than zero, as for the aggregate tier: the index was consumed
         // inside `prepare_report`, so this mode has no digest to offer and says so.
         engine_digest: None,
@@ -1178,13 +1180,13 @@ fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
 
     let tallies = report.sections.iter().find_map(|section| match section {
         fdu_core::query::Section::Summary(row) => {
-            Some((row.files, row.dirs, row.bytes, row.allocated, row.newest_mtime_ns))
+            Some((row.files, row.dirs, row.bytes, row.allocated, row.newest_file))
         }
         fdu_core::query::Section::Tree { root: Some(node), .. } => {
-            Some((node.files, node.dirs, node.bytes, node.allocated, node.newest_mtime_ns))
+            Some((node.files, node.dirs, node.bytes, node.allocated, node.newest_file))
         }
         fdu_core::query::Section::Tree { roots: Some(trees), .. } => trees.total.map(|total| {
-            (total.files, total.dirs, total.bytes, total.allocated, total.newest_mtime_ns)
+            (total.files, total.dirs, total.bytes, total.allocated, total.newest_file)
         }),
         _ => None,
     });
@@ -1196,7 +1198,7 @@ fn roots_report(arguments: &Arguments, tree: bool) -> ProbeResult<ProbeOutput> {
         dirs,
         apparent_bytes: u128::from(bytes),
         allocated_bytes: u128::from(allocated),
-        newest_file_mtime_ns: newest,
+        newest_file_mtime_ns: newest.map(|times| times.modified),
         engine_digest: None,
         index_len: None,
         ..Summary::default()
@@ -1715,13 +1717,13 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         query,
         now,
     );
-    let first = fdu_core::query::report(&index, &request, now)?;
+    let first = fdu_core::query::report(&index, &request, now, None)?;
     let first_rendered =
         fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false)?;
     black_box(first_rendered.len());
 
     let started = Instant::now();
-    let second = fdu_core::query::report(&index, &request, now)?;
+    let second = fdu_core::query::report(&index, &request, now, None)?;
     let rendered =
         fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());
@@ -2114,9 +2116,13 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
 impl Summary {
     fn observe(&mut self, observation: &Observation) {
         for observed in &observation.ops {
-            let Op::Upsert { kind, attrs, .. } = &observed.op else {
+            let Op::Upsert { path, kind, attrs } = &observed.op else {
                 continue;
             };
+            // The walk's record of its root's device; the root is counted once, after.
+            if path.as_os_str().is_empty() {
+                continue;
+            }
             self.observe_entry(*kind, attrs);
         }
     }
@@ -2213,7 +2219,13 @@ fn normalized_path(path: &Path) -> ProbeResult<String> {
     Ok(normalized)
 }
 
+/// One entry's record in the engine digest, as the reference tree's oracle encodes it.
+///
+/// The root's record carries only the device its walk read it on, which names the host's
+/// numbering, not the tree, so the digest encodes the root with no attributes, as the
+/// oracle always has.
 fn engine_record(path: &str, kind: EntryKind, attrs: &Attrs) -> ProbeResult<Vec<u8>> {
+    let attrs = if path == "." { &Attrs::default() } else { attrs };
     let path_len = u32::try_from(path.len())
         .map_err(|_| ProbeError("engine digest path exceeds u32".into()))?;
     let mut record = Vec::with_capacity(path.len().saturating_add(53));
@@ -3283,7 +3295,7 @@ mod tests {
             std::time::SystemTime::now(),
         );
         let mut report =
-            fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH).expect("report");
+            fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH, None).expect("report");
 
         verify_content_query_report(&index, &request, &report).expect("exact sections");
         report.sections.swap(0, 1);

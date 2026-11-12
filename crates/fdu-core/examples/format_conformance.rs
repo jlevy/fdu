@@ -43,8 +43,8 @@ fn main() {
             },
             now,
         );
-        let mut report =
-            fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH).expect("age report");
+        let mut report = fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH, None)
+            .expect("age report");
         // Windows SystemTime has 100 ns granularity. The public typed report carries
         // exact nanoseconds, so seed the exact endpoint after deriving its real row.
         report.age_reference_ns = Some(reference);
@@ -123,6 +123,7 @@ fn main() {
         bytes: upsert.then_some(u64::MAX),
         allocated: upsert.then_some(u64::MAX),
         mtime_ns: upsert.then_some(i64::MIN),
+        changed_ns: upsert.then_some(i64::MAX),
         ignored: upsert.then_some(false),
         clock: u64::MAX,
     };

@@ -22,6 +22,29 @@
 // nested paths differ on stderr, which puts its whole stdout block in the diff.
 const sameSeparator = (line) => line.replace(/\[(?:JSON_)?SEP\]/g, '/');
 
+// A volume row reads the host's filesystem when the report is read, so the goldens name its
+// capacity, share in use, type, and pooled-space wording as patterns; the path is pinned. These are the
+// goldens' own regexes, applied to an already escaped golden line.
+const VOLUME_PATTERNS = [
+  ['\\[CAPACITY\\]', '\\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)? (?:B|KiB|MiB|GiB|TiB|PiB)'],
+  ['\\[IN_USE\\]', '\\s*(?:<1%|[0-9]{1,3}%|—) in use'],
+  ['\\[FS_TYPE\\]', '(?:  \\([^)\\r\\n]+\\))?'],
+  ['\\[POOL\\]', '(?:, shared with the other volumes of its pool)?'],
+  ['\\[FS_NAME\\]', '(?:"[^"]*"|null)'],
+  ['\\[BOOL\\]', '(?:true|false)'],
+];
+const volumePatterns = (escaped) =>
+  VOLUME_PATTERNS.reduce((pattern, [name, regex]) => pattern.replaceAll(name, regex), escaped);
+const VOLUME_NAMES = /\[(?:CAPACITY|IN_USE|FS_TYPE|POOL|FS_NAME|BOOL)\]/;
+// An observed volume line that its golden pattern accepts is recorded as the golden line:
+// the free space at recording time is not parity, and an artifact holding it would differ
+// on every run.
+const recordedVolumeLine = (golden, actual) => {
+  if (!VOLUME_NAMES.test(golden)) return actual;
+  const escaped = sameSeparator(golden).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${volumePatterns(escaped)}$`).test(sameSeparator(actual)) ? golden : actual;
+};
+
 // tryscript expands named patterns into concrete values on the Python side of a diff.
 // After classification checks those values, keep the artifact stable across runs.
 // Only '+' lines are observed output; '-' golden expectations remain untouched.
@@ -32,7 +55,7 @@ export function normalisePortableValues(text) {
     const flush = () => {
       if (removed.length === added.length) {
         for (let i = 0; i < removed.length; i += 1) {
-          let value = added[i].value;
+          let value = recordedVolumeLine(removed[i], added[i].value);
           for (const [field, named, marker] of [
             ['age_reference_ns', 'AGE_NS', 'AGE_NS_VALUE'],
             // A row's age is measured from each run's own instant, as the reference is.
@@ -154,6 +177,9 @@ const fixtureRoot = (file = '') => {
   return null;
 };
 const portablePatternMatches = (line, actual, file) => {
+  // A recorded line that normalisePortableValues() wrote back as its golden line is the
+  // same line, which no pattern regex accepts as its own text.
+  if (sameSeparator(line) === sameSeparator(actual)) return true;
   let value = sameSeparator(line);
   const fixture = fixtureRoot(file);
   if (fixture) {
@@ -179,14 +205,14 @@ const portablePatternMatches = (line, actual, file) => {
     )
     .replaceAll('\\[AGE_BLANK\\]', '(?:\\[AGE_BLANK_VALUE\\]| +)')
     .replaceAll('\\[AGE_NS\\]', '(?:\\[AGE_NS_VALUE\\]|-?\\d+)')
-    // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
+    // normalise() already masks the clock fields (`time_ns` and the rest), but leaves `observed_at_ns`
     // numeric. The same named golden pattern appears in both fields.
     .replaceAll('\\[MTIME_NS\\]', '(?:\\[MTIME_NS\\]|\\[MTIME_NS_VALUE\\]|-?\\d+)')
     .replaceAll('\\[ALLOCATED\\]', '(?:\\[ALLOCATED_VALUE\\]|\\d+)');
-  return new RegExp(`^${pattern}$`).test(sameSeparator(actual));
+  return new RegExp(`^${volumePatterns(pattern)}$`).test(sameSeparator(actual));
 };
 
-/** Flags and parameters name the same thing: --modified-since is modified_since. */
+/** Flags and parameters name the same thing: --min-size is min_size. */
 const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').replace(/[-_]/g, '');
 
 // The two surfaces have different NAMES for the same knob, not merely different
@@ -200,7 +226,7 @@ const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').repla
 // its refusals have always said `invalid cache policy`, which `AxisNames::FIELDS` kept
 // rather than changing the wording when the rule moved into the request model.
 const KNOBS =
-  /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
+  /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--since|--include|--depth|--stale-ok|--cache|--watch|cache policy|stale_ok|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
 // A report's one bound suggestion names the same setters differently on each surface: a

@@ -292,6 +292,10 @@ class OpenedOptions:
     hidden_allow: tuple[str, ...] = ()
     exclude_special: bool = False
     max_files: int | None = None
+    #: Start native observation, which verifies the paths the backend's events name. A
+    #: hard link made or removed moves the change time of every other name of the file,
+    #: which no event names, so those keep their old change time until a ``refresh`` or
+    #: a later change reads them; ``TimeBasis.MODIFIED`` reads a clock no link moves.
     observe: bool = False
     #: A byte budget for the exact change journal ``changes()`` reads from, or ``None``
     #: for the engine default of 8 MiB. The smallest budget is the engine's minimum,
@@ -430,7 +434,11 @@ class RollUpSummary:
     dirs: int
     bytes: int
     allocated: int
+    #: The newest descendant file's modification time, or ``None`` with none.
     newest_mtime_ns: int | None
+    #: The newest descendant file's change time, the newer of modification and status
+    #: change, or ``None`` with none.
+    newest_changed_ns: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -956,6 +964,9 @@ def _rollup(value: object) -> RollUpSummary:
         allocated=int(raw["allocated"]),
         newest_mtime_ns=(
             int(raw["newest_mtime_ns"]) if raw["newest_mtime_ns"] is not None else None
+        ),
+        newest_changed_ns=(
+            int(raw["newest_changed_ns"]) if raw["newest_changed_ns"] is not None else None
         ),
     )
 

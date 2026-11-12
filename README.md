@@ -9,7 +9,7 @@ It is pre-built and distributed via PyPI and `uv` so you can run it right now wi
 `uvx fdu@latest`.
 
 For every directory in a file tree, fdu reports its size, file count, most recent
-change, file kinds, how much `.gitignore` files cover.
+change, file kinds, and how much `.gitignore` files cover.
 Optionally, it also analyzes lines of code by programming language or words, paragraphs,
 and pages in documents for Markdown or text.
 
@@ -64,8 +64,15 @@ More on how it was built
 ## Key Features
 
 - **Extensive metrics:** Different `--view` options show total size, file count, age of
-  entire directories, tree overview, largest or or most recent files, and breakdowns by
+  entire directories, tree overview, largest or most recent files, and breakdowns by
   file type, family, extension, and programming language.
+- **What was written recently, with no baseline:** `fdu PATH --kind file --since 24h`
+  shows where the data written in the last day now lives, by folder, from one walk.
+  Every time reads change time by default, so copies and extracted archives that kept
+  old modification times still count as new (`--time modified` reads content age).
+  `--view ages` divides the selection into age bands, every window from one walk, and
+  `--view volumes` puts each filesystem’s capacity and free space beside what the tree
+  holds.
 - **`.gitignore`-aware sizes:** Rows show how much of their size the tree’s own
   `.gitignore` files cover, and `--ignored=exclude` or `--ignored=only` reports one
   side. Rules apply per directory, as git applies them; `.git/info/exclude` and global
@@ -170,8 +177,10 @@ Only `code` and `documents` read file contents; every other view reads metadata 
 | Languages by space | `fdu . --view=languages` |
 | File families, types, and extensions | `fdu . --view=families,types,extensions` |
 | Twenty largest files | `fdu . --view=largest` |
-| Ten most recently modified working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
-| Where the files written in the last day are | `fdu . --kind=file --modified-since=24h` |
+| Ten most recently changed working files | `fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'` |
+| Where the files written in the last day are | `fdu . --kind=file --since=24h` |
+| When the space arrived, in fixed age bands | `fdu . --view=ages` |
+| How full the disk is, beside what the tree holds | `fdu . --view=volumes` |
 | Totals without gitignored entries | `fdu . --ignored=exclude --view=summary` |
 | Stay on one filesystem, like `du -x` (macOS and Linux) | `fdu . --one-filesystem` |
 | Several paths as one report, with a total | `fdu docs src` |
@@ -254,19 +263,22 @@ and supported languages.
 ## Find What Was Written Recently
 
 When free space drops, find where the new data is.
-fdu keeps no history of past sizes, but every file records when it was last modified, so
-one scan with no saved state shows the files written since a given time, by folder and
+fdu keeps no history of past sizes, but every file records when it last changed, so one
+scan with no saved state shows the files written since a given time, by folder and
 largest first:
 
 ```shell
-fdu ~ --kind=file --modified-since=24h
-fdu ~ --view=largest --modified-since=24h --limit=20
+fdu ~ --kind=file --since=24h
+fdu ~ --view=largest --since=24h --limit=20
 ```
 
+fdu reads change time by default, the newer of modification and status change, so data
+copied or extracted with an older modification time still counts.
+`--time=modified` reads modification time instead, as `ls -l` shows, for every window,
+sort, and age in the report.
 `--kind=file` matters: without it, a directory with any activity in the window counts at
 its full size. The total is data written, not net growth: a file written in the window
-counts in full, deleted files do not appear, and data copied or extracted with an older
-modification time is missed.
+counts in full, and deleted files do not appear.
 The [usage guide](docs/usage.md#find-what-was-written-recently) says how to read and
 check the result.
 
@@ -279,15 +291,16 @@ largest first, with its allocated size and the age of its newest change:
 fdu ~/work --kind=dir --include=.venv --include=node_modules --include=target --full --long
 ```
 
-Add `--modified-before=30d` for the ones untouched in a month, or
-`--sort=mtime --reverse` for oldest first; replace `--long` with `--format=paths` for
-paths alone. `--view=summary` gives their combined usage and counts nested matches once;
+Add `--before=30d` for the ones untouched in a month, or `--sort=time --reverse` for
+oldest first; replace `--long` with `--format=paths` for paths alone.
+`--view=summary` gives their combined usage and counts nested matches once;
 `--view=files,summary --format=json` gives exact rows and the total in one report.
 Add `--cache=on` to keep the scan, and a later run with `--stale-ok` answers from it
 without walking again.
 
-A directory’s size counts the regular files below it, and its age is the newest
-modification of the directory or anything in it, which measures activity, not last use.
+A directory’s size counts the regular files below it, and its age is the newest change
+to the directory or anything in it, which measures activity, not last use: one copied in
+yesterday is a day old however old its files are.
 Ignored directories are included, and symlinks are not followed.
 Sizes are per path, not space freed by deletion: hard links and copy-on-write clones, as
 uv environments use, can share storage.
@@ -480,7 +493,8 @@ paired runs on real trees, and the
 retains the experiments and their measured effects.
 
 The figures below are historical measurements of the builds named beside them.
-They are not measurements of the final 0.5.0 release.
+They are not measurements of the 0.5.0 or 0.6.0 releases; 0.6.0 has not been timed
+against these tools.
 In the 2026-10-10 Linux rerun, neither the 0.5.0 development build nor 0.4.0 showed a
 resolved lead over `pdu --max-depth 2` or diskus on the two real trees; the generated
 million-entry tree retained its leads.
@@ -601,7 +615,7 @@ If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`
 does not publish free-threaded wheels yet.
 
 **Pinned versions:** For a repeatable run, replace `latest` with a release number, such
-as `uvx --no-build fdu@0.5.0 .`.
+as `uvx --no-build fdu@0.6.0 .`.
 
 **uv cool-off policies:** If uv is configured with an `exclude-newer` cool-off, a new
 fdu release may be filtered.

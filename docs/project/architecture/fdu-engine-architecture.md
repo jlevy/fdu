@@ -259,6 +259,8 @@ The target models are in
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
 | Measured value | What each metric means, and how coverage is decided | The `METRICS` registry and per-unit outcomes in `FileAnalysis`; `ReportMetricValues` and per-unit coverage in `MetricRow`; `document_words` and `pages` in `query_report.rs` | Yes. The registry owns metric names and units, each requested unit records its own outcome, and absent units stay absent from reports |
 | Provenance | Source, freshness, observation time, completeness, errors | `TreeStatus` and `ReportProvenance`, including per-tier `TierState`; per-entry `Provenance` in `engine_contract.rs` | Yes. Report status, delivery provenance, and retained-tier provenance are separate values; an unavailable observation time is `None` rather than an invented timestamp |
+| Time basis | Which clock every time in one report reads | `TimeBasis` (`Changed` by default, or `Modified`) on `Selection`, `Times` on each entry and tier, and `Attrs::times`, which applies the substitution for an unobserved status change (`engine_contract.rs`); `TimeBasis::ALL` is the vocabulary each surface states | Yes. The clock is applied only where a value leaves the engine: the window predicate, the time sort, the age profile, and the writers; every tier keeps both clocks, so either request reads the same fast paths |
+| Capacity observation | How full each filesystem a `volumes` report touches is, at read time | `VolumesObservation`, `CapacityObservation`, and `observe_capacity` (`capacity.rs`, `query/query_volumes.rs`); `observe_volumes` composes the roots’ devices as their walks recorded them (`Index::root_device`), the entries the walk listed (`volume_entries`), the mount table (`capacity::MountTable`), and the calls | Yes. Never stored in any tier or served from one; every serving route observes it with the same step, outside any index guard: on each root still on the device its walk recorded, and below a root only on a directory the walk listed where the mount table, read without resolving any path, lists a reachable mount at exactly that path whose topmost filesystem is not autofs, and the stat that never mounts, safe there, then finds the device the walk recorded. It passes the observation to the pure readers, which report capacity as unknown, with the reason, when given none |
 | Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants, field-presence rules, and the shared machine-output walk in `report_format.rs` | Yes. JSON, JSON Lines, and YAML consume one field walk, while each document family keeps its own schema identity |
 
 ### Core Values and Ownership
@@ -325,8 +327,10 @@ together. There is no route that changes one without the others.
 #### Persisted Snapshot
 
 A snapshot is a detached representation, not a dormant opened root.
-It contains the complete retained entry facts, the engine fingerprint, the validated
-scope and semantic identities, and the control table required to interpret them.
+It contains the complete retained entry facts, the device each walk read its root on
+among them (the root entry’s attributes, which a `volumes` report keys the root by), the
+engine fingerprint, the validated scope and semantic identities, and the control table
+required to interpret them.
 It stores no roll-ups and no classification: loading rebuilds roll-ups from the entries,
 classification happens on read with the registry in use, and the reducer-set identity it
 records is a constant today.
@@ -398,11 +402,12 @@ Opened report budgets charge the subtree-measurement pass as well as selection a
 shaping.
 The default unfiltered tree still reads maintained roll-ups without constructing
 a flat inventory. Its age column reads each row’s newest activity from a maximum the
-index maintains per directory beside the roll-up, so a retained index’s repeated reports
-cost their rows, not a pass: it counts directories and symlinks, which the roll-up’s
-files-only recency leaves out, and in a folded index, which kept only the largest files
-as entries, the times of the files it folded.
-That read serves a complete index with no scan depth, where every subtree is complete.
+index maintains per directory beside the roll-up, on both clocks, so either `--time`
+reads the same path and a retained index’s repeated reports cost their rows, not a pass:
+it counts directories and symlinks, which the roll-up’s files-only recency leaves out,
+and in a folded index, which kept only the largest files as entries, the times of the
+files it folded. That read serves a complete index with no scan depth, where every
+subtree is complete.
 An index that may hold an unlisted subtree takes one pass over the index by entry id
 instead, without paths, which also proves which subtrees are complete.
 A filtered tree folds the same maximum in its selection walk.
@@ -714,6 +719,10 @@ Logical preconditions prevent an older sample from overwriting newer facts.
 A backend reports only what its kernel emits: on macOS, a write through an open
 descriptor produces an event only at the last close (and a writable mapping at the last
 unmap), so growth in a file held open is observed when it closes.
+And no backend names the other names of a file when a hard link to it is made or
+removed, which moves the status change they share: a link made outside the observed tree
+sends no event at all, so those names keep their old change time until something
+verifies them again, where a cold walk reads the new one.
 
 Where the backend permits it, observation starts before baseline discovery and buffers
 hints in a bounded queue.
@@ -738,6 +747,11 @@ An opened `read()` captures one index guard, engine version, and lifecycle state
 It returns requested projections in request order with explicit bounds and a cursor that
 can resume changes after that version.
 It performs no filesystem I/O and no unbounded scan or sort while holding the guard.
+A report that names `volumes` needs the filesystem’s capacity, which is read from the
+filesystem and takes as long as a filesystem takes to answer, so it is observed before
+that guard: one short guard finds where the root enters each filesystem, the capacity
+calls follow with it released, and the coherent read is given what they observed.
+A filesystem the root enters between the two reads as not observed in its row.
 
 The native projection vocabulary stays smaller than any one application’s algebra:
 
@@ -774,9 +788,13 @@ can already request a recent-files report.
 An opened root maintains a newest-first order of regular files for one, and the page
 that serves it must meet this contract.
 Ranked recency has a selection order and a presentation order, and they differ.
-Rows are selected by ignored state, then modification time descending, then canonical
-path ascending; the page that survives is returned in modification time descending, then
-that same path ascending.
+Rows are selected by ignored state, then time descending, then canonical path ascending;
+the page that survives is returned in time descending, then that same path ascending.
+The time is the report’s clock (`Selection::time`): change time unless the request asks
+for modification time, as the `recent` view reads it on every route.
+The maintained order an opened root keeps today is keyed by modification time alone, and
+no projection reads it; a page that serves from it must first key it by the request’s
+clock, or keep one order per clock.
 The path is the final key in both, which is what makes each total.
 
 Ignored entries rank last during selection because installing dependencies writes

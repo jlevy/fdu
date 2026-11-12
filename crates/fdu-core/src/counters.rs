@@ -69,6 +69,12 @@ pub struct Counts {
     pub parent_memo_hits: u64,
     /// Roll-up merge operations.
     pub rollup_merges: u64,
+    /// Directories whose newest times were rebuilt from their children, once per batch,
+    /// because a removal or an earlier time in it may have left a maximum stale.
+    pub maximum_repairs: u64,
+    /// Children those rebuilds read: the cost the batching bounds, one pass over each
+    /// rebuilt directory per batch.
+    pub maximum_repair_reads: u64,
     /// Control files read from the filesystem.
     pub control_reads: u64,
     /// Control sources a control table refused for one of its limits.
@@ -189,6 +195,8 @@ impl Counts {
         parent_resolutions: 0,
         parent_memo_hits: 0,
         rollup_merges: 0,
+        maximum_repairs: 0,
+        maximum_repair_reads: 0,
         control_reads: 0,
         control_refused: 0,
         control_sources_shared: 0,
@@ -252,6 +260,8 @@ impl Counts {
             ("index", "parent path resolutions", self.parent_resolutions),
             ("index", "parent memo hits", self.parent_memo_hits),
             ("index", "roll-up merges", self.rollup_merges),
+            ("index", "maximum repairs", self.maximum_repairs),
+            ("index", "maximum repair child reads", self.maximum_repair_reads),
             ("control state", "control files read", self.control_reads),
             ("control state", "control sources refused", self.control_refused),
             ("control state", "control sources shared", self.control_sources_shared),
@@ -341,6 +351,9 @@ impl Counts {
         self.parent_resolutions = self.parent_resolutions.saturating_add(other.parent_resolutions);
         self.parent_memo_hits = self.parent_memo_hits.saturating_add(other.parent_memo_hits);
         self.rollup_merges = self.rollup_merges.saturating_add(other.rollup_merges);
+        self.maximum_repairs = self.maximum_repairs.saturating_add(other.maximum_repairs);
+        self.maximum_repair_reads =
+            self.maximum_repair_reads.saturating_add(other.maximum_repair_reads);
         self.control_reads = self.control_reads.saturating_add(other.control_reads);
         self.control_refused = self.control_refused.saturating_add(other.control_refused);
         self.control_sources_shared =
@@ -435,6 +448,8 @@ struct GlobalCounts {
     parent_resolutions: AtomicU64,
     parent_memo_hits: AtomicU64,
     rollup_merges: AtomicU64,
+    maximum_repairs: AtomicU64,
+    maximum_repair_reads: AtomicU64,
     control_reads: AtomicU64,
     control_refused: AtomicU64,
     control_sources_shared: AtomicU64,
@@ -497,6 +512,8 @@ impl GlobalCounts {
             parent_resolutions: AtomicU64::new(0),
             parent_memo_hits: AtomicU64::new(0),
             rollup_merges: AtomicU64::new(0),
+            maximum_repairs: AtomicU64::new(0),
+            maximum_repair_reads: AtomicU64::new(0),
             control_reads: AtomicU64::new(0),
             control_refused: AtomicU64::new(0),
             control_sources_shared: AtomicU64::new(0),
@@ -558,6 +575,8 @@ impl GlobalCounts {
         atomic_saturating_add(&self.parent_resolutions, counts.parent_resolutions);
         atomic_saturating_add(&self.parent_memo_hits, counts.parent_memo_hits);
         atomic_saturating_add(&self.rollup_merges, counts.rollup_merges);
+        atomic_saturating_add(&self.maximum_repairs, counts.maximum_repairs);
+        atomic_saturating_add(&self.maximum_repair_reads, counts.maximum_repair_reads);
         atomic_saturating_add(&self.control_reads, counts.control_reads);
         atomic_saturating_add(&self.control_refused, counts.control_refused);
         atomic_saturating_add(&self.control_sources_shared, counts.control_sources_shared);
@@ -637,6 +656,8 @@ impl GlobalCounts {
             parent_resolutions: self.parent_resolutions.load(Ordering::Relaxed),
             parent_memo_hits: self.parent_memo_hits.load(Ordering::Relaxed),
             rollup_merges: self.rollup_merges.load(Ordering::Relaxed),
+            maximum_repairs: self.maximum_repairs.load(Ordering::Relaxed),
+            maximum_repair_reads: self.maximum_repair_reads.load(Ordering::Relaxed),
             control_reads: self.control_reads.load(Ordering::Relaxed),
             control_refused: self.control_refused.load(Ordering::Relaxed),
             control_sources_shared: self.control_sources_shared.load(Ordering::Relaxed),
@@ -702,6 +723,8 @@ impl GlobalCounts {
         self.parent_resolutions.store(0, Ordering::Relaxed);
         self.parent_memo_hits.store(0, Ordering::Relaxed);
         self.rollup_merges.store(0, Ordering::Relaxed);
+        self.maximum_repairs.store(0, Ordering::Relaxed);
+        self.maximum_repair_reads.store(0, Ordering::Relaxed);
         self.control_reads.store(0, Ordering::Relaxed);
         self.control_refused.store(0, Ordering::Relaxed);
         self.control_sources_shared.store(0, Ordering::Relaxed);

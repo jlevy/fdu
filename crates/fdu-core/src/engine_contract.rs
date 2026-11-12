@@ -78,6 +78,98 @@ impl EntryKind {
     }
 }
 
+/// Which clock a report reads an entry's time from.
+///
+/// One report reads one clock everywhere: its time windows, its time sort, the tree's age
+/// column, `recent`, `ages`, and every row's age.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub enum TimeBasis {
+    /// When the entry last changed in any way, its content or its metadata, arriving by
+    /// copy or extraction included: the newer of its modification and status-change times
+    /// ([`Attrs::times`]).
+    ///
+    /// The default, because its errors point the safe way for both questions a time
+    /// answers: asked what is new, it over-includes (a `chmod` looks new) rather than
+    /// omits a copy that kept old times; asked what is old, it holds back a just-restored
+    /// backup rather than calling it stale.
+    ///
+    /// A link count is the file's own metadata, so making or removing a hard link to a
+    /// file anywhere moves the status change of every other name it has: a package store
+    /// that installs by linking (`uv`, `pnpm`), `cp -l`, and `git clone --local` move it
+    /// in every tree sharing the files. A watch or an observing opened root reads a name
+    /// again only where an event names it, so another name keeps its old status change
+    /// until it is next read (review G3 on #209).
+    #[default]
+    Changed,
+    /// When the entry's content was last written, as `ls -l` shows: for content age, or
+    /// when a bulk `chmod`, `chown`, or relabel moved every status-change time at once, or
+    /// in a tree whose files are hard-linked from elsewhere, which no link moves.
+    Modified,
+}
+
+impl TimeBasis {
+    /// Every basis, in declaration order: the vocabulary each surface states, and the one
+    /// the Python package is held to (`contract()["time_bases"]`).
+    pub const ALL: [Self; 2] = [Self::Changed, Self::Modified];
+
+    /// Parse the library's spelling: `changed` or `modified`.
+    ///
+    /// The expectation only, as [`crate::query::ViewSpec::parse`] returns it, so each
+    /// surface names its own knob in front of it.
+    pub fn parse(value: &str) -> std::result::Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "changed" => Ok(Self::Changed),
+            "modified" => Ok(Self::Modified),
+            _ => Err("expected one of changed, modified".to_owned()),
+        }
+    }
+
+    /// Stable label, the inverse of [`Self::parse`].
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Changed => "changed",
+            Self::Modified => "modified",
+        }
+    }
+}
+
+/// An entry's time on both clocks, in nanoseconds since the Unix epoch.
+///
+/// A directory's is the newest of each clock beneath it, so the index maintains both and
+/// a report reads either without another pass.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct Times {
+    /// Modification time.
+    pub modified: i64,
+    /// Change time: the newer of modification and status change.
+    pub changed: i64,
+}
+
+impl Times {
+    /// Below every time on both clocks, so a maximum absorbs it: a subtree with nothing in
+    /// it.
+    pub const NONE: Self = Self { modified: i64::MIN, changed: i64::MIN };
+
+    /// The time on `basis`'s clock.
+    #[inline]
+    pub const fn get(self, basis: TimeBasis) -> i64 {
+        match basis {
+            TimeBasis::Changed => self.changed,
+            TimeBasis::Modified => self.modified,
+        }
+    }
+
+    /// The newer of two times on each clock separately.
+    #[inline]
+    #[must_use]
+    pub const fn max(self, other: Self) -> Self {
+        Self {
+            modified: if other.modified > self.modified { other.modified } else { self.modified },
+            changed: if other.changed > self.changed { other.changed } else { self.changed },
+        }
+    }
+}
+
 /// The stat fields an entry contributes to roll-ups, plus the ones that identify it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 pub struct Attrs {
@@ -97,6 +189,44 @@ pub struct Attrs {
 }
 
 impl Attrs {
+    /// When the entry last changed: the newer of its modification time and its status
+    /// change time, or `None` where the status change time was not observed.
+    ///
+    /// A status change time is set by the kernel whenever data or metadata is written,
+    /// so it catches what modification time misses: a copy or an extracted archive that
+    /// restored an old modification time is still new by this clock. The maximum rather
+    /// than `ctime_ns` alone keeps an entry whose modification time was set into the
+    /// future from hiding behind an older status change. Unobserved is unknown, never
+    /// old: an entry read without a handle on Windows has no status change time, and
+    /// treating its zero as 1970 would put new data in the oldest band.
+    #[inline]
+    pub const fn change_time_ns(&self) -> Option<i64> {
+        if self.ctime_ns == 0 {
+            None
+        } else if self.ctime_ns > self.mtime_ns {
+            Some(self.ctime_ns)
+        } else {
+            Some(self.mtime_ns)
+        }
+    }
+
+    /// The entry's time on both clocks.
+    ///
+    /// An entry whose status change was not observed is timed by its modification time
+    /// on the change-time clock: a lower bound of its change time, never a zero. One such
+    /// entry almost never moves a directory's time, which is the newest of everything
+    /// beneath it, while leaving it unknown would blank the age of every ancestor; a
+    /// report counts the files so timed where a window or `ages` counted one
+    /// ([`Self::change_time_ns`] still says whether a status change was observed).
+    #[inline]
+    pub const fn times(&self) -> Times {
+        let changed = match self.change_time_ns() {
+            Some(changed) => changed,
+            None => self.mtime_ns,
+        };
+        Times { modified: self.mtime_ns, changed }
+    }
+
     /// The change-detection fingerprint for these attributes.
     #[inline]
     pub const fn fingerprint(&self) -> Fingerprint {
@@ -1022,6 +1152,9 @@ pub enum ProjectionRefusal {
 }
 
 /// One projection result, in the same position as its request.
+// One result per projection, built once and matched once; boxing the report would change
+// the payload of a public variant every caller matches on.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum ProjectionResult {
     /// Three-valued retained-entry lookup.
@@ -2112,6 +2245,22 @@ pub type Result<T> = std::result::Result<T, Error>;
 mod tests {
     use super::*;
 
+    /// Every basis is listed once, and its label parses back to it: the list is what the
+    /// Python package's `TimeBasis` is held to, so a basis missing from it would leave
+    /// Python behind with every test green (review F6 on #209).
+    #[test]
+    fn every_time_basis_is_listed_and_round_trips_through_its_label() {
+        for basis in TimeBasis::ALL {
+            assert_eq!(TimeBasis::parse(basis.label()), Ok(basis));
+            match basis {
+                // An arm per basis: a new one fails to compile here until it is listed.
+                TimeBasis::Changed | TimeBasis::Modified => {}
+            }
+        }
+        assert_eq!(TimeBasis::ALL.map(TimeBasis::label), ["changed", "modified"]);
+        assert_eq!(TimeBasis::ALL[0], TimeBasis::default());
+    }
+
     #[test]
     fn clock_advances_monotonically() {
         let c = Clock::ZERO;
@@ -2138,6 +2287,18 @@ mod tests {
         // A ctime bump is, even when mtime was rolled back to look unchanged.
         let touched = Attrs { ctime_ns: 9, ..base };
         assert_ne!(base.fingerprint(), touched.fingerprint());
+    }
+
+    #[test]
+    fn change_time_is_the_newer_clock_and_unknown_when_unobserved() {
+        let base = Attrs { size: 1, allocated: 1, mtime_ns: 5, ctime_ns: 7, inode: 1, dev: 1 };
+        assert_eq!(base.change_time_ns(), Some(7));
+        // A modification time set into the future is not hidden by an older status change.
+        assert_eq!(Attrs { mtime_ns: 9, ..base }.change_time_ns(), Some(9));
+        // A copy that restored an old modification time is new by its status change.
+        assert_eq!(Attrs { mtime_ns: -40, ..base }.change_time_ns(), Some(7));
+        // Zero is the walkers' spelling of "not observed", never the epoch.
+        assert_eq!(Attrs { ctime_ns: 0, ..base }.change_time_ns(), None);
     }
 
     #[test]

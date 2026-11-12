@@ -39,6 +39,23 @@
 //! opened descriptor so that `one_filesystem` bounds the walk to the filesystem the
 //! listing finds.
 //!
+//! `AT_NO_AUTOMOUNT` governs a path's last component alone, and only where it exists: an
+//! earlier component, or a name an indirect map does not hold (an expired key whose
+//! directory the automounter removed), is resolved as any lookup is, and asks the
+//! automounter. A listed child exists, and is looked up by name relative to its listing's
+//! descriptor, so its stat never mounts; a path a route resolves by itself mounts nothing
+//! only where nothing on the way is an unmounted trigger.
+//!
+//! A kernel automount point (an inode the kernel flags `S_AUTOMOUNT`: tracefs under
+//! debugfs, an NFS nested export or referral, an AFS mount point, a CIFS DFS link) stats
+//! as a directory on its parent's device until something resolves through it, and its
+//! `stx_attributes` carries `STATX_ATTR_AUTOMOUNT` while it is unmounted. The reader
+//! reports that bit with each child ([`Outcome::Observed`]), and the walk treats such a
+//! directory as it treats one on another device: the listing that follows mounts it, so it
+//! is recorded from the descriptor the walk opens (`scan::entered_directory_attrs`), and a
+//! one-filesystem walk keeps it as a boundary it never opens. An autofs trigger marks its
+//! dentry, not its inode, and carries no such bit.
+//!
 //! On 32-bit glibc targets the reader keeps `statx`'s 64-bit timestamps, where std's
 //! `from_statx` narrows them through a 32-bit `time_t`; the two differ only for times
 //! outside 1901–2038, and no 32-bit build is shipped.
@@ -113,22 +130,25 @@ pub(super) fn statx_unavailable() -> bool {
     STATX.state() == STATX_UNAVAILABLE
 }
 
-/// The reader's non-following stat of `path` itself, which never triggers an automount,
-/// or `None` where `statx` is not served in this process and std must answer.
+/// The reader's non-following stat of `path` itself, which never mounts at the path's last
+/// component (`AT_NO_AUTOMOUNT`), with whether that component is a kernel automount point
+/// not mounted yet, or `None` where `statx` is not served in this process and std must
+/// answer.
 ///
 /// For the stats a listing's descriptor cannot serve: a child of a directory the reader
 /// declined, a path a reconciliation or the watch verifies on its own, a control looked
-/// up by name. It resolves the whole path, where [`Reader`] resolves one name, so a
-/// route that lists a directory lists it through the reader. `None` settles support the
-/// way [`Reader`] settles it, so once std answers here it answers with `fstatat`.
-pub(super) fn stat_path(path: &Path) -> Option<std::io::Result<(EntryKind, Attrs)>> {
+/// up by name. It resolves the whole path, where [`Reader`] resolves one name, so every
+/// earlier component is resolved as any lookup is, and a route that lists a directory
+/// lists it through the reader. `None` settles support the way [`Reader`] settles it, so
+/// once std answers here it answers with `fstatat`.
+pub(super) fn stat_path(path: &Path) -> Option<std::io::Result<(EntryKind, Attrs, bool)>> {
     stat_path_with(&STATX, path)
 }
 
 fn stat_path_with(
     support: &'static StatxSupport,
     path: &Path,
-) -> Option<std::io::Result<(EntryKind, Attrs)>> {
+) -> Option<std::io::Result<(EntryKind, Attrs, bool)>> {
     if support.state() == STATX_UNAVAILABLE {
         return None;
     }
@@ -173,6 +193,10 @@ pub(crate) enum Outcome {
     Observed {
         kind: EntryKind,
         attrs: Attrs,
+        /// The child's stat flagged it a kernel automount point not mounted yet
+        /// (`STATX_ATTR_AUTOMOUNT`), which a listing of it would mount; false where it
+        /// was not stated.
+        automount: bool,
     },
     /// The stat failed with something other than `ENOENT`; the caller reports it at
     /// `listing_path.join(name)`. `ENOENT` entries are not yielded at all.
@@ -522,11 +546,11 @@ fn observe(
     };
     if let Some(kind) = listing_kind {
         if *searchability == Searchability::Proven {
-            return Ok(Some(Outcome::Observed { kind, attrs: Attrs::default() }));
+            return Ok(Some(Outcome::Observed { kind, attrs: Attrs::default(), automount: false }));
         }
     }
     counts.stats += 1;
-    let (kind, attrs) = match statx_at(fd, name_with_nul) {
+    let (kind, attrs, automount) = match statx_at(fd, name_with_nul) {
         Ok(observed) => {
             if gate.support.state() == STATX_UNKNOWN {
                 gate.support.set(STATX_PRESENT);
@@ -558,12 +582,13 @@ fn observe(
     } else {
         attrs
     };
-    Ok(Some(Outcome::Observed { kind, attrs }))
+    Ok(Some(Outcome::Observed { kind, attrs, automount }))
 }
 
-/// `statx(dirfd, name, STATX_FLAGS, STATX_MASK)`: the non-following, never-automounting
-/// stat of `name_with_nul` relative to `dirfd`, or of a path when `dirfd` is `AT_FDCWD`.
-fn statx_at(dirfd: RawFd, name_with_nul: &[u8]) -> std::io::Result<(EntryKind, Attrs)> {
+/// `statx(dirfd, name, STATX_FLAGS, STATX_MASK)`: the non-following stat of `name_with_nul`
+/// relative to `dirfd`, or of a path when `dirfd` is `AT_FDCWD`, which never mounts at its
+/// last component, with whether that component is a kernel automount point not mounted yet.
+fn statx_at(dirfd: RawFd, name_with_nul: &[u8]) -> std::io::Result<(EntryKind, Attrs, bool)> {
     debug_assert_eq!(name_with_nul.last(), Some(&0));
     // SAFETY: every field of `libc::statx` is an integer or padding, so all-zero bytes
     // are a valid value (std initializes its buffer the same way).
@@ -587,7 +612,11 @@ fn statx_at(dirfd: RawFd, name_with_nul: &[u8]) -> std::io::Result<(EntryKind, A
             )
         };
         if result == 0 {
-            return Ok((kind_from_mode(buffer.stx_mode), attrs_from_statx(&buffer)));
+            // The kernel sets the bit only where it is true, so an older kernel that does
+            // not report it answers false, as the walk did before it read the bit.
+            let automount =
+                buffer.stx_attributes & u64::from(libc::STATX_ATTR_AUTOMOUNT.unsigned_abs()) != 0;
+            return Ok((kind_from_mode(buffer.stx_mode), attrs_from_statx(&buffer), automount));
         }
         let error = std::io::Error::last_os_error();
         if error.raw_os_error() != Some(libc::EINTR) {
@@ -652,7 +681,7 @@ mod tests {
     fn observed(listing: Listing<'_>) -> Observed {
         listing
             .map(|entry| match entry.outcome {
-                Outcome::Observed { kind, attrs } => (entry.name.to_os_string(), (kind, attrs)),
+                Outcome::Observed { kind, attrs, .. } => (entry.name.to_os_string(), (kind, attrs)),
                 Outcome::Failed(error) => panic!("{:?}: {error}", entry.name),
             })
             .collect()
@@ -782,7 +811,7 @@ mod tests {
         Listing { names: &reader.names[..reader.filled], entries: reader.entries.drain(..) }
             .map(|entry| {
                 let outcome = match entry.outcome {
-                    Outcome::Observed { kind, attrs } => Ok((kind, attrs)),
+                    Outcome::Observed { kind, attrs, .. } => Ok((kind, attrs)),
                     Outcome::Failed(error) => Err(error.raw_os_error().expect("an OS error")),
                 };
                 (entry.name.to_os_string(), outcome)
@@ -823,7 +852,8 @@ mod tests {
                 (kind_from(&metadata), attrs_from(&path, &metadata).expect("Unix attrs"));
             kinds.insert(expected.0);
             let observed = stat_path(&path).expect("statx is served here").expect("observed");
-            assert_eq!(observed, expected, "{path:?}");
+            // Nothing in a temporary directory is a kernel automount point.
+            assert_eq!(observed, (expected.0, expected.1, false), "{path:?}");
         }
         assert_eq!(
             kinds,
@@ -834,7 +864,7 @@ mod tests {
         let metadata = fs::symlink_metadata(root).expect("root metadata");
         assert_eq!(
             stat_path(root).expect("served").expect("observed"),
-            (EntryKind::Dir, attrs_from(root, &metadata).expect("Unix attrs"))
+            (EntryKind::Dir, attrs_from(root, &metadata).expect("Unix attrs"), false)
         );
 
         // A missing path is the caller's `NotFound`, the error std reports.

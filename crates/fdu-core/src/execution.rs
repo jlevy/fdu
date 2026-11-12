@@ -1262,10 +1262,10 @@ impl SummaryFold {
                             return;
                         }
                         self.all.files += 1;
-                        self.all.newest_mtime_ns = Some(
+                        self.all.newest_file = Some(
                             self.all
-                                .newest_mtime_ns
-                                .map_or(attrs.mtime_ns, |current| current.max(attrs.mtime_ns)),
+                                .newest_file
+                                .map_or(attrs.times(), |seen| seen.max(attrs.times())),
                         );
                     }
                     EntryKind::Dir => self.all.dirs += 1,
@@ -1336,7 +1336,8 @@ impl SummaryFold {
             dirs: self.all.dirs,
             bytes: self.all.bytes,
             allocated: self.all.allocated,
-            newest_mtime_ns: self.all.newest_mtime_ns.unwrap_or_default(),
+            newest_mtime_ns: self.all.newest_file.map_or(0, |times| times.modified),
+            newest_changed_ns: self.all.newest_file.map_or(0, |times| times.changed),
         };
         let summary = SummaryRow {
             ignored: verified.then(|| crate::query::IgnoredTally::between(all, controls.unignored)),
@@ -2805,6 +2806,7 @@ mod tests {
             &index,
             &crate::test_support::read_of(&index, query.clone()),
             compact.provenance.generated_at,
+            None,
         )
         .expect("report");
 
@@ -2818,7 +2820,7 @@ mod tests {
         assert_eq!(compact_row.dirs, indexed_row.dirs);
         assert_eq!(compact_row.bytes, indexed_row.bytes);
         assert_eq!(compact_row.allocated, indexed_row.allocated);
-        assert_eq!(compact_row.newest_mtime_ns, indexed_row.newest_mtime_ns);
+        assert_eq!(compact_row.newest_file, indexed_row.newest_file);
         assert_eq!(compact.root, indexed.root);
         assert_eq!(compact.scope, indexed.scope);
         assert_eq!(compact.status.complete, indexed.status.complete);
@@ -3339,7 +3341,7 @@ mod tests {
         for format in [Format::Text, Format::Tree, Format::Json, Format::Jsonl, Format::Yaml] {
             folded.push(Query { views: vec![ViewSpec::Tree], format, ..Query::default() });
         }
-        for sort in [SortKey::Size, SortKey::Name, SortKey::Mtime, SortKey::Count] {
+        for sort in [SortKey::Size, SortKey::Name, SortKey::Time, SortKey::Count] {
             for reverse in [false, true] {
                 let mut query = list.clone();
                 query.selection.sort = Some(sort);
@@ -3347,6 +3349,11 @@ mod tests {
                 folded.push(query);
             }
         }
+        // Either clock: a tree row carries both, so the clock selects nothing.
+        let mut by_modification = list.clone();
+        by_modification.selection.time = crate::TimeBasis::Modified;
+        by_modification.selection.sort = Some(SortKey::Time);
+        folded.push(by_modification);
         for bound in [Bound::Limit(0), Bound::Limit(2), Bound::All] {
             let mut query = list.clone();
             query.selection.depth = Some(bound);
@@ -3415,9 +3422,11 @@ mod tests {
         let mut files = list.clone();
         files.selection.kinds = vec![EntryKind::File];
         full.push(files);
-        let mut modified = list.clone();
-        modified.selection.modified.since = Some(0);
-        full.push(modified);
+        let mut since = list.clone();
+        since.selection.window.since = Some(0);
+        let mut modified = since.clone();
+        modified.selection.time = crate::TimeBasis::Modified;
+        full.extend([since, modified]);
         let mut by_ignored = list.clone();
         by_ignored.selection.ignored = IgnoredEntries::Exclude;
         full.push(by_ignored);
@@ -3825,7 +3834,7 @@ mod tests {
             queries.push(Query { format, ..json.clone() });
         }
         queries.push(Query { views: vec![ViewSpec::List, ViewSpec::Tree], ..list.clone() });
-        for sort in [SortKey::Size, SortKey::Name, SortKey::Mtime, SortKey::Count] {
+        for sort in [SortKey::Size, SortKey::Name, SortKey::Time, SortKey::Count] {
             for reverse in [false, true] {
                 let mut query = list.clone();
                 query.selection.sort = Some(sort);
@@ -3833,6 +3842,11 @@ mod tests {
                 queries.push(query);
             }
         }
+        // A tree row's time on the other clock, which the roll-ups maintain beside it.
+        let mut by_modification = list.clone();
+        by_modification.selection.time = crate::TimeBasis::Modified;
+        by_modification.selection.sort = Some(SortKey::Time);
+        queries.push(by_modification);
         let bounds: [(Option<Bound>, Option<Bound>, Option<Bound>); 12] = [
             (Some(Bound::Limit(0)), None, None),
             (None, Some(Bound::Limit(0)), None),
@@ -3915,10 +3929,10 @@ mod tests {
                             folded = Some((retention, index));
                         }
                         let (_, index) = folded.as_ref().expect("a folded index");
-                        let mut from_folded =
-                            report(index, &request, SystemTime::UNIX_EPOCH).expect("folded report");
-                        let from_full =
-                            report(full, &request, SystemTime::UNIX_EPOCH).expect("full report");
+                        let mut from_folded = report(index, &request, SystemTime::UNIX_EPOCH, None)
+                            .expect("folded report");
+                        let from_full = report(full, &request, SystemTime::UNIX_EPOCH, None)
+                            .expect("full report");
                         // Provenance describes each walk; everything else describes the tree.
                         assert_eq!(
                             (from_folded.provenance.source, from_folded.provenance.freshness),
@@ -4160,15 +4174,16 @@ mod tests {
     /// A maximum size filters opened-root reads alone ([`crate::query::EntrySelection`]), so
     /// no one-shot tree has one to compare.
     fn filtered_selections() -> Vec<(&'static str, crate::query::Selection)> {
-        use crate::query::{ModifiedWindow, Selection};
+        use crate::query::{Selection, TimeWindow};
         let at = |offset: u64| {
             i64::try_from((FIXTURE_MINUTE + offset) * 60 * 1_000_000_000).expect("nanoseconds")
         };
         let globs = |sources: &[&str]| -> Vec<Pattern> {
             sources.iter().map(|source| Pattern::parse(source).expect("pattern")).collect()
         };
-        let window = |since, before| ModifiedWindow { since, before };
+        let window = |since, before| TimeWindow { since, before };
         let none = Selection::default;
+        let modified = || Selection { time: crate::TimeBasis::Modified, ..none() };
         vec![
             ("a minimum size", Selection { min_size: Some(1_000), ..none() }),
             ("a minimum every nonempty file passes", Selection { min_size: Some(1), ..none() }),
@@ -4187,11 +4202,13 @@ mod tests {
                     ..none()
                 },
             ),
-            ("modified since", Selection { modified: window(Some(at(2)), None), ..none() }),
-            ("modified before", Selection { modified: window(None, Some(at(2))), ..none() }),
+            // The fixture stamps modification times; its change times are when it was
+            // written, so the windows read the modification clock.
+            ("modified since", Selection { window: window(Some(at(2)), None), ..modified() }),
+            ("modified before", Selection { window: window(None, Some(at(2))), ..modified() }),
             (
                 "a modified window",
-                Selection { modified: window(Some(at(1)), Some(at(3))), ..none() },
+                Selection { window: window(Some(at(1)), Some(at(3))), ..modified() },
             ),
             ("files", Selection { kinds: vec![EntryKind::File], ..none() }),
             ("directories", Selection { kinds: vec![EntryKind::Dir], ..none() }),
@@ -4292,7 +4309,7 @@ mod tests {
         let (full, _) = crate::scan::scan_into_index(&root, &scan_config).expect("full index");
         let answer = |query: &Query| {
             let (request, _) = split(&root, &fixture, query);
-            report(&full, &request, SystemTime::UNIX_EPOCH)
+            report(&full, &request, SystemTime::UNIX_EPOCH, None)
         };
         let whole = tree_query(vec![ViewSpec::Tree], Format::Json, "0%", SizeMetric::Apparent);
         let unfiltered = format!("{:#?}", answer(&whole).expect("unfiltered report").sections);
@@ -4351,7 +4368,7 @@ mod tests {
                         .expect("folded index");
                         assert!(index.is_folded(), "{context}");
                         let folded =
-                            report(&index, &request, SystemTime::UNIX_EPOCH).expect("folded");
+                            report(&index, &request, SystemTime::UNIX_EPOCH, None).expect("folded");
                         assert_same_answer(folded, &expected, query.format, &context);
                     }
                 }
@@ -4801,6 +4818,7 @@ mod tests {
                 &roots,
                 request.request(),
                 SystemTime::UNIX_EPOCH,
+                None,
             )
             .expect("read");
             assert_eq!(answer_of(&prepared.report), answer_of(&expected), "{label}");

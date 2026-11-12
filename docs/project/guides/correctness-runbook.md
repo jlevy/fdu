@@ -85,6 +85,17 @@ FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py /tmp/fdu-correct
 FDU_BIN=target/debug/fdu python3 tests/correctness/cross_warm.py /tmp/fdu-correctness/served
 ```
 
+As root, also run the tests that mount real automounts (direct autofs triggers, an
+indirect map with keys made and removed on request, and debugfs’s `tracing`) and hold
+`volumes` to asking capacity only where the walk listed and the mount table shows the
+path mounted, never through an expired trigger or key, and a walk that mounts a trigger
+to one row for it. Run them as
+[step 3 of the Linux host gate](linux-host-gate.md#3-automount-and-mount-tests-as-root)
+does: built as your user, the binary run as root with `--nocapture`, its log outside the
+checkout, and a count of `skipped:` that must be 0. Without `--nocapture` a test that
+cannot mount returns early and reads as a pass, as every one does in CI, which runs
+unprivileged.
+
 **The serving proof needs a tree without refusals.** An unreadable file or unlistable
 directory makes every answer partial for an unprivileged user, and a partial scan never
 writes the entry tier: a snapshot missing an entry would be served as the tree’s totals
@@ -95,14 +106,18 @@ with nothing on stdout, any answer it does print is compared with cold, and a ca
 comes back complete fails, which is what a run whose refusals were not effective looks
 like. The same kinds without their refusal bits are complete, so the second run must
 serve every case and fails any case that comes back partial.
-Every report’s `age_ns` is checked against its own `age_reference_ns` and `mtime_ns`, on
+Every report’s `age_ns` is checked against its own `age_reference_ns` and `time_ns`, on
 list rows and on tree nodes at every depth, because ages move with the reference instant
 and are not comparable across runs, and the reference instant must fall within the
 invocation that produced the report.
 A tree node that counts no entry, or whose subtree was not listed in full, must have a
 null age.
 `age_reference_at`, the same instant rendered, is set aside with it; each row’s
-`modified_at` is compared like any other field.
+`time_at` is compared like any other field.
+An age band’s edges as instants (`since_ns`, `before_ns`, `since_at`, `before_at`) and a
+volume’s `available_bytes` and `observed_at` are set aside too, since each is read at
+the run rather than from the tree; a band’s tallies and a volume’s capacity and counted
+bytes are compared.
 
 Keep the socket path short.
 A Unix socket path is limited to about 104 bytes on macOS, so a tree under a long
@@ -126,10 +141,12 @@ user for the refusal paths.
 ## When It Runs
 
 Before tagging a release, and after any change to cache identity, serving, or
-reconciliation. It is not on a timer and not in `make check`: it needs a built binary, a
-constructed tree, privilege on both sides of the root boundary, and minutes rather than
-seconds. Record each run per *Recording a Result* below, so that “when did anyone last
-actually check this” has an answer.
+reconciliation. On a pull request, the [Linux host gate](linux-host-gate.md) runs it
+through the stability pass, refusal pass included, on a real machine.
+It is not on a timer and not in `make check`: it needs a built binary, a constructed
+tree, privilege on both sides of the root boundary, and minutes rather than seconds.
+Record each run per *Recording a Result* below, so that “when did anyone last actually
+check this” has an answer.
 
 ## What the Tree Holds
 
@@ -241,6 +258,50 @@ Every case is retained in the
 [0.5.0 release stability-pass report](../reports/report-2026-10-14-release-0.5.0-stability-pass.md).
 `fdu-579b` has not decided hard-link attribution; these checks establish warm/cold
 agreement, not that counting policy’s correctness.
+
+### Branch Run: One Report Time on Linux
+
+On 2026-11-09, the change that gave every report one clock and kept each directory’s
+newest time on both was checked by hand at its pull request’s build, before release.
+The regime was the 0.5.0 release pass’s: a 4-vCPU Firecracker VM, ext4, root, and a
+fresh cache per case.
+The served tree held all 16 kinds.
+`warm_cold.py` served 26 of 26 cases `cache_only`, with 0 answer mismatches, 0 mechanism
+failures, and 0 stale reference instants.
+`cross_warm.py` held 17 pairs to serving with 0 violations.
+The refusal pass and the deliberate breaks were not run.
+This sandbox gives even `nobody` read access to a mode-000 file, so no user there can
+experience a refusal; the next release’s `make release-stability` runs both.
+
+On 2026-11-11, the same pull request’s fixes for its review F were checked the same way,
+in the same regime, at a build of `e2f451e7` with four cases added for one report time:
+`ages`, a `--kind file --since 1h` window, `--time modified`, and `volumes`.
+`warm_cold.py` served 30 of 30 cases `cache_only`, with 0 answer mismatches, 0 mechanism
+failures, and 0 stale reference instants, and `cross_warm.py` matched 72 of 72 pairs, 17
+of them held to serving, with 0 violations.
+The automount test passed as root.
+The refusal pass and the breaks were again not run, for the same reason.
+
+On 2026-11-11, the fixes for review G (a walk records a directory it enters across a
+device from its listing’s descriptor, capacity is asked only where the counted
+filesystem is still mounted, and an unverified root keeps its recorded device) were
+checked the same way, in the same regime, at a build of `046597c7`. `warm_cold.py`
+served 30 of 30 cases `cache_only`, with 0 answer mismatches, 0 mechanism failures, and
+0 stale reference instants, and `cross_warm.py` matched 72 of 72 pairs, 17 of them held
+to serving, with 0 violations.
+The three automount tests passed as root, among them the one whose automounter mounts a
+tmpfs and expires it.
+The refusal pass and the breaks were again not run, for the same reason.
+
+On 2026-11-11, the fixes for review H (capacity below a root is gated on the mount
+table, a walk records its root’s device and a snapshot keeps it, and a kernel automount
+point is read as its listing finds it) were checked the same way, in the same regime, at
+a build of `9d74ace1`. `warm_cold.py` served 30 of 30 cases `cache_only`, with 0 answer
+mismatches, 0 mechanism failures, and 0 stale reference instants, and `cross_warm.py`
+matched 72 of 72 pairs, 17 of them held to serving, with 0 violations.
+The seven automount tests passed as root, none skipped: among them an indirect map whose
+expired key is removed, a report rooted at an indirect map, and debugfs’s `tracing`. The
+refusal pass and the breaks were again not run, for the same reason.
 
 ### Previous Run: 0.5.0 Candidate on macOS
 

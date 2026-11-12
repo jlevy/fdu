@@ -52,7 +52,7 @@ export function auditGolden(name, source) {
   if (/\b(?:mtime_ns|ctime_ns|inode|dev|allocated): -?\d/.test(source)) {
     findings.push(`${name}: contains an unnormalized platform-assigned attribute`);
   }
-  if (/(?:newest_mtime_ns|observed_at_ns): Some\(-?\d/.test(source)) {
+  if (/(?:newest_mtime_ns|newest_changed_ns|observed_at_ns): Some\(-?\d/.test(source)) {
     findings.push(`${name}: contains an unnormalized aggregate timestamp`);
   }
   // A duration a scenario declares -- a poll timeout, a watch settle interval -- is a round

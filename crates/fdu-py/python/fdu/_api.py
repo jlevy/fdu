@@ -278,8 +278,9 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "include": list(selection.include),
         "exclude": list(selection.exclude),
         "min_size": str(selection.min_size) if selection.min_size is not None else None,
-        "modified_since": _when(selection.modified_since),
-        "modified_before": _when(selection.modified_before),
+        "since": _when(selection.since),
+        "before": _when(selection.before),
+        "time": selection.time.value if selection.time is not None else None,
         "kind": [kind.value for kind in selection.kinds],
         "depth": _bound(selection.depth),
         "limit": _bound(selection.limit),
@@ -295,7 +296,14 @@ def _query_kwargs(query: Query) -> dict[str, object]:
 
 
 class Watch(Iterator[tuple[Change, ...]]):
-    """Closable iterator of event-driven change batches."""
+    """Closable iterator of event-driven change batches.
+
+    Each batch verifies the paths the backend's events name and their directories. A
+    hard link made or removed moves the change time of every other name of the file,
+    which no event names, and a link made outside the watched tree sends none at all, so
+    those names keep their old change time until they are next read: under
+    ``TimeBasis.MODIFIED`` no link moves a time.
+    """
 
     __slots__ = ("_native",)
 
@@ -510,6 +518,7 @@ def _change(value: dict[str, Any]) -> Change:
         bytes=int(value["bytes"]) if value.get("bytes") is not None else None,
         allocated=int(value["allocated"]) if value.get("allocated") is not None else None,
         mtime_ns=int(value["mtime_ns"]) if value.get("mtime_ns") is not None else None,
+        changed_ns=int(value["changed_ns"]) if value.get("changed_ns") is not None else None,
         ignored=bool(value["ignored"]) if value.get("ignored") is not None else None,
         reason=str(value["reason"]) if value.get("reason") is not None else None,
     )

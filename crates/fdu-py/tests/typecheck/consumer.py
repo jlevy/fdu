@@ -34,10 +34,10 @@ reference_at: datetime | None = tree_report.age_reference_at
 for tree_section in tree_report.sections:
     if isinstance(tree_section, fdu.TreeSection) and tree_section.tree is not None:
         node: fdu.TreeNode = tree_section.tree
-        activity: int | None = node.mtime_ns
+        activity: int | None = node.time_ns
         listed: bool | None = node.complete
         age: int | None = node.age_ns
-        changed: datetime | None = node.modified_at
+        changed: datetime | None = node.time_at
         print(reference_at, activity, listed, age, changed)
 
 several: fdu.Report = fdu.report([Path("docs"), "src"], cache=fdu.CachePolicy.OFF)

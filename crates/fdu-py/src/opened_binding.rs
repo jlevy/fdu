@@ -109,8 +109,9 @@ struct SelectionValues {
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     min_size: Option<String>,
-    modified_since: Option<String>,
-    modified_before: Option<String>,
+    since: Option<String>,
+    before: Option<String>,
+    time: Option<String>,
     kind: Option<Vec<String>>,
     ignored: Option<String>,
     depth: Option<String>,
@@ -130,8 +131,9 @@ impl SelectionValues {
                 include: None,
                 exclude: None,
                 min_size: None,
-                modified_since: None,
-                modified_before: None,
+                since: None,
+                before: None,
+                time: None,
                 kind: None,
                 ignored: None,
                 depth: None,
@@ -149,8 +151,9 @@ impl SelectionValues {
             include: optional_strings(dict, "include")?,
             exclude: optional_strings(dict, "exclude")?,
             min_size: optional_string(dict, "min_size")?,
-            modified_since: optional_string(dict, "modified_since")?,
-            modified_before: optional_string(dict, "modified_before")?,
+            since: optional_string(dict, "since")?,
+            before: optional_string(dict, "before")?,
+            time: optional_string(dict, "time")?,
             kind: optional_strings(dict, "kind")?,
             ignored: optional_string(dict, "ignored")?,
             depth: optional_string(dict, "depth")?,
@@ -192,8 +195,9 @@ fn opened_read(
         values.include,
         values.exclude,
         values.min_size.as_deref(),
-        values.modified_since.as_deref(),
-        values.modified_before.as_deref(),
+        values.since.as_deref(),
+        values.before.as_deref(),
+        values.time.as_deref(),
         values.kind,
         values.ignored.as_deref(),
         values.depth.as_deref(),
@@ -650,6 +654,7 @@ fn rollup_summary_dict(py: Python<'_>, rollup: RollUpSummary) -> PyResult<Bound<
     out.set_item("bytes", rollup.bytes)?;
     out.set_item("allocated", rollup.allocated)?;
     out.set_item("newest_mtime_ns", rollup.newest_mtime_ns)?;
+    out.set_item("newest_changed_ns", rollup.newest_changed_ns)?;
     Ok(out)
 }
 

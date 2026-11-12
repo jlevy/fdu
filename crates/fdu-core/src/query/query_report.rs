@@ -25,13 +25,14 @@ use crate::content::{
     LogicalWordStats, MetricDef,
 };
 use crate::control::ControlCoverage;
-use crate::engine_contract::{EntryKind, ScanScope};
-use crate::index::{EntryId, ExtTally, Index, RollUpScalars, newer};
+use crate::engine_contract::{EntryKind, ScanScope, TimeBasis, Times};
+use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
 use crate::query::query_request::{Basis, NamedRoot, Request, RequestError, Roots};
 use crate::query::query_selection::{
-    Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey,
+    Bound, IgnoredEntries, NameIdentity, Selection, ShareThreshold, SizeMetric, SortKey, TimeWindow,
 };
-use crate::query::{Rejection, ReportProvenance, TreeStatus, query_subtrees};
+use crate::query::query_subtrees::newer_times;
+use crate::query::{Rejection, ReportProvenance, TreeStatus, query_subtrees, query_volumes};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -59,15 +60,50 @@ pub enum ViewSpec {
     /// A named preset over [`Self::Files`], not separate machinery:
     /// `largest ≡ files --sort size --limit 20`, restricted to regular files.
     Largest,
-    /// The most recently modified files.
+    /// The most recently changed files, on the report's clock.
     ///
-    /// `recent ≡ files --sort mtime --limit 20`, restricted to regular files.
+    /// `recent ≡ files --sort time --limit 20`, restricted to regular files.
     Recent,
     /// One aggregate row for everything selected.
     Summary,
+    /// The selected regular files by age band on the report's clock, newest first: every
+    /// window from one walk ([`AgeProfile`](crate::query::AgeProfile)).
+    Ages,
+    /// Each filesystem the report touches, its capacity beside the bytes the report counted
+    /// there ([`VolumesSection`](crate::query::VolumesSection)).
+    Volumes,
 }
 
 impl ViewSpec {
+    /// What this view's rows are called when they carry no time, so `--sort time` cannot
+    /// order them: they keep the order they have without it, and a note says so.
+    pub(crate) const fn timeless_rows(self) -> Option<&'static str> {
+        match self {
+            Self::Types => Some("type"),
+            Self::Extensions => Some("extension"),
+            Self::Families => Some("family"),
+            Self::Languages => Some("language"),
+            Self::Documents => Some("document"),
+            _ => None,
+        }
+    }
+
+    /// Whether a sort orders this view's rows. The summary, the age bands, and the
+    /// filesystems each have a fixed order.
+    pub(crate) const fn is_sorted(self) -> bool {
+        !matches!(self, Self::Summary | Self::Ages | Self::Volumes)
+    }
+
+    /// The key this view's rows are ordered by: the caller's, unless it is a time and
+    /// these rows carry none.
+    fn sort_key(self, requested: Option<SortKey>) -> SortKey {
+        match requested {
+            Some(SortKey::Time) if self.timeless_rows().is_some() => self.default_sort(),
+            Some(key) => key,
+            None => self.default_sort(),
+        }
+    }
+
     /// The ordering this view uses when the caller did not choose one.
     fn default_sort(self) -> SortKey {
         match self {
@@ -81,6 +117,8 @@ impl ViewSpec {
             | Self::Code
             | Self::Documents
             | Self::Summary
+            | Self::Ages
+            | Self::Volumes
             // `largest` lands here for its own reason: it is named for the ranking,
             // so the ranking is not a display default but the view's whole content.
             | Self::Largest => SortKey::Size,
@@ -89,7 +127,7 @@ impl ViewSpec {
             // disappears the moment the list is truncated, which is why `files` is
             // unbounded and the two bounded presets sort by what they are named for.
             Self::Files => SortKey::Name,
-            Self::Recent => SortKey::Mtime,
+            Self::Recent => SortKey::Time,
         }
     }
 
@@ -131,9 +169,11 @@ impl ViewSpec {
     ///
     /// One list, so a front end cannot hold a stale copy: the Python binding kept its own
     /// view parser and silently rejected `largest` and `recent` for exactly that reason.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::List,
         Self::Summary,
+        Self::Volumes,
+        Self::Ages,
         Self::Tree,
         Self::Families,
         Self::Types,
@@ -165,6 +205,8 @@ impl ViewSpec {
             "recent" => Ok(Self::Recent),
             "files" => Ok(Self::Files),
             "summary" => Ok(Self::Summary),
+            "ages" => Ok(Self::Ages),
+            "volumes" => Ok(Self::Volumes),
             // The expectation only. Each front end names its own flag and quotes the
             // offending token, so neither ends up saying "invalid --view invalid view".
             _ => Err(format!("expected one of {}", Self::vocabulary())),
@@ -193,6 +235,8 @@ impl ViewSpec {
             Self::Recent => "recent",
             Self::Files => "files",
             Self::Summary => "summary",
+            Self::Ages => "ages",
+            Self::Volumes => "volumes",
         }
     }
 
@@ -222,7 +266,9 @@ impl ViewSpec {
             | Self::Files
             | Self::Largest
             | Self::Recent
-            | Self::Summary => AnalysisSet::NONE,
+            | Self::Summary
+            | Self::Ages
+            | Self::Volumes => AnalysisSet::NONE,
         }
     }
 
@@ -248,7 +294,9 @@ impl ViewSpec {
             | Self::Files
             | Self::Largest
             | Self::Recent
-            | Self::Summary => AnalysisSet::NONE,
+            | Self::Summary
+            | Self::Ages
+            | Self::Volumes => AnalysisSet::NONE,
         }
     }
 
@@ -337,10 +385,13 @@ impl ViewSpec {
 
     /// Whether this view belongs in `--view full`.
     ///
-    /// `full` is every *summary* view. `files` is an unbounded enumeration, and putting
-    /// one inside a digest destroys the digest.
+    /// `full` is every *summary* view of the tree. `files` is an unbounded enumeration,
+    /// and putting one inside a digest destroys the digest. `volumes` describes the host,
+    /// not the tree: it asks each filesystem's capacity when the report is read, so two
+    /// full reports of an unchanged tree would differ, and a digest would make capacity
+    /// calls a tree of the same request does not. It is asked for by name.
     pub const fn is_summary_view(self) -> bool {
-        !matches!(self, Self::List | Self::Files)
+        !matches!(self, Self::List | Self::Files | Self::Volumes)
     }
 }
 
@@ -466,10 +517,12 @@ pub struct AxisNames {
     pub follow_symlinks: &'static str,
     /// The patterns an entry must match.
     pub include: &'static str,
-    /// The inclusive lower bound on modification time.
-    pub modified_since: &'static str,
-    /// The exclusive upper bound on modification time.
-    pub modified_before: &'static str,
+    /// The inclusive lower bound on the entry's time.
+    pub since: &'static str,
+    /// The exclusive upper bound on the entry's time.
+    pub before: &'static str,
+    /// Which clock every time is read from.
+    pub time: &'static str,
     /// The entry kinds a selection admits.
     pub kind: &'static str,
     /// The selection by ignored state, as one axis.
@@ -521,8 +574,9 @@ impl AxisNames {
         one_filesystem: "--one-filesystem",
         follow_symlinks: "follow_symlinks",
         include: "--include",
-        modified_since: "--modified-since",
-        modified_before: "--modified-before",
+        since: "--since",
+        before: "--before",
+        time: "--time",
         kind: "--kind",
         ignored: "--ignored",
         depth: "--depth",
@@ -562,8 +616,9 @@ impl AxisNames {
         one_filesystem: "one_filesystem",
         follow_symlinks: "follow_symlinks",
         include: "include",
-        modified_since: "modified_since",
-        modified_before: "modified_before",
+        since: "since",
+        before: "before",
+        time: "time",
         kind: "kind",
         ignored: "ignored",
         depth: "depth",
@@ -728,11 +783,11 @@ pub struct TreeNode {
     /// when the selection excludes ignored entries and the whole row when it admits only
     /// them.
     pub ignored: Option<IgnoredTally>,
-    /// Newest modification time among the regular files in this subtree, when it holds
-    /// any: the files-only recency of [`SummaryRow::newest_mtime_ns`], which a summary
-    /// reports and which no directory's own churn moves.
-    pub newest_mtime_ns: Option<i64>,
-    /// Newest modification time among the entries this row counts, or `None` when it
+    /// Newest time on each clock among the regular files in this subtree, when it holds
+    /// any: the files-only recency of [`SummaryRow::newest_file`], which a summary reports
+    /// and which no directory's own churn moves.
+    pub newest_file: Option<Times>,
+    /// Newest time on each clock among the entries this row counts, or `None` when it
     /// counts none.
     ///
     /// The row's own entry counts when the selection admits it, and so does every entry
@@ -741,19 +796,19 @@ pub struct TreeNode {
     /// records, and a symlink is an entry like any other. The report root is a traversal
     /// boundary rather than an entry, so its own time never counts, as no list row shows
     /// it either. Under a selection that admits everything this is a list row's
-    /// [`FileRow::mtime_ns`] for the same directory, so a tree and `--long` agree; under a
+    /// [`FileRow::times`] for the same directory, so a tree and `--long` agree; under a
     /// filter each follows its own row's population. A lower bound when
     /// [`Self::complete`] is false.
-    pub mtime_ns: Option<i64>,
+    pub time: Option<Times>,
     /// Whether every directory in this row's subtree was listed in full, so its tallies and
-    /// [`Self::mtime_ns`] are exact rather than lower bounds; `None` for a file.
+    /// [`Self::time`] are exact rather than lower bounds; `None` for a file.
     ///
     /// False at a scan-depth boundary, below a listing that failed, and in an opened root
     /// for a directory discovery has not listed yet, by the rule a list row's
     /// [`FileRow::complete`] follows.
     pub complete: Option<bool>,
-    /// Signed nanoseconds from [`Self::mtime_ns`] to the report's
-    /// [`Report::age_reference_ns`], negative for a time after it; `None` when the row
+    /// Signed nanoseconds from [`Self::time`] on the report's clock ([`Report::time`]) to
+    /// its [`Report::age_reference_ns`], negative for a time after it; `None` when the row
     /// counts nothing, when its subtree is incomplete, since a lower-bound maximum is not
     /// an age, or when the reference cannot be represented.
     pub age_ns: Option<i128>,
@@ -944,7 +999,7 @@ impl IgnoredTally {
         }
     }
 
-    fn add(&mut self, other: Self) {
+    pub(super) fn add(&mut self, other: Self) {
         self.files = self.files.saturating_add(other.files);
         self.dirs = self.dirs.saturating_add(other.dirs);
         self.bytes = self.bytes.saturating_add(other.bytes);
@@ -1283,7 +1338,7 @@ pub struct ContentReportMetadata {
     pub provenance: ContentProvenance,
 }
 
-/// One matching entry in a flat view. Directory size and mtime describe its subtree
+/// One matching entry in a flat view. Directory size and times describe its subtree
 /// after exclusions; other entries carry their own metadata. Nested rows may overlap.
 #[derive(Clone, Debug)]
 pub struct FileRow {
@@ -1298,18 +1353,27 @@ pub struct FileRow {
     pub bytes: u64,
     /// Allocated bytes.
     pub allocated: u64,
-    /// Modification time in nanoseconds since the Unix epoch.
-    pub mtime_ns: i64,
+    /// The entry's time on both clocks ([`Attrs::times`](crate::Attrs::times)); a
+    /// measured directory's is the newest of each in its eligible subtree, and a lower
+    /// bound when `complete` is `Some(false)`.
+    pub times: Times,
+    /// Whether the entry's status change was observed; when it was not, `times.changed`
+    /// is its modification time ([`crate::Attrs::times`]), [`Self::changed_ns`] is
+    /// `None`, as a watch record's is for the same entry, and a report that counts a
+    /// regular file by change time says how many files it so timed. Always true for a
+    /// directory, whose times are maxima.
+    pub status_observed: bool,
     /// Descendant regular files for a directory; absent for other entry kinds.
     pub files: Option<u64>,
     /// Descendant directories, excluding the matching root; absent for other kinds.
     pub dirs: Option<u64>,
     /// Whether a directory's eligible subtree was listed in full, so its bytes, counts,
-    /// and modification time are exact; `Some(false)` makes them lower bounds and its age
-    /// unknown. Absent for other kinds.
+    /// and times are exact; `Some(false)` makes them lower bounds and its age unknown.
+    /// Absent for other kinds.
     pub complete: Option<bool>,
-    /// Signed nanoseconds since modification at the request's reference instant, or
-    /// `None` when the reference is unrepresentable or the subtree is incomplete.
+    /// Signed nanoseconds since the entry's time on the report's clock at the request's
+    /// reference instant, or `None` when the reference is unrepresentable or the subtree
+    /// is incomplete.
     pub age_ns: Option<i128>,
     /// Whether `.gitignore` rules ignore this entry, or `None` when its governing rules
     /// were unobserved or could not be verified.
@@ -1318,6 +1382,16 @@ pub struct FileRow {
     pub sort_value: Option<u64>,
     /// Existing type and heuristic evidence for regular files.
     pub classification: Option<ContentDetection>,
+}
+
+impl FileRow {
+    /// The entry's observed change time, or `None` when its status change was not
+    /// observed and `times.changed` stands in with its modification time; machine
+    /// output's `changed_ns`.
+    #[must_use]
+    pub const fn changed_ns(&self) -> Option<i64> {
+        if self.status_observed { Some(self.times.changed) } else { None }
+    }
 }
 
 /// The aggregate row of a summary view.
@@ -1334,8 +1408,8 @@ pub struct SummaryRow {
     /// The ignored part of what was selected, or `None` when governing rules were
     /// unobserved or could not be verified for a contributing entry.
     pub ignored: Option<IgnoredTally>,
-    /// Newest modification time, when anything was selected.
-    pub newest_mtime_ns: Option<i64>,
+    /// Newest regular file's time on each clock, when any was selected.
+    pub newest_file: Option<Times>,
 }
 
 /// One view's results.
@@ -1393,6 +1467,10 @@ pub enum Section {
     },
     /// A summary view.
     Summary(SummaryRow),
+    /// An age profile.
+    Ages(Box<crate::query::AgeProfile>),
+    /// The filesystems the report touches.
+    Volumes(Box<crate::query::VolumesSection>),
 }
 
 /// The rows of a tree over several roots.
@@ -1437,13 +1515,13 @@ pub struct TreeTotal {
     pub dirs: u64,
     /// The ignored part of the totals, or `None` when any root's is unknown.
     pub ignored: Option<IgnoredTally>,
-    /// The newest regular file under any root ([`TreeNode::newest_mtime_ns`]).
-    pub newest_mtime_ns: Option<i64>,
-    /// The newest activity any root's row counts ([`TreeNode::mtime_ns`]).
-    pub mtime_ns: Option<i64>,
+    /// The newest regular file under any root ([`TreeNode::newest_file`]).
+    pub newest_file: Option<Times>,
+    /// The newest activity any root's row counts ([`TreeNode::time`]).
+    pub time: Option<Times>,
     /// Whether every root was listed in full.
     pub complete: bool,
-    /// Signed nanoseconds from [`Self::mtime_ns`] to the report's age reference, on the
+    /// Signed nanoseconds from [`Self::time`] to the report's age reference, on the
     /// terms of [`TreeNode::age_ns`].
     pub age_ns: Option<i128>,
 }
@@ -1458,6 +1536,8 @@ impl Section {
                 *view
             }
             Self::Summary(_) => ViewSpec::Summary,
+            Self::Ages(_) => ViewSpec::Ages,
+            Self::Volumes(_) => ViewSpec::Volumes,
         }
     }
 }
@@ -1465,7 +1545,8 @@ impl Section {
 /// A rendered answer: provenance, plus one section per requested view.
 #[derive(Clone, Debug)]
 pub struct Report {
-    /// Instant used for modification age, in epoch nanoseconds; unknown outside i64.
+    /// The instant every age is measured from, on the report's clock, in epoch
+    /// nanoseconds; unknown outside i64.
     pub age_reference_ns: Option<i64>,
     /// Requested presentation; Text resolves from each section projection.
     pub format: crate::report_format::Format,
@@ -1515,6 +1596,12 @@ pub struct Report {
     /// printing apparent bytes beside an allocated-bytes ranking looks like a sorting
     /// bug and is worse than either metric alone.
     pub size: SizeMetric,
+    /// Which clock every time in this report is read from, serialised as the request's
+    /// `time`: each row's `time_ns` and `age_ns`, the tree's age column, and `ages`.
+    ///
+    /// Rows keep both clocks ([`FileRow::times`]), so a renderer reads this rather than
+    /// guess which one a row's age was measured on.
+    pub time: TimeBasis,
     /// Registered numeric metric used for sorting, when selected.
     pub sort_metric: Option<&'static str>,
     /// Analyzer identity when sparse content records are present.
@@ -1534,6 +1621,141 @@ pub struct Report {
     pub ignore_rules: ControlCoverage,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
+    /// What the selection admitted beside what the scan retained, serialised as the
+    /// envelope's `selected` and `scanned`.
+    ///
+    /// A filtered tree's root is 100% of what was selected, which reads as the whole tree
+    /// unless the report says otherwise; these two tallies are what lets it say so, in a
+    /// note for people and in fields a parser needs no note for.
+    pub selection: SelectionCoverage,
+}
+
+/// What a report's selection admitted, beside what its scan retained.
+///
+/// Both tallies are the root totals over every root of the report: `selected` is what a
+/// summary of the same selection reports, the files the selection admits or covers, and
+/// `scanned` is the unfiltered root roll-up the index already maintains, of the scan's
+/// own population (under `--ignored=only`, its ignored part), so the pair costs nothing a
+/// report did not already compute. They are equal for a selection that filters nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SelectionCoverage {
+    /// What the selection admitted or covers.
+    pub selected: EntryTotals,
+    /// Everything the scan retained of its population.
+    pub scanned: EntryTotals,
+}
+
+/// Files, directories, and bytes in both metrics, for [`SelectionCoverage`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EntryTotals {
+    /// Regular files.
+    pub files: u64,
+    /// Directories.
+    pub dirs: u64,
+    /// Apparent bytes of the regular files.
+    pub bytes: u64,
+    /// Allocated bytes of the regular files.
+    pub allocated: u64,
+}
+
+impl EntryTotals {
+    fn of(row: &SummaryRow) -> Self {
+        Self { files: row.files, dirs: row.dirs, bytes: row.bytes, allocated: row.allocated }
+    }
+
+    /// What a scan of `population` retained of it, from the index's maintained roll-up.
+    ///
+    /// An `--ignored=only` scan also holds the unignored directories it walks through to
+    /// reach what is ignored, and the `.gitignore` files it reads, which its population
+    /// does not admit: counting them, `scanned` read as more than a selection of the same
+    /// ignored state could ever select, a narrowing no note mentioned (review G7 on
+    /// #209). So its tally is the index's ignored part, an `--ignored=exclude` scan's the
+    /// unignored part, which is all it holds, and a full scan's everything. A selection by
+    /// the same ignored state then selects exactly this.
+    fn of_population(index: &Index, population: IgnoredEntries) -> Self {
+        let Some((all, unignored)) = index.partition_scalars_of(EntryId::ROOT) else {
+            return Self::default();
+        };
+        let held = match population {
+            IgnoredEntries::Include => return Self::of(&summary_from_scalars(all)),
+            IgnoredEntries::Exclude => return Self::of(&summary_from_scalars(unignored)),
+            IgnoredEntries::Only => IgnoredTally::between(all, unignored),
+        };
+        Self { files: held.files, dirs: held.dirs, bytes: held.bytes, allocated: held.allocated }
+    }
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            files: self.files + other.files,
+            dirs: self.dirs + other.dirs,
+            bytes: self.bytes + other.bytes,
+            allocated: self.allocated + other.allocated,
+        }
+    }
+
+    const fn size(self, metric: SizeMetric) -> u64 {
+        match metric {
+            SizeMetric::Apparent => self.bytes,
+            SizeMetric::Allocated => self.allocated,
+        }
+    }
+}
+
+impl SelectionCoverage {
+    /// The note a filtered report ends with, or `None` when its selection admitted every
+    /// file and byte the scan retained, where the note would say nothing.
+    ///
+    /// Files and bytes only: a `--kind file` selection admits no directory row yet every
+    /// file, and its totals are the tree's.
+    ///
+    /// Under a scan that already kept only part of the population (`population` is not
+    /// [`IgnoredEntries::Include`]), what it retained is not the tree, so the note names
+    /// the scan rather than let its total read as the whole tree's (review D2 on #209).
+    ///
+    /// A `time_bounded` selection keeps its note when it admitted everything, as
+    /// `note: selected all 2 files, 98 KiB`: a time window without `--kind file` admits a
+    /// directory whenever anything in it falls inside the window, and every file beneath
+    /// with it, so a root that reads 100% must not read as an unqualified "written since"
+    /// (review D14 on #209). A scan that retained no file has nothing to qualify.
+    fn note(
+        self,
+        metric: SizeMetric,
+        population: IgnoredEntries,
+        axes: &AxisNames,
+        time_bounded: bool,
+    ) -> Option<String> {
+        let (selected, scanned) = (self.selected, self.scanned);
+        let everything =
+            selected.files == scanned.files && selected.size(metric) == scanned.size(metric);
+        if everything && (!time_bounded || scanned.files == 0) {
+            return None;
+        }
+        let human = crate::report_format::human_count;
+        let bytes = crate::report_format::human_bytes;
+        let files = if scanned.files == 1 { "file" } else { "files" };
+        let tally = format!("{} {files}", human(scanned.files));
+        let of = match population {
+            IgnoredEntries::Include => tally,
+            IgnoredEntries::Exclude => {
+                format!("the {tally} an {} scan retained", axes.exclude_ignored)
+            }
+            IgnoredEntries::Only => format!("the {tally} an {} scan retained", axes.only_ignored),
+        };
+        if everything {
+            let whole = match (scanned.files, population) {
+                (1, IgnoredEntries::Include) => format!("the {of}"),
+                (1, _) => of,
+                _ => format!("all {of}"),
+            };
+            return Some(format!("note: selected {whole}, {}", bytes(scanned.size(metric))));
+        }
+        Some(format!(
+            "note: selected {} of {of}, {} of {}",
+            human(selected.files),
+            bytes(selected.size(metric)),
+            bytes(scanned.size(metric)),
+        ))
+    }
 }
 
 /// Remarks a report makes about itself.
@@ -1741,10 +1963,41 @@ fn refused_controls_note(
     ))
 }
 
+/// How many other paths a volume row's note names; past this it counts them.
+const NAMED_OTHER_PATHS: usize = 3;
+
+/// The note for a filesystem the report entered at more than one path: each other path by
+/// name when there are few, so a row labelled by one root says which other root or mount
+/// counted on it as well, and otherwise how many.
+fn also_entered_note(labels: Option<&[NamedRoot]>, row: &crate::query::VolumeRow) -> String {
+    let at = crate::report_format::volume_path(labels, row.root, &row.path);
+    let others: Vec<String> = row
+        .also_entered
+        .iter()
+        .map(|(root, path)| crate::report_format::volume_path(labels, *root, path))
+        .collect();
+    let named = match others.as_slice() {
+        [one] => one.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] if others.len() <= NAMED_OTHER_PATHS => {
+            format!("{}, and {last}", rest.join(", "))
+        }
+        _ => format!("{} other paths", crate::report_format::human_count(others.len() as u64)),
+    };
+    format!("note: the filesystem at {at} was also entered at {named}")
+}
+
 /// Build a report from an index.
 ///
-/// Pure: the same index, request, and provenance always produce the same report, and
-/// nothing here reads the filesystem or mutates the index.
+/// Pure: the same index, request, provenance, and capacity observation always produce
+/// the same report, and nothing here reads the filesystem or mutates the index.
+///
+/// `capacity` is what [`observe_volumes`](crate::query::observe_volumes) observed of the
+/// filesystems the index touches, which a serving route makes just before it reads a
+/// request that names the `volumes` view. Capacity is a fact about the host at one
+/// instant, not about the tree, so it is an argument rather than something the reader
+/// looks up: given `None`, a `volumes` view reports every capacity as unknown, with a
+/// note, never as zero. A request that names no `volumes` view reads none of it.
 ///
 /// # Errors
 ///
@@ -1758,8 +2011,9 @@ pub fn report(
     index: &Index,
     request: &Request,
     generated_at: std::time::SystemTime,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> crate::Result<Report> {
-    report_in(index, request, generated_at, NameIdentity::Native)
+    report_in(index, request, generated_at, NameIdentity::Native, capacity)
 }
 
 /// [`report`], with the selection evaluated against the named spelling of each path.
@@ -1771,8 +2025,9 @@ pub(crate) fn report_in(
     request: &Request,
     generated_at: std::time::SystemTime,
     identity: NameIdentity,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> crate::Result<Report> {
-    read_roots(&[index], None, request, generated_at, identity)
+    read_roots(&[index], None, request, generated_at, identity, capacity)
 }
 
 /// Build one report over several roots from one index per root, in the roots' order.
@@ -1783,10 +2038,11 @@ pub(crate) fn report_in(
 /// [`Report::roots`], and every path stays relative to its own root. With one root this is
 /// [`report`], unchanged: no total, no labels, and [`Report::root`] set.
 ///
-/// Pure, as [`report`] is. A caller that already holds an index per root, from
-/// [`open`](crate::open) or [`scan_into_index`](crate::scan::scan_into_index), composes
-/// them here; a one-shot caller uses
-/// [`prepare_roots_report`](crate::prepare_roots_report), which walks each root first.
+/// Pure, as [`report`] is, and given capacity as it is. A caller that already holds an
+/// index per root, from [`open`](crate::open) or
+/// [`scan_into_index`](crate::scan::scan_into_index), composes them here; a one-shot
+/// caller uses [`prepare_roots_report`](crate::prepare_roots_report), which walks each
+/// root first.
 ///
 /// Over several roots on Unix, the overlap check below visits every entry of every index,
 /// so each call costs time in proportion to the entries the indexes hold, not only to the
@@ -1812,6 +2068,7 @@ pub fn report_roots(
     roots: &Roots,
     request: &Request,
     generated_at: std::time::SystemTime,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> crate::Result<Report> {
     let named = roots.as_slice();
     for position in 0..indexes.len().max(named.len()) {
@@ -1849,7 +2106,7 @@ pub fn report_roots(
         }
     }
     let labels = roots.is_several().then_some(roots);
-    read_roots(indexes, labels, request, generated_at, NameIdentity::Native)
+    read_roots(indexes, labels, request, generated_at, NameIdentity::Native, capacity)
 }
 
 /// [`report_roots`] for the engine's own runs, which built each index from its root and
@@ -1860,7 +2117,8 @@ pub(crate) fn read_indexes(
     request: &Request,
     generated_at: std::time::SystemTime,
 ) -> crate::Result<Report> {
-    read_roots(indexes, roots, request, generated_at, NameIdentity::Native)
+    let capacity = crate::query::observe_volumes(indexes, request);
+    read_roots(indexes, roots, request, generated_at, NameIdentity::Native, capacity.as_ref())
 }
 
 /// One root's part of a read: its index, and everything the reader derives from that index
@@ -2022,6 +2280,39 @@ fn totals_fit<'a>(roots: impl Iterator<Item = (&'a Path, [u64; 4])>) -> crate::R
     Ok(())
 }
 
+/// The note for a time sort beside views whose rows carry no time, which keep size order
+/// rather than fall back silently; `None` when the sort reached every sorted view. A
+/// request in which no sorted view carries a time is refused before it is read.
+///
+/// `--reverse` reverses every sorted view, these rows' size order included, so the note
+/// says so rather than describe an order the reader does not see.
+fn timeless_rows_note(query: &Query) -> Option<String> {
+    if query.selection.sort != Some(SortKey::Time) {
+        return None;
+    }
+    let rows: Vec<&str> = query.views.iter().filter_map(|view| view.timeless_rows()).collect();
+    let (last, rest) = rows.split_last()?;
+    let named = match rest {
+        [] => (*last).to_owned(),
+        [first] => format!("{first} and {last}"),
+        _ => format!("{}, and {last}", rest.join(", ")),
+    };
+    let reversed = if query.selection.reverse { ", reversed" } else { "" };
+    Some(format!("note: {named} rows carry no time, so they keep size order{reversed}"))
+}
+
+/// The note for `files` regular files whose status change was not observed, where a
+/// change-time window or `ages` counted them: their change time is their modification
+/// time, a lower bound, and the reader is told so rather than left to take it as observed.
+fn timed_by_modification_note(files: u64) -> String {
+    let (noun, possessive) = if files == 1 { ("file has", "its") } else { ("files have", "their") };
+    format!(
+        "note: {} {noun} no observed status change, so {possessive} modification time stands \
+         for {possessive} change time",
+        crate::report_format::human_count(files)
+    )
+}
+
 /// Read one report from the indexes of its roots, in the roots' order.
 ///
 /// Every section accumulates over each root's [`RootRead`] and finalizes once, so display
@@ -2036,6 +2327,7 @@ fn read_roots(
     request: &Request,
     generated_at: std::time::SystemTime,
     identity: NameIdentity,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> crate::Result<Report> {
     debug_assert!(
         roots.map_or(indexes.len() == 1, |roots| roots.as_slice().len() == indexes.len()),
@@ -2064,6 +2356,7 @@ fn read_roots(
     let mut shared_metric_summaries = (unfiltered && metric_consumers > 1)
         .then(|| metric_summaries(&query.views, &reads, query, content));
 
+    let age_reference_ns = crate::query::system_time_to_nanos(request.now);
     let mut sections: Vec<Section> = query
         .views
         .iter()
@@ -2074,12 +2367,11 @@ fn read_roots(
             if let Some(summary) = shared_metric_summary {
                 return Section::Metrics { view: *view, summary: Box::new(summary) };
             }
-            build_section(*view, &reads, labels, query, content)
+            build_section(*view, &reads, labels, query, content, age_reference_ns, capacity)
         })
         .collect();
 
-    let age_reference_ns = crate::query::system_time_to_nanos(request.now);
-    measure_ages(&mut sections, age_reference_ns);
+    measure_ages(&mut sections, age_reference_ns, query.selection.time);
     let ignore_rules =
         merge_ignore_rules(reads.iter().map(|read| read.index.control_coverage()).collect());
     let (mut notes, mut tips) = display_notes(query, content, &ignore_rules, labels);
@@ -2112,6 +2404,64 @@ fn read_roots(
         }
     }
     tips.extend(retained_refusals_tip(query, &ignore_rules));
+    let population = request.basis.scope.population;
+    let selection =
+        reads.iter().fold(SelectionCoverage::default(), |total, read| SelectionCoverage {
+            selected: total.selected.add(EntryTotals::of(&read.summary())),
+            scanned: total.scanned.add(EntryTotals::of_population(read.index, population)),
+        });
+    // A selection by the ignored state the scan already kept narrows nothing it retained.
+    if query.selection.narrows(population) {
+        notes.extend(selection.note(
+            query.selection.size,
+            population,
+            query.axes,
+            !query.selection.window.is_unbounded(),
+        ));
+    }
+    for section in &sections {
+        if let Section::Volumes(volumes) = section {
+            if volumes
+                .rows
+                .iter()
+                .any(|row| row.unknown_reason.as_deref() == Some(query_volumes::NOT_OBSERVED))
+            {
+                notes.push(
+                    "note: capacity unknown: this read was given no capacity observation \
+                     (pass what observe_volumes observed to the reader)"
+                        .to_owned(),
+                );
+            }
+            for row in volumes.rows.iter().filter(|row| !row.also_entered.is_empty()) {
+                notes.push(also_entered_note(labels, row));
+            }
+        }
+    }
+    // A file the window judged and `ages` banded is counted once. A selection that
+    // filters walks every root or none: with no walk there was no window, and every file
+    // the profile banded is its own count; with one, the walk counted the files the window
+    // judged and, apart, the members it did not, which `ages` bands as well.
+    let walks: Vec<&Walked> = reads.iter().filter_map(|read| read.walked.as_ref()).collect();
+    let judged = walks.iter().map(|walked| walked.timed_by_modification).sum::<u64>();
+    let profiled = sections.iter().find_map(|section| match section {
+        Section::Ages(profile) => Some(profile.timed_by_modification),
+        _ => None,
+    });
+    let timed_by_modification = match profiled {
+        None => judged,
+        Some(profiled) if walks.is_empty() => profiled,
+        Some(_) => {
+            judged
+                + walks
+                    .iter()
+                    .map(|walked| walked.unjudged_members_timed_by_modification)
+                    .sum::<u64>()
+        }
+    };
+    if timed_by_modification > 0 {
+        notes.push(timed_by_modification_note(timed_by_modification));
+    }
+    notes.extend(timeless_rows_note(query));
     // Completeness rises to the root, so a root is incomplete exactly when some directory
     // below it is, and the report when some root is.
     if !query.min_share_for().admits(0, 1)
@@ -2150,6 +2500,7 @@ fn read_roots(
         root: roots.is_none().then(|| index.root_path().to_path_buf()),
         roots: roots.map(|roots| roots.as_slice().to_vec()),
         size: query.selection.size,
+        time: query.selection.time,
         sort_metric: match query.selection.sort {
             Some(SortKey::Metric(name)) => Some(name),
             _ => None,
@@ -2163,6 +2514,7 @@ fn read_roots(
         ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
+        selection,
     })
 }
 
@@ -2312,6 +2664,7 @@ pub(crate) fn report_summary(
         root: roots.is_none().then_some(root),
         roots: roots.map(|roots| roots.as_slice().to_vec()),
         size: query.selection.size,
+        time: query.selection.time,
         sort_metric: match query.selection.sort {
             Some(SortKey::Metric(name)) => Some(name),
             _ => None,
@@ -2321,6 +2674,11 @@ pub(crate) fn report_summary(
         analysis: None,
         ignored_entries: query.selection.ignored,
         ignore_rules,
+        // This tier filters nothing, so what was selected is what was scanned.
+        selection: SelectionCoverage {
+            selected: EntryTotals::of(&summary),
+            scanned: EntryTotals::of(&summary),
+        },
         sections: vec![Section::Summary(summary)],
     }
 }
@@ -2347,6 +2705,12 @@ struct Walked {
     visible_files: BTreeSet<EntryId>,
     /// Selected contents whose ignore classification is unavailable, by ancestor directory.
     unknown_ignored: BTreeSet<EntryId>,
+    /// Files the window counted whose status change was not observed, so the change-time
+    /// clock timed them by modification.
+    timed_by_modification: u64,
+    /// The [`Self::members`] so timed that the window did not count: what `ages`, which
+    /// bands every member, adds to [`Self::timed_by_modification`] for the note.
+    unjudged_members_timed_by_modification: u64,
 }
 
 impl Walked {
@@ -2358,10 +2722,10 @@ impl Walked {
         row
     }
 
-    /// The newest modification time among the entries one directory's row counts, its own
-    /// entry included when the selection admitted it ([`TreeNode::mtime_ns`]).
-    fn activity_of(&self, id: EntryId) -> Option<i64> {
-        self.per_directory.get(&id).and_then(|tally| tally.newest_activity_ns)
+    /// The newest time on each clock among the entries one directory's row counts, its own
+    /// entry included when the selection admitted it ([`TreeNode::time`]).
+    fn activity_of(&self, id: EntryId) -> Option<Times> {
+        self.per_directory.get(&id).and_then(|tally| tally.newest_activity)
     }
 }
 
@@ -2386,11 +2750,11 @@ enum TreeRecency<'a> {
 }
 
 impl TreeRecency<'_> {
-    /// The newest activity directory `id`'s row counts ([`TreeNode::mtime_ns`]).
-    fn activity(self, id: EntryId) -> Option<i64> {
+    /// The newest activity directory `id`'s row counts ([`TreeNode::time`]).
+    fn activity(self, id: EntryId) -> Option<Times> {
         match self {
             Self::Maintained(index) => query_subtrees::maintained_activity(index, id),
-            Self::Unfiltered(table) => table.get(id).and_then(|value| value.newest_ns),
+            Self::Unfiltered(table) => table.get(id).and_then(|value| value.newest),
             Self::Walked { walked, .. } => walked.activity_of(id),
         }
     }
@@ -2413,20 +2777,20 @@ impl TreeRecency<'_> {
 /// Measure every row age in `sections` from `reference_ns`, the report's age reference.
 ///
 /// The one rule for list rows and tree nodes alike: a signed difference from the row's
-/// newest counted modification, and no age at all when the row counts nothing, when the
+/// newest counted time on the report's clock, and no age at all when the row counts nothing, when the
 /// reference cannot be represented, or when the subtree is incomplete. An incomplete
 /// subtree's time is a lower bound, and a lower-bound maximum is not an age: the activity
 /// that would make the directory younger may sit in the part that was never listed.
-fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>) {
-    let age = |mtime_ns: Option<i64>, complete: Option<bool>| match complete {
+fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>, time: TimeBasis) {
+    let age = |times: Option<Times>, complete: Option<bool>| match complete {
         Some(false) => None,
-        Some(true) | None => Some(i128::from(reference_ns?) - i128::from(mtime_ns?)),
+        Some(true) | None => Some(i128::from(reference_ns?) - i128::from(times?.get(time))),
     };
     for section in sections {
         match section {
             Section::Files { rows, .. } => {
                 for row in rows {
-                    row.age_ns = age(Some(row.mtime_ns), row.complete);
+                    row.age_ns = age(Some(row.times), row.complete);
                 }
             }
             Section::Tree { root, roots, .. } => {
@@ -2436,13 +2800,26 @@ fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>) {
                     root.iter_mut().map(|root| &mut **root).collect();
                 if let Some(roots) = roots {
                     if let Some(total) = &mut roots.total {
-                        total.age_ns = age(total.mtime_ns, Some(total.complete));
+                        total.age_ns = age(total.time, Some(total.complete));
                     }
                     stack.extend(roots.trees.iter_mut().map(|tree| &mut tree.tree));
                 }
                 while let Some(node) = stack.pop() {
-                    node.age_ns = age(node.mtime_ns, node.complete);
+                    node.age_ns = age(node.time, node.complete);
                     stack.extend(node.children.iter_mut());
+                }
+            }
+            // A band's edges are ages, fixed; only their instants follow the reference.
+            // Which band holds a file was decided against the request instant, so a watch
+            // whose identity pins the reference repaints when a file crosses an edge and
+            // not merely because the clock moved.
+            Section::Ages(profile) => {
+                let instant = |age: Option<i64>| {
+                    reference_ns.zip(age).and_then(|(reference, age)| reference.checked_sub(age))
+                };
+                for band in &mut profile.bands {
+                    band.since_ns = instant(band.since_age_ns);
+                    band.before_ns = instant(band.before_age_ns);
                 }
             }
             _ => {}
@@ -2453,14 +2830,14 @@ fn measure_ages(sections: &mut [Section], reference_ns: Option<i64>) {
 impl Report {
     /// Measure this report's ages from another reference instant, in epoch nanoseconds.
     ///
-    /// Every age is a function of a row's modification time, its completeness, and the
+    /// Every age is a function of a row's time on the report's clock, its completeness, and the
     /// reference, so this gives exactly the ages the same read at that reference has. A
     /// watch session uses it to compare two repaints with the reference held fixed, so
     /// ages that only grew older do not count as a change.
     #[cfg(feature = "watch")]
     pub(crate) fn measure_ages_from(&mut self, reference_ns: Option<i64>) {
         self.age_reference_ns = reference_ns;
-        measure_ages(&mut self.sections, reference_ns);
+        measure_ages(&mut self.sections, reference_ns, self.time);
     }
 }
 
@@ -2468,15 +2845,15 @@ impl Report {
 /// counts.
 ///
 /// Activity is not a [`SummaryRow`] field because a summary keeps its files-only recency
-/// (`newest_mtime_ns`); it rides in the same map entry so the walk folds it with no
-/// lookup of its own.
+/// (`newest_file`); it rides in the same map entry so the walk folds it with no lookup of
+/// its own.
 #[derive(Clone, Copy, Default)]
 struct DirectoryTally {
     summary: SummaryRow,
-    /// The newest modification time among the counted entries beneath the directory, of
+    /// The newest time on each clock among the counted entries beneath the directory, of
     /// any kind, and of the directory itself once its post-order visit adds its own time
     /// when the selection counted it.
-    newest_activity_ns: Option<i64>,
+    newest_activity: Option<Times>,
 }
 
 /// One directory's unfiltered totals from the roll-up state the index maintains, with its
@@ -2517,6 +2894,8 @@ fn walk(
         visible: BTreeSet::new(),
         visible_files: BTreeSet::new(),
         unknown_ignored: BTreeSet::new(),
+        timed_by_modification: 0,
+        unjudged_members_timed_by_modification: 0,
     };
     // No entry of an index that read no rule can be shown to be ignored or not, so
     // `report_in` refuses a selection by ignored state before it reaches this walk.
@@ -2524,6 +2903,12 @@ fn walk(
         observed || selection.ignored == IgnoredEntries::Include,
         "a selection by ignored state over an unobserving index is refused before the walk"
     );
+
+    // A file with no observed status change is timed by modification on the change-time
+    // clock, and a window counts it in the note only when the rest of the selection admits
+    // it; one a size, kind, or pattern refuses anyway was not decided by its time.
+    let unwindowed = (selection.time == TimeBasis::Changed && !selection.window.is_unbounded())
+        .then(|| Selection { window: TimeWindow::default(), ..selection.clone() });
 
     // (id, path, post-order, covered by a selected ancestor, own time when counted)
     //
@@ -2538,14 +2923,14 @@ fn walk(
             // directory children, both tallied in the pre-order pass below; what is left
             // is to add what each child subtree found deeper down.
             let mut total = walked.per_directory.remove(&id).unwrap_or_default();
-            total.newest_activity_ns = newer(total.newest_activity_ns, own_time);
+            total.newest_activity = newer_times(total.newest_activity, own_time);
             if let Some(children) = index.children_of(id) {
                 for (_, child) in children {
                     if let Some(sub) = walked.per_directory.get(&child) {
                         let sub = *sub;
                         merge_summary(&mut total.summary, &sub.summary);
-                        total.newest_activity_ns =
-                            newer(total.newest_activity_ns, sub.newest_activity_ns);
+                        total.newest_activity =
+                            newer_times(total.newest_activity, sub.newest_activity);
                         if walked.unknown_ignored.contains(&child) {
                             walked.unknown_ignored.insert(id);
                         }
@@ -2579,42 +2964,58 @@ fn walk(
             let classification_admitted =
                 classification.is_some() || selection.ignored == IgnoredEntries::Include;
             let mut measured = *attrs;
+            let mut times = attrs.times();
+            // A directory's times are maxima over its subtree, so its own status change is
+            // not what it reports; every other entry's is, a symlink's as a file's.
+            let status_observed = kind == EntryKind::Dir || attrs.change_time_ns().is_some();
             let subtree = directories.and_then(|values| values.get(&child)).copied();
             if let Some(subtree) = subtree {
                 measured.size = subtree.bytes;
                 measured.allocated = subtree.allocated;
-                measured.mtime_ns = subtree.mtime_ns;
+                times = subtree.times;
             }
-            let (pruned, matches) = query_subtrees::with_candidate(
+            let (pruned, matches, timed_by_modification) = query_subtrees::with_candidate(
                 &child_path,
                 kind,
                 measured,
+                times,
                 ignored,
                 identity,
                 |candidate| {
-                    (query_subtrees::pruned(selection, &candidate), selection.admits(&candidate))
+                    (
+                        query_subtrees::pruned(selection, &candidate),
+                        selection.admits(&candidate),
+                        kind == EntryKind::File
+                            && !status_observed
+                            && unwindowed.as_ref().is_some_and(|rest| rest.admits(&candidate)),
+                    )
                 },
             );
             if pruned {
                 continue;
             }
+            if timed_by_modification && classification_admitted {
+                walked.timed_by_modification += 1;
+            }
             // An incomplete subtree's newest activity is a lower bound, not an age, so no
-            // modification bound can be shown to hold for it: `before` could be disproved
-            // by any unlisted descendant, and `since`, which a lower bound could prove, is
-            // held to the same rule so that a row's presence under a time filter always
-            // means the filter was decided on a complete measurement. A size bound still
-            // matches, since a lower bound at or above the minimum proves the true size is.
+            // time bound, by modification or by change, can be shown to hold for it:
+            // `before` could be disproved by any unlisted descendant, and `since`, which a
+            // lower bound could prove, is held to the same rule so that a row's presence
+            // under a time filter always means the filter was decided on a complete
+            // measurement. A size bound still matches, since a lower bound at or above the
+            // minimum proves the true size is.
+            let time_bounded = !selection.window.is_unbounded();
             let matches = matches
                 && classification_admitted
-                && (selection.modified.is_unbounded()
-                    || subtree.is_none_or(|subtree| subtree.complete));
+                && (!time_bounded || subtree.is_none_or(|subtree| subtree.complete));
             let row = FileRow {
                 root: 0,
                 path: child_path.clone(),
                 kind,
                 bytes: measured.size,
                 allocated: measured.allocated,
-                mtime_ns: measured.mtime_ns,
+                times,
+                status_observed,
                 files: subtree.map(|subtree| subtree.files),
                 dirs: subtree.map(|subtree| subtree.dirs),
                 complete: subtree.map(|subtree| subtree.complete),
@@ -2633,6 +3034,12 @@ fn walk(
                     walked.unknown_ignored.insert(id);
                 }
                 if kind == EntryKind::File {
+                    if selection.time == TimeBasis::Changed
+                        && !status_observed
+                        && !timed_by_modification
+                    {
+                        walked.unjudged_members_timed_by_modification += 1;
+                    }
                     walked.members.push(row);
                     walked.visible_files.insert(child);
                 } else if kind == EntryKind::Dir {
@@ -2643,17 +3050,14 @@ fn walk(
                 // Every counted entry is activity in its directory's row, whatever its
                 // kind; a directory's own time is added by its own post-order visit.
                 if kind != EntryKind::Dir {
-                    tally.newest_activity_ns =
-                        newer(tally.newest_activity_ns, Some(attrs.mtime_ns));
+                    tally.newest_activity = newer_times(tally.newest_activity, Some(attrs.times()));
                 }
                 if kind == EntryKind::File {
                     let own = &mut tally.summary;
                     own.files += 1;
                     own.bytes += attrs.size;
                     own.allocated += attrs.allocated;
-                    own.newest_mtime_ns = Some(
-                        own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
-                    );
+                    own.newest_file = newer_times(own.newest_file, Some(attrs.times()));
                     let bucket = crate::classify::ext_bucket(file_name);
                     if ignored {
                         own.ignored.get_or_insert_with(IgnoredTally::default).add(IgnoredTally {
@@ -2686,7 +3090,7 @@ fn walk(
             }
 
             if kind == EntryKind::Dir {
-                let own_time = counted.then_some(attrs.mtime_ns);
+                let own_time = counted.then_some(attrs.times());
                 stack.push((child, child_path, false, covered || matches, own_time));
             }
         }
@@ -2701,10 +3105,7 @@ fn merge_summary(into: &mut SummaryRow, from: &SummaryRow) {
     into.dirs += from.dirs;
     into.bytes += from.bytes;
     into.allocated += from.allocated;
-    into.newest_mtime_ns = match (into.newest_mtime_ns, from.newest_mtime_ns) {
-        (Some(left), Some(right)) => Some(left.max(right)),
-        (left, right) => left.or(right),
-    };
+    into.newest_file = newer_times(into.newest_file, from.newest_file);
     if let Some(share) = from.ignored {
         into.ignored.get_or_insert_with(IgnoredTally::default).add(share);
     }
@@ -2752,6 +3153,8 @@ fn build_section(
     labels: Option<&[NamedRoot]>,
     query: &Query,
     content: AnalysisSet,
+    now_ns: Option<i64>,
+    capacity: Option<&crate::query::VolumesObservation>,
 ) -> Section {
     if query.tree_for(view) {
         let limits = TreeDisplayLimits {
@@ -2776,6 +3179,44 @@ fn build_section(
     match view {
         ViewSpec::Code => Section::Code(Box::new(code_overview(reads, query, content))),
         ViewSpec::Summary => Section::Summary(sum_roots(reads.iter().map(RootRead::summary))),
+        ViewSpec::Ages => {
+            // The same files `summary` counts, so the bands partition its totals: what a
+            // filtering selection admitted or covers, and otherwise every regular file,
+            // read from the index by id, since banding reads no path (review F5 on #209).
+            use crate::query::query_ages::{AgeCounter, AgedFile, each_file};
+            let observed = reads.iter().all(|read| read.index.observes_controls());
+            let mut ages = AgeCounter::new(now_ns, query.selection.time, observed);
+            for read in reads {
+                match &read.walked {
+                    Some(walked) => walked
+                        .members
+                        .iter()
+                        .filter_map(AgedFile::of_row)
+                        .for_each(|file| ages.count(file)),
+                    None => each_file(read.index, |file| ages.count(file)),
+                }
+            }
+            Section::Ages(Box::new(ages.finish()))
+        }
+        ViewSpec::Volumes => {
+            // What the selection counted on each device: every regular file when it filters
+            // nothing, and otherwise exactly the files its walk counted.
+            let parts = reads
+                .iter()
+                .map(|read| {
+                    let root_device = capacity
+                        .and_then(|seen| seen.root_devices.get(read.root).copied().flatten());
+                    let (entries, tallies) =
+                        query_volumes::devices(read.index, root_device, |id| {
+                            read.walked
+                                .as_ref()
+                                .is_none_or(|walked| walked.visible_files.contains(&id))
+                        });
+                    (read.root, read.index.root_path(), entries, tallies)
+                })
+                .collect();
+            Section::Volumes(Box::new(query_volumes::volumes_section(parts, capacity)))
+        }
         ViewSpec::Extensions => {
             let (rows, total, share_omitted) = extension_rows(reads, query);
             Section::Extensions { rows, total, share_omitted }
@@ -2813,7 +3254,7 @@ fn sum_roots(rows: impl IntoIterator<Item = SummaryRow>) -> SummaryRow {
         total.dirs += row.dirs;
         total.bytes += row.bytes;
         total.allocated += row.allocated;
-        total.newest_mtime_ns = newer(total.newest_mtime_ns, row.newest_mtime_ns);
+        total.newest_file = newer_times(total.newest_file, row.newest_file);
         total.ignored = total.ignored.zip(row.ignored).map(|(mut sum, share)| {
             sum.add(share);
             sum
@@ -2830,7 +3271,10 @@ fn summary_from_scalars(rollup: RollUpScalars) -> SummaryRow {
         bytes: rollup.bytes,
         allocated: rollup.allocated,
         ignored: None,
-        newest_mtime_ns: (rollup.files > 0).then_some(rollup.newest_mtime_ns),
+        newest_file: (rollup.files > 0).then_some(Times {
+            modified: rollup.newest_mtime_ns,
+            changed: rollup.newest_changed_ns,
+        }),
     }
 }
 
@@ -2965,7 +3409,7 @@ fn extension_rows(reads: &[RootRead<'_>], query: &Query) -> (Vec<TypeRow>, usize
                 SizeMetric::Allocated => row.allocated,
             },
             count: |row: &TypeRow| row.files,
-            mtime: |_: &TypeRow| None,
+            time: |_: &TypeRow| None,
             name: borrowed_name(|row: &TypeRow| std::borrow::Cow::Borrowed(row.extension.as_str())),
             content_metric: |_: &TypeRow, _: &MetricDef| None,
             rank: |_: &TypeRow| 0,
@@ -3071,7 +3515,9 @@ impl MetricAccumulator {
             | ViewSpec::Files
             | ViewSpec::Largest
             | ViewSpec::Recent
-            | ViewSpec::Summary => false,
+            | ViewSpec::Summary
+            | ViewSpec::Ages
+            | ViewSpec::Volumes => false,
         };
         if !included {
             return;
@@ -3265,7 +3711,9 @@ impl MetricAccumulator {
             | ViewSpec::Files
             | ViewSpec::Largest
             | ViewSpec::Recent
-            | ViewSpec::Summary => {
+            | ViewSpec::Summary
+            | ViewSpec::Ages
+            | ViewSpec::Volumes => {
                 unreachable!("only grouped views reach metric_summary")
             }
         };
@@ -3288,7 +3736,7 @@ impl MetricAccumulator {
                     },
                 },
                 count: |row: &MetricRow| row.files,
-                mtime: |_: &MetricRow| None,
+                time: |_: &MetricRow| None,
                 name: borrowed_name(|row: &MetricRow| std::borrow::Cow::Borrowed(row.id.as_str())),
                 content_metric: MetricRow::metric_value,
                 rank: |_: &MetricRow| 0,
@@ -3319,7 +3767,7 @@ fn code_overview(reads: &[RootRead<'_>], query: &Query, content: AnalysisSet) ->
     struct SortFacts {
         apparent: u64,
         allocated: u64,
-        newest_mtime_ns: Option<i64>,
+        newest_file: Option<Times>,
         metric: MetricAggregate,
     }
 
@@ -3365,8 +3813,7 @@ fn code_overview(reads: &[RootRead<'_>], query: &Query, content: AnalysisSet) ->
             let facts = sort_facts.entry(language.clone()).or_default();
             facts.apparent = facts.apparent.saturating_add(file.bytes);
             facts.allocated = facts.allocated.saturating_add(file.allocated);
-            facts.newest_mtime_ns =
-                Some(facts.newest_mtime_ns.map_or(file.mtime_ns, |old| old.max(file.mtime_ns)));
+            facts.newest_file = newer_times(facts.newest_file, Some(file.times));
             if let (Some(name), Some(record)) = (sort_metric, record) {
                 if let Some(value) =
                     measured_file_metric(record, classification.file_type.as_str(), name)
@@ -3422,7 +3869,12 @@ fn code_overview(reads: &[RootRead<'_>], query: &Query, content: AnalysisSet) ->
                 value(right_facts).cmp(&value(left_facts))
             }
             SortKey::Count => right.selected.source_files.cmp(&left.selected.source_files),
-            SortKey::Mtime => right_facts.newest_mtime_ns.cmp(&left_facts.newest_mtime_ns),
+            SortKey::Time => {
+                let at = |facts: &SortFacts| {
+                    facts.newest_file.map(|times| times.get(query.selection.time))
+                };
+                at(right_facts).cmp(&at(left_facts))
+            }
             SortKey::Name => left.language.cmp(&right.language),
             SortKey::Metric(_) => {
                 let left_value = left_facts.metric.value(normalized);
@@ -3580,7 +4032,7 @@ fn sort_file_rows_ranked(
                 SizeMetric::Allocated => row.allocated,
             },
             count: |row: &FileRow| row.files.unwrap_or(1),
-            mtime: |row: &FileRow| Some(row.mtime_ns),
+            time: |row: &FileRow| Some(row.times),
             name: borrowed_name(|row: &FileRow| row.path.to_string_lossy()),
             content_metric: |row: &FileRow, _: &MetricDef| row.sort_value,
             rank,
@@ -3750,7 +4202,8 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 kind,
                 bytes: attrs.size,
                 allocated: attrs.allocated,
-                mtime_ns: attrs.mtime_ns,
+                times: attrs.times(),
+                status_observed: kind == EntryKind::Dir || attrs.change_time_ns().is_some(),
                 files: None,
                 dirs: None,
                 complete: None,
@@ -3846,7 +4299,7 @@ fn root_trees(
                 SizeMetric::Allocated => row.allocated,
             },
             count: |(row, _): &(TreeNode, usize)| row.files,
-            mtime: |(row, _): &(TreeNode, usize)| row.mtime_ns,
+            time: |(row, _): &(TreeNode, usize)| row.time,
             name: borrowed_name(|(row, _): &(TreeNode, usize)| {
                 std::borrow::Cow::Borrowed(row.name.as_str())
             }),
@@ -3860,8 +4313,8 @@ fn root_trees(
         files: summary.files,
         dirs: summary.dirs,
         ignored: summary.ignored,
-        newest_mtime_ns: summary.newest_mtime_ns,
-        mtime_ns: rows.iter().fold(None, |newest, (row, _)| newer(newest, row.mtime_ns)),
+        newest_file: summary.newest_file,
+        time: rows.iter().fold(None, |newest, (row, _)| newer_times(newest, row.time)),
         complete: rows.iter().all(|(row, _)| row.complete == Some(true)),
         age_ns: None,
     };
@@ -3894,8 +4347,8 @@ fn tree_root(read: &RootRead<'_>, recency: TreeRecency<'_>, name: String) -> Tre
         files: summary.files,
         dirs: summary.dirs,
         ignored: summary.ignored,
-        newest_mtime_ns: summary.newest_mtime_ns,
-        mtime_ns: recency.activity(EntryId::ROOT),
+        newest_file: summary.newest_file,
+        time: recency.activity(EntryId::ROOT),
         complete: Some(recency.complete(EntryId::ROOT)),
         age_ns: None,
         children: Vec::new(),
@@ -4163,8 +4616,8 @@ fn expand(
             files: node.files,
             dirs: node.dirs,
             ignored: node.ignored,
-            newest_mtime_ns: node.newest_mtime_ns,
-            mtime_ns: node.mtime_ns,
+            newest_file: node.newest_file,
+            time: node.time,
             complete: node.complete,
             age_ns: node.age_ns,
             children: Vec::new(),
@@ -4306,7 +4759,7 @@ fn child_rows(
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 ignored,
-                newest_mtime_ns: Some(attrs.mtime_ns),
+                newest_file: Some(attrs.times()),
             }
         } else {
             match walked {
@@ -4321,8 +4774,8 @@ fn child_rows(
         // A complete child below a partial root's observed total is also below the true
         // (at least as large) total. Only an incomplete child's own unknown contents
         // prevent that proof; unrelated scan errors do not.
-        let (mtime_ns, complete) = match kind {
-            EntryKind::File => (summary.newest_mtime_ns, None),
+        let (time, complete) = match kind {
+            EntryKind::File => (summary.newest_file, None),
             _ => (recency.activity(child), Some(recency.complete(child))),
         };
         if complete != Some(false) && !threshold.admits(value, grand) {
@@ -4346,8 +4799,8 @@ fn child_rows(
                 files: summary.files,
                 dirs: summary.dirs,
                 ignored: summary.ignored,
-                newest_mtime_ns: summary.newest_mtime_ns,
-                mtime_ns,
+                newest_file: summary.newest_file,
+                time,
                 complete,
                 age_ns: None,
                 children: Vec::new(),
@@ -4371,7 +4824,7 @@ fn child_rows(
             count: |(row, _): &(TreeNode, EntryId)| row.files,
             // The activity the age column shows, so the order matches the column it sorts
             // and the order a list sorted by recency already has.
-            mtime: |(row, _): &(TreeNode, EntryId)| row.mtime_ns,
+            time: |(row, _): &(TreeNode, EntryId)| row.time,
             name: borrowed_name(|(row, _): &(TreeNode, EntryId)| {
                 std::borrow::Cow::Borrowed(row.name.as_str())
             }),
@@ -4397,7 +4850,9 @@ fn truncate<T>(rows: &mut Vec<T>, limit: Bound) -> usize {
 struct SortAccessors<S, C, M, N, V, R> {
     size: S,
     count: C,
-    mtime: M,
+    /// A row's time on both clocks, `None` when it counts nothing; a view whose rows carry
+    /// no time ([`ViewSpec::timeless_rows`]) keeps its default order under `--sort time`.
+    time: M,
     name: N,
     content_metric: V,
     /// The rank of the row's root ([`label_ranks`]), which decides before the name does;
@@ -4412,7 +4867,7 @@ fn sort_rows<T>(
     accessors: SortAccessors<
         impl Fn(&T, SizeMetric) -> u64,
         impl Fn(&T) -> u64,
-        impl Fn(&T) -> Option<i64>,
+        impl Fn(&T) -> Option<Times>,
         impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
         impl Fn(&T) -> usize,
@@ -4441,14 +4896,15 @@ fn sort_rows_by<T>(
     accessors: SortAccessors<
         impl Fn(&T, SizeMetric) -> u64,
         impl Fn(&T) -> u64,
-        impl Fn(&T) -> Option<i64>,
+        impl Fn(&T) -> Option<Times>,
         impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
         impl Fn(&T) -> usize,
     >,
 ) {
-    let SortAccessors { size, count, mtime, name, content_metric, rank } = accessors;
-    let key = query.selection.sort.unwrap_or_else(|| view.default_sort());
+    let SortAccessors { size, count, time, name, content_metric, rank } = accessors;
+    let clock = query.selection.time;
+    let key = view.sort_key(query.selection.sort);
     let metric = query.selection.size;
     // A row's name is its path under its root, so the root's rank comes first wherever the
     // name decides: rows read as sorted by label and then path.
@@ -4461,7 +4917,10 @@ fn sort_rows_by<T>(
             // Size, count, and recency read most-first: the interesting end is the top.
             SortKey::Size => size(right, metric).cmp(&size(left, metric)),
             SortKey::Count => count(right).cmp(&count(left)),
-            SortKey::Mtime => mtime(right).cmp(&mtime(left)),
+            SortKey::Time => {
+                let at = |row: &T| time(row).map(|times| times.get(clock));
+                at(right).cmp(&at(left))
+            }
             SortKey::Name => named(left, right),
             SortKey::Metric(metric_name) => {
                 let definition =
@@ -4493,7 +4952,7 @@ mod tests {
     use super::*;
     use crate::engine_contract::{Attrs, Observation, Op};
     use crate::query::query_glob::Pattern;
-    use crate::query::query_selection::ModifiedWindow;
+    use crate::query::query_selection::TimeWindow;
     use std::fs;
     use std::time::{Duration, UNIX_EPOCH};
 
@@ -4510,6 +4969,12 @@ mod tests {
 
     fn upsert(path: &str, kind: EntryKind, attrs: Attrs) -> Op {
         Op::Upsert { path: PathBuf::from(path), kind, attrs }
+    }
+
+    /// A time that [`attrs`] stamped alike on both clocks, as the one value either reads.
+    fn alike(times: Times) -> i64 {
+        assert_eq!(times.modified, times.changed, "stamped alike on both clocks: {times:?}");
+        times.changed
     }
 
     /// A tree with two top-level directories, a nested level, and three extensions.
@@ -4542,8 +5007,8 @@ mod tests {
             files: 1,
             dirs: 0,
             ignored: Some(IgnoredTally::default()),
-            newest_mtime_ns: None,
-            mtime_ns: None,
+            newest_file: None,
+            time: None,
             complete: Some(true),
             age_ns: None,
             children,
@@ -4641,7 +5106,7 @@ mod tests {
             Selection { include: vec![pattern("past"), pattern("future")], ..Selection::default() },
         );
         let mut request = Request::new(Basis::held_by(&index), query, UNIX_EPOCH);
-        let answer = report(&index, &request, UNIX_EPOCH).expect("report");
+        let answer = report(&index, &request, UNIX_EPOCH, None).expect("report");
         let rows = files_of(&answer);
         assert_eq!(answer.age_reference_ns, Some(0));
         assert_eq!(
@@ -4649,7 +5114,7 @@ mod tests {
             [Some(-i128::from(i64::MAX)), Some(10)]
         );
         request.now = UNIX_EPOCH + Duration::from_secs(10_000_000_000);
-        let answer = report(&index, &request, UNIX_EPOCH)
+        let answer = report(&index, &request, UNIX_EPOCH, None)
             .expect("out-of-range reference is representable as unknown age");
         assert_eq!(answer.age_reference_ns, None);
         assert!(files_of(&answer).iter().all(|row| row.age_ns.is_none()));
@@ -4671,7 +5136,7 @@ mod tests {
         );
         let rows = files_of(&report);
         assert_eq!(rows.len(), 2);
-        assert_eq!((rows[0].bytes, rows[0].mtime_ns), (350, 40));
+        assert_eq!((rows[0].bytes, alike(rows[0].times)), (350, 40));
         let Section::Summary(summary) = &report.sections[1] else { panic!("summary") };
         assert_eq!((summary.files, summary.dirs, summary.bytes), (3, 2, 350));
         let Section::Extensions { rows, .. } = &report.sections[2] else { panic!("extensions") };
@@ -4729,7 +5194,7 @@ mod tests {
         let rows = files_of(&run(&index, &query(&[ViewSpec::Files], base.clone())));
         assert_eq!(
             rows.iter()
-                .map(|r| (r.path.to_string_lossy().into_owned(), r.bytes, r.mtime_ns))
+                .map(|r| (r.path.to_string_lossy().into_owned(), r.bytes, alike(r.times)))
                 .collect::<Vec<_>>(),
             [("empty".into(), 0, -10), ("src".into(), 350, 70), (nested.clone(), 0, 60)]
         );
@@ -4739,7 +5204,7 @@ mod tests {
             (0, -10, vec!["empty".to_owned()]),
         ] {
             let selection = Selection {
-                modified: ModifiedWindow { before: Some(before), since: Some(since) },
+                window: TimeWindow { before: Some(before), since: Some(since) },
                 ..base.clone()
             };
             let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
@@ -4784,7 +5249,7 @@ mod tests {
                 &query(&[ViewSpec::Files, ViewSpec::Summary, ViewSpec::Types], selection),
             );
             let row = &files_of(&report)[0];
-            assert_eq!((row.bytes, row.mtime_ns), (bytes, newest));
+            assert_eq!((row.bytes, alike(row.times)), (bytes, newest));
             let Section::Summary(summary) = &report.sections[1] else { panic!("summary") };
             assert_eq!(summary.bytes, bytes);
             let Section::Metrics { summary, .. } = &report.sections[2] else { panic!("types") };
@@ -4810,8 +5275,8 @@ mod tests {
     }
 
     /// A directory whose subtree was not listed in full says so, and its lower-bound
-    /// activity is not an age: it matches no modification bound, in either direction,
-    /// while a size bound still holds on the lower bound it can prove.
+    /// activity is not an age: it matches no time bound on either clock, in either
+    /// direction, while a size bound still holds on the lower bound it can prove.
     #[test]
     fn an_incomplete_subtree_reports_lower_bounds_and_matches_no_time_bound() {
         // `--scan-depth 2`: `env/lib` sits at the boundary, retained and never listed, so
@@ -4848,15 +5313,19 @@ mod tests {
             ],
             "sizes are lower bounds and the age is unknown below the boundary"
         );
-        for modified in [
-            ModifiedWindow { since: None, before: Some(100) },
-            ModifiedWindow { since: Some(0), before: None },
-        ] {
-            assert_eq!(
-                directories(Selection { modified, ..Selection::default() }),
-                vec![("docs".to_string(), Some(true), 30, Some(-50))],
-                "an unknown age satisfies no bound, not even one its lower bound would prove"
-            );
+        // An unlisted descendant could have changed at any time, on either clock.
+        for time in [TimeBasis::Changed, TimeBasis::Modified] {
+            for window in [
+                TimeWindow { since: None, before: Some(100) },
+                TimeWindow { since: Some(0), before: None },
+            ] {
+                assert_eq!(
+                    directories(Selection { window, time, ..Selection::default() }),
+                    vec![("docs".to_string(), Some(true), 30, Some(-50))],
+                    "an unknown age satisfies no bound, not even one its lower bound would \
+                     prove ({time:?})"
+                );
+            }
         }
         assert_eq!(
             directories(Selection { min_size: Some(100), ..Selection::default() }),
@@ -4869,12 +5338,816 @@ mod tests {
             &index,
             &flat(Selection {
                 kinds: vec![EntryKind::File],
-                modified: ModifiedWindow { since: Some(45), before: None },
+                window: TimeWindow { since: Some(45), before: None },
                 ..Selection::default()
             }),
         ));
         assert_eq!(files.len(), 1);
         assert_eq!((files[0].complete, files[0].age_ns), (None, Some(-50)));
+    }
+
+    /// Attributes whose status change differs from their modification time; zero is an
+    /// unobserved status change.
+    fn stamped(size: u64, mtime_ns: i64, ctime_ns: i64) -> Attrs {
+        Attrs { ctime_ns, ..attrs(size, mtime_ns) }
+    }
+
+    /// `copy` holds a file restored with an old modification time, `stale` one that has
+    /// not changed, and `blind` one whose status change was never observed, which the
+    /// change clock therefore times by its modification.
+    fn change_time_sample() -> Index {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("copy", EntryKind::Dir, stamped(0, 5, 100)),
+            upsert("copy/old.bin", EntryKind::File, stamped(40, 1, 100)),
+            upsert("stale", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("stale/a.txt", EntryKind::File, stamped(10, 10, 10)),
+            upsert("blind", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("blind/b.dat", EntryKind::File, stamped(20, 200, 0)),
+        ]));
+        index
+    }
+
+    fn paths(rows: &[FileRow]) -> Vec<String> {
+        rows.iter().map(|row| row.path.to_string_lossy().into_owned()).collect()
+    }
+
+    /// One window read on each clock: the change clock finds the copy that kept an old
+    /// modification time, which the modification clock calls old; a file whose status
+    /// change went unobserved is timed by its modification on both; and a directory's
+    /// time on each clock is the newest of that clock in what it counts.
+    #[test]
+    fn the_change_clock_finds_what_the_modification_clock_misses() {
+        let index = change_time_sample();
+        let window = |kinds: Vec<EntryKind>, time, window| {
+            let sort = Some(SortKey::Name);
+            files_of(&run(
+                &index,
+                &flat(Selection { kinds, window, time, sort, ..Selection::default() }),
+            ))
+        };
+        let since = TimeWindow { since: Some(50), before: None };
+        let before = TimeWindow { since: None, before: Some(50) };
+        let file = || vec![EntryKind::File];
+        let dir = || vec![EntryKind::Dir];
+        let native =
+            |parts: &[&str]| parts.iter().collect::<PathBuf>().to_string_lossy().into_owned();
+        let (copied, blind) = (native(&["copy", "old.bin"]), native(&["blind", "b.dat"]));
+        // The copy's change time is new and its modification time old; the blind file is
+        // new by its modification time, which the change clock reads in its place.
+        assert_eq!(
+            paths(&window(file(), TimeBasis::Changed, since)),
+            [blind.clone(), copied.clone()]
+        );
+        assert_eq!(paths(&window(file(), TimeBasis::Modified, since)), [blind.as_str()]);
+        assert_eq!(
+            paths(&window(file(), TimeBasis::Modified, before)),
+            [copied, native(&["stale", "a.txt"])]
+        );
+        assert_eq!(
+            paths(&window(file(), TimeBasis::Changed, before)),
+            [native(&["stale", "a.txt"])]
+        );
+        // A directory changed when anything it counts changed, on each clock apart.
+        assert_eq!(paths(&window(dir(), TimeBasis::Changed, since)), ["blind", "copy"]);
+        assert_eq!(paths(&window(dir(), TimeBasis::Changed, before)), ["stale"]);
+        assert_eq!(paths(&window(dir(), TimeBasis::Modified, since)), ["blind"]);
+        assert_eq!(paths(&window(dir(), TimeBasis::Modified, before)), ["copy", "stale"]);
+        // Unbounded, every row is listed with both clocks, whichever the report reads.
+        for time in [TimeBasis::Changed, TimeBasis::Modified] {
+            let rows: BTreeMap<String, (Times, bool)> =
+                window(Vec::new(), time, TimeWindow::default())
+                    .iter()
+                    .map(|row| {
+                        (row.path.to_string_lossy().into_owned(), (row.times, row.status_observed))
+                    })
+                    .collect();
+            let at = |modified, changed| Times { modified, changed };
+            assert_eq!(rows["copy"], (at(5, 100), true));
+            assert_eq!(rows[&native(&["copy", "old.bin"])], (at(1, 100), true));
+            assert_eq!(rows["stale"], (at(10, 10), true));
+            assert_eq!(rows["blind"], (at(200, 200), true), "a directory's times are maxima");
+            assert_eq!(rows[&blind], (at(200, 200), false), "timed by its modification");
+        }
+    }
+
+    /// A change-clock window that judged a file by its modification time, for want of an
+    /// observed status change, says how many it so judged, and so does `ages`; a window on
+    /// the modification clock, or no window at all, judged none that way.
+    #[test]
+    fn a_change_clock_window_counts_the_files_it_timed_by_modification() {
+        let index = change_time_sample();
+        let notes =
+            |views: &[ViewSpec], selection: Selection| run(&index, &query(views, selection)).notes;
+        let note = "note: 1 file has no observed status change, so its modification time \
+                    stands for its change time";
+        assert_eq!(timed_by_modification_note(1), note);
+        let summary = &[ViewSpec::Summary][..];
+        let bounded =
+            |window| Selection { kinds: vec![EntryKind::File], window, ..Selection::default() };
+        // Judged by its time whether the window admits it or refuses it.
+        for window in [
+            TimeWindow { since: Some(50), before: None },
+            TimeWindow { since: None, before: Some(50) },
+        ] {
+            assert!(notes(summary, bounded(window)).iter().any(|n| n == note), "{window:?}");
+            let modified = Selection { time: TimeBasis::Modified, ..bounded(window) };
+            assert!(!notes(summary, modified).iter().any(|n| n.contains("status change")));
+        }
+        // A file the rest of the selection refuses was judged by that, whatever its time:
+        // no file in the sample holds a kibibyte, so that minimum leaves none so timed.
+        let larger = Selection {
+            min_size: Some(1024),
+            ..bounded(TimeWindow { since: Some(50), before: None })
+        };
+        assert!(!notes(summary, larger).iter().any(|n| n.contains("status change")));
+        assert!(!notes(summary, Selection::default()).iter().any(|n| n.contains("status change")));
+        // `ages` bands every file by its time, so it counts the file without a window; on
+        // the modification clock it needs no status change. Beside a window the two count
+        // the same file once.
+        let ages = &[ViewSpec::Ages][..];
+        assert!(notes(ages, Selection::default()).iter().any(|n| n == note));
+        let modified = Selection { time: TimeBasis::Modified, ..Selection::default() };
+        assert!(!notes(ages, modified).iter().any(|n| n.contains("status change")));
+        let both = &[ViewSpec::Summary, ViewSpec::Ages][..];
+        let windowed = bounded(TimeWindow { since: Some(50), before: None });
+        assert_eq!(
+            notes(both, windowed)
+                .iter()
+                .filter(|n| n.contains("status change"))
+                .collect::<Vec<_>>(),
+            [note]
+        );
+        assert_eq!(
+            timed_by_modification_note(2_000),
+            "note: 2,000 files have no observed status change, so their modification time \
+             stands for their change time"
+        );
+    }
+
+    /// The note counts the union of what a window judged and what `ages` banded. A file a
+    /// selected directory covers is banded though the rest of the selection refuses it,
+    /// and a file the window refuses was judged though no band holds it, so neither count
+    /// contains the other.
+    #[test]
+    fn the_note_counts_a_window_and_ages_once_each_where_neither_holds_the_other() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("big", EntryKind::Dir, stamped(0, 5, 100)),
+            upsert("big/huge.bin", EntryKind::File, stamped(2_000, 300, 300)),
+            upsert("big/small.dat", EntryKind::File, stamped(10, 200, 0)),
+            upsert("far", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("far/large.dat", EntryKind::File, stamped(1_500, 20, 0)),
+        ]));
+        let selection = Selection {
+            min_size: Some(1_024),
+            window: TimeWindow { since: Some(100), before: None },
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Summary, ViewSpec::Ages], selection));
+        let counted: Vec<_> =
+            report.notes.iter().filter(|note| note.contains("status change")).collect();
+        assert_eq!(counted, [&timed_by_modification_note(2)], "{:?}", report.notes);
+    }
+
+    /// A test cannot give a file an old change time, so the old side comes from moving the
+    /// request's instant: every window resolves against `request.now`.
+    ///
+    /// Unix only, where setting a modification time is itself a status change by POSIX;
+    /// a Windows walker reads change time from each entry's handle, which the synthetic
+    /// tests above cover through the same selection.
+    #[cfg(unix)]
+    #[test]
+    fn the_change_clock_finds_a_backdated_file_and_both_clocks_age_with_the_requests_instant() {
+        use crate::query::{AxisNames, ReadSpec, RequestSpec};
+        let root = tempfile::tempdir().expect("root");
+        fs::write(root.path().join("fresh.txt"), "written now").expect("fresh");
+        fs::write(root.path().join("copied.txt"), "kept an old time").expect("copied");
+        // What `cp -p`, `tar -x`, and `touch -d` do: restore an old modification time.
+        let two_years = Duration::from_secs(2 * 365 * 86_400);
+        fs::File::options()
+            .write(true)
+            .open(root.path().join("copied.txt"))
+            .expect("open for timestamp")
+            .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::now() - two_years))
+            .expect("set timestamp");
+        let (index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        let names = |now: std::time::SystemTime, read: ReadSpec<'_>| {
+            let spec = RequestSpec {
+                read: ReadSpec { views: Some("files"), kinds: Some("file"), ..read },
+                ..RequestSpec::new(root.path())
+            };
+            let request = Request::build(&spec, now, &AxisNames::FIELDS).expect("parses");
+            paths(&files_of(&report(&index, &request, generated_at(), None).expect("report")))
+        };
+        let (both, fresh, copied) = (["copied.txt", "fresh.txt"], ["fresh.txt"], ["copied.txt"]);
+        let none: [&str; 0] = [];
+        let now = std::time::SystemTime::now() + Duration::from_secs(1);
+        let since = |since, time| ReadSpec { since: Some(since), time, ..ReadSpec::new() };
+        let before = |before, time| ReadSpec { before: Some(before), time, ..ReadSpec::new() };
+        let (changed, modified) = (Some("changed"), Some("modified"));
+        assert_eq!(names(now, since("1h", None)), both, "the default clock sees the copy as new");
+        assert_eq!(names(now, since("1h", changed)), both);
+        assert_eq!(names(now, since("1h", modified)), fresh, "modification time does not");
+        // The same file is new by one clock and old by the other.
+        assert_eq!(names(now, before("365d", modified)), copied);
+        assert_eq!(names(now, before("365d", changed)), none);
+
+        // Four hundred days on, both files are old by both clocks.
+        let later = now + Duration::from_secs(400 * 86_400);
+        for time in [changed, modified] {
+            assert_eq!(names(later, since("365d", time)), none, "{time:?}");
+            assert_eq!(names(later, before("365d", time)), both, "{time:?}");
+        }
+
+        // The age profile moves with the instant too, on the request's clock: both files
+        // arrived under an hour ago by change time, while by modification time the copy is
+        // two years old; 400 days on, both have aged by as much.
+        let bands = |now: std::time::SystemTime, time| {
+            let spec = RequestSpec {
+                read: ReadSpec { views: Some("ages"), time, ..ReadSpec::new() },
+                ..RequestSpec::new(root.path())
+            };
+            let request = Request::build(&spec, now, &AxisNames::FIELDS).expect("parses");
+            match &report(&index, &request, generated_at(), None).expect("report").sections[0] {
+                Section::Ages(profile) => profile
+                    .bands
+                    .iter()
+                    .filter(|band| band.tally.files > 0)
+                    .map(|band| (band.band, band.tally.files))
+                    .collect::<Vec<_>>(),
+                other => panic!("expected ages, got {other:?}"),
+            }
+        };
+        assert_eq!(bands(now, changed), [("under 1h", 2)]);
+        assert_eq!(bands(now, modified), [("under 1h", 1), ("1y to 3y", 1)]);
+        assert_eq!(bands(later, changed), [("1y to 3y", 2)]);
+        assert_eq!(bands(later, modified), [("1y to 3y", 1), ("over 3y", 1)]);
+    }
+
+    /// A filtered root is 100% of what was selected; the coverage note and the envelope's
+    /// two tallies say how much of the scanned tree that is.
+    #[test]
+    fn a_filtered_report_says_how_much_of_the_scan_it_selected() {
+        let index = sample();
+        let reported = |selection: Selection| {
+            run(
+                &index,
+                &query(&[ViewSpec::Tree], Selection { size: SizeMetric::Apparent, ..selection }),
+            )
+        };
+        let tree = EntryTotals { files: 5, dirs: 3, bytes: 657, allocated: 2560 };
+        let rust = reported(Selection { include: vec![pattern("*.rs")], ..Selection::default() });
+        assert_eq!(rust.selection.scanned, tree);
+        assert_eq!((rust.selection.selected.files, rust.selection.selected.bytes), (3, 350));
+        assert!(
+            rust.notes.iter().any(|note| note == "note: selected 3 of 5 files, 350 B of 657 B"),
+            "{:?}",
+            rust.notes
+        );
+        // Nothing filtered, or a filter that admits every file and byte: no note, and the
+        // two tallies agree.
+        for selection in [
+            Selection::default(),
+            Selection { kinds: vec![EntryKind::File], ..Selection::default() },
+        ] {
+            let report = reported(selection);
+            assert_eq!(report.selection.scanned, tree);
+            assert_eq!(report.selection.selected.files, tree.files);
+            assert!(
+                !report.notes.iter().any(|note| note.contains("selected")),
+                "{:?}",
+                report.notes
+            );
+        }
+        // A display bound is not a selection, and has its own note.
+        let bounded = reported(Selection { depth: Some(Bound::Limit(1)), ..Selection::default() });
+        assert!(!bounded.notes.iter().any(|note| note.contains("selected")));
+    }
+
+    /// A scan that keeps part of the tree counts only that part as `scanned`. An
+    /// `--ignored=only` scan also holds the unignored directories it walks through to
+    /// reach what is ignored and the `.gitignore` files it reads, which its population
+    /// does not admit; counted, they made `scanned` more than a selection of the same
+    /// ignored state could select, a narrowing no note mentioned (review G7 on #209).
+    #[test]
+    fn a_narrowed_scan_counts_only_its_own_population_as_scanned() {
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir_all(root.path().join("build/out")).expect("build");
+        fs::create_dir_all(root.path().join("src/deep")).expect("src");
+        fs::write(root.path().join(".gitignore"), "build/\n*.log\n").expect("rules");
+        fs::write(root.path().join("build/out/a.o"), vec![0_u8; 2_000]).expect("object");
+        fs::write(root.path().join("src/x.log"), vec![0_u8; 300]).expect("log");
+        fs::write(root.path().join("src/main.rs"), "fn main() {}\n").expect("source");
+        let summary = |index: &Index, selection: Selection| {
+            run(
+                index,
+                &query(&[ViewSpec::Summary], Selection { size: SizeMetric::Apparent, ..selection }),
+            )
+        };
+        for (population, files, bytes) in
+            [(IgnoredEntries::Exclude, 2, 26), (IgnoredEntries::Only, 2, 2_300)]
+        {
+            let config = crate::ScanConfig { population, ..crate::ScanConfig::default() };
+            let (index, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+            let same = summary(&index, Selection { ignored: population, ..Selection::default() });
+            assert_eq!(same.selection.selected, same.selection.scanned, "{population:?}");
+            assert_eq!(
+                (same.selection.scanned.files, same.selection.scanned.bytes),
+                (files, bytes),
+                "{population:?}"
+            );
+            assert!(!same.notes.iter().any(|note| note.contains("selected")), "{:?}", same.notes);
+        }
+        // A narrower selection is measured against the ignored files alone.
+        let config =
+            crate::ScanConfig { population: IgnoredEntries::Only, ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+        let objects = summary(
+            &index,
+            Selection {
+                ignored: IgnoredEntries::Only,
+                include: vec![pattern("*.o")],
+                ..Selection::default()
+            },
+        );
+        assert!(
+            objects.notes.iter().any(|note| note
+                == "note: selected 1 of the 2 files an ignored=only scan retained, 1.9 KiB of 2.2 KiB"),
+            "{:?}",
+            objects.notes
+        );
+    }
+
+    /// The plan's identities for `ages`, on each clock: the bands partition `summary`, and
+    /// each band is the `--kind file` window it names, over the same selection, clock, and
+    /// instant. A file whose status change went unobserved is banded by its modification
+    /// time on the change clock, as that clock's window judges it.
+    #[test]
+    fn every_age_band_is_its_window_and_the_bands_partition_the_summary() {
+        const HOUR: i64 = 3_600_000_000_000;
+        const DAY: i64 = 24 * HOUR;
+        let now_ns: i64 = 1_800_000_000_000_000_000;
+        let mut ops = vec![upsert("d", EntryKind::Dir, stamped(0, now_ns - 5, now_ns - 5))];
+        // One file per band and on each side of its edges, each with a modification time
+        // older than its change time, as a copy has.
+        let ages = [-3, 0, 1, HOUR, HOUR + 1, DAY, 3 * DAY, 8 * DAY, 40 * DAY, 100 * DAY];
+        let ages = ages.into_iter().chain([400 * DAY, 2_000 * DAY]);
+        for (position, age) in ages.enumerate() {
+            let size = 10 + position as u64;
+            let changed = now_ns - age;
+            ops.push(upsert(
+                &format!("d/f{position}"),
+                EntryKind::File,
+                stamped(size, changed - 10 * DAY, changed),
+            ));
+        }
+        ops.push(upsert("d/blind", EntryKind::File, stamped(5, now_ns, 0)));
+        ops.push(upsert("loose.txt", EntryKind::File, stamped(7, now_ns - DAY, now_ns - DAY)));
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(ops));
+        let now =
+            UNIX_EPOCH + Duration::from_nanos(u64::try_from(now_ns).expect("after the epoch"));
+        let read = |selection: Selection, view: ViewSpec| {
+            let query = Query {
+                selection: Selection { size: SizeMetric::Apparent, ..selection },
+                views: vec![view],
+                ..Query::default()
+            };
+            report(&index, &Request::new(Basis::held_by(&index), query, now), generated_at(), None)
+                .expect("report")
+                .sections
+                .remove(0)
+        };
+        let summary = |selection: Selection| match read(selection, ViewSpec::Summary) {
+            Section::Summary(row) => (row.files, row.bytes),
+            other => panic!("expected a summary, got {other:?}"),
+        };
+        let profile = |selection: Selection| match read(selection, ViewSpec::Ages) {
+            Section::Ages(profile) => profile,
+            other => panic!("expected ages, got {other:?}"),
+        };
+        for time in [TimeBasis::Changed, TimeBasis::Modified] {
+            // A directory match covers its contents, in ages as in summary, so the bands
+            // partition what it covers. Its bands are not `--kind file` windows, which
+            // would replace the kind that selected the directory.
+            let covering = Selection {
+                kinds: vec![EntryKind::Dir],
+                include: vec![pattern("d")],
+                time,
+                ..Selection::default()
+            };
+            let covered = profile(covering.clone());
+            assert_eq!((covered.total.files, covered.total.bytes), summary(covering), "{time:?}");
+            assert_eq!(covered.total.files, 13, "d's files, not loose.txt");
+            for selection in [
+                Selection { time, ..Selection::default() },
+                Selection { include: vec![pattern("d/**")], time, ..Selection::default() },
+            ] {
+                let ages = profile(selection.clone());
+                assert_eq!((ages.total.files, ages.total.bytes), summary(selection.clone()));
+                assert_eq!(ages.bands.len(), 9, "future .. over 3y");
+                let mut banded = (0, 0);
+                for band in &ages.bands {
+                    let window = Selection {
+                        kinds: vec![EntryKind::File],
+                        window: TimeWindow { since: band.since_ns, before: band.before_ns },
+                        ..selection.clone()
+                    };
+                    assert_eq!(
+                        (band.tally.files, band.tally.bytes),
+                        summary(window),
+                        "{} is its window ({time:?})",
+                        band.band
+                    );
+                    banded = (banded.0 + band.tally.files, banded.1 + band.tally.bytes);
+                    assert_eq!(
+                        (band.cumulative.files, band.cumulative.bytes),
+                        banded,
+                        "{} holds every newer band",
+                        band.band
+                    );
+                }
+                assert_eq!(banded, (ages.total.files, ages.total.bytes), "the bands partition");
+                let blind = u64::from(time == TimeBasis::Changed);
+                assert_eq!(ages.timed_by_modification, blind, "d/blind, on the change clock");
+            }
+        }
+        let files = |time| -> Vec<u64> {
+            profile(Selection { time, ..Selection::default() })
+                .bands
+                .iter()
+                .map(|band| band.tally.files)
+                .collect()
+        };
+        // `d/blind`'s modification time is the request instant, `future` on both clocks;
+        // every other file in `d` was modified ten days before it changed.
+        assert_eq!(files(TimeBasis::Changed), [3, 2, 3, 1, 1, 1, 1, 1, 1], "future .. over 3y");
+        assert_eq!(files(TimeBasis::Modified), [1, 0, 1, 0, 8, 1, 1, 1, 1], "future .. over 3y");
+    }
+
+    /// An unfiltered `ages` reads every regular file from the index by id, building no
+    /// row and no path (review F5 on #209); a selection that filters nothing but walks
+    /// (`min_size` of zero) bands the walk's members. The two routes give one profile on
+    /// both clocks: every band's tally, ignored part, and cumulative tally, the total, and
+    /// the count of files timed by modification.
+    #[test]
+    fn an_unfiltered_age_profile_from_the_index_is_the_walked_one() {
+        const DAY: i64 = 86_400_000_000_000;
+        let now_ns: i64 = 1_800_000_000_000_000_000;
+        let mut ops = vec![
+            upsert("a", EntryKind::Dir, stamped(0, now_ns - DAY, now_ns - DAY)),
+            upsert("a/b", EntryKind::Dir, stamped(0, now_ns - 2 * DAY, now_ns - DAY)),
+            upsert("a/link", EntryKind::Symlink, stamped(3, now_ns, now_ns)),
+            upsert("a/blind.bin", EntryKind::File, stamped(5, now_ns - 4 * DAY, 0)),
+        ];
+        for (position, age) in [0, 1, 3, 9, 40, 100, 400, 2_000].into_iter().enumerate() {
+            let changed = now_ns - age * DAY;
+            let parent = if position % 2 == 0 { "a" } else { "a/b" };
+            ops.push(upsert(
+                &format!("{parent}/f{position}"),
+                EntryKind::File,
+                stamped(10 + position as u64, changed - 30 * DAY, changed),
+            ));
+        }
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(ops));
+        let now =
+            UNIX_EPOCH + Duration::from_nanos(u64::try_from(now_ns).expect("after the epoch"));
+        let profile = |index: &Index, now, selection: Selection| {
+            let query = Query { selection, views: vec![ViewSpec::Ages], ..Query::default() };
+            match report(index, &Request::new(Basis::held_by(index), query, now), now, None)
+                .expect("report")
+                .sections
+                .remove(0)
+            {
+                Section::Ages(profile) => *profile,
+                other => panic!("expected ages, got {other:?}"),
+            }
+        };
+        let both = |index: &Index, now, time| {
+            let unfiltered = Selection { time, ..Selection::default() };
+            assert!(
+                !Query { selection: unfiltered.clone(), ..Query::default() }.needs_selection_walk()
+            );
+            let walked = Selection { min_size: Some(0), ..unfiltered.clone() };
+            (profile(index, now, unfiltered), profile(index, now, walked))
+        };
+        for time in [TimeBasis::Changed, TimeBasis::Modified] {
+            let (from_index, walked) = both(&index, now, time);
+            assert_eq!(from_index, walked, "{time:?}");
+            assert_eq!(from_index.total.files, 9, "{time:?}");
+            assert_eq!(from_index.timed_by_modification, u64::from(time == TimeBasis::Changed));
+        }
+
+        // Ignored parts, from a real walk: rules read in full give each band its part,
+        // `noise.log` and `guarded/uncertain.rs`, and a refused rule leaves the files below
+        // it, and so every band, without one.
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir_all(root.path().join("guarded")).expect("directory");
+        fs::write(root.path().join(".gitignore"), "*.log\n").expect("rules");
+        fs::write(root.path().join("kept.rs"), "fn kept() {}\n").expect("kept");
+        fs::write(root.path().join("noise.log"), "noise\n").expect("ignored");
+        fs::write(root.path().join("guarded/.gitignore"), "*.rs\n").expect("refused rules");
+        fs::write(root.path().join("guarded/uncertain.rs"), "fn uncertain() {}\n")
+            .expect("uncertain");
+        let now = std::time::SystemTime::now();
+        for line_limit in [None, Some(1)] {
+            let config = crate::ScanConfig {
+                control_limits: crate::control::ControlLimits {
+                    line_limit,
+                    ..crate::control::ControlLimits::default()
+                },
+                ..crate::ScanConfig::default()
+            };
+            let (index, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+            for time in [TimeBasis::Changed, TimeBasis::Modified] {
+                let (from_index, walked) = both(&index, now, time);
+                assert_eq!(from_index, walked, "{line_limit:?} {time:?}");
+                let ignored = from_index.total.ignored.map(|part| part.files);
+                assert_eq!(ignored, line_limit.is_none().then_some(2), "{line_limit:?} {time:?}");
+            }
+        }
+    }
+
+    /// An entry whose status change was not observed says so on its list row whatever its
+    /// kind, as its watch record does (review F8 on #209): a symlink's row gives no
+    /// `changed_ns`, as a file's does not, while a directory's, whose times are maxima,
+    /// always observes. The note still counts the regular files a window timed by
+    /// modification, which is all its wording claims.
+    #[test]
+    fn an_unobserved_status_change_is_unobserved_on_every_row_but_a_directorys() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, stamped(0, 40, 0)),
+            upsert("d/blind.bin", EntryKind::File, stamped(5, 40, 0)),
+            upsert("d/blind-link", EntryKind::Symlink, stamped(3, 40, 0)),
+            upsert("d/seen-link", EntryKind::Symlink, stamped(3, 40, 60)),
+        ]));
+        let rows = |selection: Selection| {
+            let report = run(&index, &flat(selection));
+            let Section::Files { rows, .. } = &report.sections[0] else { panic!("files") };
+            let rows: Vec<_> = rows
+                .iter()
+                .map(|row| (row.path.to_string_lossy().into_owned(), row.changed_ns()))
+                .collect();
+            (rows, report.notes)
+        };
+        // Rows name paths with the platform's separator.
+        let native =
+            |parts: &[&str]| parts.iter().collect::<PathBuf>().to_string_lossy().into_owned();
+        let expected = [
+            (native(&["d"]), Some(60)),
+            (native(&["d", "blind-link"]), None),
+            (native(&["d", "blind.bin"]), None),
+            (native(&["d", "seen-link"]), Some(60)),
+        ];
+        // Unfiltered, from every entry; and walked, by a selection that filters nothing.
+        for selection in
+            [Selection::default(), Selection { min_size: Some(0), ..Selection::default() }]
+        {
+            assert_eq!(rows(selection.clone()).0, expected, "{selection:?}");
+        }
+        // Each row's `changed_ns` is what a watch record gives the same entry, but a
+        // directory's, which is its subtree's newest.
+        for (path, changed) in &expected[1..] {
+            let attrs = index.attrs(Path::new(path)).expect("retained");
+            assert_eq!(attrs.change_time_ns(), *changed, "{path}");
+        }
+        let windowed = Selection {
+            window: TimeWindow { since: Some(10), before: None },
+            ..Selection::default()
+        };
+        let (_, notes) = rows(windowed);
+        assert!(notes.contains(&timed_by_modification_note(1)), "the file alone: {notes:?}");
+    }
+
+    /// A filesystem entered at a few other paths names them, so a row labelled by one root
+    /// says which other root or mount counted on it as well; past three it counts them
+    /// (review F16 on #209).
+    #[test]
+    fn a_filesystem_entered_at_a_few_other_paths_names_them() {
+        let row = |others: &[&str]| crate::query::VolumeRow {
+            device: 1,
+            root: 0,
+            path: PathBuf::new(),
+            absolute: PathBuf::from("/srv"),
+            also_entered: others.iter().map(|path| (0, PathBuf::from(path))).collect(),
+            capacity: None,
+            unknown_reason: None,
+            counted: crate::query::VolumeCounted::default(),
+        };
+        let note = |others: &[&str]| also_entered_note(None, &row(others));
+        assert_eq!(note(&["a/mnt"]), "note: the filesystem at . was also entered at a/mnt");
+        assert_eq!(note(&["a", "b"]), "note: the filesystem at . was also entered at a and b");
+        assert_eq!(
+            note(&["a", "b", "c"]),
+            "note: the filesystem at . was also entered at a, b, and c"
+        );
+        assert_eq!(
+            note(&["a", "b", "c", "d"]),
+            "note: the filesystem at . was also entered at 4 other paths"
+        );
+        // Over several roots, each path is named after its root's label, as a row is: the
+        // row `fdu t1 empty --view volumes` labels `empty` names `t1` as well.
+        let base = tempfile::tempdir().expect("base");
+        let (empty, t1) = (base.path().join("empty"), base.path().join("t1"));
+        fs::create_dir(&empty).expect("empty");
+        fs::create_dir(&t1).expect("t1");
+        let roots = Roots::resolve(&[empty, t1]).expect("disjoint roots");
+        let label =
+            |root| crate::report_format::volume_path(Some(roots.as_slice()), root, Path::new(""));
+        let mut two = row(&[]);
+        two.also_entered = vec![(1, PathBuf::new())];
+        let note = also_entered_note(Some(roots.as_slice()), &two);
+        assert_eq!(
+            note,
+            format!("note: the filesystem at {} was also entered at {}", label(0), label(1))
+        );
+        assert!(label(1).ends_with("t1"), "{note}");
+    }
+
+    /// A scan that kept only part of the population retained less than the tree, so a
+    /// selection that repeats its population narrows nothing, and a note over it names
+    /// the scan (review D2 on #209).
+    #[test]
+    fn coverage_under_a_narrowed_population_names_the_scan() {
+        let exclude = Selection { ignored: IgnoredEntries::Exclude, ..Selection::default() };
+        assert!(!exclude.narrows(IgnoredEntries::Exclude));
+        assert!(exclude.narrows(IgnoredEntries::Include));
+        let files = Selection { kinds: vec![EntryKind::File], ..exclude.clone() };
+        assert!(files.narrows(IgnoredEntries::Exclude));
+        let coverage = SelectionCoverage {
+            selected: EntryTotals { files: 1, dirs: 0, bytes: 10, allocated: 512 },
+            scanned: EntryTotals { files: 4, dirs: 1, bytes: 40, allocated: 2048 },
+        };
+        let note = |population| {
+            coverage
+                .note(SizeMetric::Apparent, population, &AxisNames::FLAGS, false)
+                .expect("narrowed")
+        };
+        assert_eq!(note(IgnoredEntries::Include), "note: selected 1 of 4 files, 10 B of 40 B");
+        assert_eq!(
+            note(IgnoredEntries::Exclude),
+            "note: selected 1 of the 4 files an --ignored=exclude scan retained, 10 B of 40 B"
+        );
+        assert_eq!(
+            coverage
+                .note(SizeMetric::Apparent, IgnoredEntries::Only, &AxisNames::FIELDS, false)
+                .expect("narrowed"),
+            "note: selected 1 of the 4 files an ignored=only scan retained, 10 B of 40 B"
+        );
+    }
+
+    /// A time window that admitted every file keeps its note, saying so, where any other
+    /// selection that admitted everything says nothing: a window without `--kind file`
+    /// admits a directory whenever anything in it falls inside, and every file beneath
+    /// with it, so the root's 100% must not read as an unqualified "written since"
+    /// (review D14 on #209).
+    #[test]
+    fn a_time_window_that_selected_everything_says_so() {
+        let totals = |files, bytes| EntryTotals { files, dirs: 1, bytes, allocated: bytes };
+        let all = |files, bytes| SelectionCoverage {
+            selected: totals(files, bytes),
+            scanned: totals(files, bytes),
+        };
+        let note = |coverage: SelectionCoverage, population, bounded| {
+            coverage.note(SizeMetric::Apparent, population, &AxisNames::FLAGS, bounded)
+        };
+        let two = all(2, 100_352);
+        assert_eq!(note(two, IgnoredEntries::Include, false), None, "no window, nothing said");
+        assert_eq!(
+            note(two, IgnoredEntries::Include, true).as_deref(),
+            Some("note: selected all 2 files, 98 KiB")
+        );
+        assert_eq!(
+            note(two, IgnoredEntries::Exclude, true).as_deref(),
+            Some("note: selected all the 2 files an --ignored=exclude scan retained, 98 KiB")
+        );
+        assert_eq!(
+            note(all(1, 10), IgnoredEntries::Include, true).as_deref(),
+            Some("note: selected the 1 file, 10 B")
+        );
+        assert_eq!(
+            note(all(1, 10), IgnoredEntries::Only, true).as_deref(),
+            Some("note: selected the 1 file an --ignored=only scan retained, 10 B")
+        );
+        assert_eq!(note(all(0, 0), IgnoredEntries::Include, true), None, "nothing to qualify");
+
+        // End to end: a window every file's directory has activity in admits the root, and
+        // the report says it selected everything.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, stamped(0, 5, 5)),
+            upsert("d/new.bin", EntryKind::File, stamped(30, 100, 100)),
+            upsert("d/old.bin", EntryKind::File, stamped(70, 1, 1)),
+        ]));
+        let windowed = Selection {
+            window: TimeWindow { since: Some(50), before: None },
+            size: SizeMetric::Apparent,
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Summary], windowed));
+        assert!(
+            report.notes.iter().any(|note| note == "note: selected all 2 files, 100 B"),
+            "{:?}",
+            report.notes
+        );
+    }
+
+    /// `--sort time` reads the report's clock, newest first or reversed, and a file whose
+    /// status change went unobserved sorts by its modification time on the change clock,
+    /// among the rest rather than after them.
+    #[test]
+    fn a_time_sort_reads_the_reports_clock() {
+        let index = change_time_sample();
+        let sorted = |time, reverse| {
+            let selection = Selection {
+                kinds: vec![EntryKind::File],
+                sort: Some(SortKey::Time),
+                time,
+                reverse,
+                ..Selection::default()
+            };
+            paths(&files_of(&run(&index, &query(&[ViewSpec::Files], selection))))
+        };
+        let native =
+            |parts: &[&str]| parts.iter().collect::<PathBuf>().to_string_lossy().into_owned();
+        let (copy, stale, blind) = (
+            native(&["copy", "old.bin"]),
+            native(&["stale", "a.txt"]),
+            native(&["blind", "b.dat"]),
+        );
+        let changed = [blind.clone(), copy.clone(), stale.clone()];
+        assert_eq!(sorted(TimeBasis::Changed, false), changed);
+        assert_eq!(sorted(TimeBasis::Changed, true), [stale.clone(), copy.clone(), blind.clone()]);
+        assert_eq!(
+            sorted(TimeBasis::Modified, false),
+            [blind.clone(), stale.clone(), copy.clone()]
+        );
+        assert_eq!(sorted(TimeBasis::Modified, true), [copy, stale, blind]);
+    }
+
+    /// Beside a view a time sort orders, rows that carry no time keep size order, and a
+    /// note says so rather than leave the reader to take that order as a time's; with no
+    /// time sort, or none of those rows, there is nothing to say. `--reverse` reverses
+    /// every sorted view, those rows included, and the note says that too.
+    #[test]
+    fn rows_without_a_time_keep_size_order_under_a_time_sort_and_say_so() {
+        let index = change_time_sample();
+        let read = |views: &[ViewSpec], sort, reverse| {
+            let selection =
+                Selection { kinds: vec![EntryKind::File], sort, reverse, ..Selection::default() };
+            run(&index, &query(views, selection))
+        };
+        let extensions = |report: &Report| {
+            report
+                .sections
+                .iter()
+                .find_map(|section| match section {
+                    Section::Extensions { rows, .. } => {
+                        Some(rows.iter().map(|row| row.extension.clone()).collect::<Vec<_>>())
+                    }
+                    _ => None,
+                })
+                .expect("an extensions section")
+        };
+        let both = read(&[ViewSpec::Files, ViewSpec::Extensions], Some(SortKey::Time), false);
+        assert_eq!(extensions(&both), [".bin", ".dat", ".txt"]);
+        let note = "note: extension rows carry no time, so they keep size order";
+        assert!(both.notes.iter().any(|line| line == note), "{:?}", both.notes);
+        let reversed = read(&[ViewSpec::Files, ViewSpec::Extensions], Some(SortKey::Time), true);
+        assert_eq!(extensions(&reversed), [".txt", ".dat", ".bin"], "smallest first");
+        let note = "note: extension rows carry no time, so they keep size order, reversed";
+        assert!(reversed.notes.iter().any(|line| line == note), "{:?}", reversed.notes);
+        for (views, sort, reverse) in [
+            (&[ViewSpec::Files, ViewSpec::Extensions][..], Some(SortKey::Size), false),
+            (&[ViewSpec::Files, ViewSpec::Extensions][..], Some(SortKey::Size), true),
+            (&[ViewSpec::Files, ViewSpec::Summary][..], Some(SortKey::Time), false),
+            (&[ViewSpec::Files, ViewSpec::Summary][..], Some(SortKey::Time), true),
+        ] {
+            let report = read(views, sort, reverse);
+            assert!(!report.notes.iter().any(|line| line.contains("carry no time")));
+        }
+        let timed = Selection { sort: Some(SortKey::Time), ..Selection::default() };
+        let grouped = query(&[ViewSpec::Types, ViewSpec::Extensions, ViewSpec::Families], timed);
+        assert_eq!(
+            timeless_rows_note(&grouped).as_deref(),
+            Some("note: type, extension, and family rows carry no time, so they keep size order")
+        );
+        let timed = Selection { sort: Some(SortKey::Time), ..Selection::default() };
+        let grouped = query(&[ViewSpec::Tree, ViewSpec::Languages, ViewSpec::Documents], timed);
+        assert_eq!(
+            timeless_rows_note(&grouped).as_deref(),
+            Some("note: language and document rows carry no time, so they keep size order")
+        );
+        let timed = Selection { sort: Some(SortKey::Time), reverse: true, ..Selection::default() };
+        let grouped = query(&[ViewSpec::Tree, ViewSpec::Types, ViewSpec::Documents], timed);
+        assert_eq!(
+            timeless_rows_note(&grouped).as_deref(),
+            Some("note: type and document rows carry no time, so they keep size order, reversed")
+        );
     }
 
     /// A legacy unscoped partial marker carries no authoritative child-list evidence,
@@ -4970,7 +6243,7 @@ mod tests {
         assert_eq!(root.bytes, 7);
     }
 
-    /// One tree row's activity, completeness, and age.
+    /// One tree row's activity, on the one value [`alike`] reads, completeness, and age.
     type RowAge = (Option<i64>, Option<bool>, Option<i128>);
 
     /// Every row of a tree by path, with its [`RowAge`].
@@ -4978,7 +6251,7 @@ mod tests {
         let mut rows = BTreeMap::new();
         let mut stack = vec![root];
         while let Some(node) = stack.pop() {
-            rows.insert(node.path.clone(), (node.mtime_ns, node.complete, node.age_ns));
+            rows.insert(node.path.clone(), (node.time.map(alike), node.complete, node.age_ns));
             stack.extend(node.children.iter());
         }
         rows
@@ -5043,15 +6316,15 @@ mod tests {
             &index,
             &flat(Selection { kinds: vec![EntryKind::Dir], ..Selection::default() }),
         )) {
-            assert_eq!(expected[&row.path].0, Some(row.mtime_ns), "{}", row.path.display());
+            assert_eq!(expected[&row.path].0, Some(alike(row.times)), "{}", row.path.display());
         }
-        // `newest_mtime_ns` keeps its files-only meaning.
-        assert_eq!(unfiltered.newest_mtime_ns, Some(40));
+        // `newest_file` keeps its files-only meaning.
+        assert_eq!(unfiltered.newest_file.map(alike), Some(40));
         // A root's own time is not activity: an empty root counts nothing and has no age.
         let mut empty = Index::new("/empty");
         empty.set_initial_freshness(true);
         let root = tree_of(&run(&empty, &query(&[ViewSpec::Tree], Selection::default())));
-        assert_eq!((root.mtime_ns, root.complete, root.age_ns), (None, Some(true), None));
+        assert_eq!((root.time, root.complete, root.age_ns), (None, Some(true), None));
     }
 
     /// Under a filter a row ages what it counts: `--kind file` counts no directory's own
@@ -5078,15 +6351,12 @@ mod tests {
             &query(
                 &[ViewSpec::Tree],
                 whole(Selection {
-                    modified: crate::query::query_selection::ModifiedWindow {
-                        since: None,
-                        before: Some(25),
-                    },
+                    window: TimeWindow { since: None, before: Some(25) },
                     ..Selection::default()
                 }),
             ),
         ));
-        assert_eq!(older.mtime_ns, Some(20), "src/lib.rs is the newest entry before 25");
+        assert_eq!(older.time.map(alike), Some(20), "src/lib.rs is the newest entry before 25");
         assert_eq!(older.age_ns, Some(-20));
 
         let nothing = tree_of(&run(
@@ -5096,11 +6366,11 @@ mod tests {
                 whole(Selection { include: vec![pattern("absent")], ..Selection::default() }),
             ),
         ));
-        assert_eq!((nothing.mtime_ns, nothing.complete, nothing.age_ns), (None, Some(true), None));
+        assert_eq!((nothing.time, nothing.complete, nothing.age_ns), (None, Some(true), None));
     }
 
     /// An incomplete subtree keeps its lower-bound activity and has no age; a time after
-    /// the reference is a negative age; and `--sort mtime` orders by the activity the age
+    /// the reference is a negative age; and `--sort time` orders by the activity the age
     /// column shows, so a directory whose newest entry is a symlink sorts by it.
     #[test]
     fn tree_ages_are_unknown_when_incomplete_and_sort_by_activity() {
@@ -5132,14 +6402,14 @@ mod tests {
         // A `SystemTime` is 100 ns apart on Windows, so the reference sits on a multiple of
         // that: a finer one would be truncated to an earlier instant there.
         request.now = UNIX_EPOCH;
-        let root = tree_of(&report(&index, &request, generated_at()).expect("report"));
+        let root = tree_of(&report(&index, &request, generated_at(), None).expect("report"));
         assert_eq!(ages_of(&root)[Path::new("docs")].2, Some(-70), "70 is after the epoch");
 
         let by_activity = tree_of(&run(
             &index,
             &query(
                 &[ViewSpec::Tree],
-                whole(Selection { sort: Some(SortKey::Mtime), ..Selection::default() }),
+                whole(Selection { sort: Some(SortKey::Time), ..Selection::default() }),
             ),
         ));
         assert_eq!(
@@ -5231,7 +6501,7 @@ mod tests {
     }
 
     fn run(index: &Index, query: &Query) -> Report {
-        report(index, &crate::test_support::read_of(index, query.clone()), generated_at())
+        report(index, &crate::test_support::read_of(index, query.clone()), generated_at(), None)
             .expect("the query is answerable over this index")
     }
 
@@ -5288,7 +6558,7 @@ mod tests {
         assert_eq!(row.files, 5);
         assert_eq!(row.dirs, 3);
         assert_eq!(row.bytes, 657);
-        assert_eq!(row.newest_mtime_ns, Some(40));
+        assert_eq!(row.newest_file.map(alike), Some(40));
     }
 
     #[test]
@@ -5308,8 +6578,8 @@ mod tests {
         // directory it descended into, so a filter admitting everything was the only
         // filter the two tiers could agree under.
         assert_eq!(
-            (fast.files, fast.dirs, fast.bytes, fast.allocated, fast.newest_mtime_ns),
-            (slow.files, slow.dirs, slow.bytes, slow.allocated, slow.newest_mtime_ns)
+            (fast.files, fast.dirs, fast.bytes, fast.allocated, fast.newest_file),
+            (slow.files, slow.dirs, slow.bytes, slow.allocated, slow.newest_file)
         );
     }
 
@@ -5491,16 +6761,16 @@ mod tests {
     }
 
     #[test]
-    fn a_modified_window_selects_by_time() {
+    fn a_window_selects_by_time() {
         let index = sample();
         let selection = Selection {
             kinds: vec![EntryKind::File],
-            modified: ModifiedWindow { since: Some(20), before: Some(40) },
-            sort: Some(SortKey::Mtime),
+            window: TimeWindow { since: Some(20), before: Some(40) },
+            sort: Some(SortKey::Time),
             ..Selection::default()
         };
         let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
-        let mut times: Vec<i64> = rows.iter().map(|row| row.mtime_ns).collect();
+        let mut times: Vec<i64> = rows.iter().map(|row| alike(row.times)).collect();
         times.sort_unstable();
         assert_eq!(times, vec![20, 30], "inclusive start, exclusive end");
     }
@@ -6383,7 +7653,7 @@ mod tests {
         let mut request =
             crate::test_support::read_of(&index, query(&[ViewSpec::Tree], selection.clone()));
         request.now = UNIX_EPOCH + Duration::from_secs(3_600);
-        let report = report(&index, &request, generated_at()).expect("report");
+        let report = report(&index, &request, generated_at(), None).expect("report");
         assert!(!report.status.complete);
         assert_eq!(
             crate::report_format::render(&report, crate::report_format::Format::Text, false)
@@ -7094,7 +8364,7 @@ mod tests {
         ]));
         let id = |path: &str| index.lookup(Path::new(path)).expect("an indexed path");
         let measured = |newest_ns, complete| query_subtrees::DirectoryActivity {
-            newest_ns: Some(newest_ns),
+            newest: Some(Times { modified: newest_ns, changed: newest_ns }),
             complete,
         };
         let activity = query_subtrees::ActivityTable::of(
@@ -7132,7 +8402,7 @@ mod tests {
             [("big", 1_000, id("big")), ("f1", 200, id("f1")), ("tiny", 3, id("tiny"))]
         );
         assert_eq!(
-            rows.iter().map(|(row, _)| (row.mtime_ns, row.complete)).collect::<Vec<_>>(),
+            rows.iter().map(|(row, _)| (row.time.map(alike), row.complete)).collect::<Vec<_>>(),
             [(Some(10), Some(true)), (Some(40), None), (Some(30), Some(false))]
         );
         assert!(rows.iter().all(|(row, _)| row.path.as_path() == Path::new(&row.name)));
@@ -7160,8 +8430,8 @@ mod tests {
                 files: 5,
                 dirs: 3,
                 ignored: None,
-                newest_mtime_ns: None,
-                mtime_ns: None,
+                newest_file: None,
+                time: None,
                 complete: Some(complete),
                 age_ns: None,
                 children: Vec::new(),
@@ -7389,12 +8659,15 @@ mod tests {
             // `SystemTime` is 100 ns apart on Windows, and the instant would be truncated to
             // one before the newest time there, which renders `-0s`.
             let query = query(&[ViewSpec::Tree], selection);
-            let newest = tree_of(&run(index, &query)).mtime_ns.expect("every tree has activity");
+            let newest = tree_of(&run(index, &query))
+                .time
+                .expect("every tree has activity")
+                .get(query.selection.time);
             let mut request = crate::test_support::read_of(index, query);
             request.now = UNIX_EPOCH
                 + Duration::from_nanos(u64::try_from(newest).expect("after the epoch"))
                 + Duration::from_micros(1);
-            let report = report(index, &request, generated_at()).expect("report");
+            let report = report(index, &request, generated_at(), None).expect("report");
             actual.push_str(label);
             actual.push('\n');
             actual.push_str(
@@ -7568,7 +8841,8 @@ mod tests {
                     super::report(
                         &index,
                         &crate::test_support::read_of(&index, refused),
-                        generated_at()
+                        generated_at(),
+                        None
                     ),
                     Err(crate::Error::InvalidRequest(
                         crate::query::RequestError::IgnoredWithoutObservation(_)
@@ -7636,7 +8910,7 @@ mod tests {
 
     fn run_roots(indexes: &[&Index], roots: &Roots, query: &Query) -> Report {
         let request = crate::test_support::read_of(indexes[0], query.clone());
-        report_roots(indexes, roots, &request, generated_at()).expect("answerable")
+        report_roots(indexes, roots, &request, generated_at(), None).expect("answerable")
     }
 
     fn root_trees_of(report: &Report) -> (&RootTrees, &[TreeOmission]) {
@@ -7668,7 +8942,7 @@ mod tests {
                 node.bytes,
                 node.files,
                 node.dirs,
-                node.mtime_ns,
+                node.time,
                 node.age_ns,
                 node.omissions
             ));
@@ -7699,7 +8973,7 @@ mod tests {
                 one.allocated + two.allocated
             )
         );
-        assert_eq!(summary.newest_mtime_ns, Some(50));
+        assert_eq!(summary.newest_file.map(alike), Some(50));
 
         let types =
             types_of(&run_roots(&both, &roots, &query(&[ViewSpec::Extensions], unbounded())));
@@ -7741,7 +9015,7 @@ mod tests {
             (total.bytes, total.files, total.dirs),
             (summary.bytes, summary.files, summary.dirs)
         );
-        assert_eq!(total.mtime_ns, Some(50), "the newest activity under any root");
+        assert_eq!(total.time.map(alike), Some(50), "the newest activity under any root");
         assert!(total.complete);
         assert_eq!(total.age_ns, Some(i128::from(report.age_reference_ns.expect("now")) - 50));
         for (index, label) in [(&docs, "docs"), (&src, "src")] {
@@ -7808,13 +9082,16 @@ mod tests {
         };
         let alone: Vec<MetricRow> = indexes
             .iter()
-            .map(|index| documents(&report(index, &request(index), generated_at()).expect("one")))
+            .map(|index| {
+                documents(&report(index, &request(index), generated_at(), None).expect("one"))
+            })
             .collect();
         let both = report_roots(
             &indexes.iter().collect::<Vec<_>>(),
             &roots,
             &request(&indexes[0]),
             generated_at(),
+            None,
         )
         .expect("both");
         let merged = documents(&both);
@@ -7846,15 +9123,21 @@ mod tests {
             files: 2,
             bytes: 10,
             ignored: Some(IgnoredTally { files: 1, dirs: 0, bytes: 4, allocated: 4 }),
-            newest_mtime_ns: Some(3),
+            newest_file: Some(Times { modified: 3, changed: 10 }),
             ..SummaryRow::default()
         };
-        let unknown = SummaryRow { ignored: None, newest_mtime_ns: None, ..known };
+        let unknown = SummaryRow { ignored: None, newest_file: None, ..known };
         let both = sum_roots([known, known]);
         assert_eq!(both.ignored.map(|share| share.bytes), Some(8));
-        assert_eq!((both.files, both.bytes, both.newest_mtime_ns), (4, 20, Some(3)));
+        assert_eq!((both.files, both.bytes, both.newest_file), (4, 20, known.newest_file));
         assert_eq!(sum_roots([known, unknown]).ignored, None);
-        assert_eq!(sum_roots([unknown, known]).newest_mtime_ns, Some(3));
+        assert_eq!(sum_roots([unknown, known]).newest_file, known.newest_file);
+        // Each clock is the newest of its own, not one root's pair.
+        let crossed = SummaryRow { newest_file: Some(Times { modified: 5, changed: 6 }), ..known };
+        assert_eq!(
+            sum_roots([known, crossed]).newest_file,
+            Some(Times { modified: 5, changed: 10 })
+        );
         assert_eq!(format!("{:?}", sum_roots([known])), format!("{known:?}"));
     }
 
@@ -7897,7 +9180,7 @@ mod tests {
         let key = |row: &FileRow| {
             format!("{}/{}", roots.as_slice()[row.root].label.display(), row.path.display())
         };
-        for sort in [SortKey::Size, SortKey::Name, SortKey::Count, SortKey::Mtime] {
+        for sort in [SortKey::Size, SortKey::Name, SortKey::Count, SortKey::Time] {
             for reverse in [false, true] {
                 let selection = |limit| Selection {
                     sort: Some(sort),
@@ -8031,10 +9314,11 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let report =
-            report_roots(&[&src, &docs], &roots, &request, generated_at()).expect("sorted");
+            report_roots(&[&src, &docs], &roots, &request, generated_at(), None).expect("sorted");
         assert_eq!(names(&report), ["docs", "src"]);
         request.query.selection = Selection { sort: None, ..by_lines };
-        let report = report_roots(&[&src, &docs], &roots, &request, generated_at()).expect("sized");
+        let report =
+            report_roots(&[&src, &docs], &roots, &request, generated_at(), None).expect("sized");
         assert_eq!(names(&report), ["src", "docs"]);
     }
 
@@ -8047,8 +9331,9 @@ mod tests {
         {
             let query = query(views, Selection::default());
             let request = crate::test_support::read_of(&index, query);
-            let alone = report(&index, &request, generated_at()).expect("one");
-            let through = report_roots(&[&index], &one, &request, generated_at()).expect("roots");
+            let alone = report(&index, &request, generated_at(), None).expect("one");
+            let through =
+                report_roots(&[&index], &one, &request, generated_at(), None).expect("roots");
             for format in [crate::report_format::Format::Json, crate::report_format::Format::Text] {
                 assert_eq!(
                     crate::report_format::render(&through, format, false).expect("render"),
@@ -8067,7 +9352,7 @@ mod tests {
             crate::test_support::read_of(&docs, query(&[ViewSpec::Tree], Selection::default()));
         for indexes in [&[&src, &docs][..], &[&docs]] {
             assert!(matches!(
-                report_roots(indexes, &roots, &request, generated_at()),
+                report_roots(indexes, &roots, &request, generated_at(), None),
                 Err(crate::Error::InvalidRequest(RequestError::RootMismatch { .. }))
             ));
         }
@@ -8083,7 +9368,7 @@ mod tests {
         let request =
             crate::test_support::read_of(&docs, query(&[ViewSpec::Tree], Selection::default()));
         assert!(matches!(
-            report_roots(&[&docs, &shallow], &roots, &request, generated_at()),
+            report_roots(&[&docs, &shallow], &roots, &request, generated_at(), None),
             Err(crate::Error::InvalidRequest(RequestError::RootScopesDiffer { first, other }))
                 if first == Path::new("/docs") && other == Path::new("/src")
         ));
@@ -8118,23 +9403,28 @@ mod tests {
         let request =
             crate::test_support::read_of(&entered, query(&[ViewSpec::Tree], Selection::default()));
         assert!(matches!(
-            report_roots(&[&entered, &inner], &roots, &request, generated_at()),
+            report_roots(&[&entered, &inner], &roots, &request, generated_at(), None),
             Err(crate::Error::InvalidRequest(RequestError::RootReachedInside { inner, outer, at }))
                 if inner == Path::new("view/x")
                     && outer == Path::new("srv")
                     && at == Path::new("srv").join("data").join("x")
         ));
-        report_roots(&[&listed, &inner], &roots, &request, generated_at())
+        report_roots(&[&listed, &inner], &roots, &request, generated_at(), None)
             .expect("listed, not entered");
     }
 
-    /// A flat row's size is a layout decision: the root index rides in padding today, and
-    /// the next 8-byte field would grow every row a walk builds by a ninth (review C13 on
-    /// #192). Pinned where the layout is known.
+    /// A flat row's size is a layout decision: the root index rides in padding, and the
+    /// next 8-byte field grows every row a walk builds (review C13 on #192). Pinned where
+    /// the layout is known.
+    ///
+    /// 192 bytes: the row's 16-byte alignment (its `i128` age) rounds any 8-byte field up
+    /// to 16, so its second clock ([`FileRow::times`]) and `status_observed` took it from
+    /// 176. Kept on the row because sorting and windowing a flat view by either clock read
+    /// it there, and rows are built only for admitted entries.
     #[cfg(all(unix, target_pointer_width = "64"))]
     #[test]
     fn a_flat_row_keeps_its_size() {
-        assert_eq!(std::mem::size_of::<FileRow>(), 176);
+        assert_eq!(std::mem::size_of::<FileRow>(), 192);
     }
 
     /// Coverage over several roots adds its counts and keeps each refusal's root, and a

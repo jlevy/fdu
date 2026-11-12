@@ -116,10 +116,10 @@ Examples:
   fdu . --view=code,documents   lines of code by language, words by document type
   fdu . --ignored=exclude       omit entries covered by .gitignore
   fdu . --view=summary          one total for the tree
-  fdu . --kind file --modified-since 24h
-  fdu . --kind dir --include .venv --modified-before 7d --long
-  fdu . --kind dir --include node_modules --modified-before 30d --long
-  fdu . --kind dir --include target --modified-before 30d --format paths
+  fdu . --kind file --since 24h
+  fdu . --kind dir --include .venv --before 7d --long
+  fdu . --kind dir --include node_modules --before 30d --long
+  fdu . --kind dir --include target --before 30d --format paths
 
 Run `fdu --docs` for setup, libraries, more commands, cache behavior, and the full usage guide.";
 
@@ -191,8 +191,8 @@ START HERE
     fdu . --view=summary                       one total for the tree
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
-    fdu . --view=recent --limit=10             ten most recently modified files
-    fdu . --kind=file --modified-since=24h     files written in the last day, by folder
+    fdu . --view=recent --limit=10             ten most recently changed files
+    fdu . --kind=file --since=24h              files written in the last day, by folder
     fdu docs src                               several paths as one report, with a total
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
@@ -251,19 +251,20 @@ MORE COMPOSITIONS
   fdu PATH --kind dir --full --format json                  recursive directory totals
   fdu PATH --kind file --full --format paths                find/fd-style file inventory
   fdu PATH --view=largest --limit=100                        the 100 largest files
-  fdu PATH --view=files --kind=file --modified-since=1h      files modified lately
+  fdu PATH --view=files --kind=file --since=1h               files changed lately
   fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
 ",
             $watch_composition,
             r"
   largest and recent are presets over files, not more views to learn:
     largest = files --sort size --limit 20, regular files only
-    recent  = files --sort mtime --limit 20, regular files only
+    recent  = files --sort time --limit 20, regular files only
   --full expands to --depth=all --breadth=all --limit=all --min-share=0%.
   Explicit bounds override it regardless of order. It leaves view, scan scope,
   population, and analysis unchanged. --view=full chooses views instead.
   --sort and --limit still override them. files alone is complete: every
-  matching entry, in name order. full combines applicable views, without list/files.
+  matching entry, in name order. full combines applicable views, without list,
+  files, or volumes.
 
 LIST FORMATS AND OLD BUILD DIRECTORIES
   The metadata default view is list; its default format is tree. These agree:
@@ -274,9 +275,9 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   --breadth caps children per directory; --limit caps data rows per section.
   Both default to all. --depth all expands levels. Omission notes name each bound.
   Display bounds never change totals or limit the filesystem scan.
-  A tree row's age is its newest counted change, of files, directories, and symlinks;
+  A tree row's age is its newest counted time, of files, directories, and symlinks;
   unknown where a subtree was not listed. Ages read s, m, h, d, mo (30.44 days), and
-  y (365.25 days); time bounds take days. --sort mtime orders rows by that age.
+  y (365.25 days); time bounds take days. --sort time orders rows by that age.
 
   --format paths gives matching paths only; --long adds size, age, and path.
   Flat lists are complete and size-ranked by default; --sort name lists by name.
@@ -286,41 +287,83 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   files keeps name order; the tree view keeps structured tree output.
   Explicit paths/long overrides the tree presentation. Format flags conflict.
 
-  fdu PATH --kind dir --include .venv --modified-before 7d --long
-  fdu PATH --kind dir --include node_modules --modified-before 30d --format long
-  fdu PATH --kind dir --include target --modified-before 30d --format paths
-  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
-  fdu PATH --kind dir --include .venv --modified-before 30d --format json
+  fdu PATH --kind dir --include .venv --before 7d --long
+  fdu PATH --kind dir --include node_modules --before 30d --format long
+  fdu PATH --kind dir --include target --before 30d --format paths
+  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --before 30d --long --sort time --reverse
+  fdu PATH --kind dir --include .venv --before 30d --format json
 
   Kind, name/path, size, and age are filters. Repeated includes form a union.
   Directory sizes sum eligible regular-file contents, excluding inode/symlink bytes.
-  Age uses the newest modification of the root or an eligible descendant, including
+  Age uses the newest time of the root or an eligible descendant, including
   directories and symlinks. Empty directories use their own time; future age is negative.
-  This is modification activity, not access or last use. target is a naming convention.
+  This is change activity, not access or last use: a copy that arrived yesterday is a
+  day old however old its content, so it is never called stale. target is a naming
+  convention.
   Exclusions win throughout the subtree before size/age filtering. Nested matching
   roots can overlap; aggregate views count the covered contents once. --size apparent
   selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 WHAT WAS WRITTEN RECENTLY
-  fdu PATH --kind file --modified-since 24h
-  fdu PATH --view largest --modified-since 24h --limit 20
+  fdu PATH --kind file --since 24h
+  fdu PATH --view largest --since 24h --limit 20
 
   Each finds what was written in the last day, by folder or by file, in one scan
-  with no saved state. Keep --kind file: without it a directory with any activity
-  in the window counts at its full size. A file written in the window counts in
-  full, deleted files do not appear, and data that kept an older modification time
-  (cp -p, rsync -a, Finder or Explorer copies, mv from another filesystem,
-  archives, some downloads, Cargo's crate sources) is missed.
+  with no saved state. Every time fdu reads is change time: the newer of
+  modification and status change, so data that kept an older modification time
+  still counts: cp -p, rsync -a, Finder or Explorer copies, mv from another
+  filesystem, archives, some downloads, and Cargo's crate sources. Keep --kind file:
+  without it a directory with any activity in the window counts at its full size.
+  This is data written, not net growth: a file written in the window counts in
+  full, deleted files do not appear, and a chmod changes a file that did not grow.
+
+  --time modified reads modification time everywhere instead: windows, --sort time,
+  the tree's ages, recent, and ages. That is content age, as ls -l shows, and the
+  clock to use after a bulk chmod, chown, or relabel moved every status change, and
+  where files are hard-linked: making or removing any link moves the change time of
+  every other name of the file, as uv and pnpm installs from a shared store, cp -l,
+  and a git clone of a local repository do. A watch reads a name again only when an
+  event names it.
+  Machine list rows carry both clocks, mtime_ns and changed_ns.
+
+  fdu PATH --view ages
+  fdu PATH --view tree,ages --kind file --since 7d
+
+  ages shows the selected files by age, every window from one scan: future,
+  under 1h, 1h to 1d, 1d to 7d, 7d to 30d, 30d to 90d, 90d to 1y, 1y to 3y, and
+  over 3y. future also holds files written while the scan runs. The rows add up to
+  --view summary, and where the selection admits files alone each is what --kind
+  file with the --since/--before window it names selects. Machine output adds each
+  band's edges and the cumulative total of it and every newer band. Without --kind
+  file a window admits whole directories, which the bands never do.
+
+HOW FULL THE DISK IS
+  fdu PATH --view volumes
+  fdu PATH --view volumes --scan-depth 0     capacity alone, walking nothing
+
+  volumes shows each filesystem the report touches: its capacity, the share in use,
+  what is available, and what this report counted there. A walk without
+  --one-filesystem can cross mounts below PATH, one row each. Capacity is read when
+  the report is, never cached, and below PATH only where the walk listed and the
+  mount table shows a mounted filesystem, not an automount trigger, at exactly that
+  path, so reading it mounts nothing, unless an automount expires between that read
+  of the table and the call, a window as long as the calls before it; any other row
+  reads capacity unknown and says why. --view full, which describes the tree, leaves
+  volumes out. Rows never add up: available space can be shared within an APFS
+  container, btrfs filesystem, or ZFS pool, which the row says, and snapshots, other
+  volumes, and deleted files still open use space no walk sees.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH..., --scan-depth, --one-filesystem    what is scanned and cached
              --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
                                                         beyond what the views imply
-  Selection  --include, --exclude, --depth, --limit     which entries are considered
-             --breadth, --min-share
-  View       list,summary,tree,families,types,extensions,languages,code,documents,
-             largest,recent,files,full
+  Selection  --include, --exclude, --min-size, --kind   which entries are considered
+             --since, --before, --time, --sort, --reverse
+             --depth, --limit, --breadth, --min-share, --full
+             --size
+  View       list,summary,volumes,ages,tree,families,types,extensions,languages,code,
+             documents,largest,recent,files,full
   Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
              --color, --progress
   Mode       ",
@@ -387,12 +430,15 @@ IGNORE RULES
   sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/11; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/12; watch changes use fdu.stream/3.
   A Files watch emits an initial ordinary report, then change records;
   aggregate views repaint reports. An invalidate change requires rebuilding
   or resynchronizing the inventory, not continuing from incomplete state.
   Before automating, check status.complete, errors and errors_omitted,
   provenance.freshness/source, tree truncation, and metric coverage.
+  selected and scanned give what a selection admitted beside the whole scan; a
+  filtered text report ends with `note: selected N of M files, SIZE of SIZE`, or,
+  when a time bound admitted everything, `note: selected all M files, SIZE`.
   A multi-root report has root: null and roots; its tree section has tree: null,
   a combined total, and trees. Read the machine contract before parsing it.
   Cache status is its own document in every machine format: fdu.cache/3.
@@ -613,13 +659,21 @@ pub struct Cli {
     #[arg(long, value_name = "SIZE", help_heading = "SELECTION")]
     pub min_size: Option<String>,
 
-    /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
+    /// Report only entries whose time is at or after this, as 2h or an RFC 3339 stamp.
     #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
-    pub modified_since: Option<String>,
+    pub since: Option<String>,
 
-    /// Report only entries modified before this time.
+    /// Report only entries whose time is before this.
     #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
-    pub modified_before: Option<String>,
+    pub before: Option<String>,
+
+    /// Which clock every time reads: changed (default) or modified.
+    ///
+    /// Change time is the newer of modification and status change, so data that kept an
+    /// older modification time (`cp -p`, an extracted archive) is still new by it.
+    /// Modification time is content age, as `ls -l` shows.
+    #[arg(long, value_name = "CLOCK", help_heading = "SELECTION")]
+    pub time: Option<String>,
 
     /// Entry kinds to report: file, dir, symlink, other.
     #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
@@ -657,7 +711,7 @@ pub struct Cli {
     #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
     pub full: bool,
 
-    /// Order results: size, count, mtime, name, or a requested metric such as `code_lines`.
+    /// Order results: size, count, time, name, or a requested metric such as `code_lines`.
     #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
     pub sort: Option<String>,
 
@@ -671,7 +725,7 @@ pub struct Cli {
 
     // ---- view: which roll-ups are reported ----
     /// Views: list, tree, files, extensions, types, families, languages, code, documents,
-    /// largest, recent, summary, or full. Defaults to list with no analysis, otherwise to
+    /// largest, recent, summary, ages, volumes, or full. Defaults to list with no analysis, otherwise to
     /// a view that displays the requested analysis. code and documents read file contents:
     /// each runs its analyzer.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
@@ -716,7 +770,7 @@ pub struct Cli {
     #[arg(long, conflicts_with_all = ["format", "long"], help_heading = "OUTPUT")]
     pub tree: bool,
 
-    /// Display flat matching paths with size and modification age.
+    /// Display flat matching paths with size and age.
     #[arg(long, conflicts_with_all = ["format", "tree"], help_heading = "OUTPUT")]
     pub long: bool,
 
@@ -1256,7 +1310,9 @@ impl Cli {
         loop {
             let Some(batch) = session.next_batch(interval)? else {
                 // Nothing arrived in the window. Repaint only if something is pending,
-                // so a quiet tree produces no output and no work at all.
+                // so a quiet tree produces no output and no work at all. Ages, the tree's
+                // and `ages`'s bands, are measured anew at each repaint, so they move when
+                // the tree does: an idle tree keeps a file in its band past the edge.
                 if has_aggregates && dirty_since_render {
                     Self::render_live(
                         out,
@@ -1684,8 +1740,9 @@ impl Cli {
                 include: &self.include,
                 exclude: &self.exclude,
                 min_size: self.min_size.as_deref(),
-                modified_since: self.modified_since.as_deref(),
-                modified_before: self.modified_before.as_deref(),
+                since: self.since.as_deref(),
+                before: self.before.as_deref(),
+                time: self.time.as_deref(),
                 kinds: self.kind.as_deref(),
                 ignored: self.ignored.as_deref(),
                 depth: self.depth.as_deref().or(self.full.then_some("all")),
@@ -1941,7 +1998,7 @@ const INTERVAL_ANCHOR_SECS: u64 = 1 << 35;
 #[cfg(feature = "watch")]
 fn parse_duration(value: &str) -> anyhow::Result<std::time::Duration> {
     // Expressed as an age before a fixed instant, so `2s` and `1h30m` mean here exactly
-    // what they mean in --modified-since rather than being a fourth spelling.
+    // what they mean in --since rather than being a fourth spelling.
     let anchor = SystemTime::UNIX_EPOCH + Duration::from_secs(INTERVAL_ANCHOR_SECS);
     let at = parse_when(value, anchor)
         .map_err(|error| anyhow::anyhow!("invalid --interval {value:?}: {error}"))?;
@@ -2415,7 +2472,7 @@ mod tests {
     use crate::progress_ticker::{ERASE_LINE, SharedBuffer, Timing};
     use fdu_core::EntryKind;
     use fdu_core::query::ViewSpec;
-    use fdu_core::query::{Bound, ScopeAxis, SizeMetric, SortKey};
+    use fdu_core::query::{Bound, ScopeAxis, SizeMetric, SortKey, TimeBasis};
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
@@ -2691,6 +2748,7 @@ mod tests {
             bytes: None,
             allocated: None,
             mtime_ns: None,
+            changed_ns: None,
             ignored: None,
         }];
         for format in [report_format::Format::Paths, report_format::Format::Long] {
@@ -2753,8 +2811,9 @@ mod tests {
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,
-            modified_since: None,
-            modified_before: None,
+            since: None,
+            before: None,
+            time: None,
             kind: None,
             ignored: None,
             // None, as clap now leaves it: the default belongs to the view.
@@ -3151,32 +3210,36 @@ mod tests {
     fn value_grammars_reach_the_cli_with_their_suggestions_intact() {
         // The CLI must not restate the grammar; it hands the string to the library and
         // surfaces the library's own message, suggestion and all.
-        let fractional = query_error(&Cli { modified_since: Some("1.5h".to_string()), ..cli() });
+        let fractional = query_error(&Cli { since: Some("1.5h".to_string()), ..cli() });
         assert!(fractional.contains("1h30m"), "{fractional}");
-        let calendar = query_error(&Cli { modified_before: Some("3months".to_string()), ..cli() });
+        let calendar = query_error(&Cli { before: Some("3months".to_string()), ..cli() });
         assert!(calendar.contains("use days"), "{calendar}");
         let size = query_error(&Cli { min_size: Some("10X".to_string()), ..cli() });
         assert!(size.contains("unknown size unit"), "{size}");
     }
 
     #[test]
-    fn the_modified_window_reaches_the_selection_as_nanoseconds() {
-        let parsed = Cli {
-            modified_since: Some("@1000".to_string()),
-            modified_before: Some("@2000".to_string()),
-            ..cli()
-        }
-        .resolved_query()
-        .expect("window parses");
-        assert_eq!(parsed.selection.modified.since, Some(1_000_000_000_000));
-        assert_eq!(parsed.selection.modified.before, Some(2_000_000_000_000));
+    fn the_window_and_its_clock_reach_the_selection() {
+        let parsed =
+            Cli { since: Some("@1000".to_string()), before: Some("@2000".to_string()), ..cli() }
+                .resolved_query()
+                .expect("window parses");
+        assert_eq!(parsed.selection.window.since, Some(1_000_000_000_000));
+        assert_eq!(parsed.selection.window.before, Some(2_000_000_000_000));
+        assert_eq!(parsed.selection.time, TimeBasis::Changed, "change time is the default");
+        let modified = Cli { time: Some("modified".to_string()), ..cli() }
+            .resolved_query()
+            .expect("clock parses");
+        assert_eq!(modified.selection.time, TimeBasis::Modified);
+        let unknown = query_error(&Cli { time: Some("born".to_string()), ..cli() });
+        assert_eq!(unknown, "invalid --time \"born\": expected one of changed, modified");
     }
 
     #[test]
     fn kinds_sort_and_size_translate_to_their_library_values() {
         let parsed = Cli {
             kind: Some("file,dir".to_string()),
-            sort: Some("mtime".to_string()),
+            sort: Some("time".to_string()),
             size: "apparent".to_string(),
             reverse: true,
             ..cli()
@@ -3184,7 +3247,7 @@ mod tests {
         .resolved_query()
         .expect("parses");
         assert_eq!(parsed.selection.kinds, vec![EntryKind::File, EntryKind::Dir]);
-        assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
+        assert_eq!(parsed.selection.sort, Some(SortKey::Time));
         assert_eq!(parsed.selection.size, SizeMetric::Apparent);
         assert!(parsed.selection.reverse);
     }
@@ -3375,7 +3438,6 @@ mod tests {
         const PREFIX: &str = "fdu.";
         let live = [
             report_format::REPORT_SCHEMA,
-            report_format::CONTENT_REPORT_SCHEMA,
             report_format::CACHE_SCHEMA,
             report_format::STREAM_SCHEMA,
         ];
@@ -3537,7 +3599,7 @@ mod tests {
             .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/11\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/12\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -3660,7 +3722,7 @@ mod tests {
         assert!(json_diagnostic.is_empty());
         let json = String::from_utf8(json_out).expect("UTF-8 JSON");
         assert!(json.trim().starts_with('{') && json.trim().ends_with('}'));
-        assert!(json.contains("\"schema\": \"fdu.report/11\""));
+        assert!(json.contains("\"schema\": \"fdu.report/12\""));
         assert!(json.contains("\"view\": \"summary\""));
     }
 

@@ -241,6 +241,10 @@ the affected tests then print a skip.
 CI leaves both unset so a passing test proves its assertions ran.
 The watch opt-out covers only the warm-up: once a watch has delivered, its later silence
 is a lost event and fails regardless.
+What neither CI nor such a host can run (the root-only automount tests, the correctness
+runbook’s refusal pass, and checks on real filesystems) is the
+[Linux host gate](docs/project/guides/linux-host-gate.md), which a pull request that
+changes what a walk records or which system calls a report makes passes before merge.
 
 ## Performance Work
 

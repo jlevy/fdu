@@ -88,7 +88,8 @@ quiet.
 ### The 0.5.0 Development Build
 
 The historical tables below describe the named releases and hosts; they do not establish
-the peer standing of 0.5.0. In
+the peer standing of 0.5.0, or of 0.6.0, which has not been timed against these tools.
+In
 [exp-217](project/experiments/exp-217-linux-h193-the-age-column-costs-the-dense-tree-s-default-com.md),
 20 pairs per tool on 2026-10-10 after a container restart (guest kernel
 `6.18.44-fc-v114`) found no resolved lead over `pdu --max-depth 2` or diskus on either

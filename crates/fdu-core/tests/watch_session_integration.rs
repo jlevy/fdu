@@ -509,7 +509,7 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
 ///
 /// The claim `Session::new`'s doc makes: `now` is fixed when the request is built, so two
 /// repaints of one session answer one question. A window re-resolved per repaint would
-/// quietly drop entries out of `--modified-since 2h` as the session aged, which reads as
+/// quietly drop entries out of `--since 2h` as the session aged, which reads as
 /// the tree changing rather than as the question changing.
 #[test]
 fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
@@ -520,7 +520,7 @@ fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
 
     let started = SystemTime::now();
     let spec = RequestSpec {
-        read: ReadSpec { modified_since: Some("2h"), ..ReadSpec::new() },
+        read: ReadSpec { since: Some("2h"), ..ReadSpec::new() },
         ..RequestSpec::new(dir.path())
     };
     let request = Request::build(&spec, started, &AxisNames::FIELDS).expect("the spec parses");
@@ -528,7 +528,7 @@ fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
         Session::new(IndexHandle::new(index), request, &watching(&config), WatchConfig::default())
             .expect("session");
 
-    let window = session.query().selection.modified.since.expect("a resolved lower bound");
+    let window = session.query().selection.window.since.expect("a resolved lower bound");
     assert_eq!(session.request().now, started, "the session keeps the instant it was built at");
 
     // Two repaints, separated by a change the session applies.
@@ -544,7 +544,7 @@ fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
     assert_eq!(second.age_reference_ns, fdu_core::query::system_time_to_nanos(second_at));
     assert_eq!(session.request().now, started, "a repaint does not re-read the request");
     assert_eq!(
-        session.query().selection.modified.since,
+        session.query().selection.window.since,
         Some(window),
         "the window a watch selects by is absolute"
     );
@@ -554,7 +554,7 @@ fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
     let later = Request::build(&spec, started + Duration::from_secs(60), &AxisNames::FIELDS)
         .expect("the spec parses");
     assert!(
-        later.query.selection.modified.since > Some(window),
+        later.query.selection.window.since > Some(window),
         "a window rebuilt a minute later must have moved, or this test proves nothing"
     );
 }

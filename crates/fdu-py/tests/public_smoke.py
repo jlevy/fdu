@@ -59,7 +59,7 @@ def check_watch_reports_its_own_index(root: Path) -> None:
     # And a change record renders as the CLI streams it, rather than as repr().
     record = fdu.Change(clock=1, path=Path("a.txt"), kind=fdu.ChangeKind.UPSERT)
     line = record.render(fdu.Format.JSONL)
-    assert '"schema": "fdu.stream/2"' in line, line
+    assert '"schema": "fdu.stream/3"' in line, line
     assert '"op": "upsert"' in line, line
     assert "\t" in record.render(fdu.Format.TEXT)
 
@@ -902,7 +902,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/11"
+    assert wire["schema"] == "fdu.report/12"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 
@@ -936,6 +936,7 @@ def main() -> None:
     assert contract["views"] == [value.value for value in fdu.View]
     assert contract["entry_kinds"] == [value.value for value in fdu.EntryKind]
     assert contract["size_metrics"] == [value.value for value in fdu.SizeMetric]
+    assert contract["time_bases"] == [value.value for value in fdu.TimeBasis]
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
     assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
     assert contract["cache_states"] == [value.value for value in fdu.CacheState]
@@ -963,7 +964,7 @@ def main() -> None:
     recent = index.report(
         fdu.Query(
             views=(fdu.View.FILES,),
-            selection=fdu.Selection(modified_since=datetime.now() - timedelta(hours=1)),
+            selection=fdu.Selection(since=datetime.now() - timedelta(hours=1)),
         )
     )
     recent_files = recent.sections[0]

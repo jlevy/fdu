@@ -127,6 +127,10 @@ def case_key(phase: str, route: str, policy: str, history: str, mutation: str, r
 
 ROOT_PLACEHOLDER = "<root>"
 
+# What a list row's `time_ns` becomes when it is not the time on the clock its request
+# reads. No correct answer carries it, so the row differs from a cold run's.
+CLOCK_MISMATCH = "time_ns disagrees with its clock"
+
 
 def root_placeholder(position: int) -> str:
     """The placeholder for the root at `position` of a report over several roots."""
@@ -166,16 +170,69 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         raise TypeError("report provenance must be an object")
     reference = content.pop("age_reference_ns", None)
     # The same instant, rendered: it describes when the answer was read, as the reference
-    # does, and each row's `modified_at` is compared as it is.
+    # does, and each row's `time_at` is compared as its clock allows.
     content.pop("age_reference_at", None)
+    request = content.get("request")
+    clock = request.get("time", "changed") if isinstance(request, dict) else "changed"
 
     def residual(row: dict[str, Any]) -> None:
-        # Exact zero means the age agrees with its clock and mtime. Comparing this
+        # Exact zero means the age agrees with its clock and its time. Comparing this
         # residual preserves age bugs while allowing different read times.
+        time = row.get("time_ns")
         if "age_ns" in row and reference is not None and row["age_ns"] is not None:
-            row["age_ns"] = row["age_ns"] - (reference - row["mtime_ns"])
+            row["age_ns"] = row["age_ns"] - (reference - time)
+        mtime = row.get("mtime_ns")
+        # A list row carries both raw clocks beside its time, which must be the one its
+        # request reads: on the change clock `changed_ns`, or `mtime_ns` where no status
+        # change was observed, and on the modification clock `mtime_ns`. The masking below
+        # cannot tell a route that read the wrong clock, as a modification time is never
+        # older than itself, so this is checked first, against the row's own clocks.
+        if "time_ns" in row and "mtime_ns" in row and "changed_ns" in row:
+            changed = row["changed_ns"]
+            wanted = {"changed": mtime if changed is None else changed, "modified": mtime}
+            if clock in wanted and row["time_ns"] != wanted[clock]:
+                row["time_ns"] = CLOCK_MISMATCH
+        # A change time is when the kernel last wrote the entry's inode, which no copy
+        # carries: the oracle's tree and the measured one were each copied and mutated at
+        # their own instants. What must agree is whether a time is known and that a change
+        # time is never older than the modification time it includes; its rendering
+        # follows. On the modification clock the report's own times compare exactly.
+        if clock == "changed":
+            for name in ("time_ns", "newest_file_time_ns"):
+                value = row.get(name)
+                if isinstance(value, int) and (mtime is None or value >= mtime):
+                    row[name] = "a change time"
+            row.pop("time_at", None)
+        changed = row.get("changed_ns")
+        if changed is not None and mtime is not None and changed >= mtime:
+            row["changed_ns"] = "at or after mtime_ns"
 
     for section in content.get("reports", []):
+        # A band's edges are instants measured back from the reference, which is when the
+        # answer was read; its counts and its edges as ages are compared.
+        for band in section.get("bands", []) if section.get("view") == "ages" else []:
+            for edge in ("since_ns", "before_ns", "since_at", "before_at"):
+                band.pop(edge, None)
+        # Free space is a fact about the host at the instant it was observed, which another
+        # writer on the machine moves between two reads; capacity, type, and what the report
+        # counted on each filesystem are compared.
+        if section.get("view") == "volumes":
+            section.pop("observed_at_ns", None)
+            section.pop("observed_at", None)
+            for volume in section.get("volumes", []):
+                volume.pop("available_bytes", None)
+        summary = section.get("summary")
+        if isinstance(summary, dict):
+            residual(summary)
+        # `recent` orders its rows by time. On the change clock each copy's order follows
+        # the instants it was written at, which two copies split differently at a clock
+        # tick, so the rows are compared as a set; every fixture file is one of them, as
+        # the fixture holds fewer than the view's twenty. On the modification clock, which
+        # a copy keeps, the order is compared as it is.
+        if clock == "changed" and section.get("view") == "recent":
+            section["files"] = sorted(
+                section.get("files", []), key=lambda row: str(row.get("path"))
+            )
         for row in section.get("files", []):
             residual(row)
         # Every tree node carries the activity it counts and its age, so the folded tier a
@@ -275,7 +332,12 @@ def _sum_ignored(shares: list[Any], keys: tuple[str, ...]) -> dict[str, int] | N
     return {key: sum(int(share[key]) for share in shares) for key in keys}
 
 
-def _newest(values: list[Any]) -> int | None:
+def _newest(values: list[Any]) -> int | str | None:
+    # A change time a copy cannot carry is normalized to a marker, and the newest of any
+    # set holding one is that marker too.
+    marked = [value for value in values if isinstance(value, str)]
+    if marked:
+        return marked[0]
     known = [int(value) for value in values if value is not None]
     return max(known) if known else None
 
@@ -291,8 +353,8 @@ def _total_of(nodes: list[dict[str, Any]]) -> dict[str, Any]:
         "ignored": _sum_ignored(
             [node["ignored"] for node in nodes], ("files", "dirs", "bytes", "allocated")
         ),
-        "newest_mtime_ns": _newest([node["newest_mtime_ns"] for node in nodes]),
-        "mtime_ns": _newest([node["mtime_ns"] for node in nodes]),
+        "newest_file_time_ns": _newest([node["newest_file_time_ns"] for node in nodes]),
+        "time_ns": _newest([node["time_ns"] for node in nodes]),
         "complete": all(node["complete"] is True for node in nodes),
     }
 
@@ -316,7 +378,7 @@ def merged_facts(request_id: str, singles: list[dict[str, Any]]) -> Any:
             "ignored": _sum_ignored(
                 [row["ignored"] for row in rows], ("files", "dirs", "bytes", "allocated")
             ),
-            "newest_mtime_ns": _newest([row["newest_mtime_ns"] for row in rows]),
+            "newest_file_time_ns": _newest([row["newest_file_time_ns"] for row in rows]),
         }
     if request_id == "r_files":
         merged = [
@@ -412,9 +474,7 @@ def several_facts(request_id: str, answer: dict[str, Any]) -> Any:
             "tree": section.get("tree"),
             "total": None
             if total is None
-            else {
-                key: value for key, value in total.items() if key not in ("age_ns", "modified_at")
-            },
+            else {key: value for key, value in total.items() if key not in ("age_ns", "time_at")},
         }
         if request_id == "r_full_tree":
             facts["trees"] = {str(entry["root"]): entry["tree"] for entry in section["trees"]}

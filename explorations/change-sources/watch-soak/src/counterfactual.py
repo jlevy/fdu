@@ -25,6 +25,9 @@ from scripts.atomic_write import complete_lines  # noqa: E402
 PRIV = sys.argv[1]
 ROOT = sys.argv[2].rstrip("/")
 DEC = json.JSONDecoder()
+# A watch's change records under each version a soak may have recorded: `fdu.stream/2`
+# through 0.5.0, `fdu.stream/3` after it.
+STREAM_PREFIXES = ('{"schema": "fdu.stream/2"', '{"schema": "fdu.stream/3"')
 
 
 def load_view(path):
@@ -103,7 +106,7 @@ categories = Counter(category(p) for p in open_changed)
 stream_upserts_open = Counter()
 with open(os.path.join(PRIV, "soak.jsonl"), "r", encoding="utf-8", errors="surrogateescape") as f:
     for line in f:
-        if not line.startswith('{"schema": "fdu.stream/2"'):
+        if not line.startswith(STREAM_PREFIXES):
             continue
         d = json.loads(line)
         if d["op"] == "upsert" and d["path"] in writers:

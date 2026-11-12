@@ -86,8 +86,11 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
         .output()
         .expect("run traced partial fdu");
 
+    // The fixture stamps its files' modification time an hour back, which is all a test
+    // can backdate, so the tree reads the modification clock the engine golden was
+    // rendered on.
     let human = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--cache", "off", "--color", "never", "--size", "apparent"])
+        .args(["--cache", "off", "--color", "never", "--size", "apparent", "--time", "modified"])
         .arg(root.path())
         .output()
         .expect("run human fdu");

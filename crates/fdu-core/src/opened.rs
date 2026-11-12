@@ -1000,6 +1000,11 @@ fn bind_root(
         journal_capacity_bytes,
     );
     index.set_control_limits(scan.control_limits);
+    // The device the root is on, recorded as every walk records it, before any reader
+    // holds the index (`scan::root_device_op`); discovery lists the root next.
+    index.record_root_device(
+        crate::scan::root_device(&root, &metadata).map_err(|source| Error::io(&root, source))?,
+    );
     let index = IndexHandle::new(index);
     Ok((root, index, scan, budget))
 }
@@ -1008,6 +1013,10 @@ fn bind_root(
 struct PendingDirectory {
     path: PathBuf,
     depth: usize,
+    /// The device the directory is on, which its children are compared with
+    /// ([`crate::scan::entered_directory_attrs`]); zero for the root, whose device the
+    /// discovery reads when it starts.
+    device: u64,
 }
 
 struct DiscoveryFrontier {
@@ -1059,7 +1068,7 @@ impl DiscoveryFrontier {
             state: Mutex::new(FrontierState {
                 unprioritized: VecDeque::from([QueuedDirectory {
                     sequence: 0,
-                    directory: PendingDirectory { path: PathBuf::new(), depth: 0 },
+                    directory: PendingDirectory { path: PathBuf::new(), depth: 0, device: 0 },
                 }]),
                 serving: Vec::new(),
                 priorities: Vec::new(),
@@ -1241,6 +1250,7 @@ fn discover_directory(
     #[cfg(test)] deterministic_discovery_order: bool,
 ) -> Result<DiscoveryStep> {
     let absolute = root.join(&directory.path);
+    let dir_dev = if directory.path.as_os_str().is_empty() { root_dev } else { directory.device };
     let policy = crate::scan::ListingPolicy::every_child_stated(scan.one_filesystem);
     let listing = match crate::scan::list_directory(readers, &absolute, policy, None) {
         Ok(listing) => listing,
@@ -1296,8 +1306,8 @@ fn discover_directory(
             frontier.stop();
             return Ok(DiscoveryStep::Stopped);
         }
-        let (name, observed) = match item {
-            crate::scan::Listed::Child { name, observed } => (name, observed),
+        let (name, observed, automount) = match item {
+            crate::scan::Listed::Child { name, observed, automount } => (name, observed, automount),
             crate::scan::Listed::Failed(source) => {
                 retain_local_issue(
                     &mut issues,
@@ -1323,9 +1333,11 @@ fn discover_directory(
             root,
             &directory.path,
             directory.depth,
+            dir_dev,
             &name,
             kind,
             attrs,
+            automount,
             root_dev,
             scan,
         ) else {
@@ -1370,6 +1382,7 @@ fn discover_directory(
             discovered.push(PendingDirectory {
                 path: path.clone(),
                 depth: directory.depth.saturating_add(1),
+                device: crate::scan::listed_device(attrs, dir_dev),
             });
         }
         let answer = push_discovery_op(
@@ -2019,6 +2032,7 @@ enum TestPoint {
     BeforeJournalWait,
     AfterRefreshVerification,
     DuringTreeProjection,
+    DuringCapacityObservation,
     #[cfg(feature = "watch")]
     BeforeObservationHandoff,
     #[cfg(feature = "watch")]
@@ -2039,6 +2053,7 @@ struct TestControls {
     before_journal_wait: TestGate,
     after_refresh_verification: TestGate,
     during_tree_projection: TestGate,
+    during_capacity_observation: TestGate,
     #[cfg(feature = "watch")]
     before_observation_handoff: TestGate,
     #[cfg(feature = "watch")]
@@ -2068,6 +2083,7 @@ impl TestControls {
             TestPoint::BeforeJournalWait => &self.before_journal_wait,
             TestPoint::AfterRefreshVerification => &self.after_refresh_verification,
             TestPoint::DuringTreeProjection => &self.during_tree_projection,
+            TestPoint::DuringCapacityObservation => &self.during_capacity_observation,
             #[cfg(feature = "watch")]
             TestPoint::BeforeObservationHandoff => &self.before_observation_handoff,
             #[cfg(feature = "watch")]
@@ -2747,7 +2763,8 @@ mod tests {
             usize::try_from(seed % u64::try_from(bound).expect("small bound")).expect("fits")
         };
         let frontier = DiscoveryFrontier::new();
-        let mut reference = VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0 }]);
+        let mut reference =
+            VecDeque::from([PendingDirectory { path: PathBuf::new(), depth: 0, device: 0 }]);
         let mut priorities = Vec::new();
         for step in 0..4_000 {
             match next(10) {
@@ -2764,6 +2781,7 @@ mod tests {
                             .map(|child| PendingDirectory {
                                 path: parent.path.join(["a", "b", "c"][child]),
                                 depth: parent.depth + 1,
+                                device: 0,
                             })
                             .collect();
                         reference.extend(children.iter().cloned());
@@ -2771,8 +2789,11 @@ mod tests {
                     }
                 }
                 5..=7 => {
-                    let directory =
-                        PendingDirectory { path: PathBuf::from(PATHS[next(7)]), depth: 1 };
+                    let directory = PendingDirectory {
+                        path: PathBuf::from(PATHS[next(7)]),
+                        depth: 1,
+                        device: 0,
+                    };
                     reference.push_back(directory.clone());
                     frontier.extend([directory]);
                 }
@@ -5193,6 +5214,99 @@ mod tests {
             }),
             Err(Error::ReportViewLimit { .. })
         ));
+        opened.close().expect("close");
+    }
+
+    /// An opened root is a serving route: a report projection that names `volumes`
+    /// observes the filesystem its root is on before it reads (review D4 on #209).
+    #[test]
+    fn an_opened_report_naming_volumes_observes_capacity() {
+        let (_root, opened) = opened(Arc::new(TestControls::default()));
+        apply_and_notify(
+            &opened,
+            &Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("a.bin"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 300, allocated: 512, ..crate::Attrs::default() },
+            }]),
+        );
+        let response = opened
+            .read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
+                    query: crate::query::Query {
+                        views: vec![crate::query::ViewSpec::Volumes],
+                        ..crate::query::Query::default()
+                    },
+                    now: std::time::SystemTime::now(),
+                    max_work: crate::MAX_PAGE_WORK,
+                })],
+                ..crate::ReadRequest::default()
+            })
+            .expect("read");
+        let crate::ProjectionResult::Report(report) = &response.results[0] else {
+            panic!("expected a report, got {:?}", response.results[0]);
+        };
+        let crate::query::Section::Volumes(volumes) = &report.sections[0] else {
+            panic!("expected volumes")
+        };
+        assert!(volumes.observed_at_ns.is_some(), "capacity was observed");
+        assert_eq!(volumes.rows.len(), 1);
+        let row = &volumes.rows[0];
+        assert!(row.capacity.as_ref().is_some_and(|capacity| capacity.capacity_bytes > 0));
+        assert_eq!(row.counted.files, 1);
+        opened.close().expect("close");
+    }
+
+    /// A report that names `volumes` observes capacity holding no index guard, so a
+    /// filesystem slow to answer delays that report alone, never a refresh or the readers
+    /// queued behind one (review F2 on #209).
+    #[test]
+    fn a_refresh_returns_while_a_report_observes_capacity() {
+        let controls = Arc::new(TestControls::default());
+        let root = tempfile::tempdir().expect("temp root");
+        std::fs::write(root.path().join("a.bin"), b"bytes").expect("fixture");
+        let opened =
+            OpenedIndex::open_for_test(root.path(), OpenOptions::default(), Arc::clone(&controls))
+                .expect("open live root");
+        assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
+        controls.gate(TestPoint::DuringCapacityObservation).arm();
+        let reader = opened.clone();
+        let report = thread::spawn(move || {
+            reader.read(crate::ReadRequest {
+                projections: vec![crate::ReadProjection::Report(crate::ReportRequest {
+                    query: crate::query::Query {
+                        views: vec![crate::query::ViewSpec::Volumes],
+                        ..crate::query::Query::default()
+                    },
+                    now: std::time::SystemTime::now(),
+                    max_work: crate::MAX_PAGE_WORK,
+                })],
+                ..crate::ReadRequest::default()
+            })
+        });
+        controls.gate(TestPoint::DuringCapacityObservation).wait_reached();
+
+        std::fs::write(root.path().join("new.txt"), b"new").expect("new file");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let writer = opened.clone();
+        let refresh = thread::spawn(move || {
+            let _ = sender.send(writer.refresh(&[PathBuf::from("new.txt")]));
+        });
+        let refreshed = receiver.recv_timeout(TEST_GATE_TIMEOUT);
+        controls.gate(TestPoint::DuringCapacityObservation).release();
+        let refreshed = refreshed.expect("a refresh finished while capacity was observed");
+        assert_eq!(refreshed.expect("refresh").accepted, [PathBuf::from("new.txt")]);
+        refresh.join().expect("refresh thread");
+
+        let response = report.join().expect("report thread").expect("read");
+        let crate::ProjectionResult::Report(report) = &response.results[0] else {
+            panic!("expected a report, got {:?}", response.results[0]);
+        };
+        let crate::query::Section::Volumes(volumes) = &report.sections[0] else {
+            panic!("expected volumes")
+        };
+        assert!(volumes.rows[0].capacity.is_some(), "the observation reached the read");
+        assert_eq!(volumes.rows[0].counted.files, 2, "the read saw the refreshed file");
         opened.close().expect("close");
     }
 

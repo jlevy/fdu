@@ -7,14 +7,257 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-12
+
+fdu 0.6.0 finds what was written recently and puts the disk beside the tree.
+Every time a report reads is on one clock, change time by default, selected by
+`--since`, `--before`, and `--time`; `--view ages` profiles a selection by age, and
+`--view volumes` shows each filesystem’s capacity beside what the report counted.
+It renames the time flags and machine-output fields, changes the report schema to
+`fdu.report/12` and the watch stream to `fdu.stream/3`, and includes Rust and Python API
+changes. See the [release notes](docs/project/release-notes/0.6.0.md) for upgrade
+details.
+
+### Added
+
+- One time for every report: `--time changed|modified` (Python
+  `Selection(time=TimeBasis.MODIFIED)`, Rust `Selection::time`) chooses the clock that
+  every time window, `--sort time`, the tree’s age column, `recent`, `ages`, and every
+  row’s age reads, so one report never mixes two.
+  The default is **change time**, the newer of modification and status change, which
+  catches data that arrived carrying an older modification time: `cp -p`, `rsync -a`,
+  Finder and Explorer copies, `mv` from another filesystem, extracted archives, and
+  Cargo’s crate sources.
+  Asked what is new, it over-includes (a `chmod` looks new) rather than omits; asked
+  what is old, it does not call a just-restored backup stale.
+  `modified` is content age, as `ls -l` shows, and the clock to use after a bulk
+  `chmod`, `chown`, or relabel moved every status change, and in a tree whose files are
+  hard-linked from elsewhere: a link count is the file’s own metadata, so making or
+  removing any link moves the change time of every other name of the file, which package
+  managers that link from a shared store (`uv`, `pnpm`), `cp -l`, and
+  `git clone --local` do routinely.
+  A watch or an observing opened root reads a name again only where an event names it,
+  so a link made outside its tree, or to another name inside it, leaves the file’s other
+  names with their old change time until they are next read.
+  A file whose status change was not observed (on Windows, one fdu could list but not
+  open) is timed by its modification time, a lower bound, and a note counts such files
+  wherever a window or `ages` counted one.
+- `--since` and `--before` (Python `Selection(since=, before=)`) select entries by their
+  time on that clock, inclusive and exclusive, in the grammar the `--modified-*` flags
+  had.
+- `--sort time` (Python `SortKey.TIME`, Rust `SortKey::Time`) orders tree, list, files,
+  largest, recent, and code rows newest first on the report’s clock, trees included.
+  Types, extensions, families, languages, and documents carry no time: beside a view
+  that does, as in `--view full`, they keep size order under
+  `note: type and extension rows carry no time, so they keep size order`. Summary, ages,
+  and volumes have a fixed order, which no sort changes.
+  A request with only these views refuses the sort.
+- Machine output: the request echo names its `time`; every list row, tree node, and
+  total gives its time as `time_ns`, `time_at`, and `age_ns`; summary and tree rows give
+  `newest_file_time_ns`; and list rows also give both raw clocks, `mtime_ns` and
+  `changed_ns` (null where an entry’s status change was not observed), so an arrival
+  that carries old content is a row with a recent `changed_ns` and an old `mtime_ns`.
+  Python `FileRow`, `TreeNode`, `TreeTotal`, `SummaryRow`, and `ReportRequest` carry the
+  same names, and Rust `FileRow` has `status_observed` and `FileRow::changed_ns`.
+- Watch change records (`fdu.stream/3`) give an upsert’s `changed_ns` beside its
+  `mtime_ns`, absent where the status change was not observed, so a `--since --watch`
+  tail shows the time that admitted an entry.
+  Rust `Change::changed_ns`; Python `Change.changed_ns`, on a watch’s records and on
+  `Index.since()` upserts alike.
+- The index maintains each directory’s newest time on both clocks, so either value of
+  `--time` reads the same fast paths.
+  Public `RollUp` and `RollUpSummary`, and Python `RollUp` and opened-root
+  `RollUpSummary`, gain `newest_changed_ns` beside `newest_mtime_ns`. Rust: `TimeBasis`,
+  `Times`, `Attrs::times`, `Attrs::change_time_ns`, and `query::parse_time_basis`.
+- `--view ages` (Python `View.AGES`, Rust `ViewSpec::Ages`) profiles the selected
+  regular files by age on the report’s clock in nine fixed bands, newest first:
+  `future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`,
+  `1y to 3y`, and `over 3y`. The bands add up to `--view summary`, and where the
+  selection admits files alone each is what `--kind file` with the `--since`/`--before`
+  window it names selects over the same selection, clock, and instant; a size, pattern,
+  or kind a directory satisfies covers its contents, in the bands as in `summary`.
+  `future` holds a time at or after the report’s instant, taken before the walk, so a
+  file written while the walk runs lands there too.
+  Text keeps the grouped-row layout, leaving empty bands out.
+  Machine output keeps every band, with its edges as ages and as instants, its tallies
+  and ignored part, and a `cumulative` tally of it and every newer band.
+  The view is metadata only, composes with every selection and several roots, shares one
+  walk with other views, and is part of `--view full`. A watch re-bands at each repaint
+  and repaints when the tree changes, so in an idle tree a file keeps its band until
+  something else changes.
+- `--view volumes` (Python `View.VOLUMES`, Rust `ViewSpec::Volumes`) puts the disk
+  beside the tree: each filesystem the report touches, its capacity, the share in use,
+  what is available, and what the report counted there, in three lines per filesystem.
+  - **Rows** come from the walk’s own device changes, so a walk without
+    `--one-filesystem` shows each mount below the root; the mount table never names a
+    row. A row names where the report entered the filesystem as every other row is named,
+    relative to its root and `.` for the root itself, never by the canonical path the
+    capacity call used (`\\?\C:\…` on Windows, `/private/var` for `/var` on macOS). A
+    filesystem entered at several paths is one row, named by the first, with a note
+    naming up to three of the others, or counting them when there are more; machine
+    output lists every one in the row’s `also_entered`. Each row names its filesystem’s
+    type: on Linux, which gives a number, the common ones by the name `mount` gives them
+    (`ext2/3/4`, `xfs`, `tmpfs`, `overlay`, `nfs`, `fuse`, and others), and any other by
+    its number. An APFS, btrfs, or ZFS row says its available space is shared within its
+    pool.
+  - **Capacity** is observed when the report is read, by one `statfs` per filesystem on
+    Linux and macOS and `GetDiskFreeSpaceExW` on Windows, and never stored, so
+    `--stale-ok` shows current capacity.
+    `fdu PATH --view volumes --scan-depth 0` reads capacity alone.
+  - **What a report never mounts.** A capacity call mounts an unmounted automount
+    trigger and waits for it, as a listing does, and so does any path through one, or a
+    name an indirect map no longer holds; a stat with `AT_NO_AUTOMOUNT` covers only a
+    path’s last component, where it exists.
+    So below a root the call is made only where the walk listed and the operating
+    system’s mount table (`/proc/self/mountinfo`, or `getfsstat` without waiting on
+    macOS), read without resolving any path, lists a mount at exactly that path whose
+    topmost filesystem is not autofs, and only once the stat, safe there, finds the
+    device the walk recorded.
+    A directory kept at the scan depth, an expired automount, a filesystem unmounted or
+    numbered afresh, or a device boundary that is no mount point (a btrfs subvolume)
+    keeps its row with its counts, capacity unknown, and the reason; a mount the table
+    lists below one is still asked.
+    So `--stale-ok`, a watch’s repaint, a retained index, and an opened root’s read
+    never mount what the tree view would not, on indirect maps such as `/home` and
+    `/net` and kernel automounts such as NFS nested exports too, as far as the table
+    read for the report can tell: an automount that expires between that read and the
+    call there is asked for again, and the window is as long as the calls before it, so
+    a slow network filesystem in the same report stretches it.
+  - **The root’s device.** Every walk records the device it read its root on, and the
+    snapshot keeps it, so a report keys the root by the number its walk counted it on:
+    under `--stale-ok` after a remount or a reboot gave the root a new number, the tree
+    beneath it is still one filesystem, not a mount point per directory, and the root’s
+    capacity, like any row’s, reads unknown until a fresh walk.
+    Rust `Index::root_device` returns it.
+  - The view describes the host rather than the tree, so `--view full` leaves it out;
+    ask for it by name, alone or beside other views (`--view tree,volumes`).
+- Rust: `observe_capacity`, `CapacityObservation`, and `VolumeCapacity` in
+  `fdu_core::capacity`; `query::observe_volumes` observes what a request needs, and
+  `report` and `report_roots` take that observation as their last argument, reporting
+  capacity as unknown, with a note, when given `None`. The sections and their parts are
+  `AgeProfile`, `AgeBand`, and `AgeTally`, and `VolumesSection`, `VolumeRow`, and
+  `VolumeCounted`; `observe_volumes` returns a `VolumesObservation`, `volume_entries`
+  lists the `VolumeEntry` values it observes, each saying whether the walk listed it,
+  and `CapacityObservation` holds one `ObservedVolume` per filesystem.
+- Python: `View.AGES` reports an `AgesSection` of `AgeBand` values with `AgeTally`
+  tallies, and `View.VOLUMES` a `VolumesSection` of `VolumeRow` values, each with what
+  the report counted there as a `VolumeCounted` and the other paths it entered the
+  filesystem at as `VolumeEntered` values.
+- Selection coverage: a report whose selection narrows the scanned files ends with
+  `note: selected 2,951 of 27,060 files, 704 MiB of 1.8 GiB`, so a filtered root’s 100%
+  is not read as the whole tree.
+  A time-bounded selection that admitted every file says so, as
+  `note: selected all 2 files, 98 KiB`, since a window without `--kind file` admits a
+  directory, and everything in it, whenever anything in it is recent.
+  Every report’s envelope carries `selected` and `scanned`, each
+  `{files, dirs, bytes, allocated}`; Python `Report.selected` and `Report.scanned` are
+  `EntryTotals`, and Rust `Report::selection` is a `SelectionCoverage` of two
+  `EntryTotals`. Under `--ignored=exclude` or `--ignored=only` the population is the
+  scan’s scope: `scanned` is what that scan retained of it (under `--ignored=only`, the
+  ignored entries, not the directories walked to reach them or the `.gitignore` files
+  read), selecting by the same ignored state narrows nothing, so `selected` equals
+  `scanned`, and a narrower selection’s note names the scope, as in
+  `note: selected 12 of the 4,296 files an --ignored=exclude scan retained, …`.
+- Python: `Index.freshness` reads a retained index’s `Freshness` without building a
+  report.
+
 ### Changed
 
+- **Breaking:** every time is change time unless `--time modified` is given, so the
+  tree’s age column, `--view recent`, `--long`, and every age read change time: a tree
+  copied in yesterday reads `1d` however old its files.
+  `--time modified` gives the modification-time answers 0.5.0 gave.
+- **Breaking:** `--modified-since` and `--modified-before` are `--since` and `--before`,
+  and `--sort mtime` is `--sort time`; Python
+  `Selection(modified_since=, modified_before=)` is `Selection(since=, before=)` and
+  `SortKey.MTIME` is `SortKey.TIME`.
+- **Breaking:** a time sort is refused where no sorted view carries a time:
+  `--sort time` with only `types`, `extensions`, `families`, `languages`, `documents`,
+  `summary`, `ages`, or `volumes` exits 2, naming the views that do.
+  `--sort mtime` was accepted there and ordered those rows by name.
+  Python raises `InvalidArgumentError` for the same request.
+- **Breaking:** the report schema is `fdu.report/12`, for the time fields and envelope
+  fields here and the `ages` and `volumes` sections.
+- **Breaking:** machine output names every time by the report’s clock: a tree node’s and
+  total’s `mtime_ns`, `newest_mtime_ns`, and `modified_at` are `time_ns`,
+  `newest_file_time_ns`, and `time_at`, a summary’s `newest_mtime_ns` is
+  `newest_file_time_ns`, and a list row’s `modified_at` is `time_at`, beside its new
+  `time_ns` (its `mtime_ns` stays, as one of the two raw clocks).
+  The Python models follow: `FileRow.modified_at`, `TreeNode.mtime_ns`,
+  `TreeNode.newest_mtime_ns`, `TreeNode.modified_at`, the same `TreeTotal` fields, and
+  `SummaryRow.newest_mtime_ns`.
+- **Breaking:** the watch change-record schema is `fdu.stream/3`, for the upsert’s
+  `changed_ns` above; a consumer pinned to `fdu.stream/2` moves to `fdu.stream/3`.
+- **Breaking:** `--view full` holds `ages` right after `summary`, so every later section
+  of a full report moves one place in machine output: read sections by their `view`, not
+  their position.
+- **Breaking:** the metadata snapshot is format 7, which keeps the device each walk read
+  its root on. A snapshot 0.5.0 wrote is not read: `--cache-status` reports it as
+  `stale`, `--stale-ok` fails until a run writes a new one, and `--cache-clear` removes
+  it.
+- **Breaking (Rust):** `ViewSpec` gains `Ages` and `Volumes` and `Section` gains `Ages`
+  and `Volumes`, so an exhaustive match over either needs the new arms; `ViewSpec::ALL`
+  has 14 views. `Report` gains `selection` and `time`.
+- **Breaking (Rust):** `query::report` and `query::report_roots` take a capacity
+  observation as their last argument, `None` for a request without `volumes`.
+- **Breaking (Rust):** `report_format::CONTENT_REPORT_SCHEMA`, an alias of
+  `REPORT_SCHEMA` since every report shares one schema, is gone.
+- **Breaking (Rust):** `Selection::modified` is `Selection::window`, beside the new
+  `Selection::time`, and `ModifiedWindow` is `TimeWindow`; `SortKey::Mtime` is
+  `SortKey::Time`; `Candidate::mtime_ns` and `FileRow::mtime_ns` are `times: Times`;
+  `TreeNode` and `TreeTotal` carry `time` and `newest_file` as `Times`, and `SummaryRow`
+  carries `newest_file`; `ReadSpec::modified_since` and `modified_before` are `since`
+  and `before`, beside `time`, and `AxisNames` names the same three.
+  `FileRow` gains `status_observed`, `Change` gains `changed_ns`, and `RollUp` and
+  `RollUpSummary` gain `newest_changed_ns`, so a struct literal of any of them needs the
+  new field.
+- **Breaking (Python):** a hand-built value takes the new fields: `FileRow` takes
+  `time_ns`, `mtime_ns`, and `changed_ns` after `allocated`, `Report` takes `selected`
+  and `scanned`, `ReportRequest` takes `time`, and `RollUp` and the opened-root
+  `RollUpSummary` take `newest_changed_ns` after `newest_mtime_ns`.
+- Every walk’s first record is its root, carrying the device the walk read it on.
+  Rust `scan::scan` emits it first, as an upsert of the empty path whose attributes hold
+  only that device, so a consumer that tallies entries from the stream skips it.
+  A refresh or reconciliation of the whole root records it again, so its counts include
+  the root: Python `Index.refresh()` counts it among `unchanged`.
 - The agent skill, `fdu --help`, `fdu --docs`, and the README show how to find what was
-  written recently from one scan with no saved state:
-  `fdu PATH --kind file --modified-since 24h` by folder, and `--view largest` for the
-  files. They say why `--kind file` is required, and that the answer is data written, not
-  net growth: modified files count in full, deleted files do not appear, and data copied
-  or extracted with an older modification time is missed.
+  written recently from one scan with no saved state: `fdu PATH --kind file --since 24h`
+  by folder, and `--view largest` for the files.
+  They say why `--kind file` is required, and that the answer is data written, not net
+  growth: modified files count in full and deleted files do not appear.
+- A tree row’s age is described as how long ago anything it counts last changed, on the
+  report’s clock.
+- The locked dependency set takes pulldown-cmark 0.13.6, which fixes RUSTSEC-2026-0414
+  and RUSTSEC-2026-0433. fdu never enables the wikilink option both need, so 0.5.0 was
+  not exposed, and Markdown word counts are unchanged.
+
+### Fixed
+
+- On Linux with glibc, a walk treats a kernel automount point that is not mounted yet
+  (`STATX_ATTR_AUTOMOUNT`: an NFS nested export, tracefs under debugfs) as the
+  filesystem crossing it is.
+  Under `--one-filesystem` it is a boundary the walk never opens.
+  It reads as on its parent’s device until something lists it, so a first run listed it,
+  which mounted the other filesystem and counted the files at its top, and the next run
+  did not.
+- A directory a walk enters on another device than its parent is recorded as the
+  filesystem its listing found, read from a descriptor the walk opens on it, as the walk
+  root already was. An automount trigger the walk mounts then reads on that first run as
+  it does once mounted, with the mounted root’s own time and identity; it was recorded
+  as the trigger, so two cold runs over an unchanged tree disagreed about that
+  directory. An ordinary mount point reads as before.
+- Python: `Index.total()` and `Index.rollup()` take a roll-up and its provenance from
+  one native read. They made two, so a `refresh` between them could pair a roll-up with
+  the provenance of a later state, or with none for a directory removed since.
+- Python: `OpenedIndex.read` raises `TypeError` for an argument that is not a
+  projection; it was read as `Diagnostics`.
+- A watch, an observing opened root, or an index refresh that removes many files from
+  one directory rebuilds that directory’s newest times once per batch of changes, not
+  once per removal. Removing a wide directory’s files newest first, as `rm -rf` does on
+  tmpfs, read every remaining file again for each removal, with the index’s write guard
+  held: 2,000 such removals rebuilt directories 8,000 times, and now 32. The counters
+  report the work as `maximum repairs` and `maximum repair child reads`, and Rust
+  `counters::Counts` gains `maximum_repairs` and `maximum_repair_reads`.
 
 ## [0.5.0] - 2026-10-11
 

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
-use crate::query::{Basis, Delivery, Query, Report, Request, Selection, WatchDelivery, report};
+use crate::query::{Basis, Delivery, Query, Report, Request, Selection, WatchDelivery};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
 
@@ -38,6 +38,10 @@ pub struct Change {
     pub allocated: Option<u64>,
     /// Modification time, when the entry still exists.
     pub mtime_ns: Option<i64>,
+    /// Change time, the newer of modification and status change, when the entry still
+    /// exists and its status change was observed ([`crate::Attrs::change_time_ns`]): the
+    /// time a `since`/`before` window on the default clock admitted it by.
+    pub changed_ns: Option<i64>,
     /// Whether `.gitignore` rules ignore this entry after the commit.
     ///
     /// Set on an upsert, and on a removal a rule edit caused, where the new classification
@@ -105,7 +109,8 @@ struct EntryFacts {
     kind: EntryKind,
     bytes: u64,
     allocated: u64,
-    mtime_ns: i64,
+    times: crate::Times,
+    changed_ns: Option<i64>,
 }
 
 /// The result of a throttled attempt to persist a live session.
@@ -147,7 +152,7 @@ impl Persistence {
 }
 
 /// Write the exact activity of every row whose age `format` shows into a repaint's
-/// identity: each tree row's `mtime_ns` and `complete`, and a flat row's under `--long`,
+/// identity: each tree row's time on the report's clock and `complete`, and a flat row's under `--long`,
 /// the one flat format that prints an age. A rendered age has a unit's resolution, so a
 /// touch that leaves `3m` at `3m` would otherwise repaint nothing; the other formats show
 /// the exact time or none. Whether a row counts, and so what each row shows, already
@@ -173,13 +178,13 @@ fn write_shown_activity(
             crate::query::Section::Tree { root: Some(root), .. } => {
                 let mut stack = vec![&**root];
                 while let Some(node) = stack.pop() {
-                    write_activity(identity, node.mtime_ns, node.complete)?;
+                    write_activity(identity, node.time.map(|t| t.get(report.time)), node.complete)?;
                     stack.extend(node.children.iter());
                 }
             }
             crate::query::Section::Files { rows, .. } if shown == Format::Long => {
                 for row in rows {
-                    write_activity(identity, Some(row.mtime_ns), row.complete)?;
+                    write_activity(identity, Some(row.times.get(report.time)), row.complete)?;
                 }
             }
             _ => {}
@@ -206,6 +211,30 @@ fn write_activity(
         Some(true) => 2,
     };
     identity.write_all(&record)
+}
+
+/// Take when each volumes section's capacity was observed out of `report`, for a repaint's
+/// identity: it is a generation instant, like the one the identity already pins, so a
+/// repaint follows what the filesystems hold and have free, never the clock alone.
+fn take_observation_instants(report: &mut Report) -> Vec<Option<i64>> {
+    report
+        .sections
+        .iter_mut()
+        .filter_map(|section| match section {
+            crate::query::Section::Volumes(volumes) => Some(volumes.observed_at_ns.take()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Put back what [`take_observation_instants`] took, in the same sections.
+fn restore_observation_instants(report: &mut Report, instants: Vec<Option<i64>>) {
+    let mut instants = instants.into_iter();
+    for section in &mut report.sections {
+        if let crate::query::Section::Volumes(volumes) = section {
+            volumes.observed_at_ns = instants.next().flatten();
+        }
+    }
 }
 
 fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
@@ -500,7 +529,11 @@ impl Session {
     /// absolute bounds when it was built, and only the age reference is re-read.
     pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
-        report(&index, &self.request_at(generated_at), generated_at)
+        let request = self.request_at(generated_at);
+        // Each answer observes capacity anew when it shows `volumes`. A watch answers when
+        // its tree changes, so free space is read then, not as it moves.
+        let capacity = crate::query::observe_volumes(&[&index], &request);
+        crate::query::report(&index, &request, generated_at, capacity.as_ref())
     }
 
     /// The session's request, read at `at`: the same question, with its ages measured
@@ -536,7 +569,7 @@ impl Session {
     /// answer measures them from its own instant, so a tree's `3m` becomes `4m` with no
     /// change at all. The identity measures them from one fixed reference instead, the
     /// instant the session's request was built, which leaves each row's age a function
-    /// of its activity alone, and adds the exact `mtime_ns` and `complete` of every row
+    /// of its activity alone, and adds the exact time and `complete` of every row
     /// whose age `format` shows. So an idle tree repaints nothing while its ages roll
     /// over, and any change in a row's activity repaints, a touch that leaves its age in
     /// the same unit included.
@@ -555,6 +588,7 @@ impl Session {
         let mut report = self.report(generated_at)?;
         let pinned = std::time::SystemTime::UNIX_EPOCH;
         let stamped = std::mem::replace(&mut report.provenance.generated_at, pinned);
+        let observed = take_observation_instants(&mut report);
         let measured_from = report.age_reference_ns;
         report.measure_ages_from(crate::query::system_time_to_nanos(self.request.now));
         let mut identity = RepaintDigest::new();
@@ -578,6 +612,7 @@ impl Session {
                 });
         report.measure_ages_from(measured_from);
         report.provenance.generated_at = stamped;
+        restore_observation_instants(&mut report, observed);
         rendered.map_err(|error| Error::io(&self.request.basis.root, error))?;
         let identity = identity.finish();
         if self.presented == Some(identity) {
@@ -692,7 +727,8 @@ impl Session {
                             kind: index.kind_of(id)?,
                             bytes: attrs.size,
                             allocated: attrs.allocated,
-                            mtime_ns: attrs.mtime_ns,
+                            times: attrs.times(),
+                            changed_ns: attrs.change_time_ns(),
                         },
                     ))
                 })
@@ -739,7 +775,7 @@ impl Session {
                     kind: *kind,
                     bytes: attrs.size,
                     allocated: attrs.allocated,
-                    mtime_ns: attrs.mtime_ns,
+                    times: attrs.times(),
                     ignored: facts.is_ignored(path).unwrap_or(false),
                 };
                 self.selection().admits(&candidate).then(|| Change {
@@ -749,6 +785,7 @@ impl Session {
                     bytes: Some(attrs.size),
                     allocated: Some(attrs.allocated),
                     mtime_ns: Some(attrs.mtime_ns),
+                    changed_ns: attrs.change_time_ns(),
                     ignored: facts.is_ignored(path),
                     clock,
                 })
@@ -762,7 +799,7 @@ impl Session {
                     kind: *kind,
                     bytes: current.size,
                     allocated: current.allocated,
-                    mtime_ns: current.mtime_ns,
+                    times: current.times(),
                     ignored,
                 };
                 if self.selection().admits(&candidate) {
@@ -773,6 +810,7 @@ impl Session {
                         bytes: Some(current.size),
                         allocated: Some(current.allocated),
                         mtime_ns: Some(current.mtime_ns),
+                        changed_ns: current.change_time_ns(),
                         ignored: facts.is_ignored(path),
                         clock,
                     })
@@ -784,6 +822,7 @@ impl Session {
                         bytes: None,
                         allocated: None,
                         mtime_ns: None,
+                        changed_ns: None,
                         ignored: None,
                         clock,
                     })
@@ -805,6 +844,7 @@ impl Session {
                     bytes: None,
                     allocated: None,
                     mtime_ns: None,
+                    changed_ns: None,
                     ignored: facts.is_ignored(path),
                     clock,
                 })
@@ -818,6 +858,7 @@ impl Session {
                 bytes: None,
                 allocated: None,
                 mtime_ns: None,
+                changed_ns: None,
                 ignored: None,
                 clock,
             }),
@@ -839,7 +880,7 @@ impl Session {
                         kind: entry.kind,
                         bytes: entry.bytes,
                         allocated: entry.allocated,
-                        mtime_ns: entry.mtime_ns,
+                        times: entry.times,
                         ignored,
                     })
                 };
@@ -851,6 +892,7 @@ impl Session {
                         bytes: None,
                         allocated: None,
                         mtime_ns: None,
+                        changed_ns: None,
                         ignored: Some(*current_ignored),
                         clock,
                     }),
@@ -860,7 +902,8 @@ impl Session {
                         entry_kind: Some(entry.kind),
                         bytes: Some(entry.bytes),
                         allocated: Some(entry.allocated),
-                        mtime_ns: Some(entry.mtime_ns),
+                        mtime_ns: Some(entry.times.modified),
+                        changed_ns: entry.changed_ns,
                         ignored: Some(*current_ignored),
                         clock,
                     }),
@@ -1900,10 +1943,13 @@ mod tests {
             .and_then(|handle| handle.set_modified(written))
             .expect("stamp");
         // The identity measures ages from the request's instant: a day and an hour after
-        // the file, so a five-second touch leaves it at `1d`.
+        // the file, so a five-second touch leaves it at `1d`. On the modification clock,
+        // which the fixture stamps; its status changes are its writes, made just now.
         let built = written + Duration::from_secs(25 * 3_600);
+        let mut query = tree_query();
+        query.selection.time = crate::TimeBasis::Modified;
         let (mut session, sender) =
-            scripted_session_built(root.path(), tree_query(), ScanConfig::default(), built);
+            scripted_session_built(root.path(), query, ScanConfig::default(), built);
         let at = |session: &mut Session, instant| {
             session.changed_report(instant, Format::Text, RenderOptions::default()).expect("report")
         };
@@ -1931,6 +1977,71 @@ mod tests {
         );
         assert!(at(&mut session, later).is_some(), "a change in activity repaints");
         assert!(at(&mut session, later).is_none(), "and only once");
+    }
+
+    /// An age band is measured from each answer's own instant, but its edges as instants
+    /// are not part of the answer's identity: an answer asked for after a file crossed into
+    /// an older band differs, and one asked a minute later does not (review D4 on #209).
+    /// The command line asks after its tree changes, so a watch re-bands at each repaint,
+    /// not at each edge (review F7).
+    #[test]
+    fn an_answer_differs_once_a_file_crosses_a_band_edge_and_not_before() {
+        use crate::report_format::{Format, RenderOptions};
+
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("a.txt"), b"alpha").expect("a");
+        // A change time cannot be set, so the session starts now, beside the file's.
+        let built = std::time::SystemTime::now() + Duration::from_secs(1);
+        let query = Query { views: vec![crate::query::ViewSpec::Ages], ..Query::default() };
+        let (mut session, _sender) =
+            scripted_session_built(root.path(), query, ScanConfig::default(), built);
+        let at = |session: &mut Session, instant| {
+            session.changed_report(instant, Format::Json, RenderOptions::default()).expect("report")
+        };
+        assert!(at(&mut session, built).is_some(), "the first answer is always given");
+        assert!(
+            at(&mut session, built + Duration::from_secs(60)).is_none(),
+            "every band edge moved a minute, and the file is still under an hour old"
+        );
+        let crossed = at(&mut session, built + Duration::from_secs(2 * 3_600))
+            .expect("the file crossed into 1h to 1d");
+        let crate::query::Section::Ages(profile) = &crossed.sections[0] else { panic!("ages") };
+        let held: Vec<_> = profile
+            .bands
+            .iter()
+            .filter(|band| band.tally.files > 0)
+            .map(|band| band.band)
+            .collect();
+        assert_eq!(held, ["1h to 1d"]);
+    }
+
+    /// When capacity was observed is left out of a repaint's identity and put back on the
+    /// answer, so free space, not the instant it was read, decides a repaint.
+    #[test]
+    fn a_capacity_observation_instant_is_pinned_for_the_identity_and_restored() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("a.txt"), b"alpha").expect("a");
+        let query = Query {
+            views: vec![crate::query::ViewSpec::Summary, crate::query::ViewSpec::Volumes],
+            ..Query::default()
+        };
+        let (session, _sender) = scripted_session_built(
+            root.path(),
+            query,
+            ScanConfig::default(),
+            std::time::SystemTime::now(),
+        );
+        let mut report = session.report(std::time::SystemTime::now()).expect("report");
+        let observed = |report: &Report| match &report.sections[1] {
+            crate::query::Section::Volumes(volumes) => volumes.observed_at_ns,
+            other => panic!("expected volumes, got {other:?}"),
+        };
+        let when = observed(&report);
+        assert!(when.is_some(), "a watch's repaint observes capacity");
+        let taken = take_observation_instants(&mut report);
+        assert_eq!((taken.clone(), observed(&report)), (vec![when], None));
+        restore_observation_instants(&mut report, taken);
+        assert_eq!(observed(&report), when);
     }
 
     /// The repaint digest is FNV-1a at 128 bits, and a section boundary is part of what
@@ -2141,6 +2252,71 @@ mod tests {
         sender.send("rename-to\tarchive/report.pdf\n").expect("script the arrival");
         drain(&mut session);
         assert_matches_cold_walk(&session, root.path(), "an old file moved in");
+    }
+
+    /// A link count is the file's own metadata, so making a hard link moves the status
+    /// change of every name the file has, while a backend names only the name made, and
+    /// nothing at all for a link made outside the watched tree. The watch reads the named
+    /// path and its directory, and no other name: another keeps its old change time until
+    /// something reads it again, where a cold walk reads the new one. This holds the
+    /// documented limit as it is, not as fixed (review G3 on #209): the time-basis docs
+    /// name it, and `--time modified` reads a clock no link moves.
+    #[cfg(unix)]
+    #[test]
+    fn a_hard_link_moves_a_change_time_the_watch_reads_only_where_an_event_names_it() {
+        let root = tempfile::tempdir().expect("root");
+        let outside = tempfile::tempdir().expect("outside the watched tree");
+        crate::test_support::stamped_file(&root.path().join("src/lib.rs"), b"fn f() {}", 1_000);
+        std::fs::create_dir(root.path().join("docs")).expect("docs");
+        let (mut session, sender) = scripted_session(root.path(), tree_query());
+        let held = |session: &Session, path: &str| {
+            session
+                .index
+                .read_with(|index| match index.expectation(std::path::Path::new(path)).state {
+                    crate::engine_contract::PathState::Present { attrs, .. } => attrs,
+                    state @ crate::engine_contract::PathState::Absent => {
+                        panic!("{path} is held: {state:?}")
+                    }
+                })
+                .expect("read the session's index")
+        };
+        let cold = |path: &str| {
+            let (_, attrs) =
+                crate::scan::observe_path(&root.path().join(path)).expect("a cold read");
+            attrs
+        };
+        // Past the coarsest timestamp tick, so the link's change time is a later one.
+        let wait_past = |attrs: crate::engine_contract::Attrs| {
+            let past = std::time::UNIX_EPOCH
+                + Duration::from_nanos(u64::try_from(attrs.ctime_ns).expect("after 1970"))
+                + Duration::from_millis(20);
+            while std::time::SystemTime::now() <= past {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        let before = held(&session, "src/lib.rs");
+        wait_past(before);
+
+        // A link made outside the tree: no event reaches the watch.
+        std::fs::hard_link(root.path().join("src/lib.rs"), outside.path().join("lib.rs"))
+            .expect("link outside");
+        drain(&mut session);
+        let after_outside = cold("src/lib.rs");
+        assert!(after_outside.ctime_ns > before.ctime_ns, "the link moved the change time");
+        assert_eq!(after_outside.mtime_ns, before.mtime_ns, "and not the modification time");
+        assert_eq!(held(&session, "src/lib.rs"), before, "the watch keeps the old change time");
+
+        // A link made inside the tree: the event names the new name, which the watch
+        // reads; the file's other name keeps its old change time.
+        wait_past(after_outside);
+        std::fs::hard_link(root.path().join("src/lib.rs"), root.path().join("docs/lib_link.rs"))
+            .expect("link inside");
+        sender.send("create\tdocs/lib_link.rs\n").expect("script the new name");
+        drain(&mut session);
+        let linked = cold("docs/lib_link.rs");
+        assert_eq!(held(&session, "docs/lib_link.rs").ctime_ns, linked.ctime_ns);
+        assert!(cold("src/lib.rs").ctime_ns > before.ctime_ns);
+        assert_eq!(held(&session, "src/lib.rs"), before, "the other name is not read again");
     }
 
     /// Deterministic `SplitMix64`, so a failing sequence replays from its printed seed.

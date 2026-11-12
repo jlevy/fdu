@@ -159,7 +159,7 @@ pub(crate) fn format_rfc3339_nanos(timestamp: i64) -> String {
 
 /// Hand [`format_rfc3339_nanos`]'s text to `f` without allocating it.
 ///
-/// Machine output writes one instant per row (`modified_at`), and building a `String` for
+/// Machine output writes one instant per row (`time_at`), and building a `String` for
 /// each was most of what that field cost a large report (review C7 on #191, exp-212).
 pub(crate) fn with_rfc3339_nanos<R>(timestamp: i64, f: impl FnOnce(&str) -> R) -> R {
     let nanos_per_second = i64::from(NANOS_PER_SEC);

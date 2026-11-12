@@ -686,6 +686,122 @@ class ToolComparisonTests(unittest.TestCase):
 
         self.assertIsNone(compare_tools._summary_oracle_error(summary, oracle))
 
+    def _one_clock_oracle(self) -> dict:
+        """A fingerprint whose newest file was modified at 17 and last changed at 40."""
+        return {
+            "counts": {"directories": 5, "files": 9},
+            "sizes": {"apparent_bytes": 1234, "allocated_bytes": 4096},
+            "newest_file_mtime_ns": 17,
+            "newest_file_changed_ns": 40,
+        }
+
+    def _one_clock_summary(self, newest: int) -> dict:
+        """A summary that names its newest file time by the report's one clock."""
+        return {
+            "files": 9,
+            "dirs": 4,
+            "bytes": 1234,
+            "allocated": 4096,
+            "newest_file_time_ns": newest,
+        }
+
+    def test_a_change_clock_summary_is_held_to_the_newest_change_time(self) -> None:
+        """The change clock reads change time, so mtime is the wrong answer there."""
+        oracle = self._one_clock_oracle()
+
+        self.assertIsNone(
+            compare_tools._summary_oracle_error(self._one_clock_summary(40), oracle, "changed")
+        )
+        error = compare_tools._summary_oracle_error(self._one_clock_summary(17), oracle, "changed")
+        self.assertEqual(
+            error,
+            "summary newest_file_time_ns=17 disagrees with independent oracle 40",
+        )
+
+    def test_a_summary_that_names_its_time_without_a_clock_is_malformed(self) -> None:
+        """Every report that prints the field echoes its clock, so none is assumed."""
+        oracle = self._one_clock_oracle()
+
+        for newest in (17, 40):
+            with self.subTest(newest=newest):
+                self.assertEqual(
+                    compare_tools._summary_oracle_error(
+                        self._one_clock_summary(newest), oracle, None
+                    ),
+                    "summary names newest_file_time_ns, but its request echo names no clock",
+                )
+
+    def test_a_modification_clock_summary_is_held_to_the_newest_mtime(self) -> None:
+        oracle = self._one_clock_oracle()
+
+        self.assertIsNone(
+            compare_tools._summary_oracle_error(self._one_clock_summary(17), oracle, "modified")
+        )
+        error = compare_tools._summary_oracle_error(self._one_clock_summary(40), oracle, "modified")
+        self.assertEqual(
+            error, "summary newest_file_time_ns=40 disagrees with independent oracle 17"
+        )
+
+    def test_a_fingerprint_without_the_change_clock_skips_only_that_time(self) -> None:
+        """A baseline recorded before the field existed cannot fail a change-clock run."""
+        oracle = self._one_clock_oracle()
+        del oracle["newest_file_changed_ns"]
+
+        self.assertIsNone(
+            compare_tools._summary_oracle_error(self._one_clock_summary(99), oracle, "changed")
+        )
+        # The modification clock is still checkable, and so is every tally.
+        self.assertIsNotNone(
+            compare_tools._summary_oracle_error(self._one_clock_summary(99), oracle, "modified")
+        )
+        wrong_files = {**self._one_clock_summary(99), "files": 8}
+        self.assertIn(
+            "files=8",
+            compare_tools._summary_oracle_error(wrong_files, oracle, "changed") or "",
+        )
+
+    def test_a_one_clock_binary_summary_is_held_to_mtime_whatever_the_clock(self) -> None:
+        """A control binary from before the change clock prints `newest_mtime_ns`."""
+        oracle = self._one_clock_oracle()
+        summary = {**self._one_clock_summary(0), "newest_mtime_ns": 17}
+        del summary["newest_file_time_ns"]
+
+        self.assertIsNone(compare_tools._summary_oracle_error(summary, oracle, None))
+        summary["newest_mtime_ns"] = 40
+        self.assertEqual(
+            compare_tools._summary_oracle_error(summary, oracle, None),
+            "summary newest_mtime_ns=40 disagrees with independent oracle 17",
+        )
+
+    def test_a_summary_on_an_unknown_clock_is_not_accepted(self) -> None:
+        error = compare_tools._summary_oracle_error(
+            self._one_clock_summary(40), self._one_clock_oracle(), "accessed"
+        )
+
+        self.assertIsNotNone(error)
+        self.assertIn("'accessed'", error or "")
+
+    def test_the_clock_is_read_from_the_request_echo_and_kept_out_of_the_digest(self) -> None:
+        base = {
+            "schema": "fdu.report/12",
+            "status": {"complete": True, "errors": []},
+            "provenance": {"source": "cold_scan", "freshness": "fresh"},
+            "reports": [{"view": "summary", "summary": {"files": 3}}],
+        }
+        echoed = {**base, "request": {"time": "modified"}}
+
+        digest, summary, clock, error = compare_tools._summary_semantics(
+            json.dumps(echoed).encode()
+        )
+        self.assertIsNone(error)
+        self.assertEqual(clock, "modified")
+        self.assertEqual(summary, {"files": 3})
+        bare_digest, _summary, bare_clock, _error = compare_tools._summary_semantics(
+            json.dumps(base).encode()
+        )
+        self.assertIsNone(bare_clock)
+        self.assertEqual(digest, bare_digest)
+
     def test_summary_semantic_mismatch_invalidates_both_sides_of_the_pair(self) -> None:
         samples = [
             {

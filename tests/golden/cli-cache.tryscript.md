@@ -27,8 +27,8 @@ patterns:
 ```console
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -43,6 +43,7 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -53,6 +54,8 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -113,8 +116,8 @@ one.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -129,6 +132,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -139,6 +143,8 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -205,8 +211,8 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a 
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -221,6 +227,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -231,6 +238,8 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -289,8 +298,8 @@ Under `auto` the report scans fresh and leaves the snapshot as it found it.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -305,6 +314,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -315,6 +325,8 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 269, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -373,8 +385,8 @@ fixture expanded
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -389,6 +401,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -399,6 +412,8 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -448,8 +463,8 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -464,6 +479,7 @@ $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -474,6 +490,8 @@ $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 p
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cache_only",
     "freshness": "stale",
@@ -533,8 +551,8 @@ $ fdu --watch --stale-ok project
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -549,6 +567,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -559,6 +578,8 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 3, "dirs": 3, "bytes": 82, "allocated": [ALLOCATED]},
+  "scanned": {"files": 3, "dirs": 3, "bytes": 82, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -618,8 +639,8 @@ A run that writes replaces the corrupt file.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -634,6 +655,7 @@ $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --dept
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -644,6 +666,8 @@ $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --dept
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 3, "dirs": 3, "bytes": 82, "allocated": [ALLOCATED]},
+  "scanned": {"files": 3, "dirs": 3, "bytes": 82, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -703,8 +727,8 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -719,6 +743,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -729,6 +754,8 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -773,8 +800,8 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
 ```console
 $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -789,6 +816,7 @@ $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --dept
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -799,6 +827,8 @@ $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --dept
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cache_only",
     "freshness": "stale",
@@ -841,8 +871,8 @@ stronger snapshot usable by a subsequent default `--stale-ok` request.
 ```console
 $ fdu --no-gitignore --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -857,6 +887,7 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["list"],
     "omitted_views": []
@@ -867,6 +898,8 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",
@@ -895,8 +928,8 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
 ```console
 $ fdu --stale-ok --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -911,6 +944,7 @@ $ fdu --stale-ok --format json --size apparent --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["list"],
     "omitted_views": []
@@ -921,6 +955,8 @@ $ fdu --stale-ok --format json --size apparent --limit 0 project
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cache_only",
     "freshness": "stale",
@@ -960,8 +996,8 @@ way out.
 ```console
 $ fdu --no-gitignore --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/11",
-  "generator": "fdu 0.5.0",
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "age_reference_at": "[RFC3339]",
@@ -976,6 +1012,7 @@ $ fdu --no-gitignore --cache on --view tree --format json --size apparent --dept
     },
     "analyze": [],
     "size": "apparent",
+    "time": "changed",
     "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
@@ -986,6 +1023,8 @@ $ fdu --no-gitignore --cache on --view tree --format json --size apparent --dept
     "errors": [],
     "errors_omitted": 0
   },
+  "selected": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
   "provenance": {
     "source": "cold_scan",
     "freshness": "fresh",

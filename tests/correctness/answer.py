@@ -1,4 +1,4 @@
-"""Read `fdu.report/11` JSON for the correctness runbook scripts.
+"""Read `fdu.report/12` JSON for the correctness runbook scripts.
 
 Both comparison scripts compare an answer with a cold oracle and check separately how the
 answer was produced. The answer is the report without the root fields that describe a
@@ -14,6 +14,22 @@ import json
 
 # Root fields that legitimately differ between two runs of one request.
 DELIVERY_FIELDS = frozenset({"provenance", "age_reference_ns", "age_reference_at"})
+# Fields at any depth that are read at each run rather than from the tree: a row's age,
+# an age band's edges as instants, which follow the reference instant, and a volume's
+# available space and when it was observed, which the host decides. A band's tallies and
+# a volume's capacity and counted bytes are the tree's, so they are compared.
+PER_READ_FIELDS = frozenset(
+    {
+        "age_ns",
+        "since_ns",
+        "before_ns",
+        "since_at",
+        "before_at",
+        "available_bytes",
+        "observed_at",
+        "observed_at_ns",
+    }
+)
 
 
 def parse(out: str) -> dict | None:
@@ -25,27 +41,27 @@ def parse(out: str) -> dict | None:
 
 
 def answer(out: str) -> object:
-    """The report without its delivery fields and row ages, or the raw text if not JSON."""
+    """The report without its delivery and per-read fields, or the raw text if not JSON."""
     doc = parse(out)
     if doc is None:
         return out
 
-    def strip_ages(node: object) -> object:
+    def strip_per_read(node: object) -> object:
         if isinstance(node, dict):
-            return {k: strip_ages(v) for k, v in node.items() if k != "age_ns"}
+            return {k: strip_per_read(v) for k, v in node.items() if k not in PER_READ_FIELDS}
         if isinstance(node, list):
-            return [strip_ages(item) for item in node]
+            return [strip_per_read(item) for item in node]
         return node
 
-    return strip_ages({k: v for k, v in doc.items() if k not in DELIVERY_FIELDS})
+    return strip_per_read({k: v for k, v in doc.items() if k not in DELIVERY_FIELDS})
 
 
 def age_problems(out: str) -> list[str]:
-    """Rows whose `age_ns` is not their reference instant minus their `mtime_ns`.
+    """Rows whose `age_ns` is not their reference instant minus their `time_ns`.
 
     Every object carrying an `age_ns` is checked, a flat row or a tree node at any depth.
     An age is unknown (null) when the report has no reference instant, when the row's
-    subtree was not listed in full (`complete: false`), or when the row has no mtime, as
+    subtree was not listed in full (`complete: false`), or when the row has no time, as
     a tree node that counts no entry has none.
     """
     doc = parse(out)
@@ -57,11 +73,9 @@ def age_problems(out: str) -> list[str]:
     def visit(node: object) -> None:
         if isinstance(node, dict):
             if "age_ns" in node:
-                mtime = node.get("mtime_ns")
-                known = reference is not None and mtime is not None
-                expected = (
-                    reference - mtime if known and node.get("complete") is not False else None
-                )
+                time = node.get("time_ns")
+                known = reference is not None and time is not None
+                expected = reference - time if known and node.get("complete") is not False else None
                 if node["age_ns"] != expected:
                     problems.append(f"{node.get('path')}: age {node['age_ns']} != {expected}")
             for value in node.values():

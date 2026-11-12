@@ -184,7 +184,7 @@ def main() -> None:
     )
     assert cli_scan.returncode == 0, cli_scan
     cli_data = json.loads(cli_scan.stdout)
-    assert cli_data["schema"] == "fdu.report/11", cli_data
+    assert cli_data["schema"] == "fdu.report/12", cli_data
     assert cli_data["status"]["complete"] is True, cli_data
     tree = cli_data["reports"][0]["tree"]
     assert tree["bytes"] == 17, cli_data
@@ -312,7 +312,8 @@ def main() -> None:
     stats = index.refresh()
     assert stats["inserted"] == 1, stats
     assert stats["removed"] == 1, stats
-    assert stats["unchanged"] == 2, stats
+    # The root, whose device the refresh records again, and the two untouched entries.
+    assert stats["unchanged"] == 3, stats
     assert stats["complete"] is True, stats
     assert index.freshness == "fresh", index.freshness
     assert stats["errors"] == [] and stats["errors_omitted"] == 0, stats
@@ -439,7 +440,7 @@ def main() -> None:
     # Value grammars are shared, so a bad value is rejected the same way everywhere.
     for bad in [
         {"min_size": "10X"},
-        {"modified_since": "1.5h"},
+        {"since": "1.5h"},
         {"views": ["bogus"]},
         {"views": ["documents"]},
         {"sort": "sideways"},

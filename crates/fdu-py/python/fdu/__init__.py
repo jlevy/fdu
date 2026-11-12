@@ -34,6 +34,9 @@ if TYPE_CHECKING:
         watch_rule,
     )
     from ._models import (
+        AgeBand,
+        AgesSection,
+        AgeTally,
         Analysis,
         AnalysisMetadata,
         AnalysisOptions,
@@ -63,6 +66,7 @@ if TYPE_CHECKING:
         Detection,
         EntryKind,
         EntryTierIdentity,
+        EntryTotals,
         ExtensionRow,
         ExtensionsSection,
         ExtensionTally,
@@ -105,6 +109,7 @@ if TYPE_CHECKING:
         SummarySection,
         TierProvenance,
         TierState,
+        TimeBasis,
         TreeDisplayLimits,
         TreeNode,
         TreeOmission,
@@ -114,6 +119,10 @@ if TYPE_CHECKING:
         TreeTotal,
         ValueSource,
         View,
+        VolumeCounted,
+        VolumeEntered,
+        VolumeRow,
+        VolumesSection,
         WatchOptions,
     )
 else:
@@ -177,6 +186,9 @@ def _main() -> int:
 
 
 __all__ = [
+    "AgeBand",
+    "AgeTally",
+    "AgesSection",
     "Analysis",
     "AnalysisMetadata",
     "AnalysisOptions",
@@ -206,6 +218,7 @@ __all__ = [
     "Detection",
     "EntryKind",
     "EntryTierIdentity",
+    "EntryTotals",
     "ExtensionRow",
     "ExtensionTally",
     "ExtensionsSection",
@@ -252,6 +265,7 @@ __all__ = [
     "SummarySection",
     "TierProvenance",
     "TierState",
+    "TimeBasis",
     "TreeDisplayLimits",
     "TreeNode",
     "TreeOmission",
@@ -261,6 +275,10 @@ __all__ = [
     "TreeTotal",
     "ValueSource",
     "View",
+    "VolumeCounted",
+    "VolumeEntered",
+    "VolumeRow",
+    "VolumesSection",
     "Watch",
     "WatchOptions",
     "__version__",

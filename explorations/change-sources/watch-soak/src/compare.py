@@ -23,6 +23,9 @@ from scripts.atomic_write import open_atomic  # noqa: E402
 PRIV = sys.argv[1]
 ROOT = sys.argv[2].rstrip("/")
 DEC = json.JSONDecoder()
+# A watch's change records under each version a soak may have recorded: `fdu.stream/2`
+# through 0.5.0, `fdu.stream/3` after it.
+STREAM_PREFIXES = ('{"schema": "fdu.stream/2"', '{"schema": "fdu.stream/3"')
 
 # Row tuples: (kind, bytes, allocated, mtime_ns, files, dirs); files/dirs None for non-dirs.
 
@@ -200,7 +203,7 @@ ops = Counter(); inval_by_depth = Counter(); inval_root = 0; clocks = []
 change_paths_by_cat = Counter(); records_ts = []
 with open(os.path.join(PRIV, "soak.jsonl"), "r", encoding="utf-8", errors="surrogateescape") as f:
     for line in f:
-        if not line.startswith('{"schema": "fdu.stream/2"'):
+        if not line.startswith(STREAM_PREFIXES):
             continue
         d = json.loads(line)
         ops[d["op"]] += 1
@@ -340,7 +343,7 @@ if copy_bytes:
     with open(os.path.join(PRIV, "soak.jsonl"), "rb") as f:
         data = f.read(copy_bytes)
     for line in data.decode("utf-8", errors="surrogateescape").splitlines():
-        if not line.startswith('{"schema": "fdu.stream/2"'):
+        if not line.startswith(STREAM_PREFIXES):
             continue
         d = json.loads(line)
         applied += 1

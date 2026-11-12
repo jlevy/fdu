@@ -175,9 +175,11 @@ The index API (`Index`) returns whole selected results in bulk while retaining t
 inventory in Rust. The opened API below also supports continuation-based paging.
 Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
 unrelated Python threads and independent indexes can progress.
-Content analysis streams every eligible file through EOF. Binary data, invalid UTF-8,
-and unsupported SLOC languages remain visible as coverage without making the operation
-partial; I/O failures and files changed during a read remain operational errors.
+So does a report’s capacity observation, only when it asks for `View.VOLUMES`; every
+other `Index.report` holds the GIL. Content analysis streams every eligible file through
+EOF. Binary data, invalid UTF-8, and unsupported SLOC languages remain visible as
+coverage without making the operation partial; I/O failures and files changed during a
+read remain operational errors.
 One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
 that same object is rejected rather than becoming an unsynchronized shared-index access.
 The wheel enables the optional watch dependency and exposes `Index.watch()` as a
@@ -268,8 +270,8 @@ for name in (".venv", "venv", "node_modules", "target"):
             selection=fdu.Selection(
                 kinds=(fdu.EntryKind.DIR,),
                 include=(name,),
-                modified_before="30d",
-                sort=fdu.SortKey.MTIME,
+                before="30d",
+                sort=fdu.SortKey.TIME,
                 reverse=True,
             ),
         )
@@ -281,30 +283,89 @@ for name in (".venv", "venv", "node_modules", "target"):
 All four reads use one retained index without rescanning.
 `View.LIST` is the metadata default.
 `Format.TREE` explicitly requests the current tree; `PATHS` lists matching paths, `LONG`
-adds size and signed modification age, and JSON/JSONL/YAML carry exact metrics.
+adds size and signed age, and JSON/JSONL/YAML carry exact metrics.
 `TEXT` selects automatic human presentation.
 The `View.FILES` preset uses flat name ordering, and `View.TREE` presents structured
 directory output. Largest/recent remain regular-file presets, with optional Paths/Long
 output.
 
+Every time a report reads is on one clock, `Selection.time`: `TimeBasis.CHANGED` by
+default, the newer of modification and status change, so a copy or an extracted archive
+that kept an older modification time is still new, or `TimeBasis.MODIFIED`, content age
+as `ls -l` shows. The `since`/`before` window, `SortKey.TIME`, every age, `recent`, and
+`ages` read it, and `Report.request.time` names it.
+
+## Recent Writes, Ages, and Volumes
+
+One walk says where the data written in a window now lives, how the selection divides by
+age, and how full each filesystem is:
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
+recent = index.report(
+    fdu.Query(
+        views=(fdu.View.TREE, fdu.View.AGES),
+        selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,), since="24h"),
+    )
+)
+print(f"{recent.selected.bytes} of {recent.scanned.bytes} bytes written in a day")
+for section in recent.sections:
+    if isinstance(section, fdu.AgesSection):
+        for band in section.bands:
+            print(band.band, band.tally.files, band.cumulative.bytes)
+
+disk = index.report(fdu.Query(views=(fdu.View.VOLUMES,)))
+for section in disk.sections:
+    if isinstance(section, fdu.VolumesSection):
+        for row in section.volumes:
+            print(row.path, row.capacity_bytes, row.available_bytes, row.counted.bytes)
+```
+
+Keep `EntryKind.FILE` with a window: without it a directory with any activity in the
+window is selected whole.
+Every report carries `Report.selected` and `Report.scanned`, each an `EntryTotals` of
+files, directories, and both byte metrics, so a filtered root’s 100% can be read against
+the whole scan without parsing a note.
+`View.AGES` returns an `AgesSection`: nine `AgeBand` values, newest first, each with an
+`AgeTally` of files, bytes, and the ignored part, a `cumulative` tally of it and every
+newer band, and a `total` equal to a summary of the same selection.
+Where the selection admits files alone, each band is also the files
+`kinds=(EntryKind.FILE,)` with the window it names would select.
+`View.VOLUMES` returns a `VolumesSection` of `VolumeRow` values: each filesystem the
+report touches, its capacity, available space, type, and whether it shares space in a
+pool, beside the `VolumeCounted` files and bytes this report counted there.
+A filesystem the report entered at several paths is one row, named by the first, with
+each other path in `also_entered` as a `VolumeEntered`. Capacity is read when the report
+is, and below the root only where the walk listed and the operating system’s mount table
+shows a mounted filesystem, not an automount trigger (autofs), at exactly that path, so
+reading it mounts nothing, except an automount that expires between the report’s read of
+the mount table and its call there, a window as long as the calls before it.
+Any other row’s capacity is `None`, with an `unknown_reason` that says why, such as
+`not a mount point now, so it was not asked`; `View.FULL` leaves volumes out.
+
 Directory `FileRow` values carry subtree `bytes`, `allocated`, `files`, `dirs`,
-`complete`, `mtime_ns`, `age_ns`, and `modified_at`; non-directory counts are `None`. A
+`complete`, `time_ns`, `age_ns`, and `time_at`; non-directory counts are `None`. A
 directory whose subtree was not listed in full has `complete=False`, lower-bound sizes,
-`age_ns=None`, and `modified_at=None`. Each `TreeNode` carries the same `mtime_ns`,
-`complete` (`None` for a file), `age_ns`, and `modified_at`: the newest modification
-among the entries the row counts, of any kind, never the report root’s own time, and
-`None` when it counts nothing.
-Its `newest_mtime_ns` keeps the newest regular file alone.
+`age_ns=None`, and `time_at=None`. Every `FileRow` also carries both raw clocks,
+`mtime_ns` and `changed_ns`, so an arrival carrying old content is a row with a recent
+`changed_ns` and an old `mtime_ns`. Each `TreeNode` carries the same `time_ns`,
+`complete` (`None` for a file), `age_ns`, and `time_at`: the newest time among the
+entries the row counts, of any kind, never the report root’s own time, and `None` when
+it counts nothing. Its `newest_file_time_ns` keeps the newest regular file alone.
 `Report.age_reference_ns` is the instant every age is measured from, including negative
 future ages and pre-epoch mtime, and `Report.age_reference_at` is that instant as a
 `datetime`. A `Watch.report()` measures from the instant it is called; the windows its
 query selects by stay as the query resolved them.
-`modified_at` and `age_reference_at` are timezone-aware UTC `datetime` values derived
-from the exact nanoseconds, floored to the microsecond.
+`time_at` and `age_reference_at` are timezone-aware UTC `datetime` values derived from
+the exact nanoseconds, floored to the microsecond.
 An unrepresentable reference yields `None` age.
 Exclusions win throughout the subtree; nested roots may overlap, while grouped totals
 count their union once.
-Age describes modification, not access or last use.
+Age describes change, not access or last use.
 Native entry/lookup projections retain inode attributes; these report rows deliberately
 carry subtree metrics instead.
 
@@ -330,7 +391,7 @@ The terminal gives that remainder one root-level line, such as
 `… and 12,345 more files`, with its combined size and root share in the usual columns.
 Use `report.render(bar_size=20)` for wider bars, or `bar_size=0` (also negative values)
 to hide them; the default is 10. Machine formats are unchanged.
-Machine reports use `fdu.report/11`. Machine List output is complete unless explicitly
+Machine reports use `fdu.report/12`. Machine List output is complete unless explicitly
 limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).

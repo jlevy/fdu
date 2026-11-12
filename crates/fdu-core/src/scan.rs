@@ -288,7 +288,7 @@ impl Default for ScanConfig {
 pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
     "watching requires full scope and cannot be combined with max_depth or one_filesystem: ",
     "a watcher cannot filter backend events against a narrowed boundary. Selection such as ",
-    "depth, include, and modified_since does work while watching, because it filters the ",
+    "depth, include, and since does work while watching, because it filters the ",
     "retained index rather than narrowing the scan"
 );
 
@@ -1605,6 +1605,9 @@ pub(crate) enum Listed<'a> {
     Child {
         name: std::borrow::Cow<'a, OsStr>,
         observed: std::io::Result<Option<(EntryKind, Attrs)>>,
+        /// The child's stat flagged it a kernel automount point not mounted yet, which a
+        /// listing of it would mount; only the Linux reader reads the bit.
+        automount: bool,
     },
 }
 
@@ -1629,11 +1632,17 @@ impl<'r> Iterator for Listing<'r> {
             #[cfg(all(target_os = "linux", target_env = "gnu"))]
             Self::Native(listing) => {
                 let entry = listing.next()?;
-                let observed = match entry.outcome {
-                    linux_dents::Outcome::Observed { kind, attrs } => Ok(Some((kind, attrs))),
-                    linux_dents::Outcome::Failed(error) => Err(error),
+                let (observed, automount) = match entry.outcome {
+                    linux_dents::Outcome::Observed { kind, attrs, automount } => {
+                        (Ok(Some((kind, attrs))), automount)
+                    }
+                    linux_dents::Outcome::Failed(error) => (Err(error), false),
                 };
-                Some(Listed::Child { name: std::borrow::Cow::Borrowed(entry.name), observed })
+                Some(Listed::Child {
+                    name: std::borrow::Cow::Borrowed(entry.name),
+                    observed,
+                    automount,
+                })
             }
             Self::Portable { entries, policy, searchability, .. } => {
                 let item = match entries.next()? {
@@ -1642,7 +1651,11 @@ impl<'r> Iterator for Listing<'r> {
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let observed = listed_child_kind_and_attrs(&item, *policy, searchability);
-                Some(Listed::Child { name: std::borrow::Cow::Owned(item.file_name()), observed })
+                Some(Listed::Child {
+                    name: std::borrow::Cow::Owned(item.file_name()),
+                    observed,
+                    automount: false,
+                })
             }
         }
     }
@@ -1806,6 +1819,11 @@ pub(crate) struct DetachedDirectory {
 }
 
 /// Walk `root` and emit observations describing everything found.
+///
+/// The first observation is an upsert of the root itself, the empty path, as a directory
+/// whose attributes hold only the device the walk read it on (`dev`; every other field is
+/// zero). Applied to an [`Index`], it is what [`Index::root_device`] returns, which a
+/// report keys the root's filesystem by; no report counts the root entry itself.
 pub fn scan(
     root: &Path,
     config: &ScanConfig,
@@ -1994,6 +2012,10 @@ fn scan_internal(
         ));
     }
     let root_dev = root_device(root, &root_meta).map_err(|error| Error::io(root, error))?;
+    if sink_mode == SinkMode::Retained {
+        // A consumer that keeps the observations keeps the root's device with them.
+        sink(ScannerBatch::new(vec![ObservationOp::unconditional(root_device_op(root_dev))]));
+    }
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     // Narrow populations need control admission before child enumeration. Keep one ordered
@@ -2040,7 +2062,9 @@ fn scan_internal(
     let worker_guard = diagnostics.as_ref().map(ScanDiagnosticsRecorder::worker_guard);
     let walk_started = std::time::Instant::now();
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size);
-    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
+    // Each directory with the device it is on, which its children are compared with.
+    let mut queue: VecDeque<(PathBuf, usize, u64)> =
+        VecDeque::from(vec![(PathBuf::new(), 0, root_dev)]);
     let mut controls = (config.population != crate::query::IgnoredEntries::Include)
         .then(|| crate::control::ControlTable::with_limits(config.control_limits));
     let mut unreadable_controls = std::collections::BTreeSet::new();
@@ -2059,7 +2083,7 @@ fn scan_internal(
         tally.flush(report);
     };
 
-    while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
+    while let Some((rel_dir, depth, dir_dev)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
         if let Some(controls) = controls.as_mut() {
             let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
@@ -2085,8 +2109,8 @@ fn scan_internal(
         report.dirs_read += 1;
 
         for item in listing {
-            let (name, observed) = match item {
-                Listed::Child { name, observed } => (name, observed),
+            let (name, observed, automount) = match item {
+                Listed::Child { name, observed, automount } => (name, observed, automount),
                 Listed::Failed(e) => {
                     report.errors.push(Error::io(&abs_dir, e));
                     continue;
@@ -2140,6 +2164,12 @@ fn scan_internal(
                 }
                 continue;
             }
+            let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
+            let attrs = if descend {
+                entered_directory_attrs(attrs, dir_dev, automount, || abs_dir.join(&name))
+            } else {
+                attrs
+            };
             report.observe(kind, attrs);
             batch.push(ObservationOp::unconditional(Op::Upsert {
                 path: rel_path.clone(),
@@ -2158,8 +2188,8 @@ fn scan_internal(
                 }
             }
 
-            if should_descend(kind, attrs, depth, root_dev, config) {
-                queue.push_back((rel_path, depth + 1));
+            if descend {
+                queue.push_back((rel_path, depth + 1, listed_device(attrs, dir_dev)));
             }
         }
     }
@@ -2185,7 +2215,7 @@ fn scan_internal(
 ///
 /// Both orders push to the back; only the end they are taken from differs, which is
 /// what keeps this a one-line policy rather than two walkers.
-fn take_next(queue: &mut VecDeque<(PathBuf, usize)>, order: ScanOrder) -> Option<(PathBuf, usize)> {
+fn take_next<T>(queue: &mut VecDeque<T>, order: ScanOrder) -> Option<T> {
     match order {
         ScanOrder::BreadthFirst => queue.pop_front(),
         ScanOrder::DepthFirst => queue.pop_back(),
@@ -2964,7 +2994,7 @@ fn scan_concurrent_detached(
     policy: WorkerPolicyExperiment,
     retention: Option<TreeRetention>,
 ) -> Result<(ScanReport, DetachedIndexBuilder)> {
-    let mut builder = detached_builder(root, config, retention);
+    let mut builder = detached_builder(root, config, root_dev, retention);
     let mut build_error = None;
     let output = {
         let mut consume = |message| match message {
@@ -3040,7 +3070,7 @@ where
 {
     let diagnostics = diagnostics.cloned();
     let queue = DirectoryQueue::new_with_policy(
-        (PathBuf::new(), 0),
+        (PathBuf::new(), 0, root_dev),
         config.order,
         pool.calibration,
         diagnostics.clone(),
@@ -3202,13 +3232,15 @@ trait WalkEmission {
         rel_dir: &Path,
         depth: usize,
         region: RegionId,
+        dir_dev: u64,
         name: &OsStr,
         kind: EntryKind,
         attrs: Attrs,
+        automount: bool,
         root_dev: u64,
         config: &ScanConfig,
         directory: &mut Self::Directory,
-        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        discovered: &mut Vec<QueuedDirectory>,
         report: &mut ScanReport,
         sender: &std::sync::mpsc::Sender<WalkMessage>,
         chunk_send_ns: &mut u64,
@@ -3427,13 +3459,15 @@ impl WalkEmission for StreamingEmission {
         rel_dir: &Path,
         depth: usize,
         region: RegionId,
+        dir_dev: u64,
         name: &OsStr,
         kind: EntryKind,
         attrs: Attrs,
+        automount: bool,
         root_dev: u64,
         config: &ScanConfig,
         _directory: &mut Self::Directory,
-        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        discovered: &mut Vec<QueuedDirectory>,
         report: &mut ScanReport,
         sender: &std::sync::mpsc::Sender<WalkMessage>,
         chunk_send_ns: &mut u64,
@@ -3444,9 +3478,11 @@ impl WalkEmission for StreamingEmission {
             rel_dir,
             depth,
             region,
+            dir_dev,
             name,
             kind,
             attrs,
+            automount,
             root_dev,
             config,
             self,
@@ -3611,13 +3647,15 @@ impl WalkEmission for DetachedEmission {
         rel_dir: &Path,
         depth: usize,
         region: RegionId,
+        dir_dev: u64,
         name: &OsStr,
         kind: EntryKind,
         attrs: Attrs,
+        automount: bool,
         root_dev: u64,
         config: &ScanConfig,
         directory: &mut Self::Directory,
-        discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+        discovered: &mut Vec<QueuedDirectory>,
         report: &mut ScanReport,
         _sender: &std::sync::mpsc::Sender<WalkMessage>,
         _chunk_send_ns: &mut u64,
@@ -3628,9 +3666,11 @@ impl WalkEmission for DetachedEmission {
             rel_dir,
             depth,
             region,
+            dir_dev,
             name,
             kind,
             attrs,
+            automount,
             root_dev,
             config,
             &mut directory.children,
@@ -3777,8 +3817,8 @@ fn walk_worker_with<E: WalkEmission>(
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
     let mut tally = ProgressTally::new(config.progress.as_ref());
-    let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
-    let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
+    let mut claimed: Vec<QueuedDirectory> = Vec::with_capacity(DIR_CLAIM);
+    let mut discovered: Vec<QueuedDirectory> = Vec::new();
     let mut consumer_gone = false;
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
@@ -3792,7 +3832,7 @@ fn walk_worker_with<E: WalkEmission>(
         let chunk_started = std::time::Instant::now();
         let mut chunk_send_ns: u64 = 0;
         let entries_before = report.entries;
-        for (rel_dir, depth, region) in claimed.drain(..) {
+        for (rel_dir, depth, region, dir_dev) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
             let mut directory = emission.begin_directory(&rel_dir);
             #[cfg(target_os = "macos")]
@@ -3813,9 +3853,11 @@ fn walk_worker_with<E: WalkEmission>(
                             &rel_dir,
                             depth,
                             region,
+                            dir_dev,
                             &entry.name,
                             entry.kind,
                             entry.attrs,
+                            false,
                             root_dev,
                             config,
                             &mut directory,
@@ -3861,8 +3903,10 @@ fn walk_worker_with<E: WalkEmission>(
                     }
                     report.dirs_read += 1;
                     for entry in listing {
-                        let (kind, attrs) = match entry.outcome {
-                            linux_dents::Outcome::Observed { kind, attrs } => (kind, attrs),
+                        let (kind, attrs, automount) = match entry.outcome {
+                            linux_dents::Outcome::Observed { kind, attrs, automount } => {
+                                (kind, attrs, automount)
+                            }
                             linux_dents::Outcome::Failed(error) => {
                                 // The same path std's `DirEntry::path` builds: the listing
                                 // path joined with the name.
@@ -3875,9 +3919,11 @@ fn walk_worker_with<E: WalkEmission>(
                             &rel_dir,
                             depth,
                             region,
+                            dir_dev,
                             entry.name,
                             kind,
                             attrs,
+                            automount,
                             root_dev,
                             config,
                             &mut directory,
@@ -3947,9 +3993,12 @@ fn walk_worker_with<E: WalkEmission>(
                     &rel_dir,
                     depth,
                     region,
+                    dir_dev,
                     &name,
                     kind,
                     attrs,
+                    // Std's stat does not say; only the Linux reader reads the bit.
+                    false,
                     root_dev,
                     config,
                     &mut directory,
@@ -4020,14 +4069,16 @@ fn record_detached_entry(
     rel_dir: &Path,
     depth: usize,
     region: RegionId,
+    dir_dev: u64,
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
     children: &mut Vec<DetachedChild>,
     control: &mut Option<Op>,
-    discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+    discovered: &mut Vec<QueuedDirectory>,
     report: &mut ScanReport,
 ) {
     let disposition = crate::admission::decide(name, kind, config.hidden(), config.exclude_special);
@@ -4051,13 +4102,24 @@ fn record_detached_entry(
     if disposition != crate::admission::Disposition::Retain {
         return;
     }
+    let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
+    let attrs = if descend {
+        entered_directory_attrs(attrs, dir_dev, automount, || root.join(rel_dir).join(name))
+    } else {
+        attrs
+    };
     report.observe(kind, attrs);
     // Positions only order repeated names, and no real listing reaches `u32::MAX` entries.
     let position = u32::try_from(children.len()).unwrap_or(u32::MAX);
     children.push(DetachedChild { name: name.to_os_string(), kind, attrs, position });
-    if should_descend(kind, attrs, depth, root_dev, config) {
+    if descend {
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((rel_dir.join(name), depth + 1, child_region));
+        discovered.push((
+            rel_dir.join(name),
+            depth + 1,
+            child_region,
+            listed_device(attrs, dir_dev),
+        ));
     }
 }
 
@@ -4076,18 +4138,25 @@ pub(crate) struct PreparedWalkEntry {
 ///
 /// Both blocking and opened-root scans call this after obtaining non-following metadata,
 /// which keeps admission, fixed controls, and traversal boundaries from drifting.
+///
+/// `dir_dev` is the device the listed directory is on, which a descended directory's own
+/// is compared with ([`entered_directory_attrs`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_walk_entry(
     root: &Path,
     rel_dir: &Path,
     depth: usize,
+    dir_dev: u64,
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
 ) -> Option<PreparedWalkEntry> {
-    prepare_walk_entry_reading(root, rel_dir, depth, name, kind, attrs, root_dev, config, true)
+    prepare_walk_entry_reading(
+        root, rel_dir, depth, dir_dev, name, kind, attrs, automount, root_dev, config, true,
+    )
 }
 
 /// [`prepare_walk_entry`], reading the entry's control only when `read_control` allows.
@@ -4100,9 +4169,11 @@ fn prepare_walk_entry_reading(
     root: &Path,
     rel_dir: &Path,
     depth: usize,
+    dir_dev: u64,
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
     read_control: bool,
@@ -4120,15 +4191,14 @@ fn prepare_walk_entry_reading(
     } else {
         (None, None)
     };
-    Some(PreparedWalkEntry {
-        path,
-        kind,
-        attrs,
-        retained: disposition == crate::admission::Disposition::Retain,
-        control,
-        descend: should_descend(kind, attrs, depth, root_dev, config),
-        control_error,
-    })
+    let retained = disposition == crate::admission::Disposition::Retain;
+    let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
+    let attrs = if retained && descend {
+        entered_directory_attrs(attrs, dir_dev, automount, || root.join(&path))
+    } else {
+        attrs
+    };
+    Some(PreparedWalkEntry { path, kind, attrs, retained, control, descend, control_error })
 }
 
 /// `rel_dir.join(name)`, allocated once at the joined length.
@@ -4152,13 +4222,15 @@ fn record_walk_entry(
     rel_dir: &Path,
     depth: usize,
     region: RegionId,
+    dir_dev: u64,
     name: &OsStr,
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     root_dev: u64,
     config: &ScanConfig,
     emission: &mut StreamingEmission,
-    discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+    discovered: &mut Vec<QueuedDirectory>,
     report: &mut ScanReport,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     chunk_send_ns: &mut u64,
@@ -4169,15 +4241,20 @@ fn record_walk_entry(
         root,
         rel_dir,
         depth,
+        dir_dev,
         name,
         kind,
         attrs,
+        automount,
         root_dev,
         config,
         read_control,
     ) else {
         return true;
     };
+    // A descended directory's attributes may have been read again where it is on another
+    // device than this one.
+    let attrs = prepared.attrs;
     emission.note_listed_control(prepared.control.as_ref(), prepared.control_error.as_ref());
     let (mut control, control_error) = (prepared.control, prepared.control_error);
     if let Some(error) = control_error {
@@ -4230,7 +4307,7 @@ fn record_walk_entry(
         // parent's. Region membership therefore costs one integer copy and never
         // inspects a path.
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((path, depth + 1, child_region));
+        discovered.push((path, depth + 1, child_region, listed_device(attrs, dir_dev)));
     }
     true
 }
@@ -4651,6 +4728,11 @@ fn elapsed_ns(started: std::time::Instant) -> u64 {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct RegionId(usize);
 
+/// A directory a concurrent walk or reconciliation wave still has to list: its path
+/// relative to the root, its depth, its region, and the device it is on, which its
+/// children are compared with ([`entered_directory_attrs`]).
+type QueuedDirectory = (PathBuf, usize, RegionId, u64);
+
 impl RegionId {
     /// The root's own region, which exists only to bootstrap the walk.
     const ROOT: Self = Self(0);
@@ -4744,9 +4826,9 @@ impl Drop for DirectoryClaim<'_> {
 
 struct DirectoryQueueState {
     /// Depth-first's single stack. Unused under breadth-first.
-    pending: VecDeque<(PathBuf, usize, RegionId)>,
+    pending: VecDeque<QueuedDirectory>,
     /// Breadth-first's per-region work, indexed by [`RegionId`]. Each is a LIFO stack.
-    regions: Vec<Vec<(PathBuf, usize, RegionId)>>,
+    regions: Vec<Vec<QueuedDirectory>>,
     /// Regions with work, in round-robin order. A region appears at most once; the
     /// flag array is what keeps that true without scanning the ring.
     ready_ring: VecDeque<RegionId>,
@@ -4769,7 +4851,7 @@ struct DirectoryQueueState {
 
 impl DirectoryQueueState {
     fn seeded(
-        root: (PathBuf, usize),
+        root: (PathBuf, usize, u64),
         order: ScanOrder,
         calibration: Option<WorkerCalibration>,
         initial_workers: usize,
@@ -4791,12 +4873,12 @@ impl DirectoryQueueState {
             worker_target: initial_workers,
             maximum_workers,
         };
-        state.push((root.0, root.1, RegionId::ROOT), order);
+        state.push((root.0, root.1, RegionId::ROOT, root.2), order);
         state
     }
 
     /// Push one directory into the structure the order uses.
-    fn push(&mut self, item: (PathBuf, usize, RegionId), order: ScanOrder) {
+    fn push(&mut self, item: QueuedDirectory, order: ScanOrder) {
         self.ready_directories = self.ready_directories.saturating_add(1);
         match order {
             ScanOrder::DepthFirst => self.pending.push_back(item),
@@ -4845,12 +4927,7 @@ impl DirectoryQueueState {
     /// happen to fan across the root's children — spread wider than breadth-first did.
     /// Locality still comes from the claim being a run of directories out of one
     /// region; it must not come from a worker refusing to leave.
-    fn take(
-        &mut self,
-        limit: usize,
-        order: ScanOrder,
-        into: &mut Vec<(PathBuf, usize, RegionId)>,
-    ) -> usize {
+    fn take(&mut self, limit: usize, order: ScanOrder, into: &mut Vec<QueuedDirectory>) -> usize {
         let before = into.len();
         match order {
             ScanOrder::DepthFirst => {
@@ -4887,7 +4964,7 @@ impl DirectoryQueue {
     /// Seed the queue with the root, which is region zero until its children fan out.
     #[cfg(test)]
     fn new(
-        root: (PathBuf, usize),
+        root: (PathBuf, usize, u64),
         order: ScanOrder,
         calibration: Option<WorkerCalibration>,
         diagnostics: Option<std::sync::Arc<ScanDiagnosticsRecorder>>,
@@ -4905,7 +4982,7 @@ impl DirectoryQueue {
 
     #[allow(clippy::too_many_arguments)]
     fn new_with_policy(
-        root: (PathBuf, usize),
+        root: (PathBuf, usize, u64),
         order: ScanOrder,
         calibration: Option<WorkerCalibration>,
         diagnostics: Option<std::sync::Arc<ScanDiagnosticsRecorder>>,
@@ -4939,7 +5016,7 @@ impl DirectoryQueue {
     /// supposed to stay near zero.
     fn claim<'a>(
         &'a self,
-        into: &mut Vec<(PathBuf, usize, RegionId)>,
+        into: &mut Vec<QueuedDirectory>,
         timing: &mut WalkAttribution,
     ) -> Option<DirectoryClaim<'a>> {
         let mut state = self.lock_timed(timing);
@@ -4969,7 +5046,7 @@ impl DirectoryQueue {
 
     fn extend(
         &self,
-        directories: impl Iterator<Item = (PathBuf, usize, RegionId)>,
+        directories: impl Iterator<Item = QueuedDirectory>,
         timing: &mut WalkAttribution,
     ) {
         let mut state = self.lock_timed(timing);
@@ -5205,14 +5282,17 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
 }
 
 /// The private builder a detached walk consumes its listings into: a full index, or with
-/// `retention` a folded one.
+/// `retention` a folded one, whose root records `root_dev`, the device the walk read the
+/// root on ([`Index::root_device`]).
 fn detached_builder(
     root: &Path,
     config: &ScanConfig,
+    root_dev: u64,
     retention: Option<TreeRetention>,
 ) -> DetachedIndexBuilder {
     let builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-        .with_control_limits(config.control_limits);
+        .with_control_limits(config.control_limits)
+        .with_root_device(root_dev);
     match retention {
         Some(retention) => builder.folding(retention),
         None => builder,
@@ -5254,7 +5334,7 @@ fn scan_detached_directories(
         }
         return Ok((
             ScanReport::default(),
-            detached_builder(root, config, retention),
+            detached_builder(root, config, root_dev, retention),
             diagnostics.as_ref().map(|value| value.finish()),
         ));
     }
@@ -5468,6 +5548,11 @@ pub fn revalidate(
     let mut tally = ProgressTally::new(config.progress.as_ref());
     let batch_limit = config.batch_size.max(1);
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
+    // The root's device as the walk reads it now, as a cold walk records it.
+    batch.push(ObservationOp::if_state(
+        root_device_op(root_dev),
+        index.relaxed_expectation(Path::new("")),
+    ));
     if config.max_depth == Some(0) {
         if let Some(children) = index.children(Path::new("")) {
             for (name, _) in children {
@@ -5487,14 +5572,16 @@ pub fn revalidate(
         }
         return Ok(report);
     }
-    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
+    // Each directory with the device it is on, which its children are compared with.
+    let mut queue: VecDeque<(PathBuf, usize, u64)> =
+        VecDeque::from(vec![(PathBuf::new(), 0, root_dev)]);
     let mut controls = (config.population != crate::query::IgnoredEntries::Include)
         .then(|| index.control_table().clone());
     let mut unreadable_controls = std::collections::BTreeSet::new();
     let mut readers = Readers::new();
     let policy = ListingPolicy::every_child_stated(config.one_filesystem);
 
-    while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
+    while let Some((rel_dir, depth, dir_dev)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
         let mut had_control = index.control_table().contains(&control_path);
@@ -5537,8 +5624,8 @@ pub fn revalidate(
         let mut listing_complete = true;
         let listing = reconcile_listing(listing, &abs_dir);
         for item in listing {
-            let (name, observed) = match item {
-                Listed::Child { name, observed } => (name, observed),
+            let (name, observed, automount) = match item {
+                Listed::Child { name, observed, automount } => (name, observed, automount),
                 Listed::Failed(e) => {
                     listing_complete = false;
                     report.errors.push(Error::io(&abs_dir, e));
@@ -5620,6 +5707,12 @@ pub fn revalidate(
                 }
                 continue;
             }
+            let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
+            let attrs = if descend {
+                entered_directory_attrs(attrs, dir_dev, automount, || abs_dir.join(&name))
+            } else {
+                attrs
+            };
             report.observe(kind, attrs);
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: rel_path.clone(), kind, attrs },
@@ -5639,8 +5732,8 @@ pub fn revalidate(
                 }
             }
 
-            if should_descend(kind, attrs, depth, root_dev, config) {
-                queue.push_back((rel_path, depth + 1));
+            if descend {
+                queue.push_back((rel_path, depth + 1, listed_device(attrs, dir_dev)));
             } else if kind.is_dir() {
                 if let Some(children) = index.children(&rel_path) {
                     for (child_name, _) in children {
@@ -6092,17 +6185,34 @@ fn reconcile_target_inner(
     let mut tally = ProgressTally::new(config.progress.as_ref());
     let mut retry_frontier = None;
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
+    if subtree.as_os_str().is_empty() {
+        // The root's device as the walk reads it now, as a cold walk records it. A
+        // reconciliation of a path below the root reads no part of the root, so it leaves
+        // the recorded device as it is.
+        let baseline = target.expectation(Path::new(""))?;
+        push_reconcile_upsert(
+            target,
+            Path::new(""),
+            EntryKind::Dir,
+            Index::root_attrs(root_dev),
+            baseline,
+            &mut batch,
+            &mut report,
+        );
+    }
 
     if config.max_depth == Some(0) {
         remove_known_children(target, Path::new(""), config, &mut batch, sink, &mut report)?;
         return Ok(report);
     }
 
+    // The device the walk's first directory is on, which its children are compared with.
+    let mut subtree_dev = root_dev;
     if !subtree.as_os_str().is_empty() {
-        push_directory_attributes(target, &root, subtree, &mut batch)?;
+        push_directory_attributes(target, &root, root_dev, subtree, &mut batch)?;
         let baseline = target.expectation(subtree)?;
         let absolute = root.join(subtree);
-        let (kind, attrs) = match observe_path(&absolute) {
+        let (kind, attrs, automount) = match observe_path_entering(&absolute) {
             Ok(observed) => observed,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 batch.push(ObservationOp::if_state(
@@ -6158,6 +6268,21 @@ fn reconcile_target_inner(
             flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
             return Ok(report);
         }
+        let descend =
+            should_descend(kind, attrs, automount, start_depth.saturating_sub(1), root_dev, config);
+        // Read again where it is on another device than the directory holding it, as a
+        // listing of that directory reads it before descending.
+        let attrs = if descend {
+            entered_directory_attrs(
+                attrs,
+                held_device(target, subtree, root_dev)?,
+                automount,
+                || absolute.clone(),
+            )
+        } else {
+            attrs
+        };
+        subtree_dev = listed_device(attrs, subtree_dev);
         report.scan.observe(kind, attrs);
         push_reconcile_upsert(target, subtree, kind, attrs, baseline, &mut batch, &mut report);
         // A retained control file at the root of the walk reads its rules here, as the
@@ -6168,7 +6293,7 @@ fn reconcile_target_inner(
         let read = read_control_op(config, &root, subtree, kind);
         push_read_control(target, subtree, baseline, read, &mut batch, &mut report)?;
         flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
-        if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
+        if !descend {
             if kind.is_dir() {
                 remove_known_children(target, subtree, config, &mut batch, sink, &mut report)?;
             }
@@ -6181,12 +6306,19 @@ fn reconcile_target_inner(
         && config.population == crate::query::IgnoredEntries::Include
         && config.reconciliation_worker_threads() > 1
     {
+        // The root's record, where it moved, commits before the waves, which own no batch.
+        flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if let ReconcileTarget::Direct(index) = target {
             match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)?
             {
-                DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
+                DirectParallelOutcome::Complete(mut parallel) => {
+                    // What the root's own record counted.
+                    merge_reconcile_report(&mut parallel, report);
+                    return Ok(parallel);
+                }
                 DirectParallelOutcome::RetrySerial { prefix, remaining } => {
-                    report = prefix;
+                    let root_part = std::mem::replace(&mut report, prefix);
+                    merge_reconcile_report(&mut report, root_part);
                     report.reconcile_epoch = Some(started_at);
                     retry_frontier = Some(remaining);
                     // The wave workers reported the prefix themselves, and the wave
@@ -6199,8 +6331,9 @@ fn reconcile_target_inner(
         }
     }
 
-    let mut queue: VecDeque<(PathBuf, usize)> = retry_frontier
-        .unwrap_or_else(|| VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]));
+    // Each directory with the device it is on, which its children are compared with.
+    let mut queue: VecDeque<(PathBuf, usize, u64)> = retry_frontier
+        .unwrap_or_else(|| VecDeque::from(vec![(subtree.to_path_buf(), start_depth, subtree_dev)]));
     let mut controls = if config.population == crate::query::IgnoredEntries::Include {
         None
     } else {
@@ -6211,7 +6344,7 @@ fn reconcile_target_inner(
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     let mut readers = Readers::new();
     let policy = ListingPolicy::every_child_stated(config.one_filesystem);
-    while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
+    while let Some((rel_dir, depth, dir_dev)) = take_next(&mut queue, config.order) {
         let errors_before = report.scan.errors.len();
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
@@ -6256,10 +6389,11 @@ fn reconcile_target_inner(
         let process_entry = |name: OsString,
                              kind: EntryKind,
                              attrs: Attrs,
+                             automount: bool,
                              baseline: PathExpectation,
                              listed_control: &mut ListedControl,
                              target: &mut ReconcileTarget<'_>,
-                             queue: &mut VecDeque<(PathBuf, usize)>,
+                             queue: &mut VecDeque<(PathBuf, usize, u64)>,
                              batch: &mut Vec<ObservationOp>,
                              sink: &mut dyn FnMut(&Commit),
                              report: &mut ReconcileReport|
@@ -6298,6 +6432,12 @@ fn reconcile_target_inner(
                 }
                 return Ok(());
             }
+            let descend = should_descend(kind, attrs, automount, depth, root_dev, config);
+            let attrs = if descend {
+                entered_directory_attrs(attrs, dir_dev, automount, || abs_dir.join(&name))
+            } else {
+                attrs
+            };
             report.scan.observe(kind, attrs);
             push_reconcile_upsert(target, &rel_path, kind, attrs, baseline, batch, report);
             if batch.len() >= config.batch_size.max(1) {
@@ -6310,8 +6450,8 @@ fn reconcile_target_inner(
                 flush_reconcile_batch(target, batch, sink, report)?;
             }
 
-            if should_descend(kind, attrs, depth, root_dev, config) {
-                queue.push_back((rel_path, depth + 1));
+            if descend {
+                queue.push_back((rel_path, depth + 1, listed_device(attrs, dir_dev)));
             } else if kind.is_dir() {
                 remove_known_children(target, &rel_path, config, batch, sink, report)?;
             }
@@ -6333,6 +6473,7 @@ fn reconcile_target_inner(
                     entry.name,
                     entry.kind,
                     entry.attrs,
+                    false,
                     baseline,
                     &mut listed_control,
                     target,
@@ -6369,8 +6510,10 @@ fn reconcile_target_inner(
             report.scan.dirs_read += 1;
             let listing = reconcile_listing(listing, &abs_dir);
             for item in listing {
-                let (name, observed) = match item {
-                    Listed::Child { name, observed } => (name.into_owned(), observed),
+                let (name, observed, automount) = match item {
+                    Listed::Child { name, observed, automount } => {
+                        (name.into_owned(), observed, automount)
+                    }
                     Listed::Failed(error) => {
                         listing_complete = false;
                         report.scan.errors.push(Error::io(&abs_dir, error));
@@ -6427,6 +6570,7 @@ fn reconcile_target_inner(
                     name,
                     kind,
                     attrs,
+                    automount,
                     baseline,
                     &mut listed_control,
                     target,
@@ -6483,13 +6627,13 @@ struct DeferredReconcile {
     /// wave's sorted operations, in one batch, because the sort moves every removal after
     /// every other operation and a batch boundary could fall between the two.
     restated: Vec<Op>,
-    discovered: Vec<(PathBuf, usize, RegionId)>,
+    discovered: Vec<QueuedDirectory>,
     listed_incomplete: Vec<PathBuf>,
 }
 
 enum DirectParallelOutcome {
     Complete(ReconcileReport),
-    RetrySerial { prefix: ReconcileReport, remaining: VecDeque<(PathBuf, usize)> },
+    RetrySerial { prefix: ReconcileReport, remaining: VecDeque<(PathBuf, usize, u64)> },
 }
 
 /// Reconcile an exclusive full tree in bounded immutable-baseline waves.
@@ -6517,7 +6661,7 @@ fn reconcile_direct_parallel(
     sink: &mut dyn FnMut(&Commit),
 ) -> Result<DirectParallelOutcome> {
     let mut frontier = DirectoryQueueState::seeded(
-        (PathBuf::new(), 0),
+        (PathBuf::new(), 0, root_dev),
         config.order,
         None,
         1,
@@ -6578,11 +6722,13 @@ fn reconcile_direct_parallel(
         // entries again and misreport the logical reconciliation pass.
         if overflowed.load(std::sync::atomic::Ordering::Relaxed) {
             let mut remaining: VecDeque<_> =
-                wave.into_iter().map(|(path, depth, _region)| (path, depth)).collect();
+                wave.into_iter().map(|(path, depth, _region, dev)| (path, depth, dev)).collect();
             let mut deferred = Vec::with_capacity(DIR_CLAIM);
             while !frontier.is_empty(config.order) {
                 frontier.take(DIR_CLAIM, config.order, &mut deferred);
-                remaining.extend(deferred.drain(..).map(|(path, depth, _region)| (path, depth)));
+                remaining.extend(
+                    deferred.drain(..).map(|(path, depth, _region, dev)| (path, depth, dev)),
+                );
             }
             return Ok(DirectParallelOutcome::RetrySerial { prefix: report, remaining });
         }
@@ -6662,7 +6808,7 @@ fn reconcile_wave_worker(
     root: &Path,
     root_dev: u64,
     config: &ScanConfig,
-    wave: &[(PathBuf, usize, RegionId)],
+    wave: &[QueuedDirectory],
     next: &std::sync::atomic::AtomicUsize,
     deferred_count: &std::sync::atomic::AtomicUsize,
     overflowed: &std::sync::atomic::AtomicBool,
@@ -6682,7 +6828,7 @@ fn reconcile_wave_worker(
             break;
         }
         let end = start.saturating_add(DIR_CLAIM).min(wave.len());
-        for (rel_dir, depth, region) in &wave[start..end] {
+        for (rel_dir, depth, region, dir_dev) in &wave[start..end] {
             let errors_before = result.scan.errors.len();
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
@@ -6700,6 +6846,7 @@ fn reconcile_wave_worker(
                     |name: OsString,
                      kind: EntryKind,
                      attrs: Attrs,
+                     automount: bool,
                      baseline: PathExpectation,
                      listed_control: &mut ListedControl| {
                         let rel_path = rel_dir.join(&name);
@@ -6756,6 +6903,15 @@ fn reconcile_wave_worker(
                             }
                             return;
                         }
+                        let descend =
+                            should_descend(kind, attrs, automount, *depth, root_dev, config);
+                        let attrs = if descend {
+                            entered_directory_attrs(attrs, *dir_dev, automount, || {
+                                abs_dir.join(&name)
+                            })
+                        } else {
+                            attrs
+                        };
                         result.scan.entries += 1;
                         if kind == EntryKind::File {
                             result.scan.files_walked += 1;
@@ -6814,10 +6970,15 @@ fn reconcile_wave_worker(
                             }
                         }
 
-                        if should_descend(kind, attrs, *depth, root_dev, config) {
+                        if descend {
                             let child_region =
                                 if *depth == 0 { RegionId::UNASSIGNED } else { *region };
-                            result.discovered.push((rel_path, depth + 1, child_region));
+                            result.discovered.push((
+                                rel_path,
+                                depth + 1,
+                                child_region,
+                                listed_device(attrs, *dir_dev),
+                            ));
                         } else if kind.is_dir() {
                             for name in collect_child_expectations(index, &rel_path).into_keys() {
                                 defer_reconcile_op(
@@ -6844,6 +7005,7 @@ fn reconcile_wave_worker(
                             entry.name,
                             entry.kind,
                             entry.attrs,
+                            false,
                             baseline,
                             &mut listed_control,
                         );
@@ -6868,8 +7030,10 @@ fn reconcile_wave_worker(
                         result.scan.dirs_read += 1;
                         let listing = reconcile_listing(listing, &abs_dir);
                         for item in listing {
-                            let (name, observed) = match item {
-                                Listed::Child { name, observed } => (name.into_owned(), observed),
+                            let (name, observed, automount) = match item {
+                                Listed::Child { name, observed, automount } => {
+                                    (name.into_owned(), observed, automount)
+                                }
                                 Listed::Failed(error) => {
                                     result.scan.errors.push(Error::io(&abs_dir, error));
                                     continue;
@@ -6894,7 +7058,14 @@ fn reconcile_wave_worker(
                                     continue;
                                 }
                             };
-                            process_entry(name, kind, attrs, baseline, &mut listed_control);
+                            process_entry(
+                                name,
+                                kind,
+                                attrs,
+                                automount,
+                                baseline,
+                                &mut listed_control,
+                            );
                         }
                     }
                 }
@@ -7302,6 +7473,19 @@ fn remove_known_children(
     flush_reconcile_batch(target, batch, sink, report)
 }
 
+/// The device the index holds for the directory that holds `path`: the root's is
+/// `root_dev`, read when the walk began, and any other's is its recorded attributes', or
+/// zero, which compares with nothing, where it holds none.
+fn held_device(target: &ReconcileTarget<'_>, path: &Path, root_dev: u64) -> Result<u64> {
+    let Some(directory) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+        return Ok(root_dev);
+    };
+    Ok(match target.expectation(directory)?.state {
+        PathState::Present { kind: EntryKind::Dir, attrs } => attrs.dev,
+        _ => 0,
+    })
+}
+
 /// Re-read the own attributes of the directory `subtree` lives in, without listing it.
 ///
 /// Whatever happened at `subtree` (an entry created, removed, or moved in) moved that
@@ -7314,10 +7498,18 @@ fn remove_known_children(
 /// Only a directory the index holds is refreshed, conditional on the entry it holds, and
 /// only when its attributes moved; a directory that is gone or no longer one is the
 /// business of a walk of it. The root is never read: its own time counts toward no row,
-/// and a cold walk does not record it.
+/// and a cold walk records only its device.
+///
+/// The directory is recorded as a walk records one it descends into
+/// ([`entered_directory_attrs`]), against the device the index holds for the directory
+/// above it: an automount trigger whose mount has expired stats as the trigger, and
+/// recorded so, it would write the trigger's device over the filesystem's the walk counted
+/// there (review H5 on #209). Reading it from its descriptor mounts nothing the subtree's
+/// own stat would not: that path resolves through this directory.
 fn push_directory_attributes(
     target: &ReconcileTarget<'_>,
     root: &Path,
+    root_dev: u64,
     subtree: &Path,
     batch: &mut Vec<ObservationOp>,
 ) -> Result<()> {
@@ -7328,7 +7520,14 @@ fn push_directory_attributes(
     let PathState::Present { kind: EntryKind::Dir, attrs: held } = baseline.state else {
         return Ok(());
     };
-    if let Ok((EntryKind::Dir, attrs)) = observe_path(&root.join(directory)) {
+    let absolute = root.join(directory);
+    if let Ok((EntryKind::Dir, attrs, automount)) = observe_path_entering(&absolute) {
+        let attrs = entered_directory_attrs(
+            attrs,
+            held_device(target, directory, root_dev)?,
+            automount,
+            || absolute,
+        );
         if attrs != held {
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: directory.to_path_buf(), kind: EntryKind::Dir, attrs },
@@ -7410,21 +7609,29 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.listed_incomplete.extend(addition.listed_incomplete);
 }
 
+/// Whether a listed entry with `attrs` is traversed as a directory, given whether its
+/// listing's stat flagged it a kernel automount point not mounted yet (`automount`).
+///
+/// Such a point is on its parent's device until its listing mounts another filesystem
+/// there, so a one-filesystem walk keeps it as a boundary, as it keeps a mount point,
+/// and never opens it.
 fn should_descend(
     kind: EntryKind,
     attrs: Attrs,
+    automount: bool,
     parent_depth: usize,
     root_dev: u64,
     config: &ScanConfig,
 ) -> bool {
-    crate::admission::should_descend(
-        kind,
-        attrs,
-        parent_depth,
-        root_dev,
-        config.max_depth,
-        config.one_filesystem,
-    )
+    !(automount && config.one_filesystem)
+        && crate::admission::should_descend(
+            kind,
+            attrs,
+            parent_depth,
+            root_dev,
+            config.max_depth,
+            config.one_filesystem,
+        )
 }
 
 pub(crate) fn normalize_subtree(path: &Path) -> Result<PathBuf> {
@@ -7557,7 +7764,7 @@ pub(crate) fn observe_dir_entry(
             if !linux_dents::statx_unavailable() {
                 crate::counters::bump(|c| c.stats += 1);
                 if let Some(observed) = linux_dents::stat_path(&entry.path()) {
-                    return missing_as_none(observed);
+                    return missing_as_none(observed.map(|(kind, attrs, _)| (kind, attrs)));
                 }
                 // `statx` has just been found unavailable: std answers, with `fstatat`.
             }
@@ -7570,19 +7777,34 @@ pub(crate) fn observe_dir_entry(
 }
 
 /// The non-following observation of `path` itself, as [`observe`] reads it from
-/// `symlink_metadata`, and on Linux one that never triggers an automount.
+/// `symlink_metadata`, and on Linux one that never mounts at the path's last component.
 ///
 /// For a path a route holds as an entry and verifies by itself: a reconciliation's
 /// subtree and the prefixes above it, a change the watch verifies, a control looked up
 /// by name. The walk root is not one; [`root_device`] says why.
+///
+/// `AT_NO_AUTOMOUNT` governs the last component alone, and only where it exists: every
+/// earlier component is resolved as any lookup is, and a name an indirect map does not hold
+/// (an expired key whose directory the automounter removed) is looked up and asks the
+/// automounter. So this mounts nothing only where nothing on the way to `path` is an
+/// unmounted trigger; a capacity observation consults the mount table before it calls it
+/// (`query_volumes::directory_device`), and a watch's verification of a removed name has
+/// no such guard yet (fdu-kle7).
 pub(crate) fn observe_path(path: &Path) -> std::io::Result<(EntryKind, Attrs)> {
+    observe_path_entering(path).map(|(kind, attrs, _)| (kind, attrs))
+}
+
+/// [`observe_path`], with whether `path` is a kernel automount point not mounted yet, which
+/// a route that descends into it reads from its descriptor as a walk does
+/// ([`entered_directory_attrs`]); only the Linux reader reads the bit.
+pub(crate) fn observe_path_entering(path: &Path) -> std::io::Result<(EntryKind, Attrs, bool)> {
     crate::counters::bump(|c| c.stats += 1);
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     if let Some(observed) = linux_dents::stat_path(path) {
         return observed;
     }
     let metadata = fs::symlink_metadata(path)?;
-    observe(path, &metadata)
+    observe(path, &metadata).map(|(kind, attrs)| (kind, attrs, false))
 }
 
 #[cfg(not(windows))]
@@ -7659,7 +7881,9 @@ pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<A
 /// entry the listing finds under it, so on Linux the device is read from an opened
 /// descriptor on every route and under either libc, and `meta`'s device answers only
 /// when the open fails, as the listing then fails the same way. Every other stat of the
-/// tree never mounts ([`observe_dir_entry`], [`observe_path`], `linux_dents`).
+/// tree passes `AT_NO_AUTOMOUNT` ([`observe_dir_entry`], [`observe_path`], `linux_dents`),
+/// which never mounts at a path's last component where it exists; a path a route resolves
+/// by itself is resolved through its earlier components as any lookup is.
 pub(crate) fn root_device(root: &Path, meta: &fs::Metadata) -> std::io::Result<u64> {
     #[cfg(windows)]
     {
@@ -7680,6 +7904,79 @@ pub(crate) fn root_device(root: &Path, meta: &fs::Metadata) -> std::io::Result<u
     {
         attrs_from(root, meta).map(|attrs| attrs.dev)
     }
+}
+
+/// The observation every walk that keeps its entries starts with: its root, on `root_dev`,
+/// the device [`root_device`] read it on ([`Index::root_device`]).
+///
+/// A report read later keys the root's filesystem by it. Read again when the report is,
+/// the root can be on another number by then, after a remount or a reboot, and every
+/// directory beneath it would read as a mount point (review H2 on #209).
+pub(crate) fn root_device_op(root_dev: u64) -> Op {
+    Op::Upsert { path: PathBuf::new(), kind: EntryKind::Dir, attrs: Index::root_attrs(root_dev) }
+}
+
+/// The attributes a walk records for a directory it is about to descend into, at `path`,
+/// given what its parent's listing observed of it (`observed`), whether that stat flagged
+/// it a kernel automount point not mounted yet (`automount`), and the device the parent is
+/// on (`parent_dev`).
+///
+/// A listed child's stat never mounts ([`observe_dir_entry`]), so at an unmounted
+/// automount trigger it answers for the trigger, and the listing that follows mounts the
+/// filesystem and finds its contents. Recorded as the stat found it, the directory would
+/// be on the trigger's device and everything beneath it on the filesystem's: two
+/// filesystems for one, and an identity no later read could compare with what is mounted
+/// there then (review G4 on #209). So where a mount can be, its attributes are read again
+/// from a descriptor the walk opens on it, as [`root_device`] reads the root's: the entry
+/// then carries the filesystem the listing finds. That is where the stat put a directory on
+/// another device than its parent, and where it flagged a kernel automount point, which
+/// stats on its parent's device until something resolves through it (review H4). An
+/// ordinary mount point reads the same either way, and the walk lists the directory next
+/// in any case, so nothing is mounted that the listing would not mount. Where the open
+/// fails the stat stands, and the listing fails the same way. Windows walks never cross a
+/// mount, whose folder mounts are reparse points the walk records as symlinks, so there the
+/// stat always stands.
+///
+/// The descriptor is opened here, in the parent's listing, and closed again; the
+/// directory's own listing opens another. An autofs key of a browsable indirect map sits on
+/// its parent's device too, and its stat carries no flag, so it is recorded as the stat
+/// found it until a walk reads such directories where they are listed (fdu-vxji).
+///
+/// `path` builds the directory's absolute path, which only a crossing needs, so the
+/// ordinary directory costs the walk no allocation.
+pub(crate) fn entered_directory_attrs(
+    observed: Attrs,
+    parent_dev: u64,
+    automount: bool,
+    path: impl FnOnce() -> PathBuf,
+) -> Attrs {
+    if !automount && (observed.dev == 0 || parent_dev == 0 || observed.dev == parent_dev) {
+        return observed;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let path = path();
+        crate::counters::bump(|c| c.stats += 1);
+        fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(&path)
+            .and_then(|directory| directory.metadata())
+            .and_then(|meta| attrs_from(&path, &meta))
+            .unwrap_or(observed)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        observed
+    }
+}
+
+/// The device a walk lists a directory's children against: its own, or where it has none
+/// (zero, which a directory the walk read only by kind carries), its parent's.
+pub(crate) const fn listed_device(attrs: Attrs, parent_dev: u64) -> u64 {
+    if attrs.dev == 0 { parent_dev } else { attrs.dev }
 }
 
 pub(crate) fn attrs_from_file(file: &fs::File, meta: &fs::Metadata) -> std::io::Result<Attrs> {
@@ -7726,6 +8023,43 @@ mod tests {
         write_file(&dir.path().join("src/deep/nested.rs"), b"// nested");
         crate::test_support::settle_allocations(dir.path());
         dir
+    }
+
+    /// A directory the walk descends into on another device than its parent, or flagged a
+    /// kernel automount point, is recorded from a descriptor the walk opens on it, so an
+    /// automount the listing mounts carries the filesystem the listing found, not the
+    /// trigger (reviews G4 and H4 on #209). No
+    /// mount is needed to see it: a stat that put the directory on a device of its own, as
+    /// a trigger's does, is replaced by what the opened directory says.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_entered_on_another_device_is_read_from_its_descriptor() {
+        let root = tempfile::tempdir().expect("root");
+        let dir = root.path().join("d");
+        fs::create_dir(&dir).expect("directory");
+        let (_, opened) = observe_path(&dir).expect("stat");
+        let trigger = Attrs { dev: opened.dev.wrapping_add(1), inode: 1, ..opened };
+        let entered = entered_directory_attrs(trigger, opened.dev, false, || dir.clone());
+        assert_eq!((entered.dev, entered.inode), (opened.dev, opened.inode), "{entered:?}");
+        // On its parent's device the stat stands, and the walk builds no path for it.
+        let unbuilt = || -> PathBuf { panic!("a directory on its parent's device is not reread") };
+        assert_eq!(entered_directory_attrs(trigger, trigger.dev, false, unbuilt), trigger);
+        // A kernel automount point stats on its parent's device, and is read again all the
+        // same.
+        let kernel = Attrs { dev: opened.dev, inode: 1, ..opened };
+        let entered = entered_directory_attrs(kernel, opened.dev, true, || dir.clone());
+        assert_eq!((entered.dev, entered.inode), (opened.dev, opened.inode), "{entered:?}");
+        // An unavailable device on either side proves no crossing.
+        let deviceless = Attrs { dev: 0, ..trigger };
+        assert_eq!(entered_directory_attrs(deviceless, opened.dev, false, unbuilt), deviceless);
+        assert_eq!(entered_directory_attrs(trigger, 0, false, unbuilt), trigger);
+        // Where the open fails the stat stands, and the listing fails the same way.
+        let absent =
+            entered_directory_attrs(trigger, opened.dev, false, || root.path().join("absent"));
+        assert_eq!(absent, trigger);
+        // The device a directory's children are compared with is its own, or its parent's.
+        assert_eq!(listed_device(opened, 3), opened.dev);
+        assert_eq!(listed_device(deviceless, 3), 3);
     }
 
     /// A counter that silently reads zero is worse than a missing one, because a report
@@ -8736,9 +9070,11 @@ mod tests {
                 dir.path(),
                 Path::new(""),
                 0,
+                0,
                 OsStr::new(".gitignore"),
                 EntryKind::File,
                 Attrs::default(),
+                false,
                 0,
                 &config,
                 read_control,
@@ -9591,6 +9927,8 @@ mod tests {
         .expect("parallel scan");
 
         assert!(report.is_complete());
+        // The root is no entry the report counts; the walk records its device once.
+        assert_eq!(seen.remove(Path::new("")), Some(1), "the root's device, recorded once");
         assert_eq!(seen.len() as u64, report.entries, "entry count disagrees with the report");
         let duplicated: Vec<_> =
             seen.iter().filter(|(_path, count)| **count != 1).map(|(path, _)| path).collect();
@@ -9869,7 +10207,8 @@ mod tests {
         // walk: consecutive claims by *different* workers must land in different
         // regions while several regions have work. This is what the round-robin ready
         // ring buys, and it is the thing a global FIFO could not promise.
-        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, None, None);
+        let queue =
+            DirectoryQueue::new((PathBuf::new(), 0, 0), ScanOrder::BreadthFirst, None, None);
         let mut timing = WalkAttribution::default();
 
         // Bootstrap: drain the root, then seed four top-level regions.
@@ -9877,7 +10216,7 @@ mod tests {
         let root = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
         claimed.clear();
         queue.extend(
-            (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
+            (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED, 0)),
             &mut timing,
         );
         assert!(root.release(0, 0, &mut timing).is_none());
@@ -9978,7 +10317,7 @@ mod tests {
         // the release, and every remaining worker waited on the condvar forever while
         // the scoped join waited on them.
         let queue = std::sync::Arc::new(DirectoryQueue::new(
-            (PathBuf::new(), 0),
+            (PathBuf::new(), 0, 0),
             ScanOrder::BreadthFirst,
             None,
             None,
@@ -10010,22 +10349,25 @@ mod tests {
     fn automatic_queue_activates_its_reserve_only_for_slow_initial_work() {
         let slow = WorkerCalibration::new(3, 10);
         let queue =
-            DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(slow), None);
+            DirectoryQueue::new((PathBuf::new(), 0, 0), ScanOrder::BreadthFirst, Some(slow), None);
         let mut timing = WalkAttribution::default();
         let mut claimed = Vec::new();
 
         let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
-        queue.extend([(PathBuf::from("child"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("child"), 1, RegionId::UNASSIGNED, 0)].into_iter(),
+            &mut timing,
+        );
         assert!(claim.release(2, 20, &mut timing).is_none());
 
         claimed.clear();
         let claim = queue.claim(&mut claimed, &mut timing).expect("child is claimable");
-        queue.extend([(PathBuf::from("grandchild"), 2, claimed[0].2)].into_iter(), &mut timing);
+        queue.extend([(PathBuf::from("grandchild"), 2, claimed[0].2, 0)].into_iter(), &mut timing);
         assert_eq!(claim.release(1, 10, &mut timing), Some(2));
 
         let fast = WorkerCalibration::new(3, 11);
         let queue =
-            DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(fast), None);
+            DirectoryQueue::new((PathBuf::new(), 0, 0), ScanOrder::BreadthFirst, Some(fast), None);
         let mut timing = WalkAttribution::default();
         let mut claimed = Vec::new();
         let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
@@ -10055,7 +10397,7 @@ mod tests {
         let recorder =
             ScanDiagnosticsRecorder::new(pool, 2, WorkerPolicyExperiment::ShippedOneShot);
         let queue = DirectoryQueue::new_with_policy(
-            (PathBuf::new(), 0),
+            (PathBuf::new(), 0, 0),
             ScanOrder::BreadthFirst,
             Some(calibration),
             Some(recorder.clone()),
@@ -10067,12 +10409,14 @@ mod tests {
         let mut claimed = Vec::new();
 
         let first = queue.claim(&mut claimed, &mut timing).expect("first window");
-        queue.extend([(PathBuf::from("late"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue
+            .extend([(PathBuf::from("late"), 1, RegionId::UNASSIGNED, 0)].into_iter(), &mut timing);
         assert_eq!(first.release(2, 10, &mut timing), None, "fast prefix holds");
 
         claimed.clear();
         let late = queue.claim(&mut claimed, &mut timing).expect("late phase");
-        queue.extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue
+            .extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED, 0)].into_iter(), &mut timing);
         assert_eq!(late.release(2, 40, &mut timing), None, "shadow cannot scale");
 
         let diagnostics = recorder.finish();
@@ -10095,7 +10439,7 @@ mod tests {
         let recorder =
             ScanDiagnosticsRecorder::new(pool, 4, WorkerPolicyExperiment::StagedGatedWindows);
         let queue = DirectoryQueue::new_with_policy(
-            (PathBuf::new(), 0),
+            (PathBuf::new(), 0, 0),
             ScanOrder::BreadthFirst,
             Some(calibration),
             Some(recorder.clone()),
@@ -10107,13 +10451,17 @@ mod tests {
         let mut claimed = Vec::new();
 
         let root = queue.claim(&mut claimed, &mut timing).expect("root");
-        queue.extend([(PathBuf::from("narrow"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue.extend(
+            [(PathBuf::from("narrow"), 1, RegionId::UNASSIGNED, 0)].into_iter(),
+            &mut timing,
+        );
         assert_eq!(root.release(1, 20, &mut timing), None);
 
         claimed.clear();
         let narrow = queue.claim(&mut claimed, &mut timing).expect("narrow child");
         queue.extend(
-            (0..9).map(|index| (PathBuf::from(format!("wide-{index}")), 2, RegionId::UNASSIGNED)),
+            (0..9)
+                .map(|index| (PathBuf::from(format!("wide-{index}")), 2, RegionId::UNASSIGNED, 0)),
             &mut timing,
         );
         assert_eq!(narrow.release(1, 20, &mut timing), Some(4));
@@ -10121,7 +10469,8 @@ mod tests {
         claimed.clear();
         let wide = queue.claim(&mut claimed, &mut timing).expect("wide claim");
         queue.extend(
-            (0..9).map(|index| (PathBuf::from(format!("wider-{index}")), 3, RegionId::UNASSIGNED)),
+            (0..9)
+                .map(|index| (PathBuf::from(format!("wider-{index}")), 3, RegionId::UNASSIGNED, 0)),
             &mut timing,
         );
         assert_eq!(wide.release(1, 20, &mut timing), Some(8));
@@ -10162,7 +10511,7 @@ mod tests {
         recorder.handoff_sent();
         recorder.handoff_sent();
         let queue = DirectoryQueue::new_with_policy(
-            (PathBuf::new(), 0),
+            (PathBuf::new(), 0, 0),
             ScanOrder::BreadthFirst,
             Some(calibration),
             Some(recorder.clone()),
@@ -10174,7 +10523,8 @@ mod tests {
         let mut claimed = Vec::new();
         let claim = queue.claim(&mut claimed, &mut timing).expect("root");
         queue.extend(
-            (0..9).map(|index| (PathBuf::from(format!("ready-{index}")), 1, RegionId::UNASSIGNED)),
+            (0..9)
+                .map(|index| (PathBuf::from(format!("ready-{index}")), 1, RegionId::UNASSIGNED, 0)),
             &mut timing,
         );
 
@@ -10195,7 +10545,7 @@ mod tests {
         let recorder =
             ScanDiagnosticsRecorder::new(pool, 4, WorkerPolicyExperiment::RepeatedWindows);
         let queue = DirectoryQueue::new_with_policy(
-            (PathBuf::new(), 0),
+            (PathBuf::new(), 0, 0),
             ScanOrder::BreadthFirst,
             Some(calibration),
             Some(recorder.clone()),
@@ -10208,14 +10558,16 @@ mod tests {
 
         let slow = queue.claim(&mut claimed, &mut timing).expect("slow prefix");
         queue.extend(
-            (0..4).map(|index| (PathBuf::from(format!("fast-{index}")), 1, RegionId::UNASSIGNED)),
+            (0..4)
+                .map(|index| (PathBuf::from(format!("fast-{index}")), 1, RegionId::UNASSIGNED, 0)),
             &mut timing,
         );
         assert_eq!(slow.release(1, 20, &mut timing), Some(4));
 
         claimed.clear();
         let fast = queue.claim(&mut claimed, &mut timing).expect("fast suffix");
-        queue.extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        queue
+            .extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED, 0)].into_iter(), &mut timing);
         assert_eq!(fast.release(1, 1, &mut timing), None);
 
         let diagnostics = recorder.finish();
@@ -11234,8 +11586,10 @@ mod tests {
     fn filesystem_boundary_is_part_of_the_shared_descent_policy() {
         let config = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
         let attrs = Attrs { dev: 22, ..Attrs::default() };
-        assert!(!should_descend(EntryKind::Dir, attrs, 0, 11, &config));
-        assert!(should_descend(EntryKind::Dir, Attrs { dev: 11, ..attrs }, 0, 11, &config,));
+        assert!(!should_descend(EntryKind::Dir, attrs, false, 0, 11, &config));
+        assert!(should_descend(EntryKind::Dir, Attrs { dev: 11, ..attrs }, false, 0, 11, &config));
+        // A kernel automount point on the root's device is a boundary all the same.
+        assert!(!should_descend(EntryKind::Dir, Attrs { dev: 11, ..attrs }, true, 0, 11, &config));
     }
 
     /// A cold scan's index records its own pass start, the stamp a snapshot of it writes:
@@ -11281,7 +11635,7 @@ mod tests {
 
         assert!(sizes.len() >= 3, "expected several batches, got {sizes:?}");
         assert!(sizes.iter().all(|&n| n <= 10));
-        assert_eq!(sizes.iter().sum::<usize>(), 25);
+        assert_eq!(sizes.iter().sum::<usize>(), 26, "25 files and the root's device");
     }
 
     #[test]
@@ -11375,7 +11729,7 @@ mod tests {
             unchanged += index.apply_ok(delta).unchanged;
         }
 
-        assert_eq!(unchanged, 5, "3 files + 2 dirs all already known");
+        assert_eq!(unchanged, 6, "the root, 3 files, and 2 dirs, all already known");
         assert_eq!(index.total(), before);
     }
 
@@ -11462,7 +11816,7 @@ mod tests {
         .expect("reconcile");
 
         assert!(report.is_complete());
-        assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
+        assert_eq!(report.apply.unchanged, 6, "the root, 3 files, and 2 dirs, all already known");
         assert_eq!(commits.len(), 2);
         assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(
@@ -11796,21 +12150,18 @@ mod tests {
         }
         .expect("root metadata");
         let mut commits = Vec::new();
-        let outcome = reconcile_direct_parallel(
-            &mut index,
-            &root,
-            root_device(&root, &root_meta).expect("root device"),
-            &config,
-            1,
-            &mut |commit| commits.push(commit.clone()),
-        )
-        .expect("parallel attempt");
+        let root_dev = root_device(&root, &root_meta).expect("root device");
+        let outcome =
+            reconcile_direct_parallel(&mut index, &root, root_dev, &config, 1, &mut |commit| {
+                commits.push(commit.clone());
+            })
+            .expect("parallel attempt");
         let DirectParallelOutcome::RetrySerial { prefix, remaining } = outcome else {
             panic!("the deliberately tiny deferred budget must trigger the retry");
         };
 
         assert_eq!(prefix.apply, ApplyStats::default());
-        assert_eq!(remaining, VecDeque::from([(PathBuf::new(), 0)]));
+        assert_eq!(remaining, VecDeque::from([(PathBuf::new(), 0, root_dev)]));
         assert!(commits.is_empty());
         assert_eq!(index_fingerprint(&index), before);
 
@@ -12067,7 +12418,7 @@ mod tests {
         .expect("reconcile");
 
         assert!(report.is_complete());
-        assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
+        assert_eq!(report.apply.unchanged, 6, "the root, 3 files, and 2 dirs, all already known");
         assert_eq!(commits.len(), 2);
         assert!(commits.iter().all(|commit| commit.changes.is_empty()));
         assert_eq!(
