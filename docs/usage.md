@@ -322,10 +322,11 @@ fdu keeps no history of past sizes, but every file records when it last changed,
 scan with no saved state finds what was written in a window:
 
 ```shell
-fdu ~ --kind=file --since=24h                  # by folder, largest first
-fdu ~ --kind=file --since=24h --view=summary   # their total
-fdu ~ --view=largest --since=24h --limit=20    # the largest of them
+fdu ~ --kind=file --since=24h --view=tree,summary,largest
 ```
+
+One walk answers three questions: the folders, largest first, their total, and the 20
+largest files. Asked as three commands, each would walk the tree again.
 
 The window reads change time, so it catches data that arrived carrying an older
 modification time. `cp -p`, `rsync -a`, Finder and Explorer copies, `mv` from another
@@ -349,6 +350,22 @@ window separates nothing.
 Narrow it, as in `--since=1h`, or read [`--view=ages`](#see-when-the-space-arrived),
 whose `under 1h` and `1h to 1d` rows show when within the day the data arrived.
 
+Leave `--min-size` off this question.
+Growth is often many small files, and a size bound drops each of them from every
+folder’s row and from the total.
+
+A relative bound such as `24h` resolves once, at the report’s instant, which is taken
+before the walk begins, so the same command run later asks about a different window.
+To ask about one window again, or to compare two runs, give both bounds as RFC 3339
+instants:
+
+```shell
+fdu ~ --kind=file --since=2026-11-11T08:00:00Z --before=2026-11-12T08:00:00Z
+```
+
+A window with no upper bound also admits files written while the walk runs;
+`--before=now` leaves them out.
+
 The result is data written in the window, not net growth:
 
 - A file written in the window counts at its full size, so a 1 MB append to a 10 GB file
@@ -365,6 +382,12 @@ The result is data written in the window, not net growth:
   list but not open, such as a locked system file, has none.
   When a window or `ages` counted such a file, a note says how many:
   `note: 3 files have no observed status change, so their modification time stands for their change time`.
+- Rows overlap: a folder’s row includes its subfolders, so rows do not add up.
+  The root row and `--view=summary` give the total.
+- Allocated bytes are counted per path.
+  A file with several hard links counts at each of them, and clones can share blocks, so
+  the total can exceed the space the writes took; see
+  [Allocation and Shared Files](#allocation-and-shared-files).
 - Space outside the scanned paths, in filesystem snapshots, or in deleted files that a
   process still holds open is in no walk.
   `df` reports the volume’s free space; fdu reports what the scanned tree holds.

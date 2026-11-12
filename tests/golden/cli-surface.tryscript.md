@@ -568,11 +568,13 @@ fdu keeps no history of past sizes, but every file records when it last changed,
 scan, with no earlier state, finds what was written in a window:
 
 ```bash
-fdu PATH --kind file --since 24h                  # by folder, largest first
-fdu PATH --kind file --since 24h --view summary   # their total
-fdu PATH --view largest --since 24h --limit 20    # the largest of them
-fdu PATH --view ages                              # how much arrived when, in fixed bands
+fdu PATH --kind file --since 24h --view tree,summary,largest  # by folder, total, largest files
+fdu PATH --view ages                                          # how much arrived when, in fixed bands
 ```
+
+The first command answers three questions from one walk: the folders, largest first,
+their total, and the 20 largest files.
+Asked as three commands, each would walk the tree again.
 
 The window reads change time, so it catches data that arrived carrying an older
 modification time, which modification time misses: copies made with `cp -p`, `rsync -a`,
@@ -593,6 +595,15 @@ the window, so the window separates nothing.
 Narrow it, as in `--since 1h`, or read `--view ages`: its `under 1h` and `1h to 1d` rows
 show when within the day the data arrived.
 
+Add no `--min-size`. Growth is often many small files, and a size bound drops each of
+them from every folder’s row and from the total.
+
+A relative bound such as `24h` resolves once, at the report’s instant, which is taken
+before the walk, so the same command run later asks about a different window.
+To ask about one window again, give both bounds as RFC 3339 instants, as in
+`--since 2026-11-11T08:00:00Z --before 2026-11-12T08:00:00Z`. A window with no upper
+bound also admits files written while the walk runs; `--before now` leaves them out.
+
 Read the result as data written, not as net growth:
 
 - A file written in the window counts at its full size, so a 1 MB append to a 10 GB file
@@ -605,6 +616,10 @@ Read the result as data written, not as net growth:
 - A file whose status change was not observed, such as a Windows file fdu could not
   open, is timed by its modification time, and a note counts such files whenever a
   window or `ages` counted one.
+- Rows overlap: a folder’s row includes its subfolders, so rows do not add up.
+  The root row and `--view summary` give the total.
+- Allocated bytes are counted per path: a file with several hard links counts at each of
+  them, and clones can share blocks, so the total can exceed the space the writes took.
 - Space outside PATH, in filesystem snapshots, or in deleted files still held open is in
   no walk. fdu reports what the tree holds; `df PATH` reports the volume’s free space.
 

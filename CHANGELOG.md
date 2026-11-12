@@ -25,6 +25,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - When a window’s note reads `selected all`, they say that the window separates
     nothing and point at a narrower window or `--view ages`, which the skill’s first
     recipe now shows. A fresh agent given only the skill had stopped at that note.
+  - The recipe is one walk, `--kind file --since 24h --view tree,summary,largest`, where
+    it was three commands and three walks.
+    Its reading rules add what was documented only elsewhere: rows overlap and
+    `--view summary` is the total; allocation is counted per path, so hard links and
+    clones can make a total exceed the space the writes took; `--min-size` drops the
+    small files that add up; and a window can be asked again only with both bounds as
+    RFC 3339 instants, `--before now` leaving out files written during the walk.
 
 ### Fixed
 
