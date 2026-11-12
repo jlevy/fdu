@@ -571,6 +571,7 @@ scan, with no earlier state, finds what was written in a window:
 fdu PATH --kind file --since 24h                  # by folder, largest first
 fdu PATH --kind file --since 24h --view summary   # their total
 fdu PATH --view largest --since 24h --limit 20    # the largest of them
+fdu PATH --view ages                              # how much arrived when, in fixed bands
 ```
 
 The window reads change time, so it catches data that arrived carrying an older
@@ -586,6 +587,11 @@ directory with any activity in the window is admitted at its full size.
 With it, each folder counts only the files written in the window, and percentages are
 shares of their total; the `note: selected … of …` line gives the whole tree to compare,
 and machine output carries both as `selected` and `scanned`.
+
+When that note reads `selected all N files`, every file in the tree was written inside
+the window, so the window separates nothing.
+Narrow it, as in `--since 1h`, or read `--view ages`: its `under 1h` and `1h to 1d` rows
+show when within the day the data arrived.
 
 Read the result as data written, not as net growth:
 
@@ -620,7 +626,6 @@ With none saved, the written-data answer above is the one available.
 `1y to 3y`, `over 3y`), from one scan.
 
 ```bash
-fdu PATH --view ages                             # how much arrived when
 fdu PATH --view tree,ages --kind file --since 7d # where this week's data is
 ```
 

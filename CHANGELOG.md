@@ -20,6 +20,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `fdu: invalid --sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless --time=modified is given`.
   None is an alias or in `--help`. Rust `query::parse_sort` refuses `mtime` the same
   way, ending `unless time=modified is given` under the library’s axis names.
+- The agent skill and the usage guide say more about finding what was written recently;
+  no command changes.
+  - When a window’s note reads `selected all`, they say that the window separates
+    nothing and point at a narrower window or `--view ages`, which the skill’s first
+    recipe now shows. A fresh agent given only the skill had stopped at that note.
 
 ### Fixed
 

@@ -344,6 +344,10 @@ With it, each folder counts only the files written in the window.
 The root row’s 100% is their total, not the tree’s; a `note: selected … of …` line says
 how much of the scanned tree that is, and `note: selected all 2 files, 98 KiB` says a
 window selected everything, which without `--kind file` it often does.
+With `--kind=file` it means every file in the tree was written inside the window, so the
+window separates nothing.
+Narrow it, as in `--since=1h`, or read [`--view=ages`](#see-when-the-space-arrived),
+whose `under 1h` and `1h to 1d` rows show when within the day the data arrived.
 
 The result is data written in the window, not net growth:
 
