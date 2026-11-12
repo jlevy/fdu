@@ -2612,8 +2612,16 @@ pub(crate) struct SummaryPart {
 /// An incomplete root is not enough: a selection gives an unreadable directory that holds
 /// no selected entry no row at all, and a bound can hide the row it has. A root's own row
 /// is not one either, since the caller named it and no threshold applies to it.
+///
+/// The usual report costs nothing here. A threshold that admits everything keeps no row
+/// by exception, and completeness rises to the root ([`TreeRecency::complete`]), so a
+/// directory listed in full has no incomplete row beneath it: a complete tree is decided
+/// by its root rows, and a partial one is read only below its incomplete rows.
 fn shows_incomplete_row_below_share(sections: &[Section], query: &Query) -> bool {
     let threshold = query.min_share_for();
+    if threshold.admits(0, 1) {
+        return false;
+    }
     let size = |bytes: u64, allocated: u64| match query.selection.size {
         SizeMetric::Apparent => bytes,
         SizeMetric::Allocated => allocated,
@@ -2636,15 +2644,16 @@ fn shows_incomplete_row_below_share(sections: &[Section], query: &Query) -> bool
             (None, None) => return false,
         };
         // Iterative, as every tree traversal here is: a deep tree must not exhaust the
-        // stack.
-        let mut stack: Vec<&TreeNode> = tops.into_iter().flat_map(|top| &top.children).collect();
-        while let Some(node) = stack.pop() {
-            if node.complete == Some(false)
-                && !threshold.admits(size(node.bytes, node.allocated), grand)
-            {
-                return true;
+        // stack. Each directory on it is incomplete, and its rows are the ones tested.
+        let mut incomplete: Vec<&TreeNode> =
+            tops.into_iter().filter(|top| top.complete == Some(false)).collect();
+        while let Some(directory) = incomplete.pop() {
+            for row in directory.children.iter().filter(|row| row.complete == Some(false)) {
+                if !threshold.admits(size(row.bytes, row.allocated), grand) {
+                    return true;
+                }
+                incomplete.push(row);
             }
-            stack.extend(&node.children);
         }
         false
     })
@@ -7774,11 +7783,17 @@ mod tests {
         let files = vec![EntryKind::File];
 
         assert_eq!(shown_and_noted(Selection::default()), (true, true));
-        assert_eq!(
-            shown_and_noted(Selection { exclude: vec![pattern("large")], ..Selection::default() }),
-            (true, true),
-            "a selection that leaves the directory its row leaves the note too"
-        );
+        for selection in [
+            Selection { exclude: vec![pattern("large")], ..Selection::default() },
+            Selection { include: vec![pattern("denied")], ..Selection::default() },
+            Selection { kinds: vec![EntryKind::Dir], ..Selection::default() },
+        ] {
+            assert_eq!(
+                shown_and_noted(selection),
+                (true, true),
+                "a selection that leaves the directory its row leaves the note too"
+            );
+        }
         // A selection of files, or of a time window no unlisted directory can satisfy,
         // gives it no row: it holds no selected entry.
         for selection in [
