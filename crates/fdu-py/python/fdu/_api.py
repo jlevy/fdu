@@ -35,6 +35,7 @@ from ._models import (
     ScanOptions,
     SortKey,
     Status,
+    TimeBasis,
     WatchOptions,
     _wire_path,
     cache_status_from_dict,
@@ -281,7 +282,10 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "min_size": str(selection.min_size) if selection.min_size is not None else None,
         "since": _when(selection.since),
         "before": _when(selection.before),
-        "time": selection.time.value if selection.time is not None else None,
+        # Through `TimeBasis`, as `sort` goes through `SortKey` below: the sort refusal
+        # names `time=modified`, so a raw token here has to be read, not fail as a missing
+        # attribute on a string.
+        "time": TimeBasis(selection.time).value if selection.time is not None else None,
         "kind": [kind.value for kind in selection.kinds],
         "depth": _bound(selection.depth),
         "limit": _bound(selection.limit),

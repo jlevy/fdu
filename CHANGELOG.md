@@ -27,8 +27,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `'mtime' is not a valid SortKey`, and for the selection an `AttributeError` when the
   query was read. Any other unknown key gets the grammar’s refusal, and a spelling the
   grammar accepts, such as `SortKey(" Time ")`, is the member it names.
-  `SortKey.MTIME` and `Selection(modified_since=, modified_before=)` still fail with
-  Python’s own `AttributeError` and `TypeError`, which name no replacement.
+  A `Selection` whose `time` holds a string is read through `TimeBasis` the same way, so
+  the spelling the sentence suggests, `Selection(sort="time", time="modified")`, works;
+  it raised the same `AttributeError`. `SortKey.MTIME` and
+  `Selection(modified_since=, modified_before=)` still fail with Python’s own
+  `AttributeError` and `TypeError`, which name no replacement.
   Rust: `SortKey::label`.
 - The agent skill and the usage guide say more about finding what was written recently;
   no command changes.

@@ -196,6 +196,19 @@ def test_a_sort_key_is_read_by_the_librarys_grammar(builds: Path) -> None:
     member = fdu.Selection(sort=fdu.SortKey.NAME, kinds=(fdu.EntryKind.DIR,))
     assert paths(token) == paths(member) != []
 
+    # The refusal names `time=modified`, so the spelling it suggests has to work: a raw
+    # token for the clock is read through its enum, and the report reads that clock.
+    files = (fdu.EntryKind.FILE,)
+    hinted = fdu.Selection(sort="time", time="modified", kinds=files)  # type: ignore[arg-type]
+    typed = fdu.Selection(sort=fdu.SortKey.TIME, time=fdu.TimeBasis.MODIFIED, kinds=files)
+    assert paths(hinted) == paths(typed) != []
+    report = index.report(fdu.Query(views=(fdu.View.FILES,), selection=hinted))
+    assert report.request.time is fdu.TimeBasis.MODIFIED
+    # A clock that is no clock is refused when the query is read, by name.
+    unknown = fdu.Selection(time="accessed")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="'accessed' is not a valid TimeBasis"):
+        index.report(fdu.Query(views=(fdu.View.FILES,), selection=unknown))
+
 
 def test_list_default_and_format_compatibility(builds: Path) -> None:
     index = fdu.scan(builds)
