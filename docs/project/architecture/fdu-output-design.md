@@ -323,6 +323,14 @@ apply. Five belong to selection, time, and capacity:
    `note: type and extension rows carry no time, so they keep size order`, ending
    `size order, reversed` under `--reverse`, which reverses those rows too.
 
+One more follows them, for a tree that shows a directory it could not list in full below
+its share threshold:
+`note: incomplete subtrees remain visible below the size threshold`. A note that
+explains an exception prints only where the result shows the exception.
+A selection that gives that directory no row, a bound that hides the row, or a share
+that reaches the threshold leaves nothing to explain, so the note is read from the
+rendered rows, not from whether the scan listed everything.
+
 Apply color using stderr’s terminal state for diagnostics and stdout’s terminal state
 for results.
 Honor the existing color option and `NO_COLOR`. Redirected streams are plain

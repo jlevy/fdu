@@ -235,7 +235,7 @@ Display bounds compose and leave aggregate measurements unchanged.
 On a partial scan, verified small files and complete subtrees still obey the share
 threshold against the observed root total.
 Incomplete subtrees remain visible because their unseen contents could be significant;
-where the tree shows one, a note explains this exception.
+where the tree shows one below the threshold, a note explains this exception.
 An unrelated scan error does not disable pruning.
 
 Shares compare exact values against the selected root total, including threshold
