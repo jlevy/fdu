@@ -423,10 +423,13 @@ Give every command the same `--cache-dir`, outside the scanned path.
 The default, `~/.cache/fdu` on macOS and Linux and `%LOCALAPPDATA%/fdu` on Windows, is
 inside `~` and `~/.cache`: a snapshot left there is itself a file written in the window,
 and the next fresh report of either path counts it.
-A snapshot holds a record for every entry: 6.7 MiB for a tree of 97,602 entries and 1.9
-MiB for one of 26,726, measured on Linux, about 75 bytes an entry.
-At that rate a tree of five million entries leaves about 350 MiB, so put the directory
-on another volume when this one is nearly full, which is the usual reason for asking.
+A snapshot holds a record for every entry, about 57 bytes plus the entry’s name.
+Measured on Linux, that is 72 bytes an entry on `/usr` (6.7 MiB for 97,602 entries,
+whose names average 15 bytes) and 121 where names are 64-character hashes, as in a
+content-addressed cache (2.3 MiB for 20,100 entries).
+At those rates a tree of five million entries leaves about 340 to 580 MiB, so put the
+directory on another volume when this one is nearly full, which is the usual reason for
+asking.
 
 In Python, scan the tree once and query the index; `fdu.scan` reads and writes no cache:
 

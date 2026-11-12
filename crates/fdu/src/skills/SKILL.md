@@ -495,9 +495,11 @@ own instant, not from the walk.
 DIR belongs outside PATH. The default, `~/.cache/fdu` on macOS and Linux and
 `%LOCALAPPDATA%/fdu` on Windows, is inside `~` and `~/.cache`, so a snapshot left there
 is itself a file written in the window, on the volume that is short of space.
-A snapshot holds a record for every entry, about 75 bytes each (6.7 MiB for 97,602
-entries, measured on Linux), so put DIR on another volume when this one is nearly full,
-which is the usual reason for asking.
+A snapshot holds a record for every entry, about 57 bytes plus the entry’s name: 72
+bytes an entry on a Linux `/usr`, and 121 where names are 64-character hashes, as in a
+content-addressed cache.
+Five million entries leave about 340 to 580 MiB, so put DIR on another volume when this
+one is nearly full, which is the usual reason for asking.
 In Python, `fdu.scan` keeps the walk in memory and writes no cache, and each
 `index.report` takes its own `since`.
 

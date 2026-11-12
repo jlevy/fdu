@@ -53,7 +53,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     they show the three commands, recommend absolute bounds for the later windows, and
     give each the same `--cache-dir` outside the scanned path, since the default cache
     directory is inside `~` and `~/.cache` and a snapshot left there is itself a file
-    written in the window; a measured snapshot size says when to use another volume.
+    written in the window; a measured snapshot size, about 57 bytes plus the name for
+    each entry, says when to use another volume.
     The cache sections say that a snapshot is written only from a complete scan, so
     `--allow-partial` over a partly unreadable tree leaves nothing for `--stale-ok`.
   - The saved-report recipe for exact net change asks for `--view tree,volumes`, so the
