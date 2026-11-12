@@ -2463,7 +2463,7 @@ fn read_roots(
     }
     notes.extend(timeless_rows_note(query));
     if shows_incomplete_row_below_share(&sections, query) {
-        notes.push("note: incomplete subtrees remain visible below the size threshold".to_owned());
+        notes.push(INCOMPLETE_ROW_NOTE.to_owned());
     }
     if reads.iter().any(|read| {
         read.index.observes_controls()
@@ -2568,6 +2568,10 @@ fn merge_analysis(
         merged
     })
 }
+
+/// Said of a tree that shows a row [`ShareDecision::KeptIncomplete`] kept.
+const INCOMPLETE_ROW_NOTE: &str =
+    "note: incomplete subtrees remain visible below the size threshold";
 
 /// Said of a report whose ignored subtotals a refused or unreadable control file withheld.
 const UNVERIFIED_IGNORED_NOTE: &str =
@@ -6583,8 +6587,61 @@ mod tests {
     }
 
     fn run(index: &Index, query: &Query) -> Report {
-        report(index, &crate::test_support::read_of(index, query.clone()), generated_at(), None)
-            .expect("the query is answerable over this index")
+        let report = report(
+            index,
+            &crate::test_support::read_of(index, query.clone()),
+            generated_at(),
+            None,
+        )
+        .expect("the query is answerable over this index");
+        assert_incomplete_rows_are_found(&report, query);
+        report
+    }
+
+    /// Holds a report's trees to what [`shows_incomplete_row_below_share`] rests on when
+    /// it descends only below incomplete rows. Completeness rises, so no row listed in
+    /// full has an incomplete row beneath it; and so the note is there exactly when a
+    /// reading of every row finds one kept by exception. Every tree a test here builds
+    /// through [`run`] or [`run_roots`] passes through this, whatever the test is about,
+    /// so a change to how a tree measures completeness cannot quietly unsettle the
+    /// pruning.
+    fn assert_incomplete_rows_are_found(report: &Report, query: &Query) {
+        let threshold = query.min_share_for();
+        let size = |bytes: u64, allocated: u64| match query.selection.size {
+            SizeMetric::Apparent => bytes,
+            SizeMetric::Allocated => allocated,
+        };
+        let mut kept = false;
+        for section in &report.sections {
+            let Section::Tree { root, roots, .. } = section else { continue };
+            let (grand, mut rows): (u64, Vec<&TreeNode>) = match (root, roots) {
+                (Some(root), _) => (size(root.bytes, root.allocated), vec![&**root]),
+                (None, Some(roots)) => (
+                    roots.total.map_or(0, |total| size(total.bytes, total.allocated)),
+                    roots.trees.iter().map(|tree| &tree.tree).collect(),
+                ),
+                (None, None) => continue,
+            };
+            while let Some(parent) = rows.pop() {
+                for row in &parent.children {
+                    assert!(
+                        !(parent.complete == Some(true) && row.complete == Some(false)),
+                        "`{}` is listed in full and holds the incomplete `{}`",
+                        parent.path.display(),
+                        row.path.display()
+                    );
+                    let value = size(row.bytes, row.allocated);
+                    kept |= ShareDecision::of(&threshold, value, grand, row.complete)
+                        == ShareDecision::KeptIncomplete;
+                    rows.push(row);
+                }
+            }
+        }
+        assert_eq!(
+            report.notes.iter().any(|note| note == INCOMPLETE_ROW_NOTE),
+            kept,
+            "the note must agree with a reading of every row"
+        );
     }
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
@@ -7778,7 +7835,7 @@ mod tests {
     /// and the status still says the tree is partial.
     #[test]
     fn the_incomplete_subtree_note_follows_the_rows_the_tree_shows() {
-        const NOTE: &str = "note: incomplete subtrees remain visible below the size threshold";
+        const NOTE: &str = INCOMPLETE_ROW_NOTE;
         let denied = |root: &str, path: &str| {
             crate::Error::io(
                 Path::new(root).join(path),
@@ -7920,6 +7977,118 @@ mod tests {
             "the incomplete root `part` is a row at a hundredth of a percent, by name"
         );
         assert!(!noted(Selection { limit: Some(Bound::Limit(0)), ..Selection::default() }));
+    }
+
+    /// Completeness rises in every source a tree reads it from, which is what lets the
+    /// note's reading skip a row listed in full. [`run`] and [`run_roots`] hold each tree
+    /// to that, and to the note agreeing with a reading of every row; this builds the
+    /// trees that put it at risk: listings that failed at two depths beside healthy
+    /// siblings, a scan-depth boundary, and an index with no per-listing marks, each read
+    /// unfiltered and through a walk, with every display bound lifted and under the
+    /// defaults.
+    #[test]
+    fn no_row_listed_in_full_holds_an_incomplete_row_under_any_selection() {
+        use EntryKind::{Dir, File};
+        let entries = [
+            ("large", File, 9_000),
+            ("a", Dir, 0),
+            ("a/ok", Dir, 0),
+            ("a/ok/file", File, 300),
+            ("a/denied", Dir, 0),
+            ("b", Dir, 0),
+            ("b/file", File, 200),
+            ("c", Dir, 0),
+            ("c/d", Dir, 0),
+            ("c/d/file", File, 100),
+            ("c/d/e", Dir, 0),
+            ("c/d/e/denied", Dir, 0),
+        ];
+        let filled = |mut index: Index| {
+            index.apply_ok(&Observation::new(
+                entries
+                    .iter()
+                    .map(|(path, kind, size)| upsert(path, *kind, attrs(*size, 50)))
+                    .collect(),
+            ));
+            index
+        };
+        let failed = |path: &str| {
+            crate::Error::io(
+                Path::new("/root").join(path),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
+            )
+        };
+        let mut partial = filled(Index::new("/root"));
+        partial.set_initial_scan_freshness(&[failed("a/denied"), failed("c/d/e/denied")]);
+        let bounded = filled(Index::new_with_scope(
+            "/root",
+            crate::ScanScope { max_depth: Some(2), ..crate::ScanScope::default() },
+        ));
+        let mut unmarked = filled(Index::new("/root"));
+        unmarked.set_initial_freshness(false);
+        let complete = filled(Index::new("/root"));
+
+        let since = TimeWindow { since: Some(0), before: None };
+        let selections = [
+            Selection::default(),
+            Selection { size: SizeMetric::Apparent, ..Selection::default() },
+            Selection { kinds: vec![File], ..Selection::default() },
+            Selection { kinds: vec![Dir], ..Selection::default() },
+            Selection { kinds: vec![File], window: since, ..Selection::default() },
+            Selection { window: since, ..Selection::default() },
+            Selection { exclude: vec![pattern("large")], ..Selection::default() },
+            Selection { exclude: vec![pattern("a/denied")], ..Selection::default() },
+            Selection { include: vec![pattern("denied")], ..Selection::default() },
+            Selection { include: vec![pattern("file")], ..Selection::default() },
+            Selection { min_size: Some(150), ..Selection::default() },
+        ];
+        let every_row = |selection: &Selection| Selection {
+            depth: Some(Bound::All),
+            min_share: Some(ShareThreshold::parse("0%").expect("share")),
+            ..selection.clone()
+        };
+        for index in [&partial, &bounded, &unmarked, &complete] {
+            for selection in &selections {
+                for selection in [selection.clone(), every_row(selection)] {
+                    run(index, &query(&[ViewSpec::Tree], selection));
+                }
+            }
+        }
+        let other = rooted("/other", &[("guide.md", File, 4_000, 30)]);
+        let roots = labelled(&[("part", "/root"), ("other", "/other")]);
+        for selection in &selections {
+            for selection in [selection.clone(), every_row(selection)] {
+                run_roots(&[&partial, &other], &roots, &query(&[ViewSpec::Tree], selection));
+            }
+        }
+
+        // The partial tree is the case with something to get wrong: beside incomplete rows
+        // nested under incomplete rows, it has rows listed in full, the ones a reading
+        // may skip.
+        let tree = tree_of(&run(&partial, &query(&[ViewSpec::Tree], every_row(&selections[0]))));
+        let mut listed = Vec::new();
+        let mut stack = vec![&tree];
+        while let Some(node) = stack.pop() {
+            if node.kind == Dir && !node.path.as_os_str().is_empty() {
+                listed.push((node.path.to_string_lossy().replace('\\', "/"), node.complete));
+            }
+            stack.extend(&node.children);
+        }
+        listed.sort();
+        let row = |path: &str, complete: bool| (path.to_string(), Some(complete));
+        assert_eq!(
+            listed,
+            [
+                row("a", false),
+                row("a/denied", false),
+                row("a/ok", true),
+                row("b", true),
+                row("c", false),
+                row("c/d", false),
+                row("c/d/e", false),
+                row("c/d/e/denied", false),
+            ]
+        );
     }
 
     #[test]
@@ -9142,7 +9311,10 @@ mod tests {
 
     fn run_roots(indexes: &[&Index], roots: &Roots, query: &Query) -> Report {
         let request = crate::test_support::read_of(indexes[0], query.clone());
-        report_roots(indexes, roots, &request, generated_at(), None).expect("answerable")
+        let report =
+            report_roots(indexes, roots, &request, generated_at(), None).expect("answerable");
+        assert_incomplete_rows_are_found(&report, query);
+        report
     }
 
     fn root_trees_of(report: &Report) -> (&RootTrees, &[TreeOmission]) {
