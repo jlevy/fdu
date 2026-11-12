@@ -1064,6 +1064,158 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope: th
 ? 1
 ```
 
+## One Walk Answers Later Questions of Any Kind or Window
+
+A `--cache on` report leaves a snapshot of the whole tree, whatever it selected itself.
+`--stale-ok` then answers other questions from it without walking: here a directory
+question and a file question with absolute bounds, each reporting `cache_only`
+provenance and the stale warning.
+
+```console
+$ fdu --cache on --quiet --kind file --since 2000-01-01T00:00:00Z --view summary --size apparent project
+     294 B  7 files, 0 directories (128 B gitignored)
+? 0
+```
+
+```console
+$ fdu --stale-ok --kind dir --include src --view summary --format json --size apparent project
+{
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
+  "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true,
+      "population": "include"
+    },
+    "analyze": [],
+    "size": "apparent",
+    "time": "changed",
+    "sort_metric": null,
+    "views": ["summary"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "selected": {"files": 2, "dirs": 1, "bytes": 36, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "provenance": {
+    "source": "cache_only",
+    "freshness": "stale",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "rules": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
+  "reports": [
+    {
+      "view": "summary",
+      "summary": {
+        "files": 2,
+        "dirs": 1,
+        "bytes": 36,
+        "allocated": [ALLOCATED],
+        "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+        "newest_file_time_ns": [MTIME_NS]
+      }
+    }
+  ]
+}
+! note: selected 2 of 7 files, 36 B of 294 B
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
+? 0
+```
+
+```console
+$ fdu --stale-ok --kind file --since 2000-01-01T00:00:00Z --before 2200-01-01T00:00:00Z --view summary --format json --size apparent project
+{
+  "schema": "fdu.report/12",
+  "generator": "fdu 0.6.0",
+  "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
+  "age_reference_at": "[RFC3339]",
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true,
+      "population": "include"
+    },
+    "analyze": [],
+    "size": "apparent",
+    "time": "changed",
+    "sort_metric": null,
+    "views": ["summary"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "selected": {"files": 7, "dirs": 0, "bytes": 294, "allocated": [ALLOCATED]},
+  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
+  "provenance": {
+    "source": "cache_only",
+    "freshness": "stale",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "rules": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
+  "reports": [
+    {
+      "view": "summary",
+      "summary": {
+        "files": 7,
+        "dirs": 0,
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_file_time_ns": [MTIME_NS]
+      }
+    }
+  ]
+}
+! note: totals include gitignored sizes
+! note: selected all 7 files, 294 B
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
+? 0
+```
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

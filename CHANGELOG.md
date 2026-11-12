@@ -37,6 +37,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     What it saves is stated as the rules it does not read.
   - `--workers` is described as bounding content-analysis readers only; the metadata
     walk sizes its own thread pool, which no flag sets.
+  - They no longer say that each window is one scan on the command line.
+    One `--cache on` run leaves a snapshot, and `--stale-ok` then answers any kind,
+    window, or metadata view of the same scope from it without a walk, labelled stale;
+    they show the three commands, recommend absolute bounds for the later windows, and
+    name `--cache-dir` for a nearly full volume, with a measured snapshot size.
+    The cache sections say that a snapshot is written only from a complete scan, so
+    `--allow-partial` over a partly unreadable tree leaves nothing for `--stale-ok`.
 
 ### Fixed
 

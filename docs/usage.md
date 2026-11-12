@@ -398,9 +398,32 @@ The walk reads every entry’s metadata once and needs no cache.
 A home folder can hold millions of entries and take minutes, so start where growth is
 likely: the project, `~/.cache`, `~/Library/Caches`, agent state such as `~/.claude` and
 `~/.codex`, and the temporary directory, as several paths in one report if they do not
-overlap. Each window is one walk on the command line.
-To ask several windows, or to drill into folders, without walking again, scan the tree
-once in Python and query the index; `fdu.scan` reads and writes no cache:
+overlap.
+
+One walk can answer many questions.
+On the command line, add `--cache=on` to the first command, which leaves a snapshot of
+the whole tree, and `--stale-ok` to each later one:
+
+```shell
+fdu ~/.cache --cache=on --kind=file --since=24h --view=tree,summary,largest
+fdu ~/.cache --stale-ok --kind=file --since=2026-11-11T08:00:00Z --before=2026-11-11T20:00:00Z
+fdu ~/.cache --stale-ok --kind=dir --include=node_modules --long
+```
+
+`--stale-ok` answers any kind, window, or metadata view from the snapshot without
+walking, and labels the answer stale, as [Understand the Cache](#understand-the-cache)
+describes. Keep the path and the scan-scope options (`--one-filesystem`, `--scan-depth`,
+`--ignored`, and `--no-gitignore`) as the first command had them, since a snapshot
+answers only its own scope.
+Give the later windows absolute bounds, because a relative bound is measured from each
+command’s own instant, not from the walk.
+A snapshot holds a record for every entry: 6.7 MiB for a tree of 97,602 entries and 1.9
+MiB for one of 26,726, measured on Linux, about 75 bytes an entry.
+At that rate a tree of five million entries leaves about 350 MiB. By default it is
+written under the home directory, so when that volume is nearly full, which is the usual
+reason for asking, give every command the same `--cache-dir` on another volume.
+
+In Python, scan the tree once and query the index; `fdu.scan` reads and writes no cache:
 
 ```python
 from pathlib import Path
@@ -762,6 +785,10 @@ Content analysis, `--watch`, and a retained index from the Rust or Python `open`
 read, revalidate, and write it.
 Use `--cache=on` to leave a snapshot after a one-shot report, for a later `--stale-ok`
 answer or a warm watch.
+A snapshot is written only from a complete scan.
+Over a tree with an unreadable directory, `--allow-partial` changes the exit status and
+still writes none, so `--stale-ok` has nothing from that run to answer from; an earlier
+complete snapshot, if there is one, stays in place.
 
 Content results are different.
 They live in a sidecar keyed by analyzer identities and semantic options.

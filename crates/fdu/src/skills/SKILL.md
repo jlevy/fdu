@@ -477,10 +477,30 @@ The scan reads every entry’s metadata once.
 A home folder can hold millions of entries and take minutes, so start where growth is
 likely: the project, `~/.cache`, `~/Library/Caches`, agent state such as `~/.claude` and
 `~/.codex`, and the temporary directory.
-Each window is one scan on the command line; to ask several windows or drill into
-folders without walking again, walk the tree once with Python’s `fdu.scan`, which writes
-no cache, and ask each `index.report` with its own `since`. Exact net change, deletions
-included, needs a report saved before the window began, written outside PATH:
+
+One walk can answer many questions.
+Add `--cache on` to the first command, which leaves a snapshot of the whole tree, and
+`--stale-ok` to each later one, which answers any kind, window, or metadata view from
+that snapshot without walking and labels the answer stale.
+Keep PATH and the Scope options as the first command had them:
+
+```bash
+fdu PATH --cache on --kind file --since 24h --view tree,summary,largest
+fdu PATH --stale-ok --kind file --since 2026-11-11T08:00:00Z --before 2026-11-11T20:00:00Z
+fdu PATH --stale-ok --kind dir --include node_modules --long
+```
+
+Give the later windows absolute bounds: a relative bound is measured from each command’s
+own instant, not from the walk.
+A snapshot holds a record for every entry, about 75 bytes each (6.7 MiB for 97,602
+entries, measured on Linux), and by default it is written under the home directory.
+When that volume is nearly full, which is the usual reason for asking, give every
+command the same `--cache-dir DIR` on another volume.
+In Python, `fdu.scan` keeps the walk in memory and writes no cache, and each
+`index.report` takes its own `since`.
+
+Exact net change, deletions included, needs a report saved before the window began,
+written outside PATH:
 `fdu PATH --one-filesystem --cache off --view tree --depth all --limit all --format json > before.json`
 keeps every directory and file at or above 1% of the root and stays small, and a later
 one is compared with it by path.
@@ -705,6 +725,9 @@ Content analysis, `--watch`, and a retained index from the Rust or Python `open`
 revalidate, and write it.
 `--cache on` also writes after a one-shot report, which is how to leave a snapshot for a
 later `--stale-ok` answer.
+A snapshot is written only from a complete scan.
+Over a tree with an unreadable directory, `--allow-partial` changes the exit status and
+still writes none, so `--stale-ok` has nothing from that run to answer from.
 
 Content analysis is where ordinary repeated runs benefit most.
 The first compatible run reads eligible bodies; a later run restores unchanged records
