@@ -482,20 +482,22 @@ One walk can answer many questions.
 Add `--cache on` to the first command, which leaves a snapshot of the whole tree, and
 `--stale-ok` to each later one, which answers any kind, window, or metadata view from
 that snapshot without walking and labels the answer stale.
-Keep PATH and the Scope options as the first command had them:
+Keep PATH, the Scope options, and `--cache-dir` as the first command had them:
 
 ```bash
-fdu PATH --cache on --kind file --since 24h --view tree,summary,largest
-fdu PATH --stale-ok --kind file --since 2026-11-11T08:00:00Z --before 2026-11-11T20:00:00Z
-fdu PATH --stale-ok --kind dir --include node_modules --long
+fdu PATH --cache on --cache-dir DIR --kind file --since 24h --view tree,summary,largest
+fdu PATH --stale-ok --cache-dir DIR --kind file --since 2026-11-11T08:00:00Z --before 2026-11-11T20:00:00Z
+fdu PATH --stale-ok --cache-dir DIR --kind dir --include node_modules --long
 ```
 
 Give the later windows absolute bounds: a relative bound is measured from each command’s
 own instant, not from the walk.
+DIR belongs outside PATH. The default, `~/.cache/fdu` on macOS and Linux and
+`%LOCALAPPDATA%/fdu` on Windows, is inside `~` and `~/.cache`, so a snapshot left there
+is itself a file written in the window, on the volume that is short of space.
 A snapshot holds a record for every entry, about 75 bytes each (6.7 MiB for 97,602
-entries, measured on Linux), and by default it is written under the home directory.
-When that volume is nearly full, which is the usual reason for asking, give every
-command the same `--cache-dir DIR` on another volume.
+entries, measured on Linux), so put DIR on another volume when this one is nearly full,
+which is the usual reason for asking.
 In Python, `fdu.scan` keeps the walk in memory and writes no cache, and each
 `index.report` takes its own `since`.
 

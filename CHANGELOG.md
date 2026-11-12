@@ -41,7 +41,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     One `--cache on` run leaves a snapshot, and `--stale-ok` then answers any kind,
     window, or metadata view of the same scope from it without a walk, labelled stale;
     they show the three commands, recommend absolute bounds for the later windows, and
-    name `--cache-dir` for a nearly full volume, with a measured snapshot size.
+    give each the same `--cache-dir` outside the scanned path, since the default cache
+    directory is inside `~` and `~/.cache` and a snapshot left there is itself a file
+    written in the window; a measured snapshot size says when to use another volume.
     The cache sections say that a snapshot is written only from a complete scan, so
     `--allow-partial` over a partly unreadable tree leaves nothing for `--stale-ok`.
   - The saved-report recipe for exact net change asks for `--view tree,volumes`, so the

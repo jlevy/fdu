@@ -405,9 +405,9 @@ On the command line, add `--cache=on` to the first command, which leaves a snaps
 the whole tree, and `--stale-ok` to each later one:
 
 ```shell
-fdu ~/.cache --cache=on --kind=file --since=24h --view=tree,summary,largest
-fdu ~/.cache --stale-ok --kind=file --since=2026-11-11T08:00:00Z --before=2026-11-11T20:00:00Z
-fdu ~/.cache --stale-ok --kind=dir --include=node_modules --long
+fdu ~/.cache --cache=on --cache-dir=/mnt/scratch/fdu --kind=file --since=24h --view=tree,summary,largest
+fdu ~/.cache --stale-ok --cache-dir=/mnt/scratch/fdu --kind=file --since=2026-11-11T08:00:00Z --before=2026-11-11T20:00:00Z
+fdu ~/.cache --stale-ok --cache-dir=/mnt/scratch/fdu --kind=dir --include=node_modules --long
 ```
 
 `--stale-ok` answers any kind, window, or metadata view from the snapshot without
@@ -417,11 +417,15 @@ describes. Keep the path and the scan-scope options (`--one-filesystem`, `--scan
 answers only its own scope.
 Give the later windows absolute bounds, because a relative bound is measured from each
 command’s own instant, not from the walk.
+
+Give every command the same `--cache-dir`, outside the scanned path.
+The default, `~/.cache/fdu` on macOS and Linux and `%LOCALAPPDATA%/fdu` on Windows, is
+inside `~` and `~/.cache`: a snapshot left there is itself a file written in the window,
+and the next fresh report of either path counts it.
 A snapshot holds a record for every entry: 6.7 MiB for a tree of 97,602 entries and 1.9
 MiB for one of 26,726, measured on Linux, about 75 bytes an entry.
-At that rate a tree of five million entries leaves about 350 MiB. By default it is
-written under the home directory, so when that volume is nearly full, which is the usual
-reason for asking, give every command the same `--cache-dir` on another volume.
+At that rate a tree of five million entries leaves about 350 MiB, so put the directory
+on another volume when this one is nearly full, which is the usual reason for asking.
 
 In Python, scan the tree once and query the index; `fdu.scan` reads and writes no cache:
 
