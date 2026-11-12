@@ -421,8 +421,8 @@ command’s own instant, not from the walk.
 
 Give every command the same `--cache-dir`, outside the scanned path.
 The default, `~/.cache/fdu` on macOS and Linux and `%LOCALAPPDATA%/fdu` on Windows, is
-inside `~` and `~/.cache`: a snapshot left there is itself a file written in the window,
-and the next fresh report of either path counts it.
+inside `~`, and on macOS and Linux inside `~/.cache`: a snapshot left there is itself a
+file written in the window, and the next fresh report of a path that holds it counts it.
 A snapshot holds a record for every entry, about 57 bytes plus the entry’s name.
 Measured on Linux, that is 72 bytes an entry on `/usr` (6.7 MiB for 97,602 entries,
 whose names average 15 bytes) and 121 where names are 64-character hashes, as in a

@@ -493,8 +493,9 @@ fdu PATH --stale-ok --cache-dir DIR --kind dir --include node_modules --long
 Give the later windows absolute bounds: a relative bound is measured from each command’s
 own instant, not from the walk.
 DIR belongs outside PATH. The default, `~/.cache/fdu` on macOS and Linux and
-`%LOCALAPPDATA%/fdu` on Windows, is inside `~` and `~/.cache`, so a snapshot left there
-is itself a file written in the window, on the volume that is short of space.
+`%LOCALAPPDATA%/fdu` on Windows, is inside `~`, and on macOS and Linux inside
+`~/.cache`, so a snapshot left there is itself a file written in the window, on the
+volume that is short of space.
 A snapshot holds a record for every entry, about 57 bytes plus the entry’s name: 72
 bytes an entry on a Linux `/usr`, and 121 where names are 64-character hashes, as in a
 content-addressed cache.
