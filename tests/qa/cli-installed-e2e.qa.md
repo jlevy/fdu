@@ -61,7 +61,7 @@ The peers were GNU du 9.4, dust 1.2.5, pdu 0.24.0, dua 2.45.0, and diskus 0.9.0.
 | Phase 3: Cache × analyze | ✅ Passed | 16 checks: 16 ok |
 | Phase 4: Medium tree | ✅ Passed | 9 checks: 9 ok, on `linux-v6.12` with `Documentation/` analyzed |
 | Phase 5: Bounded large tree | ✅ Passed | 2 checks: 2 ok, on `/usr` |
-| Phase 6: Terminal Progress | ⏳ Pending | The pty probe passed 38 of 38 checks, on 20 hardlinked copies of `linux-v6.12` because the plain tree scans too fast to judge, and all 3 terminal tests passed. A person has not watched a real window, and Windows progress QA has not run |
+| Phase 6: Terminal Progress | ⏳ Pending | The pty probe passed 38 of 38 checks, on 20 hardlinked copies of `linux-v6.12` because the plain tree scans too fast to judge, and all 3 terminal tests passed. A person has not watched a real window, and Windows progress QA has not run. Neither ran before the 0.6.0 tag; see Pre-tag decisions |
 | Phase 7: Peer agreement | ✅ Passed | Self-test: 12 readings agree exactly. Real trees: 36 of 36 readings on `node-modules-dense`, `linux-v6.12`, and `cargo-registry-src` agree exactly, 0 `UNEXPLAINED` |
 | Phase 8: Results | ✅ Passed | 49 checks: 49 ok, 0 warn, 0 fail. The [0.6.0 release stability-pass report](../../docs/project/reports/report-2026-11-12-release-0.6.0-stability-pass.md) keeps every table and the release record; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records its passes and breaks |
 
@@ -73,6 +73,15 @@ The peers were GNU du 9.4, dust 1.2.5, pdu 0.24.0, dua 2.45.0, and diskus 0.9.0.
   The maintainer’s go-ahead to cut the release, given after reviewing the records that
   listed them as pending, decided them; no separate waiver was stated.
   The automated pty probe and terminal tests passed.
+
+Earlier release records remain in the
+[0.5.0 Linux report](../../docs/project/reports/report-2026-10-14-release-0.5.0-stability-pass.md),
+the
+[0.5.0 macOS report](../../docs/project/reports/report-2026-10-12-release-0.5.0-stability-pass.md),
+the newest macOS record, the
+[0.4.0 report](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
+(macOS), and the
+[0.3.0 report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md).
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked | ⏭️ Waived
 

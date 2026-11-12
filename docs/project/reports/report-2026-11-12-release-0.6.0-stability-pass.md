@@ -1191,13 +1191,15 @@ The automated pty probe and terminal tests passed.
 
 ## Release Record
 
-The release was cut from a cloud session, with every step run with `gh` on the direct
-GitHub channel that [Who Runs What](../guides/release-process.md#who-runs-what)
-describes.
+The release was cut from a cloud session.
+Every GitHub read or write ran with `gh` on the direct GitHub channel that
+[Who Runs What](../guides/release-process.md#who-runs-what) describes, except the push
+that moved the release branch, in the table’s second row.
 
 | Item | Record |
 | --- | --- |
 | Release commit | `4450be7e58b1e87a3d2b0fc8ffc0e8646e5b7a09`, the merge of [#213](https://github.com/jlevy/fdu/pull/213), with the same tree as its gated head `bf4981b9` |
+| Release branch | `release/v0.6.0` was first pinned at `8a8febc7`, the earlier candidate, which was never tagged. When [#213](https://github.com/jlevy/fdu/pull/213) replaced the release commit, the agent moved the branch to `4450be7e` with a fast-forward `git push` through the session’s git broker, since `8a8febc7` is an ancestor of `4450be7e`. The guide’s route is `make release-cleanup ARGS="--abandon 8a8febc7…"` and then step 4, which pins the new commit. The end state is the same: step 4 found the branch at the release commit and accepted it |
 | Tag | `v0.6.0`: annotated tag object `0fbba725`, message `fdu 0.6.0`, unsigned; `make release-verify-tag` passed every line |
 | Preflight | Every line `ok`, including the demo declaration, the protected `release` environment, and no registry secrets |
 | Rehearsal | [Run 43314068874](https://github.com/jlevy/fdu/actions/runs/43314068874), on its first attempt every job succeeded except the three on the publishing path (`Confirm the release environment is protected`, `Publish to crates.io and PyPI`, and `Announce on GitHub`), which a rehearsal skips. The eight files were downloaded and checked |
@@ -1206,7 +1208,7 @@ describes.
 | Publishing run | [Run 43318821657](https://github.com/jlevy/fdu/actions/runs/43318821657), dispatched on `v0.6.0` at the release commit. Every job succeeded on the first attempt, including `Confirm the release environment is protected`, `Publish to crates.io and PyPI`, and `Announce on GitHub`. The `release` environment was approved through the API on the maintainer’s explicit go-ahead for this release |
 | GitHub release | [fdu 0.6.0](https://github.com/jlevy/fdu/releases/tag/v0.6.0): published 2026-11-12T22:29:01Z, immutable, the latest release, with twelve assets: the eleven release files and the declared demo video |
 | `make release-published` | crates.io `fdu-core` and `fdu` and PyPI `fdu` 0.6.0 each identical to the run’s files. Its first attempt downloaded nothing: GitHub’s artifact storage answered `HTTP 503: Egress is over the account limit`. The rerun, after moving the empty directory aside, passed |
-| `make release-announced --cargo` | Every line `ok`: the release title, body, and twelve assets; docs.rs built for both crates; `uvx fdu@0.6.0` and `fdu@latest`, and a `cargo install` build, each print `fdu 0.6.0` |
+| `make release-announced ARGS=--cargo` | Every line `ok`: the release title, body, and twelve assets; docs.rs built for both crates; `uvx fdu@0.6.0` and `fdu@latest`, and a `cargo install` build, each print `fdu 0.6.0` |
 | Use after publication | The PyPI wheel through `uvx` rendered `ages` and `volumes` for a checkout’s `crates/` directory under `--kind file` |
 | Cleanup | `release/v0.6.0` deleted from origin; the `v0.6.0` tag remains. The first attempt’s `git push` reached GitHub directly without a credential; the rerun gave git `gh`’s credential and passed |
 

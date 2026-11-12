@@ -227,7 +227,8 @@ candidate and correctness stages again as root, so that the trees held device no
 Both candidates were the wheel built from that commit,
 `fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.6.0-dev+gbf4981b99`.
 Every pass and both deliberate breaks passed in both runs, with the same counts as the
-pass of the earlier, untagged candidate `8a8febc7` on 2026-11-11.
+earlier, untagged candidate’s pass, recorded in the
+[2026-11-11 report](../reports/report-2026-11-11-release-0.6.0-stability-pass.md).
 
 **Regime.**
 
