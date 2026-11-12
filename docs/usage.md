@@ -412,9 +412,10 @@ fdu ~/.cache --stale-ok --cache-dir=/mnt/scratch/fdu --kind=dir --include=node_m
 
 `--stale-ok` answers any kind, window, or metadata view from the snapshot without
 walking, and labels the answer stale, as [Understand the Cache](#understand-the-cache)
-describes. Keep the path and the scan-scope options (`--one-filesystem`, `--scan-depth`,
-`--ignored`, and `--no-gitignore`) as the first command had them, since a snapshot
-answers only its own scope.
+describes. Keep the path and the six Scope options (`--scan-depth`, `--one-filesystem`,
+`--gitignore-budget`, `--gitignore-line-limit`, `--no-gitignore`, and `--ignored`) as
+the first command had them: a snapshot answers its own scope, with the one exception
+described under [Select by `.gitignore`](#select-by-gitignore).
 Give the later windows absolute bounds, because a relative bound is measured from each
 command’s own instant, not from the walk.
 
