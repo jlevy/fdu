@@ -402,12 +402,13 @@ overlap.
 
 One walk can answer many questions.
 On the command line, add `--cache=on` to the first command, which leaves a snapshot of
-the whole tree, and `--stale-ok` to each later one:
+the whole tree, and `--stale-ok` to each later one.
+`DIR` below is a placeholder for a directory of your own:
 
 ```shell
-fdu ~/.cache --cache=on --cache-dir=/mnt/scratch/fdu --kind=file --since=24h --view=tree,summary,largest
-fdu ~/.cache --stale-ok --cache-dir=/mnt/scratch/fdu --kind=file --since=2026-11-11T08:00:00Z --before=2026-11-11T20:00:00Z
-fdu ~/.cache --stale-ok --cache-dir=/mnt/scratch/fdu --kind=dir --include=node_modules --long
+fdu ~/.cache --cache=on --cache-dir=DIR --kind=file --since=24h --view=tree,summary,largest
+fdu ~/.cache --stale-ok --cache-dir=DIR --kind=file --since=2026-11-11T08:00:00Z --before=2026-11-11T20:00:00Z
+fdu ~/.cache --stale-ok --cache-dir=DIR --kind=dir --include=node_modules --long
 ```
 
 `--stale-ok` answers any kind, window, or metadata view from the snapshot without
@@ -419,7 +420,7 @@ described under [Select by `.gitignore`](#select-by-gitignore).
 Give the later windows absolute bounds, because a relative bound is measured from each
 command’s own instant, not from the walk.
 
-Give every command the same `--cache-dir`, outside the scanned path.
+Give every command the same `DIR`: one you can write to, outside the scanned path.
 The default, `~/.cache/fdu` on macOS and Linux and `%LOCALAPPDATA%/fdu` on Windows, is
 inside `~`, and on macOS and Linux inside `~/.cache`: a snapshot left there is itself a
 file written in the window, and the next fresh report of a path that holds it counts it.
