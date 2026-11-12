@@ -73,6 +73,19 @@ RETIRED_CACHE_POLICIES = {
 }
 
 
+# The flags 0.6.0 renamed, each refused with its replacement as the command line refuses
+# it. The package has no flags, so this vocabulary is the command line's alone.
+RENAMED_FLAGS = {"--modified-since": "--since", "--modified-before": "--before"}
+
+# The sort key 0.6.0 renamed, refused as the command line refuses it.
+RENAMED_SORT_KEYS = {
+    "mtime": (
+        "mtime was renamed time in 0.6.0, and it orders by change time unless "
+        "--time=modified is given"
+    ),
+}
+
+
 def parse_cache(value: str) -> fdu.CachePolicy:
     try:
         return fdu.CachePolicy(value)
@@ -125,6 +138,9 @@ def parse_sort(value: str) -> fdu.SortKey:
     try:
         return fdu.SortKey(value)
     except ValueError:
+        renamed = RENAMED_SORT_KEYS.get(value.strip().lower())
+        if renamed is not None:
+            raise UsageError(f'invalid --sort "{value}": {renamed}') from None
         known = ", ".join(k.value for k in fdu.SortKey)
         raise UsageError(f'invalid --sort "{value}": expected one of {known}') from None
 
@@ -303,6 +319,11 @@ def parse_args(argv: list[str]) -> Args:
             args.cache_status = parse_scope(inline if separator else "root", flag)
         elif flag == "--cache-clear":
             args.cache_clear = parse_scope(inline if separator else "root", flag)
+        elif flag in RENAMED_FLAGS:
+            raise UsageError(
+                f"{flag} was renamed {RENAMED_FLAGS[flag]} in 0.6.0, and the window reads "
+                "change time unless --time=modified is given"
+            )
         else:
             raise UsageError(f"unexpected argument '{token}' found")
 

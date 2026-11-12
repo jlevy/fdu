@@ -541,6 +541,39 @@ const _: () = assert!(
     "--help prints the default analyzer set; a table that enables one needs a spelling here"
 );
 
+/// The flags 0.6.0 renamed, each with the flag that replaced it.
+///
+/// Neither is an argument. Clap refuses each as it refuses any flag it does not know, so
+/// an old spelling parses nowhere, is in no help text, and selects nothing. That refusal
+/// alone does not say where the flag went, and commands written for 0.5.0 still carry
+/// both, so [`renamed_flag_refusal`] rewords it to name the replacement, as the cache
+/// policy's grammar names the replacement of a retired value.
+const RENAMED_FLAGS: [(&str, &str); 2] =
+    [("--modified-since", AxisNames::FLAGS.since), ("--modified-before", AxisNames::FLAGS.before)];
+
+/// What to say when clap refused the command line for a flag [`RENAMED_FLAGS`] lists.
+///
+/// Read from clap's own account of the failure rather than by searching the arguments:
+/// clap alone knows whether a word was a flag, a flag's value, or a path after `--`.
+/// The window's clock changed with the name, and a caller who swaps only the flag would
+/// get change time where they had modification time, so the message names both.
+fn renamed_flag_refusal(error: &clap::Error) -> Option<String> {
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+    if error.kind() != ErrorKind::UnknownArgument {
+        return None;
+    }
+    let Some(ContextValue::String(given)) = error.get(ContextKind::InvalidArg) else {
+        return None;
+    };
+    let (old, new) = RENAMED_FLAGS.iter().find(|(old, _)| old == given)?;
+    Some(format!(
+        "{old} was renamed {new} in 0.6.0, and the window reads change time unless \
+         {time}={modified} is given",
+        time = AxisNames::FLAGS.time,
+        modified = fdu_core::query::TimeBasis::Modified.label(),
+    ))
+}
+
 /// The request model's refusal, in the command line's words.
 fn refused(error: &RequestError) -> anyhow::Error {
     anyhow::anyhow!(error.message(&AxisNames::FLAGS))
@@ -2202,6 +2235,17 @@ fn run_with_io(
     let matches = match command.try_get_matches_from(args) {
         Ok(matches) => matches,
         Err(error) => {
+            if let Some(refusal) = renamed_flag_refusal(&error) {
+                let color = ColorContext::from_environment(
+                    requested_color,
+                    false,
+                    false,
+                    stderr_is_terminal,
+                )
+                .enabled();
+                let _ = writeln!(diagnostic, "{} {refusal}", paint("fdu:", STYLE_ERROR, color));
+                return 2;
+            }
             let use_stderr = error.use_stderr();
             let destination_is_terminal =
                 if use_stderr { stderr_is_terminal } else { stdout_is_terminal };
@@ -3108,6 +3152,52 @@ mod tests {
                 .expect_err("an unreleased alias must not become a contract")
                 .to_string(),
             "invalid --cache \"readonly\": expected one of auto, on, off"
+        );
+    }
+
+    /// A flag 0.6.0 renamed is refused with its replacement and the clock that changed
+    /// with it, and is no argument: no spelling of it parses, and help does not list it.
+    #[test]
+    fn a_renamed_flag_names_its_replacement_and_is_not_an_alias() {
+        let clock = "and the window reads change time unless --time=modified is given";
+        let help = Cli::command().render_long_help().to_string();
+        for (old, new) in [("--modified-since", "--since"), ("--modified-before", "--before")] {
+            let refusal = format!("fdu: {old} was renamed {new} in 0.6.0, {clock}\n");
+            let inline = format!("{old}=24h");
+            for args in [vec!["fdu", ".", old, "24h"], vec!["fdu", inline.as_str(), "."]] {
+                let words: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+                let (status, out, err) = run_args(&words);
+                assert_eq!(status, 2, "{args:?}");
+                assert!(out.is_empty(), "the refusal comes before any scan: {out}");
+                assert_eq!(err, refusal, "{args:?}");
+                assert!(Cli::try_parse_from(&args).is_err(), "{old} must not parse");
+            }
+            assert!(!help.contains(old), "{old} must not be listed in help");
+        }
+        // Every other unknown flag keeps clap's refusal, a near miss of a renamed one too.
+        for unknown in ["--modified-sinc", "--modified", "--changed-since"] {
+            let (status, _, err) = run_args(&["fdu", ".", unknown].map(OsStr::new));
+            assert_eq!(status, 2, "{unknown}");
+            assert!(
+                err.starts_with(&format!("error: unexpected argument '{unknown}' found")),
+                "{err}"
+            );
+            assert!(!err.contains("renamed"), "{err}");
+        }
+        // After `--` the same word is a path, which is not this refusal's to claim.
+        let (status, _, err) =
+            run_args(&["fdu", "--cache", "off", "--", "--modified-since"].map(OsStr::new));
+        assert_eq!(status, 1, "a path that does not exist is a filesystem failure: {err}");
+        assert!(!err.contains("renamed"), "{err}");
+    }
+
+    /// The sort key 0.6.0 renamed is refused by the request model, in this surface's words.
+    #[test]
+    fn the_renamed_sort_key_names_its_replacement() {
+        assert_eq!(
+            query_error(&Cli { sort: Some("mtime".to_string()), ..cli() }),
+            "invalid --sort \"mtime\": mtime was renamed time in 0.6.0, and it orders by \
+             change time unless --time=modified is given"
         );
     }
 

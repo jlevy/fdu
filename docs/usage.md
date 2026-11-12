@@ -276,6 +276,8 @@ fdu . --kind=file --view=largest
 
 Quote glob patterns so the shell does not expand them before fdu sees them.
 `--since` is inclusive and `--before` exclusive.
+Releases before 0.6.0 spelled them `--modified-since` and `--modified-before`, and the
+time sort `--sort mtime`; each is refused with its replacement named.
 Size and time bounds test a directory’s eligible subtree, not its inode, and a directory
 they match covers its contents in aggregate views.
 Without `--kind`, `fdu . --since 7d` therefore lists every directory with activity this

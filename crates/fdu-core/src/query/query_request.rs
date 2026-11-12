@@ -2194,12 +2194,28 @@ pub fn parse_bound(value: &str, axis: &'static str) -> Result<Bound, RequestErro
 }
 
 /// Parse a metadata ordering key or a registered numeric content metric.
+///
+/// `mtime`, the key 0.6.0 renamed, is refused with its replacement, as
+/// [`parse_cache_policy`] refuses a retired policy: commands written for 0.5.0 still
+/// carry it, and a list of keys would not say that `time` is the same key. The clock
+/// changed with the name, so the refusal names the setting that reads the old one.
 pub fn parse_sort(value: &str, axis: &'static str) -> Result<SortKey, RequestError> {
+    let time =
+        if axis == AxisNames::FLAGS.sort { AxisNames::FLAGS.time } else { AxisNames::FIELDS.time };
     match value.trim().to_ascii_lowercase().as_str() {
         "size" => Ok(SortKey::Size),
         "count" => Ok(SortKey::Count),
         "time" => Ok(SortKey::Time),
         "name" => Ok(SortKey::Name),
+        "mtime" => Err(invalid(
+            axis,
+            "mtime",
+            format!(
+                "mtime was renamed time in 0.6.0, and it orders by change time unless \
+                 {time}={} is given",
+                TimeBasis::Modified.label()
+            ),
+        )),
         other => crate::content::METRICS.iter().find(|metric| metric.name == other).map_or_else(
             || {
                 Err(invalid(
@@ -2396,6 +2412,30 @@ mod tests {
         for retired in ["mtime", "changed"] {
             assert!(parse_sort(retired, axis).is_err(), "{retired}");
         }
+        // The key 0.6.0 renamed names its replacement and the clock that changed with it,
+        // in each surface's own words; a clock that never was a key gets the list.
+        for (axis, message) in [
+            (
+                AxisNames::FLAGS.sort,
+                "invalid --sort \"mtime\": mtime was renamed time in 0.6.0, and it orders by \
+                 change time unless --time=modified is given",
+            ),
+            (
+                AxisNames::FIELDS.sort,
+                "invalid sort \"mtime\": mtime was renamed time in 0.6.0, and it orders by \
+                 change time unless time=modified is given",
+            ),
+        ] {
+            let refusal = parse_sort(" MTime ", axis).expect_err("renamed");
+            assert_eq!(refusal.message(&AxisNames::FLAGS), message);
+        }
+        assert_eq!(
+            parse_sort("changed", AxisNames::FLAGS.sort)
+                .expect_err("never a key")
+                .message(&AxisNames::FLAGS),
+            "invalid --sort \"changed\": expected size, count, time, name, or a registered \
+             numeric metric"
+        );
         for (spelling, clock) in
             [(" Changed", TimeBasis::Changed), ("MODIFIED", TimeBasis::Modified)]
         {

@@ -213,6 +213,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --depth "two": expected a whole number or `all`
 +fdu: invalid depth "two": expected a whole number or `all`
+  ✓ A Renamed Flag or Sort Key Names Its Replacement
+  ✓ A Renamed Flag or Sort Key Names Its Replacement
+  ✓ A Renamed Flag or Sort Key Names Its Replacement
   ✓ `--cache on` Scans Cold and Leaves a Snapshot
   ✓ The Next Run Scans Cold Again, Because Reading Cannot Pay
   ✗ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale

@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The spellings 0.6.0 renamed are refused with their replacement.
+  `--modified-since` and `--modified-before` got clap’s
+  `error: unexpected argument '--modified-since' found`, which names no replacement, and
+  `--sort mtime` got the list of sort keys.
+  Each now exits 2 with one line naming the new spelling and the clock that changed with
+  it:
+  `fdu: --modified-since was renamed --since in 0.6.0, and the window reads change time unless --time=modified is given`,
+  the same for `--modified-before` and `--before`, and
+  `fdu: invalid --sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless --time=modified is given`.
+  None is an alias or in `--help`. Rust `query::parse_sort` refuses `mtime` the same
+  way, ending `unless time=modified is given` under the library’s axis names.
+
 ### Fixed
 
 - `note: incomplete subtrees remain visible below the size threshold` is printed only

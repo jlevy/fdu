@@ -730,6 +730,30 @@ fdu: invalid --depth "two": expected a whole number or `all`
 ? 2
 ```
 
+### A Renamed Flag or Sort Key Names Its Replacement
+
+0.6.0 renamed the time-window flags and the time sort key, and changed the clock they
+read. Each old spelling is refused with the new one and the setting that reads the old
+clock. None is an alias: nothing is scanned.
+
+```console
+$ fdu --cache off --kind file --modified-since 24h project
+! fdu: --modified-since was renamed --since in 0.6.0, and the window reads change time unless --time=modified is given
+? 2
+```
+
+```console
+$ fdu --cache off --kind dir --modified-before=30d project
+! fdu: --modified-before was renamed --before in 0.6.0, and the window reads change time unless --time=modified is given
+? 2
+```
+
+```console
+$ fdu --cache off --view files --sort mtime project
+! fdu: invalid --sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless --time=modified is given
+? 2
+```
+
 ## Mode: Cache Policy Is Explicit, and Never Silently Stale
 
 Every report says which tier answered it, so no policy can quietly serve old data.
