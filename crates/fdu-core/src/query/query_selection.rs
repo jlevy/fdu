@@ -74,6 +74,24 @@ pub enum SortKey {
     Metric(&'static str),
 }
 
+impl SortKey {
+    /// Stable label, the inverse of [`parse_sort`](crate::query::parse_sort): a metric
+    /// key's is the metric's registered name.
+    ///
+    /// A surface that types its sort keys reads this to learn which key a spelling the
+    /// grammar accepted names, so it need not restate the grammar's trimming and case
+    /// rules to find out.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Size => "size",
+            Self::Count => "count",
+            Self::Time => "time",
+            Self::Name => "name",
+            Self::Metric(name) => name,
+        }
+    }
+}
+
 /// An inclusive-start, exclusive-end window over one entry timestamp, in nanoseconds since
 /// the Unix epoch.
 ///

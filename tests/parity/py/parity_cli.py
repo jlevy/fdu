@@ -77,14 +77,6 @@ RETIRED_CACHE_POLICIES = {
 # it. The package has no flags, so this vocabulary is the command line's alone.
 RENAMED_FLAGS = {"--modified-since": "--since", "--modified-before": "--before"}
 
-# The sort key 0.6.0 renamed, refused as the command line refuses it.
-RENAMED_SORT_KEYS = {
-    "mtime": (
-        "mtime was renamed time in 0.6.0, and it orders by change time unless "
-        "--time=modified is given"
-    ),
-}
-
 
 def parse_cache(value: str) -> fdu.CachePolicy:
     try:
@@ -135,14 +127,20 @@ def parse_time(value: str) -> fdu.TimeBasis:
 
 
 def parse_sort(value: str) -> fdu.SortKey:
+    """Hand the token to the library's sort grammar and print what it says.
+
+    `SortKey` reads any value through the request model's grammar, so an unknown key, or
+    one an earlier release spelled differently, is refused in the library's own sentence.
+    That sentence names the package's parameters where the command line names its flags,
+    which the parity artifact records as a difference of labels. This used to print a
+    copy of the command line's sentence kept here, which recorded agreement the package
+    had not produced.
+    """
+
     try:
         return fdu.SortKey(value)
-    except ValueError:
-        renamed = RENAMED_SORT_KEYS.get(value.strip().lower())
-        if renamed is not None:
-            raise UsageError(f'invalid --sort "{value}": {renamed}') from None
-        known = ", ".join(k.value for k in fdu.SortKey)
-        raise UsageError(f'invalid --sort "{value}": expected one of {known}') from None
+    except ValueError as error:
+        raise UsageError(str(error)) from None
 
 
 def parse_bound(value: str) -> fdu.Bound | int | str:

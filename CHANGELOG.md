@@ -20,6 +20,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `fdu: invalid --sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless --time=modified is given`.
   None is an alias or in `--help`. Rust `query::parse_sort` refuses `mtime` the same
   way, ending `unless time=modified is given` under the library’s axis names.
+- Python: `SortKey` reads a value that is not one of its members through the library’s
+  sort grammar. `SortKey("mtime")`, and a `Selection` whose `sort` holds that string,
+  raise `InvalidArgumentError`, a `ValueError`, with the sentence above in the library’s
+  names (`invalid sort "mtime": … unless time=modified is given`); it was
+  `'mtime' is not a valid SortKey`, and for the selection an `AttributeError` when the
+  query was read. Any other unknown key gets the grammar’s refusal, and a spelling the
+  grammar accepts, such as `SortKey(" Time ")`, is the member it names.
+  `SortKey.MTIME` and `Selection(modified_since=, modified_before=)` still fail with
+  Python’s own `AttributeError` and `TypeError`, which name no replacement.
+  Rust: `SortKey::label`.
 - The agent skill and the usage guide say more about finding what was written recently;
   no command changes.
   - When a window’s note reads `selected all`, they say that the window separates

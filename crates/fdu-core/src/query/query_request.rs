@@ -2407,6 +2407,7 @@ mod tests {
             ("CODE_LINES", SortKey::Metric("code_lines")),
         ] {
             assert_eq!(parse_sort(spelling, axis), Ok(key));
+            assert_eq!(parse_sort(key.label(), axis), Ok(key), "the label parses back");
         }
         // One time key reads the request's clock, so neither clock is a key of its own.
         for retired in ["mtime", "changed"] {

@@ -33,6 +33,7 @@ from ._models import (
     Report,
     RollUp,
     ScanOptions,
+    SortKey,
     Status,
     WatchOptions,
     _wire_path,
@@ -286,7 +287,10 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "limit": _bound(selection.limit),
         "breadth": _bound(selection.breadth),
         "min_share": selection.min_share,
-        "sort": selection.sort.value if selection.sort is not None else None,
+        # Through `SortKey`, so a raw token in the field is read by the library's grammar
+        # and a key it refuses is refused in its words, here rather than as a missing
+        # attribute on a string.
+        "sort": SortKey(selection.sort).value if selection.sort is not None else None,
         "reverse": selection.reverse,
         "size": selection.size.value,
         "ignored": selection.ignored.value if selection.ignored is not None else None,

@@ -42,7 +42,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 78 sessions differ, and every one of them has a named cause.
+# 79 sessions differ, and every one of them has a named cause.
 #
 #  35  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
@@ -58,7 +58,7 @@
 #      Only the four setter and value pairs the shared report renderer emits, in its
 #      fixed order, are accepted; every other line remains identical.
 #
-#  27  Each surface names its own parameter  [surface-label]
+#  28  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -215,7 +215,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +fdu: invalid depth "two": expected a whole number or `all`
   ✓ A Renamed Flag or Sort Key Names Its Replacement
   ✓ A Renamed Flag or Sort Key Names Its Replacement
-  ✓ A Renamed Flag or Sort Key Names Its Replacement
+  ✗ A Renamed Flag or Sort Key Names Its Replacement
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: invalid --sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless --time=modified is given
++fdu: invalid sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless time=modified is given
   ✓ `--cache on` Scans Cold and Leaves a Snapshot
   ✓ The Next Run Scans Cold Again, Because Reading Cannot Pay
   ✗ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale

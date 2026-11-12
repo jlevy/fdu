@@ -1517,6 +1517,20 @@ fn main(py: Python<'_>) -> PyResult<u8> {
     Ok(py.detach(move || fdu::run_process(args)))
 }
 
+/// The sort key a spelling names, as the request model's grammar reads it.
+///
+/// The public `SortKey` asks here for any value that is not one of its members. A
+/// spelling the grammar accepts comes back as the key's label, and one it refuses is
+/// refused in the library's own sentence under this API's field names, so a key an
+/// earlier release spelled differently says what replaced it without that sentence being
+/// written a second time in Python.
+#[pyfunction]
+fn parse_sort(value: &str) -> PyResult<&'static str> {
+    fdu_core::query::parse_sort(value, AxisNames::FIELDS.sort)
+        .map(fdu_core::query::SortKey::label)
+        .map_err(|refusal| value_error(&refusal))
+}
+
 /// Canonical cross-language vocabulary used by the public facade's parity test.
 #[pyfunction]
 fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
@@ -1578,6 +1592,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scan, m)?)?;
     m.add_function(wrap_pyfunction!(main, m)?)?;
     m.add_function(wrap_pyfunction!(contract, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_sort, m)?)?;
     opened_binding::register(m)?;
 
     Ok(())
