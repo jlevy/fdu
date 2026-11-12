@@ -2603,9 +2603,8 @@ pub(crate) struct SummaryPart {
 }
 
 /// Whether a tree in `sections` shows a row that the share threshold alone would have
-/// omitted. Only an incomplete directory can be one: [`child_rows`] keeps it whatever its
-/// share, because the contents nobody listed could be large, and the note that explains
-/// the exception is printed exactly when this holds.
+/// omitted: one [`ShareDecision::KeptIncomplete`], the rule [`child_rows`] built the row
+/// under. The note that explains the exception is printed exactly when this holds.
 ///
 /// Read from the rows as rendered, after the selection and the depth, breadth, and row
 /// bounds have each applied, so the note never describes a row the report does not show.
@@ -2649,7 +2648,10 @@ fn shows_incomplete_row_below_share(sections: &[Section], query: &Query) -> bool
             tops.into_iter().filter(|top| top.complete == Some(false)).collect();
         while let Some(directory) = incomplete.pop() {
             for row in directory.children.iter().filter(|row| row.complete == Some(false)) {
-                if !threshold.admits(size(row.bytes, row.allocated), grand) {
+                let value = size(row.bytes, row.allocated);
+                if ShareDecision::of(&threshold, value, grand, row.complete)
+                    == ShareDecision::KeptIncomplete
+                {
                     return true;
                 }
                 incomplete.push(row);
@@ -4744,6 +4746,39 @@ fn expand(
     node.truncated = root.node.truncated;
 }
 
+/// What the share threshold decides for one row below a root.
+///
+/// The one statement of the rule. [`child_rows`] reads it to build or omit a row, and
+/// [`shows_incomplete_row_below_share`] reads it to say that a row was kept by exception,
+/// so a change to the rule reaches both.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ShareDecision {
+    /// The row reaches the threshold.
+    Admitted,
+    /// The row is below the threshold and stays, because it is a directory whose subtree
+    /// was not listed in full and the contents nobody listed could be large. A complete
+    /// row below a partial root's observed total is also below the true total, which is
+    /// at least as large; only a row's own unknown contents prevent that proof, and an
+    /// unrelated scan error does not.
+    KeptIncomplete,
+    /// The row is below the threshold and is omitted.
+    Omitted,
+}
+
+impl ShareDecision {
+    /// Decide for a row of `value` against the denominator `grand`, where `complete` is
+    /// the row's [`TreeNode::complete`]: `None` for a file, which has no subtree.
+    fn of(threshold: &ShareThreshold, value: u64, grand: u64, complete: Option<bool>) -> Self {
+        if threshold.admits(value, grand) {
+            Self::Admitted
+        } else if complete == Some(false) {
+            Self::KeptIncomplete
+        } else {
+            Self::Omitted
+        }
+    }
+}
+
 /// The directory children of one node that the share threshold admits, shaped and
 /// sorted but not yet expanded, beside the facts of those it omits.
 ///
@@ -4821,14 +4856,11 @@ fn child_rows(
             SizeMetric::Apparent => summary.bytes,
             SizeMetric::Allocated => summary.allocated,
         };
-        // A complete child below a partial root's observed total is also below the true
-        // (at least as large) total. Only an incomplete child's own unknown contents
-        // prevent that proof; unrelated scan errors do not.
         let (time, complete) = match kind {
             EntryKind::File => (summary.newest_file, None),
             _ => (recency.activity(child), Some(recency.complete(child))),
         };
-        if complete != Some(false) && !threshold.admits(value, grand) {
+        if ShareDecision::of(threshold, value, grand, complete) == ShareDecision::Omitted {
             below_share.push(RowFacts {
                 files: summary.files,
                 bytes: summary.bytes,
