@@ -233,6 +233,31 @@ Every other step, and `make release-audit`, the first step of any recovery, an a
 run whenever it is working on the release.
 A `FAIL` line stops the release: report it rather than working around it.
 
+Every step is run with the GitHub CLI, `gh`, whoever runs it and wherever: a
+maintainer’s terminal, an agent on a workstation, or a cloud agent session.
+The `make release-*` steps call `gh` for everything they read or write on GitHub, and
+steps 6 and 8 are `gh` commands.
+An agent uses `gh` for all of it, as every release so far was cut, and never a narrower
+GitHub tool in its place, even where its platform prefers one for other work.
+The credential `gh` uses must be able to do, on this repository, what the steps do:
+
+- read repository settings, the `release` environment and its secret names, and the
+  immutable-release setting, for preflight;
+- dispatch `release.yml`, and read its runs and download their artifacts, for steps 4,
+  8, 9, and the audit;
+- create tags and releases and upload release assets, for steps 6 and 7;
+- render Markdown through the API, for step 5.
+
+When a step fails with `HTTP 403: Resource not accessible by integration`, or a proxy
+answers that a GitHub API path is not permitted or not available (for example, that a
+session is bound to its configured repositories, which refuses the Markdown render), the
+credential or the session’s network policy is missing that access.
+The release has not failed.
+Do not record the result, and do not stand in for the step with another tool.
+Fix the credential, for example by reconnecting the session’s GitHub account or
+approving the GitHub App’s pending permissions, or run the step where `gh` has them,
+then rerun it.
+
 ## What a Release Contains
 
 ### Artifacts
