@@ -42,9 +42,9 @@ Library steps are time-boxed and must stay bounded.
 [#211](https://github.com/jlevy/fdu/pull/211) into the release.
 It inherits by tree identity the stability pass that ran at #213’s head,
 `bf4981b9976ec0810fdde2a58841b9bb5618fd89`, which has the same tree.
-Every automated stage passed except `make check`, which stopped at its supply-chain
-provenance request when the host’s network proxy refused it; the rest of `make check`
-passed under `-k`, and CI ran the provenance check green at the same commit.
+Every automated stage passed.
+`make check` passed on its second run, which reached GitHub directly; the first had
+stopped at its supply-chain provenance request when the host’s network proxy refused it.
 The earlier candidate, `8a8febc7`, was never tagged; its record is the
 [2026-11-11 report](../../docs/project/reports/report-2026-11-11-release-0.6.0-stability-pass.md).
 

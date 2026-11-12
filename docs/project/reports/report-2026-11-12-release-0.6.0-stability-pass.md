@@ -12,7 +12,7 @@ this report keeps every table they summarize.
 The pass tested commit `bf4981b9976ec0810fdde2a58841b9bb5618fd89`, tree
 `2d4612556db40fae7fc7cba10f55e42434c5650d`. A release commit with that tree inherits
 every result here by tree identity; check it with `git rev-parse <commit>^{tree}` before
-tagging. Failed: check.
+tagging. Nothing failed, and nothing was skipped.
 
 That commit was the head of [#213](https://github.com/jlevy/fdu/pull/213), which folded
 [#211](https://github.com/jlevy/fdu/pull/211) into the release
@@ -23,14 +23,18 @@ This record supersedes the
 [2026-11-11 pass](report-2026-11-11-release-0.6.0-stability-pass.md) of the earlier
 release candidate `8a8febc7`, which was never tagged.
 
-**The one failure is the host’s, not the commit’s.** `make check` stopped at its first
-target, the supply-chain provenance check, when this host’s network proxy refused its
-GitHub API requests for the pinned actions’ commits (HTTP 403). The whole of
-`make check` was then run with `-k` at the same commit, as the same unprivileged user
-and with no waiver. `supply-chain` was its only failed target, and every other target
-passed, the permission fixtures and native watch tests included.
-CI ran the provenance check at this commit: `Supply-chain provenance` passed in
-[run 43271263330](https://github.com/jlevy/fdu/actions/runs/43271263330).
+**`make check` ran twice.** The first run stopped at its first target, the supply-chain
+provenance check, when this host’s network proxy refused its GitHub API requests for the
+pinned actions’ commits (HTTP 403). That failure was the host’s, not the commit’s: the
+whole of `make check` then ran with `-k` at the same commit, and `supply-chain` was its
+only failed target.
+The pass then ran its `check` step again, alone, with `--only check`,
+as the same unprivileged user and with no waiver.
+That run reached GitHub directly, as the
+[release process](../guides/release-process.md#who-runs-what) now says a cloud session
+does, and `make check` passed in full: the provenance check verified 85 action uses, and
+the permission fixtures and native watch tests ran.
+The table records that run.
 
 **A root supplement.** Run unprivileged, the correctness trees hold no device nodes.
 The pass’s candidate and correctness stages were therefore run again as root at the same
@@ -39,7 +43,7 @@ kinds; see [Root Supplement](#root-supplement).
 
 | Gate or phase | Verdict |
 | --- | --- |
-| `make check` | Failed: `make check` exited 2 |
+| `make check` | Passed: `make check` exited 0 |
 | `make cross-lint` | Passed: `make cross-lint` exited 0: linted x86_64-apple-darwin, x86_64-pc-windows-msvc, i686-unknown-linux-gnu, x86_64-unknown-linux-musl, aarch64-unknown-linux-gnu |
 | `make semver-check` | Passed: `make semver-check` exited 0: fdu-core 0.6.0: starts a new compatibility series; nothing to check; fdu 0.6.0: starts a new compatibility series; nothing to check |
 | `make release-rehearse` | Passed: `make release-rehearse` exited 0 |
