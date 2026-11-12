@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `note: incomplete subtrees remain visible below the size threshold` is printed only
+  when the tree shows such a row.
+  It was printed whenever a share threshold applied and some directory was not listed in
+  full, so a report whose selection gave that directory no row, such as
+  `fdu PATH --kind file --since 16h` over a tree with an unreadable directory, or whose
+  `--depth`, `--breadth`, or `--limit` hid the row, described a row it did not show.
+  The `warn:` line and `status.errors` name the directory as before.
+
 ## [0.6.0] - 2026-11-12
 
 fdu 0.6.0 finds what was written recently and puts the disk beside the tree.

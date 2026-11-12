@@ -2462,14 +2462,7 @@ fn read_roots(
         notes.push(timed_by_modification_note(timed_by_modification));
     }
     notes.extend(timeless_rows_note(query));
-    // Completeness rises to the root, so a root is incomplete exactly when some directory
-    // below it is, and the report when some root is.
-    if !query.min_share_for().admits(0, 1)
-        && reads.iter().any(|read| {
-            read.tree_views
-                && read.recency().is_some_and(|recency| !recency.complete(EntryId::ROOT))
-        })
-    {
+    if shows_incomplete_row_below_share(&sections, query) {
         notes.push("note: incomplete subtrees remain visible below the size threshold".to_owned());
     }
     if reads.iter().any(|read| {
@@ -2607,6 +2600,54 @@ pub(crate) struct SummaryPart {
     pub(crate) scan_started: std::time::SystemTime,
     /// Whether the walk read everything in scope.
     pub(crate) complete: bool,
+}
+
+/// Whether a tree in `sections` shows a row that the share threshold alone would have
+/// omitted. Only an incomplete directory can be one: [`child_rows`] keeps it whatever its
+/// share, because the contents nobody listed could be large, and the note that explains
+/// the exception is printed exactly when this holds.
+///
+/// Read from the rows as rendered, after the selection and the depth, breadth, and row
+/// bounds have each applied, so the note never describes a row the report does not show.
+/// An incomplete root is not enough: a selection gives an unreadable directory that holds
+/// no selected entry no row at all, and a bound can hide the row it has. A root's own row
+/// is not one either, since the caller named it and no threshold applies to it.
+fn shows_incomplete_row_below_share(sections: &[Section], query: &Query) -> bool {
+    let threshold = query.min_share_for();
+    let size = |bytes: u64, allocated: u64| match query.selection.size {
+        SizeMetric::Apparent => bytes,
+        SizeMetric::Allocated => allocated,
+    };
+    sections.iter().any(|section| {
+        let Section::Tree { root, roots, .. } = section else {
+            return false;
+        };
+        // The denominator each row was admitted against ([`expand`]'s `grand`): the root's
+        // own total for one root, and the total row for several.
+        let (grand, tops): (u64, Vec<&TreeNode>) = match (root, roots) {
+            (Some(root), _) => (size(root.bytes, root.allocated), vec![&**root]),
+            (None, Some(roots)) => match &roots.total {
+                Some(total) => (
+                    size(total.bytes, total.allocated),
+                    roots.trees.iter().map(|tree| &tree.tree).collect(),
+                ),
+                None => return false,
+            },
+            (None, None) => return false,
+        };
+        // Iterative, as every tree traversal here is: a deep tree must not exhaust the
+        // stack.
+        let mut stack: Vec<&TreeNode> = tops.into_iter().flat_map(|top| &top.children).collect();
+        while let Some(node) = stack.pop() {
+            if node.complete == Some(false)
+                && !threshold.admits(size(node.bytes, node.allocated), grand)
+            {
+                return true;
+            }
+            stack.extend(&node.children);
+        }
+        false
+    })
 }
 
 /// Build a one-section report from an already reduced exact summary.
@@ -7688,6 +7729,107 @@ mod tests {
             ),
         );
         assert_eq!(tree_of(&unbounded).children.len(), 6, "zero share lifts only share pruning");
+    }
+
+    /// The note that explains why an incomplete directory stays below the share threshold
+    /// is printed exactly when a tree shows such a row. A selection that gives the
+    /// directory no row, or a bound that hides the row, leaves the note nothing to explain,
+    /// and the status still says the tree is partial.
+    #[test]
+    fn the_incomplete_subtree_note_follows_the_rows_the_tree_shows() {
+        const NOTE: &str = "note: incomplete subtrees remain visible below the size threshold";
+        let denied = |root: &str, path: &str| {
+            crate::Error::io(
+                Path::new(root).join(path),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
+            )
+        };
+        // `half` is a tenth of the root and incomplete, because `half/denied` was never
+        // listed; `half/denied` itself holds nothing anyone saw, so it is below any share.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("large", EntryKind::File, attrs(9_000, 50)),
+            upsert("half", EntryKind::Dir, attrs(0, 5)),
+            upsert("half/file", EntryKind::File, attrs(1_000, 50)),
+            upsert("half/denied", EntryKind::Dir, attrs(0, 5)),
+        ]));
+        index.set_initial_scan_freshness(&[denied("/root", "half/denied")]);
+        // Whether the tree shows the unlisted directory's row, and whether the note is there.
+        let shown_and_noted = |selection: Selection| {
+            let selection = Selection { size: SizeMetric::Apparent, ..selection };
+            let report = run(&index, &query(&[ViewSpec::Tree], selection));
+            assert!(!report.status.complete, "the tree is partial under every selection");
+            let mut shown = false;
+            if let Section::Tree { root: Some(root), .. } = &report.sections[0] {
+                let mut stack = vec![root.as_ref()];
+                while let Some(node) = stack.pop() {
+                    shown |= node.name == "denied";
+                    stack.extend(&node.children);
+                }
+            }
+            (shown, report.notes.iter().any(|note| note == NOTE))
+        };
+        let share = |percent: &str| Some(ShareThreshold::parse(percent).expect("share"));
+        let since = TimeWindow { since: Some(0), before: None };
+        let files = vec![EntryKind::File];
+
+        assert_eq!(shown_and_noted(Selection::default()), (true, true));
+        assert_eq!(
+            shown_and_noted(Selection { exclude: vec![pattern("large")], ..Selection::default() }),
+            (true, true),
+            "a selection that leaves the directory its row leaves the note too"
+        );
+        // A selection of files, or of a time window no unlisted directory can satisfy,
+        // gives it no row: it holds no selected entry.
+        for selection in [
+            Selection { kinds: files.clone(), window: since, ..Selection::default() },
+            Selection { kinds: files, ..Selection::default() },
+            Selection { window: since, ..Selection::default() },
+        ] {
+            assert_eq!(shown_and_noted(selection), (false, false));
+        }
+        // A bound that hides the row hides what the note would explain. Under `--depth 1`
+        // the incomplete `half` is still a row, at a tenth of the root: the threshold
+        // admits it, so no exception was made for it.
+        for selection in [
+            Selection { depth: Some(Bound::Limit(1)), ..Selection::default() },
+            Selection { depth: Some(Bound::Limit(0)), ..Selection::default() },
+            Selection { breadth: Some(Bound::Limit(1)), ..Selection::default() },
+            Selection { limit: Some(Bound::Limit(4)), ..Selection::default() },
+            Selection { limit: Some(Bound::Limit(0)), ..Selection::default() },
+        ] {
+            assert_eq!(shown_and_noted(selection), (false, false));
+        }
+        assert_eq!(
+            shown_and_noted(Selection { min_share: share("0%"), ..Selection::default() }),
+            (true, false),
+            "with no threshold the row needs no exception"
+        );
+        assert_eq!(
+            shown_and_noted(Selection { min_share: share("20%"), ..Selection::default() }),
+            (true, true),
+            "the incomplete `half` stays below a threshold it does not reach, as its child does"
+        );
+
+        // Several roots: a root's own row is there because its caller named it, whatever
+        // its share and however incomplete, so only a row below a root can need the note.
+        let docs = rooted("/docs", &[("guide.md", EntryKind::File, 9_999, 30)]);
+        let mut part =
+            rooted("/part", &[("tiny", EntryKind::File, 1, 30), ("denied", EntryKind::Dir, 0, 5)]);
+        part.set_initial_scan_freshness(&[denied("/part", "denied")]);
+        let roots = labelled(&[("docs", "/docs"), ("part", "/part")]);
+        let noted = |selection: Selection| {
+            let selection = Selection { size: SizeMetric::Apparent, ..selection };
+            let report = run_roots(&[&docs, &part], &roots, &query(&[ViewSpec::Tree], selection));
+            assert!(!report.status.complete);
+            report.notes.iter().any(|note| note == NOTE)
+        };
+        assert!(noted(Selection::default()), "`part/denied` is a row below the threshold");
+        assert!(
+            !noted(Selection { depth: Some(Bound::Limit(0)), ..Selection::default() }),
+            "the incomplete root `part` is a row at a hundredth of a percent, by name"
+        );
+        assert!(!noted(Selection { limit: Some(Bound::Limit(0)), ..Selection::default() }));
     }
 
     #[test]

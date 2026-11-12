@@ -617,7 +617,6 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
 }
 ! note: totals include descendants
 ! note: display limits: row limit 0
-! note: incomplete subtrees remain visible below the size threshold
 ! tip: show more: --limit=all
 ? 0
 ```
@@ -705,7 +704,6 @@ $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --dept
 }
 ! note: totals include descendants
 ! note: display limits: row limit 0
-! note: incomplete subtrees remain visible below the size threshold
 ! tip: show more: --limit=all
 ? 0
 ```

@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 75 sessions differ, and every one of them has a named cause.
+# 76 sessions differ, and every one of them has a named cause.
 #
-#  32  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  33  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
 #      platform separator, and [AGE] for an age measured from the run's own instant.
 #      The Python replay prints the sandbox root, a literal separator, and the age, whose
@@ -781,10 +781,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
      }
    ]
     stderr:
-@@ -1,4 +1,4 @@
+@@ -1,3 +1,3 @@
  note: totals include descendants
  note: display limits: row limit 0
- note: incomplete subtrees remain visible below the size threshold
 -tip: show more: --limit=all
 +tip: show more: limit=all
   ✓ Corrupt the Snapshot
@@ -844,10 +843,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
      }
    ]
     stderr:
-@@ -1,4 +1,4 @@
+@@ -1,3 +1,3 @@
  note: totals include descendants
  note: display limits: row limit 0
- note: incomplete subtrees remain visible below the size threshold
 -tip: show more: --limit=all
 +tip: show more: limit=all
   ✓ Verify the Corrupt File Was Replaced
@@ -1697,6 +1695,19 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
  note: totals include descendants
  note: display limits: below 1% of root
  note: incomplete subtrees remain visible below the size threshold
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
+  ✗ Unknown Branches Do Not Disable Filtering for Known Sizes
+@@ -1,3 +1,3 @@
+ ██████████   100%     9.7 KiB  unknown  . 2 files
+-██████████   100%     9.7 KiB  [AGE]    large
+-░░░░░░░░░░    <1%         1 B  [AGE_BLANK]    … and 1 more file
++██████████   100%     9.7 KiB  [AGE_VALUE]    large
++░░░░░░░░░░    <1%         1 B  [AGE_BLANK_VALUE]    … and 1 more file
+    stderr:
+@@ -1,3 +1,3 @@
+ note: totals include descendants
+ note: display limits: below 1% of root
 -tip: show more: --min-share=0%
 +tip: show more: min_share=0%
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
