@@ -257,6 +257,10 @@ In a one-shot report, the ignored population also determines which subtrees and 
 bodies may be skipped.
 A retained index can answer narrower queries when it holds the required facts.
 
+In the Mode row, `--workers N` bounds the readers of content analysis only, so it
+matters only when an analyzer runs.
+The metadata walk sizes its own thread pool, which no flag sets.
+
 Work has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only
 aggregate tallies and no index, except under `--cache on` and `--stale-ok`, whose
@@ -354,7 +358,7 @@ what is not shown and a tip gives the views that show it:
 `note: code analysis not shown by documents` and `tip: show it: --view documents,code`.
 `--view full` includes Code only with code analysis and Documents only with words
 analysis, naming the views it skipped and `--analyze all` to include them.
-Use `--workers` to bound concurrent reads and `--words-per-page` to control page
+Use `--workers` to bound concurrent content reads and `--words-per-page` to control page
 derivation. Analysis never truncates a file or excludes it because of size.
 One fixed bound changes a method: `words` counts a Markdown file over 64 MiB as plain
 text, read whole but not rendered, and says so (`counted as text`, `text_only`, a note).
@@ -612,6 +616,13 @@ For recent working files, add both `--ignored=exclude` and `--exclude='.git/**'`
 unreadable `.gitignore` makes the result partial (exit 2), while one past
 `--gitignore-budget` or `--gitignore-line-limit` is refused whole and named in a note:
 sizes stay exact, the ignored shares under that directory do not.
+
+What `--no-gitignore` saves is the reading: no `.gitignore` is opened and no rule is
+matched. It is also its own snapshot scope.
+A snapshot written under it holds no classification, so it cannot answer a default
+request, while a default snapshot can answer a `--no-gitignore --stale-ok` one.
+Each root keeps one snapshot, so a `--cache on` run in either scope replaces the
+other’s.
 
 Under `--watch`, a rule edit that moves an entry into either selection streams the
 upsert that draws it and one that moves it out streams the removal, so the stream holds

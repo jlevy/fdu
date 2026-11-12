@@ -32,6 +32,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     clones can make a total exceed the space the writes took; `--min-size` drops the
     small files that add up; and a window can be asked again only with both bounds as
     RFC 3339 instants, `--before now` leaving out files written during the walk.
+  - `--no-gitignore` is described as its own snapshot scope: its snapshot cannot answer
+    a default request, a default snapshot can answer it, and each root keeps one.
+    What it saves is stated as the rules it does not read.
+  - `--workers` is described as bounding content-analysis readers only; the metadata
+    walk sizes its own thread pool, which no flag sets.
 
 ### Fixed
 

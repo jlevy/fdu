@@ -661,6 +661,14 @@ Human rows label this subset as `(73 MiB gitignored)`: the amount is already inc
 the row total, not additional usage.
 `--no-gitignore` disables reading and applying the rules, so ignored shares are unknown.
 It cannot be combined with either ignored-state selection.
+What it saves is that reading: no `.gitignore` is opened and no rule is matched.
+
+It is also its own snapshot scope.
+A snapshot written under it holds no classification, so it cannot answer a default
+request; a default snapshot holds the sizes it needs and can answer a
+`--no-gitignore --stale-ok` request.
+Each root keeps one snapshot, so a `--cache=on` run in either scope replaces the
+other’s.
 
 ## Analyze File Contents
 
@@ -688,7 +696,8 @@ Both already include `lines`, so `code,words,lines` is equivalent and adds no wo
 Use `lines` alone for physical text volume without language-specific code counting or
 word normalization. `none` and `all` name the whole axis and cannot be combined with
 another value. Files are analyzed through EOF, not truncated by size.
-`--workers` bounds concurrent content-analysis reads.
+`--workers` bounds concurrent content-analysis reads and nothing else: the metadata walk
+sizes its own thread pool, which no flag sets.
 Under `code`, a code file in a language without a line-of-code counter is reported as
 `unsupported` code coverage.
 Its physical-line metrics remain available; code, comment, and code-blank counts are
