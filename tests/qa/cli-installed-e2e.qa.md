@@ -35,12 +35,12 @@ Library steps are time-boxed and must stay bounded.
 
 ## Current Status (Last Update 2026-11-12)
 
-**0.6.0 is ready to tag and not yet released.** The release commit,
-`4450be7e58b1e87a3d2b0fc8ffc0e8646e5b7a09` (tree
-`2d4612556db40fae7fc7cba10f55e42434c5650d`), is the merge of
+**0.6.0 is released.** The release commit, `4450be7e58b1e87a3d2b0fc8ffc0e8646e5b7a09`
+(tree `2d4612556db40fae7fc7cba10f55e42434c5650d`), is the merge of
 [#213](https://github.com/jlevy/fdu/pull/213), which folded
 [#211](https://github.com/jlevy/fdu/pull/211) into the release.
-It inherits by tree identity the stability pass that ran at #213’s head,
+It was tagged `v0.6.0` and published to crates.io, PyPI, and GitHub on 2026-11-12. It
+inherits by tree identity the stability pass that ran at #213’s head,
 `bf4981b9976ec0810fdde2a58841b9bb5618fd89`, which has the same tree.
 Every automated stage passed.
 `make check` passed on its second run, which reached GitHub directly; the first had
@@ -67,20 +67,12 @@ The peers were GNU du 9.4, dust 1.2.5, pdu 0.24.0, dua 2.45.0, and diskus 0.9.0.
 
 **Pre-tag decisions.**
 
-- **Phase 6.** As for 0.5.0, a person watching a real window and Windows progress QA are
-  the maintainer’s to run or waive before the tag.
-- **macOS.** No macOS pass has run for 0.6.0. The pull request’s macOS checks (`apfs` in
-  `volumes`, a volume under `/Volumes`, and `ages` on a home folder under each clock)
-  remain open in its test plan.
-
-Earlier release records remain in the
-[0.5.0 Linux report](../../docs/project/reports/report-2026-10-14-release-0.5.0-stability-pass.md),
-the
-[0.5.0 macOS report](../../docs/project/reports/report-2026-10-12-release-0.5.0-stability-pass.md),
-the
-[0.4.0 report](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
-(macOS), and the
-[0.3.0 report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md).
+- **Phase 6 and macOS.** A person watching a real window, Windows progress QA, and the
+  pull request’s macOS checks (`apfs` in `volumes`, a volume under `/Volumes`, and
+  `ages` on a home folder under each clock) did not run before the tag.
+  The maintainer’s go-ahead to cut the release, given after reviewing the records that
+  listed them as pending, decided them; no separate waiver was stated.
+  The automated pty probe and terminal tests passed.
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked | ⏭️ Waived
 

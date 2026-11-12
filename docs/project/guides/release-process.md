@@ -255,7 +255,16 @@ carries an `x-github-request-id` header means egress is open.
 Then install `gh` 2.97.0 or later with its ensure script, and add only the GitHub hosts
 it lists to `NO_PROXY` and `no_proxy`, keeping `HTTPS_PROXY` and TLS verification as
 they are. The session’s git remote is a broker that refuses tag pushes; step 6 never
-pushes a tag, because it creates the tag object and its ref with `gh api`.
+pushes a tag, because it creates the tag object and its ref with `gh api`. Steps 4 and
+12 move `release/v$VERSION` with `git push`, which on the direct channel reaches GitHub
+without the broker’s credential and fails with
+`could not read Username for 'https://github.com'`. Give git `gh`’s credential for those
+steps, as `gh auth setup-git` does, or for one command only:
+
+```shell
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.https://github.com.helper \
+  GIT_CONFIG_VALUE_0='!gh auth git-credential' make release-cleanup
+```
 
 When a step fails with `HTTP 403: Resource not accessible by integration`, or a proxy
 answers that a GitHub API path is not permitted or not available (for example, that a
