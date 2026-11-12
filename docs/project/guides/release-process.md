@@ -248,15 +248,25 @@ The credential `gh` uses must be able to do, on this repository, what the steps 
 - create tags and releases and upload release assets, for steps 6 and 7;
 - render Markdown through the API, for step 5.
 
+In a cloud session, set `gh` up as `tbd shortcut setup-github-cli` describes under
+Proxied Remote Sessions before step 1, and run every step on the direct channel it
+describes. Its one-command egress test decides: any response from `api.github.com` that
+carries an `x-github-request-id` header means egress is open.
+Then install `gh` 2.97.0 or later with its ensure script, and add only the GitHub hosts
+it lists to `NO_PROXY` and `no_proxy`, keeping `HTTPS_PROXY` and TLS verification as
+they are. The session’s git remote is a broker that refuses tag pushes; step 6 never
+pushes a tag, because it creates the tag object and its ref with `gh api`.
+
 When a step fails with `HTTP 403: Resource not accessible by integration`, or a proxy
 answers that a GitHub API path is not permitted or not available (for example, that a
-session is bound to its configured repositories, which refuses the Markdown render), the
-credential or the session’s network policy is missing that access.
+session is bound to its configured repositories, which refuses the Markdown render),
+`gh` reached GitHub through the session proxy instead of the direct channel.
+A 403 from a GitHub host without an `x-github-request-id` header was written by the
+proxy, not by GitHub.
 The release has not failed.
 Do not record the result, and do not stand in for the step with another tool.
-Fix the credential, for example by reconnecting the session’s GitHub account or
-approving the GitHub App’s pending permissions, or run the step where `gh` has them,
-then rerun it.
+Set `NO_PROXY` as above and rerun the step; if the egress test shows the direct channel
+closed, the step needs a host where it is open.
 
 ## What a Release Contains
 
