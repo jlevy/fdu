@@ -36,32 +36,34 @@ Library steps are time-boxed and must stay bounded.
 ## Current Status (Last Update 2026-11-12)
 
 **0.6.0 is ready to tag and not yet released.** The release commit,
-`8a8febc7cf332dfd4ee8c8536dd6cc00128be9dd` (tree
-`64a7d3661ec3eade8a1cd75332951129aa2f0185`), inherits by tree identity the stability
-pass that ran at the head of [#209](https://github.com/jlevy/fdu/pull/209),
-`9878466182867e4028c0988bc5c84d7f50f50fd7`, which has the same tree.
-That pass was the pull request’s
-[Linux host gate](../../docs/project/guides/linux-host-gate.md).
+`4450be7e58b1e87a3d2b0fc8ffc0e8646e5b7a09` (tree
+`2d4612556db40fae7fc7cba10f55e42434c5650d`), is the merge of
+[#213](https://github.com/jlevy/fdu/pull/213), which folded
+[#211](https://github.com/jlevy/fdu/pull/211) into the release.
+It inherits by tree identity the stability pass that ran at #213’s head,
+`bf4981b9976ec0810fdde2a58841b9bb5618fd89`, which has the same tree.
 Every automated stage passed except `make check`, which stopped at its supply-chain
 provenance request when the host’s network proxy refused it; the rest of `make check`
 passed under `-k`, and CI ran the provenance check green at the same commit.
+The earlier candidate, `8a8febc7`, was never tagged; its record is the
+[2026-11-11 report](../../docs/project/reports/report-2026-11-11-release-0.6.0-stability-pass.md).
 
 The installed candidate was the wheel built from that commit,
-`fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.6.0-dev+g987846618`.
+`fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.6.0-dev+gbf4981b99`.
 The host was a 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18.44) on
 ext4, as an ordinary user with neither `FDU_TEST_ALLOW_*` waiver.
 The peers were GNU du 9.4, dust 1.2.5, pdu 0.24.0, dua 2.45.0, and diskus 0.9.0.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Setup | ✅ Passed | `fdu --version` printed `fdu 0.6.0-dev+g987846618`, from `fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl` |
+| Phase 1: Setup | ✅ Passed | `fdu --version` printed `fdu 0.6.0-dev+gbf4981b99`, from `fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl` |
 | Phase 2: Small-tree views | ✅ Passed | 22 checks: 22 ok, on a checkout of this repository at the commit |
 | Phase 3: Cache × analyze | ✅ Passed | 16 checks: 16 ok |
 | Phase 4: Medium tree | ✅ Passed | 9 checks: 9 ok, on `linux-v6.12` with `Documentation/` analyzed |
 | Phase 5: Bounded large tree | ✅ Passed | 2 checks: 2 ok, on `/usr` |
 | Phase 6: Terminal Progress | ⏳ Pending | The pty probe passed 38 of 38 checks, on 20 hardlinked copies of `linux-v6.12` because the plain tree scans too fast to judge, and all 3 terminal tests passed. A person has not watched a real window, and Windows progress QA has not run |
 | Phase 7: Peer agreement | ✅ Passed | Self-test: 12 readings agree exactly. Real trees: 36 of 36 readings on `node-modules-dense`, `linux-v6.12`, and `cargo-registry-src` agree exactly, 0 `UNEXPLAINED` |
-| Phase 8: Results | ✅ Passed | 49 checks: 49 ok, 0 warn, 0 fail. The [0.6.0 release stability-pass report](../../docs/project/reports/report-2026-11-11-release-0.6.0-stability-pass.md) keeps every table and the release record; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records its passes and breaks |
+| Phase 8: Results | ✅ Passed | 49 checks: 49 ok, 0 warn, 0 fail. The [0.6.0 release stability-pass report](../../docs/project/reports/report-2026-11-12-release-0.6.0-stability-pass.md) keeps every table and the release record; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records its passes and breaks |
 
 **Pre-tag decisions.**
 

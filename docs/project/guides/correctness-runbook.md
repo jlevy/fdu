@@ -218,18 +218,16 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-The 0.6.0 release pass tested release commit `8a8febc7cf332dfd4ee8c8536dd6cc00128be9dd`
-(tree `64a7d3661ec3eade8a1cd75332951129aa2f0185`) in two runs on one host.
-On 2026-11-11 the whole stability pass ran unprivileged at
-`9878466182867e4028c0988bc5c84d7f50f50fd7`, the head of
-[#209](https://github.com/jlevy/fdu/pull/209), whose tree the release commit has: it was
-that pull request’s [Linux host gate](linux-host-gate.md).
-On 2026-11-12 the candidate and correctness stages ran again as root on the release
-commit itself, so that the trees held device nodes.
-The candidates were the wheels each run built,
-`fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.6.0-dev+g987846618`
-and `fdu 0.6.0-dev+g8a8febc7c`. Every pass and both deliberate breaks passed in both
-runs.
+The 0.6.0 release pass tested release commit `4450be7e58b1e87a3d2b0fc8ffc0e8646e5b7a09`
+(tree `2d4612556db40fae7fc7cba10f55e42434c5650d`), the merge of
+[#213](https://github.com/jlevy/fdu/pull/213), in two runs on one host on 2026-11-12,
+both at #213’s head, `bf4981b9976ec0810fdde2a58841b9bb5618fd89`, whose tree the release
+commit has. The first was the whole stability pass, unprivileged; the second ran the
+candidate and correctness stages again as root, so that the trees held device nodes.
+Both candidates were the wheel built from that commit,
+`fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.6.0-dev+gbf4981b99`.
+Every pass and both deliberate breaks passed in both runs, with the same counts as the
+pass of the earlier, untagged candidate `8a8febc7` on 2026-11-11.
 
 **Regime.**
 
@@ -249,7 +247,7 @@ As root, the refusal tree held 16 kinds and lacked `permission-denied-effective`
 root cannot experience, and the served tree held all 16. There were 30 cases and a
 cross-warm matrix of 8 warmers by 9 asks.
 
-| Pass | Unprivileged, at `98784661` | As root, at `8a8febc7` |
+| Pass | Unprivileged | As root, the refusal pass as `nobody` |
 | --- | --- | --- |
 | `--refusals-only`, refusal tree | 30 of 30 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants | The same, as `nobody` |
 | `warm_cold.py`, complete tree | 30 of 30 served `cache_only` and labelled `stale`; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants | The same |
@@ -264,9 +262,10 @@ The deliberate breaks confirmed the checks reject incorrect serving, in both run
   `--stale-ok`. All 30 cases reported `PARTIAL-STORED`, and `--refusals-only` exited 1.
 
 Every case of both runs is retained in the
-[0.6.0 release stability-pass report](../reports/report-2026-11-11-release-0.6.0-stability-pass.md),
-and the 0.5.0 run in
-[its report](../reports/report-2026-10-14-release-0.5.0-stability-pass.md).
+[0.6.0 release stability-pass report](../reports/report-2026-11-12-release-0.6.0-stability-pass.md),
+the earlier candidate’s in
+[its report](../reports/report-2026-11-11-release-0.6.0-stability-pass.md), and the
+0.5.0 run in [its report](../reports/report-2026-10-14-release-0.5.0-stability-pass.md).
 `fdu-579b` has not decided hard-link attribution; these checks establish warm/cold
 agreement, not that counting policy’s correctness.
 
