@@ -159,6 +159,57 @@ def test_a_time_sort_that_orders_no_view_is_refused(builds: Path) -> None:
             index.report(fdu.Query(views=views, selection=timed))
 
 
+def test_a_sort_key_is_read_by_the_librarys_grammar(builds: Path) -> None:
+    # The key 0.6.0 renamed is refused in the library's sentence, which names what
+    # replaced it and the clock that changed with it, in this package's own names.
+    renamed = (
+        'invalid sort "mtime": mtime was renamed time in 0.6.0, and it orders by change '
+        "time unless time=modified is given"
+    )
+    with pytest.raises(fdu.InvalidArgumentError) as refusal:
+        fdu.SortKey("mtime")
+    assert str(refusal.value) == renamed
+    # The grammar's refusal for any other key, and a `ValueError` as an enum's always is.
+    with pytest.raises(ValueError, match='invalid sort "newest": expected size, count, time'):
+        fdu.SortKey("newest")
+    # A spelling the grammar accepts is the member it names; a value of another type is not
+    # the grammar's to read.
+    assert fdu.SortKey(" Time ") is fdu.SortKey.TIME
+    assert fdu.SortKey("CODE_LINES") is fdu.SortKey.CODE_LINES
+    with pytest.raises(ValueError, match="is not a valid SortKey"):
+        fdu.SortKey(7)
+    # A raw token in the field reaches the same grammar when the query is read.
+    index = fdu.scan(builds)
+    for sort, views in (("mtime", (fdu.View.FILES,)), ("MTIME", (fdu.View.TREE,))):
+        selection = fdu.Selection(sort=sort)  # type: ignore[arg-type]
+        with pytest.raises(fdu.InvalidArgumentError) as refusal:
+            index.report(fdu.Query(views=views, selection=selection))
+        assert str(refusal.value) == renamed
+
+    def paths(selection: fdu.Selection) -> list[Path]:
+        report = index.report(fdu.Query(views=(fdu.View.FILES,), selection=selection))
+        section = report.sections[0]
+        assert isinstance(section, fdu.FilesSection)
+        return [row.path for row in section.files]
+
+    token = fdu.Selection(sort="name", kinds=(fdu.EntryKind.DIR,))  # type: ignore[arg-type]
+    member = fdu.Selection(sort=fdu.SortKey.NAME, kinds=(fdu.EntryKind.DIR,))
+    assert paths(token) == paths(member) != []
+
+    # The refusal names `time=modified`, so the spelling it suggests has to work: a raw
+    # token for the clock is read through its enum, and the report reads that clock.
+    files = (fdu.EntryKind.FILE,)
+    hinted = fdu.Selection(sort="time", time="modified", kinds=files)  # type: ignore[arg-type]
+    typed = fdu.Selection(sort=fdu.SortKey.TIME, time=fdu.TimeBasis.MODIFIED, kinds=files)
+    assert paths(hinted) == paths(typed) != []
+    report = index.report(fdu.Query(views=(fdu.View.FILES,), selection=hinted))
+    assert report.request.time is fdu.TimeBasis.MODIFIED
+    # A clock that is no clock is refused when the query is read, by name.
+    unknown = fdu.Selection(time="accessed")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="'accessed' is not a valid TimeBasis"):
+        index.report(fdu.Query(views=(fdu.View.FILES,), selection=unknown))
+
+
 def test_list_default_and_format_compatibility(builds: Path) -> None:
     index = fdu.scan(builds)
     default = index.report(fdu.Query()).render()

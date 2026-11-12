@@ -90,6 +90,22 @@ $ fdu --cache off --color never --size apparent --scan-depth 1 shallow-project
 ? 0
 ```
 
+The note explains a row the tree shows.
+A selection of files gives the unknown branch no row, since it holds no selected file,
+so the same report has no such note.
+
+```console
+$ fdu --cache off --color never --size apparent --scan-depth 1 --kind file shallow-project
+██████████   100%     9.7 KiB  unknown  . 2 files
+██████████   100%     9.7 KiB  [AGE]    large
+░░░░░░░░░░    <1%         1 B  [AGE_BLANK]    … and 1 more file
+! note: totals include descendants
+! note: display limits: below 1% of root
+! tip: show more: --min-share=0%
+! perf: took [PERF_TIME] to walk 2 files (9.7 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+? 0
+```
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

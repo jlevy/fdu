@@ -264,12 +264,11 @@ and supported languages.
 
 When free space drops, find where the new data is.
 fdu keeps no history of past sizes, but every file records when it last changed, so one
-scan with no saved state shows the files written since a given time, by folder and
-largest first:
+scan with no saved state shows the files written since a given time: by folder, largest
+first, with their total and the largest of them.
 
 ```shell
-fdu ~ --kind=file --since=24h
-fdu ~ --view=largest --since=24h --limit=20
+fdu ~ --kind=file --since=24h --view=tree,summary,largest
 ```
 
 fdu reads change time by default, the newer of modification and status change, so data

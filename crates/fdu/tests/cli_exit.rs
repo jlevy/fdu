@@ -5,6 +5,9 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
+/// The note a tree prints when it shows an incomplete directory below its share threshold.
+const INCOMPLETE_NOTE: &str = "note: incomplete subtrees remain visible below the size threshold";
+
 /// Whether this process is actually subject to Unix permission bits.
 ///
 /// A privileged process reads the denied directory anyway, so the fixture below cannot
@@ -94,6 +97,17 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
         .arg(root.path())
         .output()
         .expect("run human fdu");
+    // The files' status changes are a moment old, so a two-hour window on the default
+    // clock selects them all, and none is in the directory nobody could list.
+    let files_written = |format: &str| {
+        Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--cache", "off", "--color", "never", "--kind", "file", "--since", "2h"])
+            .args(["--format", format])
+            .arg(root.path())
+            .output()
+            .expect("run fdu over the files written")
+    };
+    let (files_text, files_json) = (files_written("tree"), files_written("json"));
     fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).expect("restore reads");
 
     assert_eq!(
@@ -130,6 +144,24 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
         human_stderr.lines().any(|line| line.starts_with("warn:")),
         "missing stderr warn: {human_stderr}"
     );
+
+    // The unreadable directory is a row of the unfiltered tree, kept below the share
+    // threshold, and a note says why. A selection of files gives it no row, so that note
+    // has nothing to explain; the warning and the status still name the directory.
+    assert!(human_stderr.lines().any(|line| line == INCOMPLETE_NOTE), "{human_stderr}");
+    assert_eq!(files_text.status.code(), Some(2));
+    let files_stdout = String::from_utf8(files_text.stdout).expect("tree stdout is UTF-8");
+    let files_stderr = String::from_utf8(files_text.stderr).expect("tree stderr is UTF-8");
+    assert!(!files_stdout.contains("denied"), "an unlisted directory has no row: {files_stdout}");
+    assert!(!files_stderr.contains(INCOMPLETE_NOTE), "{files_stderr}");
+    assert!(
+        files_stderr.lines().any(|line| line.starts_with("warn:") && line.contains("/denied")),
+        "missing stderr warn: {files_stderr}"
+    );
+    assert_eq!(files_json.status.code(), Some(2));
+    let files_json = String::from_utf8(files_json.stdout).expect("JSON is UTF-8");
+    assert!(files_json.contains("\"complete\": false"), "{files_json}");
+    assert!(files_json.contains("\"path\": \"denied\""), "{files_json}");
 }
 
 /// Text mode prints one warning per retained issue, and the retention bound drops the

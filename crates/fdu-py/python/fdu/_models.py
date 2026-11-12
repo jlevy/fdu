@@ -201,6 +201,25 @@ class SortKey(StrEnum):
     VISIBLE_LOGICAL_WORDS = "visible_logical_words"
     DOCUMENT_WORDS = "document_words"
 
+    @classmethod
+    def _missing_(cls, value: object) -> SortKey | None:
+        """Read a value that is no member through the library's sort grammar.
+
+        The request model owns this grammar. A spelling it accepts, such as ``" Time "``,
+        is the member it names, and one it refuses raises
+        :class:`InvalidArgumentError`, a ``ValueError``, with the library's sentence: a
+        key an earlier release spelled differently says what replaced it.
+        """
+
+        if not isinstance(value, str):
+            return None
+        # Deferred: `_api` imports this module, so its `_call` cannot be imported at
+        # module scope.
+        from ._api import _call
+
+        label = cast(str, _call(_native.parse_sort, value))
+        return cast("SortKey | None", cls._value2member_map_.get(label))
+
 
 class Analysis(StrEnum):
     """A value the content axis accepts: one analyzer, or a total naming the whole axis.

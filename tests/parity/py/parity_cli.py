@@ -73,6 +73,11 @@ RETIRED_CACHE_POLICIES = {
 }
 
 
+# The flags 0.6.0 renamed, each refused with its replacement as the command line refuses
+# it. The package has no flags, so this vocabulary is the command line's alone.
+RENAMED_FLAGS = {"--modified-since": "--since", "--modified-before": "--before"}
+
+
 def parse_cache(value: str) -> fdu.CachePolicy:
     try:
         return fdu.CachePolicy(value)
@@ -122,11 +127,20 @@ def parse_time(value: str) -> fdu.TimeBasis:
 
 
 def parse_sort(value: str) -> fdu.SortKey:
+    """Hand the token to the library's sort grammar and print what it says.
+
+    `SortKey` reads any value through the request model's grammar, so an unknown key, or
+    one an earlier release spelled differently, is refused in the library's own sentence.
+    That sentence names the package's parameters where the command line names its flags,
+    which the parity artifact records as a difference of labels. This used to print a
+    copy of the command line's sentence kept here, which recorded agreement the package
+    had not produced.
+    """
+
     try:
         return fdu.SortKey(value)
-    except ValueError:
-        known = ", ".join(k.value for k in fdu.SortKey)
-        raise UsageError(f'invalid --sort "{value}": expected one of {known}') from None
+    except ValueError as error:
+        raise UsageError(str(error)) from None
 
 
 def parse_bound(value: str) -> fdu.Bound | int | str:
@@ -303,6 +317,11 @@ def parse_args(argv: list[str]) -> Args:
             args.cache_status = parse_scope(inline if separator else "root", flag)
         elif flag == "--cache-clear":
             args.cache_clear = parse_scope(inline if separator else "root", flag)
+        elif flag in RENAMED_FLAGS:
+            raise UsageError(
+                f"{flag} was renamed {RENAMED_FLAGS[flag]} in 0.6.0, and the window reads "
+                "change time unless --time=modified is given"
+            )
         else:
             raise UsageError(f"unexpected argument '{token}' found")
 

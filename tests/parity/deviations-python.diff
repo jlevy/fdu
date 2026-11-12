@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 75 sessions differ, and every one of them has a named cause.
+# 79 sessions differ, and every one of them has a named cause.
 #
-#  32  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  35  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root, [SEP] for a
 #      platform separator, and [AGE] for an age measured from the run's own instant.
 #      The Python replay prints the sandbox root, a literal separator, and the age, whose
@@ -58,7 +58,7 @@
 #      Only the four setter and value pairs the shared report renderer emits, in its
 #      fixed order, are accepted; every other line remains identical.
 #
-#  27  Each surface names its own parameter  [surface-label]
+#  28  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -213,6 +213,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --depth "two": expected a whole number or `all`
 +fdu: invalid depth "two": expected a whole number or `all`
+  ✓ A Renamed Flag or Sort Key Names Its Replacement
+  ✓ A Renamed Flag or Sort Key Names Its Replacement
+  ✗ A Renamed Flag or Sort Key Names Its Replacement
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: invalid --sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless --time=modified is given
++fdu: invalid sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless time=modified is given
   ✓ `--cache on` Scans Cold and Leaves a Snapshot
   ✓ The Next Run Scans Cold Again, Because Reading Cannot Pay
   ✗ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale
@@ -781,10 +788,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
      }
    ]
     stderr:
-@@ -1,4 +1,4 @@
+@@ -1,3 +1,3 @@
  note: totals include descendants
  note: display limits: row limit 0
- note: incomplete subtrees remain visible below the size threshold
 -tip: show more: --limit=all
 +tip: show more: limit=all
   ✓ Corrupt the Snapshot
@@ -844,10 +850,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
      }
    ]
     stderr:
-@@ -1,4 +1,4 @@
+@@ -1,3 +1,3 @@
  note: totals include descendants
  note: display limits: row limit 0
- note: incomplete subtrees remain visible below the size threshold
 -tip: show more: --limit=all
 +tip: show more: limit=all
   ✓ Verify the Corrupt File Was Replaced
@@ -1125,6 +1130,123 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 -tip: show more: --limit=all
 +tip: show more: limit=all
   ✓ Reading No .gitignore Is a Separate Scope
+  ✓ One Walk Answers Later Questions of Any Kind or Window
+  ✗ One Walk Answers Later Questions of Any Kind or Window
+@@ -1,10 +1,10 @@
+ {
+   "schema": "fdu.report/12",
+   "generator": "fdu 0.6.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
+-  "age_reference_at": "[RFC3339]",
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
++  "age_reference_at": "[RFC3339]",
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -25,17 +25,17 @@
+     "coverage": {"kind": "complete"},
+     "errors": [],
+     "errors_omitted": 0
+   },
+-  "selected": {"files": 2, "dirs": 1, "bytes": 36, "allocated": [ALLOCATED]},
+-  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
++  "selected": {"files": 2, "dirs": 1, "bytes": 36, "allocated": [ALLOCATED_VALUE]},
++  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED_VALUE]},
+   "provenance": {
+     "source": "cache_only",
+     "freshness": "stale",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -52,11 +52,11 @@
+       "summary": {
+         "files": 2,
+         "dirs": 1,
+         "bytes": 36,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+-        "newest_file_time_ns": [MTIME_NS]
++        "newest_file_time_ns": [MTIME_NS]
+       }
+     }
+   ]
+ }
+    stderr:
+@@ -1,2 +1,2 @@
+ note: selected 2 of 7 files, 36 B of 294 B
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
+  ✗ One Walk Answers Later Questions of Any Kind or Window
+@@ -1,10 +1,10 @@
+ {
+   "schema": "fdu.report/12",
+   "generator": "fdu 0.6.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
+-  "age_reference_at": "[RFC3339]",
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
++  "age_reference_at": "[RFC3339]",
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -25,17 +25,17 @@
+     "coverage": {"kind": "complete"},
+     "errors": [],
+     "errors_omitted": 0
+   },
+-  "selected": {"files": 7, "dirs": 0, "bytes": 294, "allocated": [ALLOCATED]},
+-  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED]},
++  "selected": {"files": 7, "dirs": 0, "bytes": 294, "allocated": [ALLOCATED_VALUE]},
++  "scanned": {"files": 7, "dirs": 3, "bytes": 294, "allocated": [ALLOCATED_VALUE]},
+   "provenance": {
+     "source": "cache_only",
+     "freshness": "stale",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -52,11 +52,11 @@
+       "summary": {
+         "files": 7,
+         "dirs": 0,
+         "bytes": 294,
+-        "allocated": [ALLOCATED],
+-        "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]},
+-        "newest_file_time_ns": [MTIME_NS]
++        "allocated": [ALLOCATED_VALUE],
++        "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]},
++        "newest_file_time_ns": [MTIME_NS]
+       }
+     }
+   ]
+ }
+    stderr:
+@@ -1,3 +1,3 @@
+ note: totals include gitignored sizes
+ note: selected all 7 files, 294 B
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
 FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare Mixed Line Endings and Observed Binary Data
   ✓ Prepare Empty and Unsupported-Language Trees
@@ -1697,6 +1819,19 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
  note: totals include descendants
  note: display limits: below 1% of root
  note: incomplete subtrees remain visible below the size threshold
+-tip: show more: --min-share=0%
++tip: show more: min_share=0%
+  ✗ Unknown Branches Do Not Disable Filtering for Known Sizes
+@@ -1,3 +1,3 @@
+ ██████████   100%     9.7 KiB  unknown  . 2 files
+-██████████   100%     9.7 KiB  [AGE]    large
+-░░░░░░░░░░    <1%         1 B  [AGE_BLANK]    … and 1 more file
++██████████   100%     9.7 KiB  [AGE_VALUE]    large
++░░░░░░░░░░    <1%         1 B  [AGE_BLANK_VALUE]    … and 1 more file
+    stderr:
+@@ -1,3 +1,3 @@
+ note: totals include descendants
+ note: display limits: below 1% of root
 -tip: show more: --min-share=0%
 +tip: show more: min_share=0%
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md

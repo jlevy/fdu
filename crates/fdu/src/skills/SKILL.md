@@ -257,6 +257,10 @@ In a one-shot report, the ignored population also determines which subtrees and 
 bodies may be skipped.
 A retained index can answer narrower queries when it holds the required facts.
 
+In the Mode row, `--workers N` bounds the readers of content analysis only, so it
+matters only when an analyzer runs.
+The metadata walk sizes its own thread pool, which no flag sets.
+
 Work has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only
 aggregate tallies and no index, except under `--cache on` and `--stale-ok`, whose
@@ -354,7 +358,7 @@ what is not shown and a tip gives the views that show it:
 `note: code analysis not shown by documents` and `tip: show it: --view documents,code`.
 `--view full` includes Code only with code analysis and Documents only with words
 analysis, naming the views it skipped and `--analyze all` to include them.
-Use `--workers` to bound concurrent reads and `--words-per-page` to control page
+Use `--workers` to bound concurrent content reads and `--words-per-page` to control page
 derivation. Analysis never truncates a file or excludes it because of size.
 One fixed bound changes a method: `words` counts a Markdown file over 64 MiB as plain
 text, read whole but not rendered, and says so (`counted as text`, `text_only`, a note).
@@ -414,10 +418,13 @@ fdu keeps no history of past sizes, but every file records when it last changed,
 scan, with no earlier state, finds what was written in a window:
 
 ```bash
-fdu PATH --kind file --since 24h                  # by folder, largest first
-fdu PATH --kind file --since 24h --view summary   # their total
-fdu PATH --view largest --since 24h --limit 20    # the largest of them
+fdu PATH --kind file --since 24h --view tree,summary,largest  # by folder, total, largest files
+fdu PATH --view ages                                          # how much arrived when, in fixed bands
 ```
+
+The first command answers three questions from one walk: the folders, largest first,
+their total, and the 20 largest files.
+Asked as three commands, each would walk the tree again.
 
 The window reads change time, so it catches data that arrived carrying an older
 modification time, which modification time misses: copies made with `cp -p`, `rsync -a`,
@@ -433,6 +440,20 @@ With it, each folder counts only the files written in the window, and percentage
 shares of their total; the `note: selected … of …` line gives the whole tree to compare,
 and machine output carries both as `selected` and `scanned`.
 
+When that note reads `selected all N files`, every file in the tree was written inside
+the window, so the window separates nothing.
+Narrow it, as in `--since 1h`, or read `--view ages`: its `under 1h` and `1h to 1d` rows
+show when within the day the data arrived.
+
+Add no `--min-size`. Growth is often many small files, and a size bound drops each of
+them from every folder’s row and from the total.
+
+A relative bound such as `24h` resolves once, at the report’s instant, which is taken
+before the walk, so the same command run later asks about a different window.
+To ask about one window again, give both bounds as RFC 3339 instants, as in
+`--since 2026-11-11T08:00:00Z --before 2026-11-12T08:00:00Z`. A window with no upper
+bound also admits files written while the walk runs; `--before now` leaves them out.
+
 Read the result as data written, not as net growth:
 
 - A file written in the window counts at its full size, so a 1 MB append to a 10 GB file
@@ -445,6 +466,10 @@ Read the result as data written, not as net growth:
 - A file whose status change was not observed, such as a Windows file fdu could not
   open, is timed by its modification time, and a note counts such files whenever a
   window or `ages` counted one.
+- Rows overlap: a folder’s row includes its subfolders, so rows do not add up.
+  The root row and `--view summary` give the total.
+- Allocated bytes are counted per path: a file with several hard links counts at each of
+  them, and clones can share blocks, so the total can exceed the space the writes took.
 - Space outside PATH, in filesystem snapshots, or in deleted files still held open is in
   no walk. fdu reports what the tree holds; `df PATH` reports the volume’s free space.
 
@@ -452,21 +477,45 @@ The scan reads every entry’s metadata once.
 A home folder can hold millions of entries and take minutes, so start where growth is
 likely: the project, `~/.cache`, `~/Library/Caches`, agent state such as `~/.claude` and
 `~/.codex`, and the temporary directory.
-Each window is one scan on the command line; to ask several windows or drill into
-folders without walking again, walk the tree once with Python’s `fdu.scan`, which writes
-no cache, and ask each `index.report` with its own `since`. Exact net change, deletions
-included, needs a report saved before the window began, written outside PATH:
-`fdu PATH --one-filesystem --cache off --view tree --depth all --limit all --format json > before.json`
-keeps every directory and file at or above 1% of the root and stays small, and a later
-one is compared with it by path.
-With none saved, the written-data answer above is the one available.
+
+One walk can answer many questions.
+Add `--cache on` to the first command, which leaves a snapshot of the whole tree, and
+`--stale-ok` to each later one, which answers any kind, window, or metadata view from
+that snapshot without walking and labels the answer stale.
+Keep PATH, the Scope options, and `--cache-dir` as the first command had them:
+
+```bash
+fdu PATH --cache on --cache-dir DIR --kind file --since 24h --view tree,summary,largest
+fdu PATH --stale-ok --cache-dir DIR --kind file --since 2026-11-11T08:00:00Z --before 2026-11-11T20:00:00Z
+fdu PATH --stale-ok --cache-dir DIR --kind dir --include node_modules --long
+```
+
+Give the later windows absolute bounds: a relative bound is measured from each command’s
+own instant, not from the walk.
+DIR belongs outside PATH. The default, `~/.cache/fdu` on macOS and Linux and
+`%LOCALAPPDATA%/fdu` on Windows, is inside `~`, and on macOS and Linux inside
+`~/.cache`, so a snapshot left there is itself a file written in the window, on the
+volume that is short of space.
+A snapshot holds a record for every entry, about 57 bytes plus the entry’s name: 72
+bytes an entry on a Linux `/usr`, and 121 where names are 64-character hashes, as in a
+content-addressed cache.
+Five million entries leave about 340 to 580 MiB, so put DIR on another volume when this
+one is nearly full, which is the usual reason for asking.
+In Python, `fdu.scan` keeps the walk in memory and writes no cache, and each
+`index.report` takes its own `since`.
+
+Exact net change, deletions included, needs a report saved before the window began,
+written outside PATH:
+`fdu PATH --one-filesystem --cache off --view tree,volumes --depth all --limit all --format json > before.json`
+keeps every directory and file at or above 1% of the root, beside the filesystem’s
+capacity and available space at that moment, and stays small; a later one is compared
+with it by path. With none saved, the written-data answer above is the one available.
 
 `--view ages` answers every window at once: the selected files by age, in fixed bands
 (`future`, `under 1h`, `1h to 1d`, `1d to 7d`, `7d to 30d`, `30d to 90d`, `90d to 1y`,
 `1y to 3y`, `over 3y`), from one scan.
 
 ```bash
-fdu PATH --view ages                             # how much arrived when
 fdu PATH --view tree,ages --kind file --since 7d # where this week's data is
 ```
 
@@ -593,6 +642,13 @@ unreadable `.gitignore` makes the result partial (exit 2), while one past
 `--gitignore-budget` or `--gitignore-line-limit` is refused whole and named in a note:
 sizes stay exact, the ignored shares under that directory do not.
 
+What `--no-gitignore` saves is the reading: no `.gitignore` is opened and no rule is
+matched. It is also its own snapshot scope.
+A snapshot written under it holds no classification, so it cannot answer a default
+request, while a default snapshot can answer a `--no-gitignore --stale-ok` one.
+Each root keeps one snapshot, so a `--cache on` run in either scope replaces the
+other’s.
+
 Under `--watch`, a rule edit that moves an entry into either selection streams the
 upsert that draws it and one that moves it out streams the removal, so the stream holds
 the entry set the flag names.
@@ -674,6 +730,9 @@ Content analysis, `--watch`, and a retained index from the Rust or Python `open`
 revalidate, and write it.
 `--cache on` also writes after a one-shot report, which is how to leave a snapshot for a
 later `--stale-ok` answer.
+A snapshot is written only from a complete scan.
+Over a tree with an unreadable directory, `--allow-partial` changes the exit status and
+still writes none, so `--stale-ok` has nothing from that run to answer from.
 
 Content analysis is where ordinary repeated runs benefit most.
 The first compatible run reads eligible bodies; a later run restores unchanged records

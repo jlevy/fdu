@@ -7,6 +7,72 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The spellings 0.6.0 renamed are refused with their replacement.
+  `--modified-since` and `--modified-before` got clap’s
+  `error: unexpected argument '--modified-since' found`, which names no replacement, and
+  `--sort mtime` got the list of sort keys.
+  Each now exits 2 with one line naming the new spelling and the clock that changed with
+  it:
+  `fdu: --modified-since was renamed --since in 0.6.0, and the window reads change time unless --time=modified is given`,
+  the same for `--modified-before` and `--before`, and
+  `fdu: invalid --sort "mtime": mtime was renamed time in 0.6.0, and it orders by change time unless --time=modified is given`.
+  None is an alias or in `--help`. Rust `query::parse_sort` refuses `mtime` the same
+  way, ending `unless time=modified is given` under the library’s axis names.
+- Python: `SortKey` reads a value that is not one of its members through the library’s
+  sort grammar. `SortKey("mtime")`, and a `Selection` whose `sort` holds that string,
+  raise `InvalidArgumentError`, a `ValueError`, with the sentence above in the library’s
+  names (`invalid sort "mtime": … unless time=modified is given`); it was
+  `'mtime' is not a valid SortKey`, and for the selection an `AttributeError` when the
+  query was read. Any other unknown key gets the grammar’s refusal, and a spelling the
+  grammar accepts, such as `SortKey(" Time ")`, is the member it names.
+  A `Selection` whose `time` holds a string is read through `TimeBasis` the same way, so
+  the spelling the sentence suggests, `Selection(sort="time", time="modified")`, works;
+  it raised the same `AttributeError`. `SortKey.MTIME` and
+  `Selection(modified_since=, modified_before=)` still fail with Python’s own
+  `AttributeError` and `TypeError`, which name no replacement.
+  Rust: `SortKey::label`.
+- The agent skill and the usage guide say more about finding what was written recently;
+  no command changes.
+  - When a window’s note reads `selected all`, they say that the window separates
+    nothing and point at a narrower window or `--view ages`, which the skill’s first
+    recipe now shows. A fresh agent given only the skill had stopped at that note.
+  - The recipe is one walk, `--kind file --since 24h --view tree,summary,largest`, where
+    it was three commands and three walks.
+    Its reading rules add what was documented only elsewhere: rows overlap and
+    `--view summary` is the total; allocation is counted per path, so hard links and
+    clones can make a total exceed the space the writes took; `--min-size` drops the
+    small files that add up; and a window can be asked again only with both bounds as
+    RFC 3339 instants, `--before now` leaving out files written during the walk.
+  - `--no-gitignore` is described as its own snapshot scope: its snapshot cannot answer
+    a default request, a default snapshot can answer it, and each root keeps one.
+    What it saves is stated as the rules it does not read.
+  - `--workers` is described as bounding content-analysis readers only; the metadata
+    walk sizes its own thread pool, which no flag sets.
+  - They no longer say that each window is one scan on the command line.
+    One `--cache on` run leaves a snapshot, and `--stale-ok` then answers any kind,
+    window, or metadata view of the same scope from it without a walk, labelled stale;
+    they show the three commands, recommend absolute bounds for the later windows, and
+    give each the same `--cache-dir` outside the scanned path, since the default cache
+    directory is inside `~`, and on macOS and Linux inside `~/.cache`, and a snapshot
+    left there is itself a file written in the window; a measured snapshot size, about
+    57 bytes plus the name for each entry, says when to use another volume.
+    The cache sections say that a snapshot is written only from a complete scan, so
+    `--allow-partial` over a partly unreadable tree leaves nothing for `--stale-ok`.
+  - The saved-report recipe for exact net change asks for `--view tree,volumes`, so the
+    file also holds the filesystem’s capacity and available space when it was written.
+
+### Fixed
+
+- `note: incomplete subtrees remain visible below the size threshold` is printed only
+  when the tree shows such a row.
+  It was printed whenever a share threshold applied and some directory was not listed in
+  full, so a report whose selection gave that directory no row, such as
+  `fdu PATH --kind file --since 16h` over a tree with an unreadable directory, or whose
+  `--depth`, `--breadth`, or `--limit` hid the row, described a row it did not show.
+  The `warn:` line and `status.errors` name the directory as before.
+
 ## [0.6.0] - 2026-11-12
 
 fdu 0.6.0 finds what was written recently and puts the disk beside the tree.
