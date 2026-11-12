@@ -33,53 +33,52 @@ Library steps are time-boxed and must stay bounded.
 
 * * *
 
-## Current Status (Last Update 2026-10-14)
+## Current Status (Last Update 2026-11-12)
 
-**0.5.0 is released.** The release commit, `4a513b00f7d7a508344725a5ebd48e84299f4727`
-(tree `bd82aedb40b7e50c1e128c3be791335408abda32`), passed every automated stage of the
-stability pass on Linux.
-It was tagged `v0.5.0` and published to crates.io, PyPI, and GitHub on 2026-10-14.
+**0.6.0 is ready to tag and not yet released.** The release commit,
+`8a8febc7cf332dfd4ee8c8536dd6cc00128be9dd` (tree
+`64a7d3661ec3eade8a1cd75332951129aa2f0185`), inherits by tree identity the stability
+pass that ran at the head of [#209](https://github.com/jlevy/fdu/pull/209),
+`9878466182867e4028c0988bc5c84d7f50f50fd7`, which has the same tree.
+That pass was the pull request’s
+[Linux host gate](../../docs/project/guides/linux-host-gate.md).
+Every automated stage passed except `make check`, which stopped at its supply-chain
+provenance request when the host’s network proxy refused it; the rest of `make check`
+passed under `-k`, and CI ran the provenance check green at the same commit.
 
-The installed candidate was the wheel built from the release commit,
-`fdu-0.5.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.5.0-dev+g4a513b00f`.
+The installed candidate was the wheel built from that commit,
+`fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.6.0-dev+g987846618`.
 The host was a 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18.44) on
-ext4, as root with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and
-`FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`. The peers were GNU du 9.4, dust 1.2.5, pdu 0.24.0,
-dua 2.45.0, and diskus 0.9.0.
+ext4, as an ordinary user with neither `FDU_TEST_ALLOW_*` waiver.
+The peers were GNU du 9.4, dust 1.2.5, pdu 0.24.0, dua 2.45.0, and diskus 0.9.0.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Setup | ✅ Passed | `fdu --version` printed `fdu 0.5.0-dev+g4a513b00f`, from `fdu-0.5.0-cp312-abi3-manylinux_2_34_x86_64.whl` |
-| Phase 2: Small-tree views | ✅ Passed | 22 checks, all ok: the 4 sanity flags (help, version, docs, skill) and 18 views, on a checkout of this repository at the release commit |
+| Phase 1: Setup | ✅ Passed | `fdu --version` printed `fdu 0.6.0-dev+g987846618`, from `fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl` |
+| Phase 2: Small-tree views | ✅ Passed | 22 checks: 22 ok, on a checkout of this repository at the commit |
 | Phase 3: Cache × analyze | ✅ Passed | 16 checks: 16 ok |
 | Phase 4: Medium tree | ✅ Passed | 9 checks: 9 ok, on `linux-v6.12` with `Documentation/` analyzed |
-| Phase 5: Bounded large tree | ✅ Passed | 2 checks: 2 ok, on the generated million-entry tree |
-| Phase 6: Terminal Progress | ⏭️ Waived | The pty probe passed 38 of 38 checks and all 3 terminal tests passed. The probe’s first attempt refused to run because the default trees scanned too fast for it to judge frames; it was rerun alone on larger trees. A person has not watched a real window, and Windows progress QA has not run: the maintainer waived both for 0.5.0 |
+| Phase 5: Bounded large tree | ✅ Passed | 2 checks: 2 ok, on `/usr` |
+| Phase 6: Terminal Progress | ⏳ Pending | The pty probe passed 38 of 38 checks, on 20 hardlinked copies of `linux-v6.12` because the plain tree scans too fast to judge, and all 3 terminal tests passed. A person has not watched a real window, and Windows progress QA has not run |
 | Phase 7: Peer agreement | ✅ Passed | Self-test: 12 readings agree exactly. Real trees: 36 of 36 readings on `node-modules-dense`, `linux-v6.12`, and `cargo-registry-src` agree exactly, 0 `UNEXPLAINED` |
-| Phase 8: Results | ✅ Passed | 49 checks: 49 ok, 0 warn, 0 fail. The [0.5.0 release stability-pass report](../../docs/project/reports/report-2026-10-14-release-0.5.0-stability-pass.md) keeps every table and the release record; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records its passes and breaks |
+| Phase 8: Results | ✅ Passed | 49 checks: 49 ok, 0 warn, 0 fail. The [0.6.0 release stability-pass report](../../docs/project/reports/report-2026-11-11-release-0.6.0-stability-pass.md) keeps every table and the release record; the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) records its passes and breaks |
 
 **Pre-tag decisions.**
 
-- **Phase 7 on macOS.** The macOS candidate pass of 2026-10-12 failed peer agreement on
-  the live home Library.
-  Its four quieter trees agreed on all 52 readings in both runs.
-  The maintainer accepted the Library residual as live-tree churn and not a tag blocker:
-  its discrepancies moved between runs and did not reproduce under focused brackets, and
-  its `Interrupted` symptom also occurs on published 0.4.0. `fdu-wo7c` stays open as a
-  post-release macOS investigation.
-  That pass’s
-  [report](../../docs/project/reports/report-2026-10-12-release-0.5.0-stability-pass.md)
-  keeps its tables.
-- **The Linux summary result.** H198 (exp-222) put one root’s dense summary at −0.22%
-  [−3.50%, +3.89%] against the age column’s base.
-  That is inconclusive at the registered +3% margin, so by the registered rule the tag
-  proceeded and `fdu-4arl` stays open.
+- **Phase 6.** As for 0.5.0, a person watching a real window and Windows progress QA are
+  the maintainer’s to run or waive before the tag.
+- **macOS.** No macOS pass has run for 0.6.0. The pull request’s macOS checks (`apfs` in
+  `volumes`, a volume under `/Volumes`, and `ages` on a home folder under each clock)
+  remain open in its test plan.
 
 Earlier release records remain in the
+[0.5.0 Linux report](../../docs/project/reports/report-2026-10-14-release-0.5.0-stability-pass.md),
+the
+[0.5.0 macOS report](../../docs/project/reports/report-2026-10-12-release-0.5.0-stability-pass.md),
+the
 [0.4.0 report](../../docs/project/reports/report-2026-10-09-release-0.4.0-stability-pass.md)
-(macOS) and the
-[0.3.0 report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md)
-(the previous Linux pass).
+(macOS), and the
+[0.3.0 report](../../docs/project/reports/report-2026-09-30-release-0.3.0-stability-pass.md).
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked | ⏭️ Waived
 

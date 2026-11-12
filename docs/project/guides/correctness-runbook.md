@@ -218,12 +218,18 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-The 0.5.0 release pass on 2026-10-14 tested release commit
-`4a513b00f7d7a508344725a5ebd48e84299f4727` (tree
-`bd82aedb40b7e50c1e128c3be791335408abda32`), the commit tagged `v0.5.0` and published.
-The candidate was the wheel the pass built from that commit,
-`fdu-0.5.0-cp312-abi3-manylinux_2_34_x86_64.whl`, which reported
-`fdu 0.5.0-dev+g4a513b00f`. Every pass and both deliberate breaks passed.
+The 0.6.0 release pass tested release commit `8a8febc7cf332dfd4ee8c8536dd6cc00128be9dd`
+(tree `64a7d3661ec3eade8a1cd75332951129aa2f0185`) in two runs on one host.
+On 2026-11-11 the whole stability pass ran unprivileged at
+`9878466182867e4028c0988bc5c84d7f50f50fd7`, the head of
+[#209](https://github.com/jlevy/fdu/pull/209), whose tree the release commit has: it was
+that pull request’s [Linux host gate](linux-host-gate.md).
+On 2026-11-12 the candidate and correctness stages ran again as root on the release
+commit itself, so that the trees held device nodes.
+The candidates were the wheels each run built,
+`fdu-0.6.0-cp312-abi3-manylinux_2_34_x86_64.whl`, reporting `fdu 0.6.0-dev+g987846618`
+and `fdu 0.6.0-dev+g8a8febc7c`. Every pass and both deliberate breaks passed in both
+runs.
 
 **Regime.**
 
@@ -231,31 +237,36 @@ The candidate was the wheel the pass built from that commit,
   bare metal.
 - **Filesystem.** ext4, with the trees under a short scratch directory every user can
   reach.
-- **Privilege.** The refusal pass ran as `nobody`; the others ran as root, with
-  `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1` declared.
+- **Privilege.** The first run was an ordinary user with neither `FDU_TEST_ALLOW_*`
+  waiver, so its refusal pass was refused by mode bits for real.
+  The second ran as root with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` declared, and its
+  refusal pass ran as `nobody`.
 - **Cache state.** A fresh cache directory for every case.
 
-**Kinds.** The refusal tree held 16 kinds and lacked one: `permission-denied-effective`,
-which root cannot experience.
-The served tree held all 16 kinds.
-There were 26 cases and a cross-warm matrix of 8 warmers by 9 asks.
+**Kinds.** Unprivileged, the refusal tree held 15 kinds and the served tree 14, both
+lacking the character and block devices only root can make.
+As root, the refusal tree held 16 kinds and lacked `permission-denied-effective`, which
+root cannot experience, and the served tree held all 16. There were 30 cases and a
+cross-warm matrix of 8 warmers by 9 asks.
 
-| Pass | Result |
-| --- | --- |
-| `--refusals-only`, refusal tree, as `nobody` | 26 of 26 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
-| `warm_cold.py`, complete tree | 26 of 26 served `cache_only` and labelled `stale`; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants; exit status 0 |
-| `cross_warm.py`, complete tree | 72 of 72 pairs matched the cold answer; 0 violations; exit status 0 |
+| Pass | Unprivileged, at `98784661` | As root, at `8a8febc7` |
+| --- | --- | --- |
+| `--refusals-only`, refusal tree | 30 of 30 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants | The same, as `nobody` |
+| `warm_cold.py`, complete tree | 30 of 30 served `cache_only` and labelled `stale`; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants | The same |
+| `cross_warm.py`, complete tree | 72 of 72 pairs matched the cold answer; 0 violations | The same |
 
-The deliberate breaks confirmed the checks reject incorrect serving:
+The deliberate breaks confirmed the checks reject incorrect serving, in both runs:
 
 - **No snapshot stored.** A wrapper turned `--cache on` into `--cache off`.
-  `warm_cold.py` exited 1 and caught all 26 cases: 17 `NO-SNAPSHOT` and 9 `NOT-WARM`.
+  `warm_cold.py` exited 1 and caught all 30 cases: 21 `NO-SNAPSHOT` and 9 `NOT-WARM`.
   `cross_warm.py` exited 1 and caught all 17 same-analyzer pairs as `NOT-WARM`.
 - **Partial answer stored.** A wrapper relabeled cold output as `cache_only` for
-  `--stale-ok`. All 26 cases reported `PARTIAL-STORED`, and `--refusals-only` exited 1.
+  `--stale-ok`. All 30 cases reported `PARTIAL-STORED`, and `--refusals-only` exited 1.
 
-Every case is retained in the
-[0.5.0 release stability-pass report](../reports/report-2026-10-14-release-0.5.0-stability-pass.md).
+Every case of both runs is retained in the
+[0.6.0 release stability-pass report](../reports/report-2026-11-11-release-0.6.0-stability-pass.md),
+and the 0.5.0 run in
+[its report](../reports/report-2026-10-14-release-0.5.0-stability-pass.md).
 `fdu-579b` has not decided hard-link attribution; these checks establish warm/cold
 agreement, not that counting policy’s correctness.
 
@@ -272,6 +283,8 @@ failures, and 0 stale reference instants.
 The refusal pass and the deliberate breaks were not run.
 This sandbox gives even `nobody` read access to a mode-000 file, so no user there can
 experience a refusal; the next release’s `make release-stability` runs both.
+The 0.6.0 release pass ran both, unprivileged, as
+[Last Recorded Run](#last-recorded-run) records.
 
 On 2026-11-11, the same pull request’s fixes for its review F were checked the same way,
 in the same regime, at a build of `e2f451e7` with four cases added for one report time:
