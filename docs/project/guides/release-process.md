@@ -233,6 +233,63 @@ Every other step, and `make release-audit`, the first step of any recovery, an a
 run whenever it is working on the release.
 A `FAIL` line stops the release: report it rather than working around it.
 
+Every GitHub read or write a step makes goes through the GitHub CLI, `gh`, whoever runs
+it and wherever: a maintainer’s terminal, an agent on a workstation, or a cloud agent
+session. Step 8’s approval may also be given in the browser, and step 10 and
+[After Publishing](#after-publishing) leave checks to the eye.
+The `make release-*` steps call `gh` for everything they read or write on GitHub, and
+steps 6 and 8 are `gh` commands.
+An agent uses `gh` for all of it, as every release so far was cut, and never a narrower
+GitHub tool in its place, even where its platform prefers one for other work.
+The credential `gh` uses must be able to do, on this repository, what the steps do:
+
+- read repository settings, the `release` environment and its secret names, and the
+  immutable-release setting, for preflight;
+- dispatch `release.yml`, and read its runs and download their artifacts, for steps 4,
+  8, 9, and the audit;
+- create tags and releases and upload release assets, for steps 6 and 7;
+- render Markdown through the API, for step 5;
+- approve the `release` environment’s pending deployment, when step 8 approves through
+  the API;
+- push and delete `release/v$VERSION`, for steps 4 and 12, wherever git uses `gh`’s
+  credential.
+
+In a cloud session, set `gh` up as `tbd shortcut setup-github-cli` describes under
+Proxied Remote Sessions before step 1, and run every step on the direct channel it
+describes. Its one-command egress test decides: any response from `api.github.com` that
+carries an `x-github-request-id` header means egress is open.
+Then install `gh` 2.97.0 or later with its ensure script, and add only the GitHub hosts
+it lists to `NO_PROXY` and `no_proxy`, keeping `HTTPS_PROXY` and TLS verification as
+they are. The session’s git remote is a broker that refuses tag pushes; step 6 never
+pushes a tag, because it creates the tag object and its ref with `gh api`. When `origin`
+is `https://github.com/…`, adding `github.com` to `NO_PROXY` takes git off the broker as
+well, so the `git push` of steps 4 and 12 reaches GitHub without the broker’s credential
+and fails with `could not read Username for 'https://github.com'`. Give git `gh`’s
+credential for those steps, as `gh auth setup-git` does, or for one command only.
+This form adds the helper after any `GIT_CONFIG_*` entries the session already sets,
+rather than replacing them:
+
+```shell
+n=${GIT_CONFIG_COUNT:-0}
+env GIT_CONFIG_COUNT=$((n + 1)) GIT_CONFIG_KEY_$n=credential.https://github.com.helper \
+  GIT_CONFIG_VALUE_$n='!gh auth git-credential' make release-cleanup
+```
+
+When a step fails with `HTTP 403: Resource not accessible by integration`, or a proxy
+answers that a GitHub API path is not permitted or not available (for example, that a
+session is bound to its configured repositories, which refuses the Markdown render), and
+`NO_PROXY` does not name the GitHub hosts, `gh` reached GitHub through the session proxy
+instead of the direct channel.
+A 403 from a GitHub host without an `x-github-request-id` header was written by the
+proxy, not by GitHub.
+The release has not failed.
+Do not record the result, and do not stand in for the step with another tool.
+Set `NO_PROXY` as above and rerun the step; if the egress test shows the direct channel
+closed, the step needs a host where it is open.
+A 403 that carries `x-github-request-id` on the direct channel is GitHub refusing `gh`’s
+own credential: check that credential against the list above, and report what it lacks
+rather than working around it.
+
 ## What a Release Contains
 
 ### Artifacts
