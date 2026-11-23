@@ -1,8 +1,9 @@
 # fdu Performance Evidence
 
-**Revised:** 2026-10-08, after a review of the 2026-10-06 revision against the record,
-covering exp-000 through exp-202 and the performance index’s history cells timed
-2026-10-05 and 2026-10-06.
+**Revised:** 2026-11-22, covering exp-000 through exp-223 and the performance index’s
+history cells timed 2026-10-05 and 2026-10-06, which end at 0.3.0. 0.4.0, 0.5.0, and
+0.6.0 have shipped since; [What Ships Where](#what-ships-where) says which of them has a
+measurement.
 
 **Status:** Current overview of the performance record.
 The per-experiment numbers live in the artifacts; this report says what they add up to.
@@ -46,25 +47,41 @@ Every run is warm-steady ([What Is Not Measured](#what-is-not-measured)).
 
 ## What the Whole Record Shows
 
-The record is 200 artifacts, exp-000 through exp-202, measured from 2026-08-10 to
-2026-09-30: 111 accepted verdicts, 61 rejected, 17 baselines, 5 superseded, 4 in
-progress and 2 blocked; 137 on macOS and 63 on Linux.
-exp-113, exp-168 and exp-169 are unused ids.
-[Every Round in Full](#every-round-in-full) places each artifact in the round that ran
-it.
+The record is 215 artifacts, exp-000 through exp-223, measured from 2026-08-10 to
+2026-10-13: 111 accepted verdicts, 75 rejected, 17 baselines, 6 superseded, 4 in
+progress and 2 blocked; 145 on macOS and 70 on Linux.
+exp-113, exp-168 and exp-169 are unused ids, and exp-203 to exp-208 were reserved for
+macOS cells that never ran.
+From exp-209 on, the records measure the 0.5.0 stack: what its capabilities cost, a
+design rejected on its cost (exp-209), and one speed change, H197, accepted and not
+shipped (exp-219). All but exp-219 are recorded as rejected speed claims; most keep the
+capability, and exp-216 and exp-221, which measure several roots’ cost, keep neither
+arm. The age column also superseded H185’s accept (exp-197), whose saving the product no
+longer carries. [Every Round in Full](#every-round-in-full) places each artifact in the
+round that ran it.
 
-- **Linux, 4-vCPU virtualized guest, ext4, warm cache, quiet:** In the probe’s
-  `default-tree` job, the 0.3.0 release engine takes 48.00% [−50.45%, −44.79%] less time
-  than 0.2.1’s on the Linux v6.12 source tree, 14.09% less on a directory-dense
-  `node_modules` tree, and 14.57% less on a generated million-entry tree; in the same
-  session’s tool cells, 0.2.1’s installed `fdu PATH` took 95%, 20% and 21% longer than
-  the release’s. On all three it leads pdu’s default, `pdu --max-depth 2` and diskus,
-  the narrowest lead being +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree
+- **Linux, the 0.3.0 release, 4-vCPU virtualized guest, ext4, warm cache, quiet:** In
+  the probe’s `default-tree` job, the 0.3.0 release engine takes 48.00%
+  [−50.45%, −44.79%] less time than 0.2.1’s on the Linux v6.12 source tree, 14.09% less
+  on a directory-dense `node_modules` tree, and 14.57% less on a generated million-entry
+  tree; in the same session’s tool cells, 0.2.1’s installed `fdu PATH` took 95%, 20% and
+  21% longer than the release’s. On all three it leads pdu’s default,
+  `pdu --max-depth 2` and diskus, the narrowest lead being +10% [+2%, +12%] over
+  `pdu --max-depth 2` on the kernel tree
   ([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
   Most of that is two rounds: the
   [overnight round](#the-linux-overnight-round-2026-09-29), −39.00% end to end on the
   kernel tree (exp-194), and the [pdu track](#the-pdu-track-2026-09-30), another −3.05%
-  (exp-201).
+  (exp-201). Those leads over the peers are 0.3.0’s: on the 0.5.0 stack’s guest build no
+  lead over `pdu --max-depth 2` or diskus resolves on the real trees, for 0.4.0 as for
+  0.5.0 (exp-217).
+- **Linux, 0.5.0 against 0.4.0, quiet, 100 pairs:** The default tree is 7.91%
+  [+5.46%, +12.97%] slower on the directory-dense tree and +3.83%, unresolved, on the
+  kernel tree; the default summary is non-inferior at +3% on both
+  ([exp-223](../experiments/exp-223-linux-h198-the-0-5-0-candidate-against-v0-4-0-default-tree-7.md)).
+  Most of the dense tree’s slowdown is the age column’s one `statx` per directory and
+  per symlink: 5.63 points of it there, and +0.42% on the kernel tree, against the same
+  code without the stats (exp-218). No later release has been timed.
 - **Linux, the other tiers:** `content-cache-hit` on the kernel tree is about 588 ms
   (exp-138, exp-155, quiet).
   The index tier on the 450k generated tree was 1.78× the
@@ -89,10 +106,14 @@ it.
   exp-132’s 778.0 ms candidate, five paired steps rather than one comparison; H153’s
   −47.01% on `content-query` is provisional (exp-159).
 - **Unmeasured:** No macOS experiment record or peer comparison covers the 2026-09-29
-  round, the pdu track or the 0.3.0 engine: the last macOS record is exp-172, of
-  2026-09-28. The index’s history cells time those builds end to end, but none of their
-  changes has a macOS verdict of its own, and the release’s standing against the peers
-  on macOS is unknown.
+  round, the pdu track or the 0.3.0 engine: the macOS records after exp-172, of
+  2026-09-28, are exp-209 to exp-216, which price the 0.5.0 stack’s age column and
+  several roots on a loaded host.
+  The index’s history cells time the 0.3.0 builds end to end, but none of their changes
+  has a macOS verdict of its own, and no release’s standing against the peers on macOS
+  is known. None of 0.4.0, 0.5.0, and 0.6.0 is in the history cells, which end at 0.3.0:
+  0.4.0’s only timing against 0.3.0 is a six-pair diagnostic (`fdu-vl8a`), 0.5.0 has
+  Linux cells only, and 0.6.0 has no timing at all.
   A cold OS page cache, bare-metal Linux, and Windows have never been measured
   ([What Is Not Measured](#what-is-not-measured)).
 
@@ -100,8 +121,8 @@ it.
 
 ### macOS
 
-137 of the 200 experiments ran on one Apple M1 Pro (10 cores, 32 GiB), APFS, Darwin
-25.5.0; 80 record the host as bare metal, and 57 leave it unrecorded.
+145 of the 215 experiments ran on one Apple M1 Pro (10 cores, 32 GiB), APFS, Darwin
+25.5.0; 88 record the host as bare metal, and 57 leave it unrecorded.
 No macOS cell since 0.1.0 is recorded as quiet: the desktop never held the gate for a
 whole cell.
 
@@ -154,12 +175,19 @@ whole cell.
   H162 and H163 have no macOS verdict of their own, and neither has any change from the
   2026-09-29 Linux round or the pdu track; the history cells time them only as milestone
   builds.
+- **The 0.5.0 stack:** A maintained per-directory newest time puts the tree’s age column
+  at a few to 23 µs a retained report, where a per-report pass had made it 6 and 20
+  times slower (exp-209 to exp-212). Machine-format instants written into a fixed buffer
+  (H194) halve the column’s render cost, leaving about 0.12 µs a row (exp-213). One root
+  through the several-roots reader is non-inferior on five jobs and unresolved on three
+  (exp-214), and several roots cost about 2.4 ms a root (exp-216). All ran on a loaded
+  host ([The 0.5.0 Stack on macOS](#the-050-stack-on-macos-2026-10-09)).
 
 ### Linux
 
 Virtualized 4-vCPU guests, Intel Xeon and ext4 where recorded: a KVM host on Linux
 6.12.94+ for exp-138–155, and Firecracker guests on 6.18.x for the cells before and
-after. Eight kernel builds, 63 experiments, counted in
+after. Nine kernel builds, 70 experiments, counted in
 [the ledger’s regime table](report-2026-08-10-fdu-performance-experiments.md#regime-coverage).
 Most Linux cells since 2026-09-20 are quiet.
 
@@ -212,6 +240,14 @@ Most Linux cells since 2026-09-20 are quiet.
   diskus by 11%. The release engine takes 14.09% less time than 0.2.1’s for the default
   tree there, and in exp-202’s run led pdu’s default by 18%, pdu `--max-depth 2` by 12%
   [+2%, +19%], and diskus by 12%.
+- **The 0.5.0 release against 0.4.0:** The age column stats every directory and symlink
+  again, which undoes H185, and the dense tree’s default tree is slower by about 8%
+  ([The 0.5.0 Release Gate](#the-050-release-gate-2026-10-13)). H197, parent-relative
+  directory opens, wins back 3.35% of the dense tree’s default tree and is not shipped
+  (exp-219, `fdu-tzv3`). After a container restart, the 0.5.0 stack’s tool cells show no
+  resolved lead over `pdu --max-depth 2` or diskus on the real trees, for 0.4.0 as for
+  0.5.0, so exp-202’s real-tree standing is not reproduced on that guest build
+  ([The 0.5.0 Stack on Linux](#the-050-stack-on-linux-2026-10-10)).
 - **Content:** `content-cache-hit` on Linux v6.12 is about 588 ms, 22.5% below the #91
   control
   ([exp-138](../experiments/exp-138-linux-cache-hit-stack-same-versus-91-control.md),
@@ -266,6 +302,32 @@ its `FDU_COUNTERS=1` rows, which is semver-breaking, so the round ships in 0.3.0
 reader’s public diagnostics fields (`fdu-q7hf`) are in
 [#164](https://github.com/jlevy/fdu/pull/164), also for 0.3.0.
 
+0.4.0 (2026-10-09) changes report construction, not the walker: a content view requests
+the analysis it shows, so `--view documents` now counts words, and explanations move to
+standard error. Its only timing against 0.3.0 is a six-pair diagnostic, uncontrolled, on
+a platform the bead does not record, and kept only in `fdu-vl8a`: cold code and
+documents analysis +1.1%, its pairs ranging from −23.9% to +22.0%, cached −1.4%, and the
+tree −10.2%. The maintainer accepted that for the release and moved the recorded screen
+to the 0.4.1 epic.
+
+0.5.0 (2026-10-14) adds the tree’s age column
+([#191](https://github.com/jlevy/fdu/pull/191)) and several roots
+([#192](https://github.com/jlevy/fdu/pull/192)), with H194’s fixed-buffer instants.
+The age column takes H185 back out: the folded tree stats every directory and symlink
+again so that a row’s age counts their times, and exp-197 is recorded as superseded.
+Its Linux standing against 0.4.0 is exp-223, and H197, which would win part of that
+back, is accepted on `claude/h197-relative-opens` and not merged.
+
+0.6.0 (2026-11-12) puts every report on one clock, change time by default, adds the ages
+and volumes views, and keeps each directory’s newest time on both clocks in the index.
+It also changes the walker: `scan.rs` differs by about 600 lines between the two tags,
+among them a directory entered across a device recorded from its listing’s descriptor
+(`05029aac`). It has no performance record: none of its six `perf` commits was timed
+(stale maxima repaired once per batch, an unfiltered ages report banded by entry id, the
+incomplete-subtree note decided without reading complete trees, and three that read the
+mount table only where a listed entry or a crossing needs it), and nothing measures what
+the second clock or the walker changes cost.
+
 ## Standing Results by Tier
 
 The latest figure each tier holds, from the arm that stayed in the product.
@@ -285,13 +347,13 @@ own host.
 | CLI indexed tree, `--cache off` | macOS | generated, 1.0M entries | 6.4 s; dumac +9%; pre-0.2.0 build `a5c0ab46`, 2026-09-28 | uncontrolled | [macOS comparison](report-2026-09-26-fdu-live-tool-comparison.md) |
 | CLI indexed tree, `--cache off` | Linux | generated, 1.0M | 1.25 s; pdu 1.02 s; pre-0.2.0 build `7acface5`, 2026-09-28 | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
 | CLI summary, `--no-gitignore` | Linux | generated, 1.0M | 0.94 s; fastest measured; pre-0.2.0 build `7acface5`, 2026-09-28 | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
-| CLI default, against pdu and diskus | Linux | `linux-v6.12`, 92k | 0.110 s; pdu’s default +15% [+12%, +19%], pdu `--max-depth 2` +10% [+2%, +12%], diskus +17% [+3%, +20%]; from 2.4× pdu’s default | quiet | exp-175, exp-202 |
-| CLI default, against pdu and diskus | Linux | `node-modules-dense`, 80k | 0.106 s; pdu’s default +18% [+15%, +23%], pdu `--max-depth 2` +12% [+2%, +19%], diskus +12% [+9%, +17%]; from 1.12× pdu’s default | quiet | exp-176, exp-202 |
-| CLI default, against pdu and diskus | Linux | generated, 1.0M | 0.951 s; pdu `--max-depth 2` +19% [+15%, +20%], pdu’s default +25% [+21%, +28%], diskus +24% [+20%, +28%]; from pdu `--max-depth 2` 2.5% ahead on `ebc06c78` | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md), exp-202 |
-| Default tree, `.gitignore` on | Linux | `linux-v6.12`, 92k | 109.9 ms in exp-202’s slower session, 85.2 ms in exp-201’s; paired −29.6% (H171), −3.3% (H175), −13.5% (H172), −7.6% (H183); end to end −39.00% from 200.3 ms at Q0, then −3.05% (H185 and H186); the release against 0.2.1 −48.00% | quiet | exp-178–180, exp-193, exp-194, exp-201, exp-202 |
-| Default summary, `.gitignore` on | Linux | `linux-v6.12`, 92k | 128.1 ms in exp-202’s session, 84.6 ms in exp-201’s; paired −25.5% (H171), −5.6% (H180), −9.4% (H169), −6.15% (H188 with H189); end to end −26.25% from 156.5 ms at Q0, then −6.14%; the release against 0.2.1 −34.63% | quiet | exp-178, exp-184, exp-186, exp-194, exp-198, exp-201, exp-202 |
+| CLI default, against pdu and diskus | Linux | `linux-v6.12`, 92k | 0.110 s; pdu’s default +15% [+12%, +19%], pdu `--max-depth 2` +10% [+2%, +12%], diskus +17% [+3%, +20%]; from 2.4× pdu’s default; 0.3.0’s, and on the 0.5.0 stack’s guest build no lead over `pdu --max-depth 2` or diskus resolves, for 0.4.0 or 0.5.0 | quiet | exp-175, exp-202, exp-217 |
+| CLI default, against pdu and diskus | Linux | `node-modules-dense`, 80k | 0.106 s; pdu’s default +18% [+15%, +23%], pdu `--max-depth 2` +12% [+2%, +19%], diskus +12% [+9%, +17%]; from 1.12× pdu’s default; 0.3.0’s, and on the 0.5.0 stack’s guest build no lead over `pdu --max-depth 2` or diskus resolves, for 0.4.0 or 0.5.0 | quiet | exp-176, exp-202, exp-217 |
+| CLI default, against pdu and diskus | Linux | generated, 1.0M | 0.951 s; pdu `--max-depth 2` +19% [+15%, +20%], pdu’s default +25% [+21%, +28%], diskus +24% [+20%, +28%]; from pdu `--max-depth 2` 2.5% ahead on `ebc06c78`; 0.3.0’s, and every lead still holds on the 0.5.0 stack’s guest build | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md), exp-202, exp-217 |
+| Default tree, `.gitignore` on | Linux | `linux-v6.12`, 92k | 109.9 ms in exp-202’s slower session, 85.2 ms in exp-201’s; paired −29.6% (H171), −3.3% (H175), −13.5% (H172), −7.6% (H183); end to end −39.00% from 200.3 ms at Q0, then −3.05% (H185, since superseded, and H186); 0.3.0 against 0.2.1 −48.00%; 0.5.0 against 0.4.0 +3.83% [−1.64%, +8.48%], unresolved | quiet | exp-178–180, exp-193, exp-194, exp-201, exp-202, exp-223 |
+| Default summary, `.gitignore` on | Linux | `linux-v6.12`, 92k | 128.1 ms in exp-202’s session, 84.6 ms in exp-201’s; paired −25.5% (H171), −5.6% (H180), −9.4% (H169), −6.15% (H188 with H189); end to end −26.25% from 156.5 ms at Q0, then −6.14%; 0.3.0 against 0.2.1 −34.63%; 0.5.0 against 0.4.0 −2.06%, non-inferior | quiet | exp-178, exp-184, exp-186, exp-194, exp-198, exp-201, exp-202, exp-223 |
 | Default summary, peak RSS | macOS | metabrowser, 137k | 11.0 MiB, from 35.9 | uncontrolled | exp-170 |
-| Default tree | Linux | `node-modules-dense`, 80k | 115.6 ms in exp-202’s session, 79.5 ms in exp-201’s; paired −10.3% (H172), −4.3% (H169), −3.55% (H185), −4.91% (H186); end to end −9.75% from 126.9 ms at Q0, then −8.94% (H185 and H186); the release against 0.2.1 −14.09% | quiet | exp-181, exp-185, exp-195, exp-197, exp-199, exp-201, exp-202 |
+| Default tree | Linux | `node-modules-dense`, 80k | 115.6 ms in exp-202’s session, 79.5 ms in exp-201’s; paired −10.3% (H172), −4.3% (H169), −3.55% (H185, since superseded by the age column), −4.91% (H186); end to end −9.75% from 126.9 ms at Q0, then −8.94% (H185 and H186); 0.3.0 against 0.2.1 −14.09%; 0.5.0 against 0.4.0 +7.91% [+5.46%, +12.97%], mostly the age column | quiet | exp-181, exp-185, exp-195, exp-197, exp-199, exp-201, exp-202, exp-218, exp-223 |
 | Default tree, peak RSS | Linux | generated, 1.0M | 57.3 MiB, from 292.7 MiB on 0.2.1 (−80%); exp-180’s screen 64 MB, from 306 | quiet | exp-180, exp-202 |
 | `content-cache-hit` | macOS | metabrowser, ~146k | 778 ms, from 1,218 across five paired steps | uncontrolled | exp-108 to exp-132 |
 | `content-cache-hit` | Linux | `linux-v6.12`, 92k | ~588 ms | quiet | exp-155 |
@@ -304,24 +366,25 @@ The campaign-1 row is the last re-measurement of the original pre-work binary on
 the [performance index](#reading-the-charted-page) times the pre-work binary against
 0.3.0 on other trees.
 
-The Linux default tree and summary rows give the release engine in its end-to-end cell
-against 0.2.1 (exp-202) and the pdu track’s shipped arm in its cell against the
-overnight round’s final head (exp-201), the paired steps that produced them, the round’s
-paired change against Q0 (exp-194 on `linux-v6.12`, exp-195 on `node-modules-dense`),
-and exp-201’s own; the rows against the peers come from exp-202’s tool cells, with the
-Q0 ratio from exp-175 and exp-176. These cells ran in different host sessions: exp-202
-in one 29–38% slower than exp-201’s for every tool on the real trees, exp-194 and
-exp-195 in the host’s slower, kernel-heavy regime, and exp-201 in a faster one that also
-favoured fdu against pdu’s default by about six points.
-Absolute levels on that host drifted by up to about 50–70% between cells over the night
-([the overnight round](#the-linux-overnight-round-2026-09-29) gives the figures), so a
-row’s absolute values need not agree with its paired steps; the paired figures are the
-claims.
+The Linux default tree and summary rows give the 0.3.0 release engine in its end-to-end
+cell against 0.2.1 (exp-202), the 0.5.0 release’s paired change against 0.4.0 (exp-223,
+on a faster processor, so the rows keep 0.3.0’s absolute times), and the pdu track’s
+shipped arm in its cell against the overnight round’s final head (exp-201), the paired
+steps that produced them, the round’s paired change against Q0 (exp-194 on
+`linux-v6.12`, exp-195 on `node-modules-dense`), and exp-201’s own; the rows against the
+peers come from exp-202’s tool cells, with the Q0 ratio from exp-175 and exp-176. These
+cells ran in different host sessions: exp-202 in one 29–38% slower than exp-201’s for
+every tool on the real trees, exp-194 and exp-195 in the host’s slower, kernel-heavy
+regime, and exp-201 in a faster one that also favoured fdu against pdu’s default by
+about six points. Absolute levels on that host drifted by up to about 50–70% between
+cells over the night ([the overnight round](#the-linux-overnight-round-2026-09-29) gives
+the figures), so a row’s absolute values need not agree with its paired steps; the
+paired figures are the claims.
 
 ## The Loops in Order
 
 Each row is one line of inquiry, and together they hold every artifact from exp-000 to
-exp-221 (exp-203 to exp-208 are reserved and unused);
+exp-223 (exp-203 to exp-208 are reserved and unused);
 [Every Round in Full](#every-round-in-full) expands each row.
 The ledger has every verdict and
 [the loop history](report-2026-08-14-performance-campaign-status.md) how the method
@@ -352,6 +415,7 @@ changed from phase to phase.
 | 0.3.0 release standing | exp-202 | Linux | The release engine against 0.2.1: the default tree −48.00%, −14.09% and −14.57% on the kernel, dense and generated trees; ahead of both pdu modes and diskus on all three, the narrowest lead +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree |
 | The 0.5.0 stack on macOS | exp-209–216 | macOS | The tree age column’s per-report pass rejected (exp-209) and a maintained per-directory maximum recorded at a few to 23 µs a retained report; machine-format instants into a fixed buffer (H194); one root through the several-roots reader non-inferior on five jobs; several roots about 2.4 ms a root (exp-216); all on a loaded host |
 | The 0.5.0 stack on Linux | exp-217–221 | Linux | The age column costs the dense tree’s default command 5.72% [+3.53%, +10.46%], one `statx` per directory and symlink; H197’s parent-relative opens win back 3.35% there and 5.06% of the summary, not shipped; one root’s summary 5.28% slower at #192’s head by the paired median, which leaves H195 inconclusive there, unattributed; several roots about 0.5 ms a root |
+| The 0.5.0 release gate | exp-222–223 | Linux | exp-220’s +5.28% summary does not reproduce at 100 pairs, −0.22% [−3.50%, +3.89%], inconclusive at +3% (`fdu-4arl` open); against 0.4.0 the default tree is about 8% slower on the dense tree and unresolved on the kernel tree, and both summaries are non-inferior |
 
 ## Every Round in Full
 
@@ -1159,6 +1223,40 @@ sessions. The release’s involuntary context switches rose from 56 to 273 on th
 tree’s default tree, which fails the qualification block’s switch gate, as exp-198
 recorded for the summary.
 
+### The 0.5.0 Stack on macOS (2026-10-09)
+
+exp-209 to exp-216. macOS, the M1 Pro, APFS, warm cache, uncontrolled: one-minute load
+from about 10 to 127 on ten cores, exp-209 at 91 to 127 and the others 10 to 49; 12
+pairs each. Each is recorded as rejected, for three different reasons.
+exp-209 rejects a design on its cost and keeps the control.
+exp-210 to exp-214 price a capability that ships regardless and keep the candidate.
+exp-215 is recorded so that it is not read either way, and exp-216 measures a cost with
+no arm to keep.
+
+**Question:** What do the tree’s age column
+([#191](https://github.com/jlevy/fdu/pull/191)) and several roots
+([#192](https://github.com/jlevy/fdu/pull/192)) cost a retained report and a one-shot
+command?
+
+**The age column:** A pass over the retained index on every report (H191) made a second
+tree report 6 times slower over a retained `Index` and 20 times slower over an opened
+root (exp-209), so it was replaced by a newest time each directory keeps as entries
+change (H192). That leaves per-row work: 7.5 µs a report over a retained `Index` and
+18.5 µs over an opened root (exp-210), 23 µs over the opened root in a replicate
+(exp-211). At the shipped head the opened root’s second report is +11.49%
+[+8.42%, +14.22%], about 17 µs, and the retained `Index` +0.21%, while the cold scan and
+snapshot load are non-inferior (exp-212). Machine output paid about 0.23 to 0.25 µs a
+row for the new timestamps; writing the instants into a fixed buffer (H194) halved that,
+leaving about 0.12 µs a row, the price of the data itself (exp-213).
+
+**Several roots:** One root through the several-roots reader is non-inferior at +3% on
+five jobs, and `aggregate-summary`, `opened-second-report`, and `render-yaml` are
+unresolved under load (exp-214); exp-215, an earlier look before H195 was registered, is
+recorded so it is not read either way.
+625 small roots cost about 2.4 ms a root on the default tree and 0.9 ms on the summary,
+seven times one walk of their parent (exp-216), which is why one walker pool across
+roots (`fdu-ich9`) has a hypothesis of its own.
+
 ### The 0.5.0 Stack on Linux (2026-10-10)
 
 exp-217 to exp-221. Linux, a 4-vCPU Firecracker guest on 6.18.44-fc-v114, ext4, warm
@@ -1208,6 +1306,45 @@ In the 17 two-arm cells of two builds, the run-order effect is within about ±2.
 median split and within ±2.2% by mean split, except exp-220’s dense-tree summary at
 +3.84% by means; the deciding cells’ are 1.4% or less (exp-220’s `order-split.txt`).
 
+### The 0.5.0 Release Gate (2026-10-13)
+
+exp-222 and exp-223, H198. Linux, a 4-vCPU Firecracker guest on 6.18.44-fc-v114 with a
+2.8 GHz Xeon, a different processor from exp-217 to exp-221’s 2.1 GHz guest, so absolute
+times do not compare across those sessions; ext4, warm cache, quiet; two-arm cells of
+100 pairs, registered before the first sample.
+The candidate is `1c42c91f`, which differs from the release commit only in documentation
+and two strings the command line prints, so the readings stand for 0.5.0. Neither is a
+speed decision.
+
+**Question:** Before tagging, does exp-220’s slower one-root summary reproduce
+(`fdu-4arl`), and where does the release candidate stand against 0.4.0?
+
+**The summary:** On `node-modules-dense` the candidate is −0.22% [−3.50%, +3.89%]
+against the age column’s base: level, and inconclusive under H195’s rule because the
+interval crosses +3%. The tag proceeded and `fdu-4arl` stays open for a host with
+hardware counters
+([exp-222](../experiments/exp-222-linux-h198-the-0-5-0-candidate-s-dense-summary-is-level-with.md)).
+exp-220’s +5.28% does not reproduce.
+
+**Against 0.4.0:**
+
+| Subject | Job | v0.4.0 → candidate | Paired median [95%] | Prediction |
+| --- | --- | --- | --- | --- |
+| `node-modules-dense` | `default-tree` | 95.34 → 102.62 ms | +7.91% [+5.46%, +12.97%] | +3% to +7% |
+| `node-modules-dense` | `aggregate-summary` | 94.39 → 94.52 ms | −2.07% [−4.62%, +2.28%] | 0 to +6% |
+| `linux-v6.12` | `default-tree` | 107.68 → 111.33 ms | +3.83% [−1.64%, +8.48%] | −2% to +3% |
+| `linux-v6.12` | `aggregate-summary` | 109.35 → 106.70 ms | −2.06% [−4.47%, +1.82%] | −2% to +3% |
+
+The dense tree’s default tree is slower by the age column’s price, just above its
+predicted range and inside exp-217’s interval for the same comparison.
+The kernel tree’s is unresolved by the paired median, though its bootstrap mean’s
+interval, +4.63% [+1.54%, +7.88%], excludes zero.
+Both summaries are non-inferior at +3% by the paired median and inconclusive by the
+mean, whose intervals reach +3.22% and +3.75%
+([exp-223](../experiments/exp-223-linux-h198-the-0-5-0-candidate-against-v0-4-0-default-tree-7.md)).
+This is the release standing the [charted page](performance-evidence/index.html)’s
+header states.
+
 ## Qualifications on Current Results
 
 These do not overturn a verdict; they say what a verdict rests on.
@@ -1215,7 +1352,7 @@ These do not overturn a verdict; they say what a verdict rests on.
 - **H156 and H160 were accepted on a generated tree only:** The loop asks for a
   nominated real tree in any accept set, and exp-160 and exp-163 ran only on the
   generated balanced tree, as did the Linux peer tables of 2026-09-27 and 2026-09-28.
-  The page’s per-platform section counts 7 of 28 Linux improvements decided on generated
+  The page’s per-platform section counts 7 of 27 Linux improvements decided on generated
   trees; every accept since 2026-09-29 was decided on a real tree.
 - **H161’s Linux verdict met one of its two bars:** It was accepted on wall; its 50% RSS
   bar was missed on the deciding subject, where classification holds about 20 MiB more
@@ -1237,8 +1374,10 @@ These do not overturn a verdict; they say what a verdict rests on.
   Every cell from exp-175 to exp-186, and exp-192 to exp-195, ran on the same 4-vCPU
   Firecracker guest, and the review screen and the pdu track’s cells, exp-196 to
   exp-201, and the release standing, exp-202, on the same kind of guest at a later
-  kernel build. Their walker-count screen and tree-tier effects are evidence about four
-  vCPUs, ext4 on virtio, and a warm cache, not about bare metal or wider hosts.
+  kernel build; the 0.5.0 cells, exp-217 to exp-223, at a later build again, with
+  exp-222 and exp-223 on a faster processor.
+  Their walker-count screen and tree-tier effects are evidence about four vCPUs, ext4 on
+  virtio, and a warm cache, not about bare metal or wider hosts.
 - **None of the 2026-09-29 changes has a macOS verdict of its own:** H171, H175, H172,
   H180, and H183 are portable code and run there; H169’s reader is Linux glibc only.
   Nor has any of the pdu track’s: H186, H188, and H189 are portable, and H185 is a no-op
@@ -1269,10 +1408,13 @@ These do not overturn a verdict; they say what a verdict rests on.
 - **The generated tree screens only:** `linux-balanced-1m` decided nothing on
   2026-09-29. H172’s −3.20% wall and −79% peak RSS on it are a screen, and its base
   moved from 1,359 to 1,748 ms between two cells of the same night.
-- **The Linux floor scoreboard is stale:** It was last derived on 2026-09-20 (exp-141).
-  H147, H72, H156, H160, H161, H159, H162, H163, H171, H175, H172, H180, H169, H183,
-  H185, H188, H189, and H186 have landed or been accepted since, and the loop re-derives
-  the ×floor after an accepted change before trusting the queue.
+- **The Linux floor scoreboard is stale:** The index tier was last derived on 2026-09-20
+  (exp-141). H147, H72, H156, H160, H161, H159, H162, H163, H171, H175, H172, H180,
+  H169, H183, H185, H188, H189, and H186 have landed or been accepted since, and the
+  loop re-derives the ×floor after an accepted change before trusting the queue.
+  The tree tier alone was scored on 2026-10-10 for H193, at 1.21× to 1.26× the floor,
+  screening-grade
+  ([the tree-tier scoreboard](scoreboard-2026-10-10-linux-tree-floor.md)).
 
 ## Dead Ends Worth Knowing
 
@@ -1326,6 +1468,7 @@ recorded as closed.
 | --- | --- | --- |
 | Index | Linux | 1.78× the floor against 1.4×, RSS 5.20× against 3× (exp-141); bare-metal remeasure open (`fdu-lf3v`, `fdu-tk1b`); re-derive the ×floor (`fdu-z2h6`) |
 | Aggregate, `.gitignore` off | Linux | 1.59× on `linux-v6.12` and 1.86× on `/usr` against 1.25× (exp-141), before H147 and H72; re-derive |
+| Tree | Linux | 1.21× to 1.26× the floor on 2026-10-10 for H193, screening-grade ([the tree-tier scoreboard](scoreboard-2026-10-10-linux-tree-floor.md)); before 0.6.0’s walker changes |
 | Content cache hit | Linux | Two consecutive leftover determinations named no new 3% cut (exp-144, exp-155); closure not recorded |
 | Any tier | macOS | No floor denominator: the floor program is Linux-only (`fdu-33ri`, `fdu-9hdc`) |
 
@@ -1342,33 +1485,47 @@ Grouped by topic; the order to run them in is
 [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 
 - **Next on Linux, in order (epics `fdu-8a8r` and `fdu-faqa`):**
-  1. **H169 phase 3**, directories opened relative to the parent’s descriptor, which
-     needs an fd budget sized to the breadth-first frontier, and **H177**, a per-listing
-     name arena: walker-side cuts, which exp-200 ranks above any consumer cut.
-     The narrowest leads are over pdu `--max-depth 2` on the real trees, +10%
-     [+2%, +12%] and +12% [+2%, +19%] in exp-202, and +3% [+1%, +8%] on `linux-v6.12` in
-     exp-201’s session.
+  1. **H197**, H169’s third phase, directories opened relative to the parent’s
+     descriptor: accepted on the dense tree at −3.35% (exp-219) on the accept rule’s
+     arithmetic alone, and waiting on `claude/h197-relative-opens`. Its complexity
+     judgment (403 lines, three new `unsafe` blocks, held descriptors) is owed to the
+     review that lands it (`fdu-tzv3`), and 0.6.0 has since changed the walker, so it
+     needs a re-screen there.
+     It would win back part of the age column’s price.
+     Then **H177**, a per-listing name arena: walker-side cuts, which exp-200 ranks
+     above any consumer cut.
+     exp-202 had fdu ahead of `pdu --max-depth 2` by +10% [+2%, +12%] and +12%
+     [+2%, +19%] on the real trees; on the 0.5.0 stack’s guest build no lead over it or
+     diskus resolves there, for 0.4.0 as for 0.5.0.
   2. **H178**, the consumer walking when its channel is empty, re-predicted at −1% to
      −3%, under the three-stage qualification a scheduling policy takes.
   3. **The full generated-tree peer table** on the shipped engine: exp-202 measured
      pdu’s two modes, diskus and 0.2.1 there, not the other peers of
      [the Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md).
-  4. Behind their gates: **H190**, a consumer-only cut on the tree route, which has no
-     wall to buy after exp-200; **H179**, which after H185 applies only to the
-     full-index route; **H164**’s tree route (`fdu-emqf`) and **H174** (`fdu-sfse`).
-- **The performance index:** The Linux cells, half the full index (Phase 2, `fdu-iwmq`);
-  a placebo cell of 0.3.0 against itself, to explain the step from the pdu track’s
-  milestone to the release (`fdu-8kad`); a quiet re-time of the macOS cells at 20 rounds
-  and a non-exploratory stage before any score is quoted (`fdu-bkj2`); the oracle’s
-  share of the probe jobs and the warm revalidation that took longer than its own cold
-  scan (`fdu-92bg`); and timings with `.gitignore` off, to separate its cost from speed
-  (`fdu-inph`).
-- **The 0.4.0 report path:** A paired non-regression of the release candidate against
-  0.3.0 on the default tree, summary, and content views (`fdu-vl8a`), and a new
-  `content-query` baseline, since its setup now analyzes words (`fdu-mvnp`).
+  4. **One walker pool across several roots** (`fdu-ich9`): a root costs about 0.5 ms on
+     Linux and 2.4 ms on macOS (exp-221, exp-216), seven times one walk of the parent
+     for 625 small roots, past the 10% bar that earns it a hypothesis.
+  5. Behind their gates: **H190**, a consumer-only cut on the tree route, which has no
+     wall to buy after exp-200; **H179**, re-scoped on 2026-10-09 because H169’s first
+     phase removed its premise, expected below 1% and run only as a cell registered with
+     that prediction; **H164**’s tree route (`fdu-emqf`) and **H174** (`fdu-sfse`).
+- **The performance index:** The three releases since 0.3.0, which the history cells do
+  not yet time (`fdu-9lxg`), re-timed in the same pass as `fdu-bkj2` below; the Linux
+  cells, half the full index (Phase 2, `fdu-iwmq`); a placebo cell of 0.3.0 against
+  itself, to explain the step from the pdu track’s milestone to the release
+  (`fdu-8kad`); a quiet re-time of the macOS cells at 20 rounds and a non-exploratory
+  stage before any score is quoted (`fdu-bkj2`); the oracle’s share of the probe jobs
+  and the warm revalidation that took longer than its own cold scan (`fdu-92bg`); and
+  timings with `.gitignore` off, to separate its cost from speed (`fdu-inph`).
+- **The releases since 0.3.0:** A recorded paired non-regression of 0.4.0’s report path
+  against 0.3.0 on the default tree, summary, and content views, moved after the release
+  to the 0.4.1 epic (`fdu-vl8a`), and a new `content-query` baseline, since its setup
+  now analyzes words (`fdu-mvnp`); `fdu-4arl`, the one-root summary on the dense tree;
+  and a first timing of 0.6.0, whose index keeps a second clock per directory.
 - **Confirm on real trees:** H156 and H160 (`fdu-b9ga`); H162 and H163 on macOS
   (`fdu-dv07`), and the 2026-09-29, pdu-track and release changes there (the platform
-  review’s cells, exp-203 onward); the Linux ×floor scoreboard (`fdu-z2h6`).
+  review’s cells, reserved as exp-203 to exp-208 and never run); the Linux ×floor
+  scoreboard (`fdu-z2h6`).
 - **H167, H168, and H170:** Directory tokens in place of the path-keyed directory map,
   re-measured after H172 as its row asks (H167, `fdu-lwsy`); no per-file extension
   `String`, on the routes that still keep the full index (H168, `fdu-mw2s`); and a
@@ -1446,7 +1603,7 @@ capability group, builds with and without `.gitignore` support, under
 `make perf-report-check` re-derives every cell from its committed run artifact.
 
 The bottom panel is every experiment’s paired change on its own primary metric: green
-for the 52 changes kept at least 3% better, each counted once (47 on wall time, 3 on
+for the 51 changes kept at least 3% better, each counted once (46 on wall time, 3 on
 peak memory, 2 on a pre-registered component timer), red for changes tried and not kept,
 and grey for everything else.
 Grey includes 22 accepted records that measure a change already counted, listed with
@@ -1455,7 +1612,12 @@ post-merge and transfer validations, the same candidate measured on a second tre
 platform, a rewrite measured against its own regression, leftover determinations, and
 screens that kept no arm or kept the control.
 The effects are not multiplied into a runtime: each was measured on its own job and
-tree, and compounding the 47 kept wall-time changes would claim about 7,700×.
+tree, and compounding the 46 kept wall-time changes would claim about 7,400×. H185
+(exp-197) left the kept set when the age column superseded it.
+Red also counts 15 rejected records that keep the candidate, most of them 0.5.0 records
+pricing a capability kept regardless, with exp-223, the header’s release standing, among
+them: the page reads a rejected speed claim as not kept even where the record keeps the
+candidate (`fdu-sqro`).
 
 **Absolute:** Wall time at five cumulative checkpoints on one 60k-entry macOS tree, each
 re-measuring the original binary against the code of the day in one interleaved run:
@@ -1476,16 +1638,20 @@ wider than several steps.
 The paired effects at the final checkpoint are in exp-032.
 
 Beside it, the page charts every Linux cell that measured one engine against a later one
-end to end on the default tree (exp-194, exp-195, exp-201, exp-202), each row with its
-own two arms.
-Rows are separate sessions on a host that drifted between them, so each row
-compares only its own bars.
+end to end on the default tree (exp-194, exp-195, exp-201, exp-202), and the 0.5.0
+release cell against 0.4.0 (exp-223), each row with its own two arms.
+That release cell is the standing the page’s header states, coloured as a slowdown
+because 0.5.0 is slower than 0.4.0 on its primary tree; the header leaves the figure out
+if the record is absent.
+Rows are separate sessions on a host that drifted between them, so each row compares
+only its own bars.
 
 **Relative:** Every experiment’s paired effect on its primary job with its 95% interval,
 against the −3% accept threshold.
 A baseline that compares two builds is drawn and tabulated with its change, as the
-end-to-end and release cells are (exp-194, exp-195, exp-201, exp-202); a baseline of one
-build against itself has none to show.
+end-to-end and release cells are (exp-194, exp-195, exp-201, exp-202, and exp-223, which
+is recorded as a rejected speed claim); a baseline of one build against itself has none
+to show.
 
 **Scale:** Cold-scan cost per entry per subject, largest first, from 307 entries to 1.01
 million. Milliseconds compare only within a subject; microseconds per entry compare
@@ -1558,10 +1724,13 @@ would have to be pinned and audited for the life of the project.
 - **Other machines:** macOS is one M1 Pro; Linux is 4-vCPU Xeon guests.
   Which tuning constants that evidence supports is in
   [the platform tuning guide](../guides/platform-tuning.md).
-- **macOS since 2026-09-28:** The last macOS record is exp-172. The 2026-09-29 round,
-  the pdu track, and the 0.3.0 engine appear on macOS only as milestone builds in the
-  index’s exploratory history cells: no paired verdict, no quiet cell, and no peer
-  comparison.
+- **macOS since 2026-09-28:** After exp-172 the only macOS records are exp-209 to
+  exp-216, which price the 0.5.0 stack’s capabilities on a loaded host.
+  The 2026-09-29 round, the pdu track, and the 0.3.0 engine appear on macOS only as
+  milestone builds in the index’s exploratory history cells: no paired verdict, no quiet
+  cell, and no peer comparison.
+  No release after 0.3.0 is in those cells (`fdu-9lxg`).
+- **0.6.0:** No cell on any platform has timed it.
 - **Windows:** It builds and passes tests; it has not been benchmarked.
 
 <!-- This document follows common-doc-guidelines.md.

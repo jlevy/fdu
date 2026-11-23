@@ -131,6 +131,7 @@ a:hover { text-decoration: underline; }
 }
 .headline .good { color: var(--good); }
 .headline .bad { color: var(--bad); }
+.headline .flat { color: var(--muted); }
 
 figure.fig { margin: 24px 0 8px; }
 .chart { width: 100%; height: auto; display: block; overflow: visible; }
@@ -312,7 +313,7 @@ one change against the code it came from, and a change is kept only if it passes
 <a href="#loop">the accept rule</a>. The record holds 215 experiments,
 including 75 rejected changes.</p>
 <div class="headline">
-  <div><span class="n good">1.71&times; better</span><span class="k">macOS score, 12 of 12 components, 0.2.0 to 0.3.0 [1.68&times;, 1.74&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n good">4.73&times; better</span><span class="k">partial: macOS score, 4 of 12 components (40% of the weight), start to 0.3.0 [4.60&times;, 4.87&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n">209 ms <span class="muted">&rarr;</span> <span class="good">110 ms</span></span><span class="k">Linux default tree, 0.2.1 to 0.3.0</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
+  <div><span class="n good">1.71&times; better</span><span class="k">macOS score, 12 of 12 components, 0.2.0 to 0.3.0 [1.68&times;, 1.74&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n good">4.73&times; better</span><span class="k">partial: macOS score, 4 of 12 components (40% of the weight), start to 0.3.0 [4.60&times;, 4.87&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n">95 ms <span class="muted">&rarr;</span> <span class="bad">103 ms</span></span><span class="k">Linux default tree, 0.4.0 to 0.5.0, node-modules-dense; +7.9% paired</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
   <div><span class="n tnum">215</span>
     <span class="k">experiments</span></div>
   <div><span class="n tnum good">51</span>
@@ -332,9 +333,11 @@ against other tools is in the comparisons
 (<a href="../../specs/active/plan-2026-10-05-fdu-performance-index.md">the index
 spec</a>): a weighted combination of benchmark components, including a run with
 fdu&rsquo;s caches empty, warm content analysis, an opened root, a million-entry tree, and
-peak memory. Every milestone build was timed against the reference build, 0.3.0, in one
-interleaved session per benchmark job, so each step is measured directly rather than
-compounded from the experiment effects below. Those sessions ran on a desktop in use, so
+peak memory. Every milestone build was timed against the reference build, 0.3.0, in
+one interleaved session per benchmark job, so each step is measured directly
+rather than compounded from the experiment effects below. The latest build those
+sessions time is 0.3.0; a release after it is not on this chart until the
+cells are timed again. Those sessions ran on a desktop in use, so
 differences of about 10% between adjacent builds are within the noise.</p>
 <p>The solid line is the platform&rsquo;s score over every component, from the first build
 that has them all; the dashed line is the partial score, over only the components every
@@ -1119,9 +1122,10 @@ Each checkpoint timed both binaries in one interleaved run."/><rect class="drift
 
 <h4>Linux, end to end</h4>
 <p>Later Linux work was measured the same way at its milestones: an older engine against a
-newer one in a single interleaved cell. The 0.3.0 release cell is the comparison to
-quote.</p>
-<figure class="fig"><svg class="chart" viewBox="0 0 900 282" role="img" preserveAspectRatio="xMinYMin meet" aria-label="Linux default tree, older engine against newer, one cell per row"><title>Linux default tree, older engine against newer, one cell per row</title><desc>Each row is one interleaved cell. Grey is the older engine and blue the newer one.</desc><line class="grid" x1="200.0" y1="24" x2="200.0" y2="252"/><text class="tick" x="200.0" y="268" text-anchor="middle">0</text><line class="grid" x1="376.7" y1="24" x2="376.7" y2="252"/><text class="tick" x="376.7" y="268" text-anchor="middle">100</text><line class="grid" x1="553.3" y1="24" x2="553.3" y2="252"/><text class="tick" x="553.3" y="268" text-anchor="middle">200</text><line class="grid" x1="730.0" y1="24" x2="730.0" y2="252"/><text class="tick" x="730.0" y="268" text-anchor="middle">300</text><text class="tick axis-name" x="200" y="14">milliseconds, lower is faster</text><rect class="hit" x="200.0" y="30.0" width="530.0" height="48.0" data-tip="exp-194: Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12
+newer one in a single interleaved cell. Each cell is its own session, so compare the two
+bars within a row, not across rows. The latest release cell, 0.4.0 to 0.5.0, is
+the comparison to quote.</p>
+<figure class="fig"><svg class="chart" viewBox="0 0 900 340" role="img" preserveAspectRatio="xMinYMin meet" aria-label="Linux default tree, older engine against newer, one cell per row"><title>Linux default tree, older engine against newer, one cell per row</title><desc>Each row is one interleaved cell. Grey is the older engine and blue the newer one.</desc><line class="grid" x1="200.0" y1="24" x2="200.0" y2="310"/><text class="tick" x="200.0" y="326" text-anchor="middle">0</text><line class="grid" x1="376.7" y1="24" x2="376.7" y2="310"/><text class="tick" x="376.7" y="326" text-anchor="middle">100</text><line class="grid" x1="553.3" y1="24" x2="553.3" y2="310"/><text class="tick" x="553.3" y="326" text-anchor="middle">200</text><line class="grid" x1="730.0" y1="24" x2="730.0" y2="310"/><text class="tick" x="730.0" y="326" text-anchor="middle">300</text><text class="tick axis-name" x="200" y="14">milliseconds, lower is faster</text><rect class="hit" x="200.0" y="30.0" width="530.0" height="48.0" data-tip="exp-194: Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12
 Older: e5a71c8a probe (the Q0 engine), 200 ms
 Newer: ebc06c78 probe (the final head of the round), 120 ms
 Paired change -39.0%, on linux-v6.12."/><text class="row-label" x="186" y="46" text-anchor="end">exp-194</text><text class="row-sub" x="186" y="61" text-anchor="end">linux-v6.12</text><rect class="bar-before" x="200" y="36" width="353.9" height="14"/><rect class="bar-after" x="200" y="54" width="211.6" height="14"/><text class="value-label" x="892" y="56" text-anchor="end"><tspan class="value-before">200 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>120 ms<tspan class="value-before"> -39.0%</tspan></text><rect class="hit" x="200.0" y="88.0" width="530.0" height="48.0" data-tip="exp-195: Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense
@@ -1133,7 +1137,10 @@ Newer: a356d456 probe (the H186 head, the pdu track&#x27;s shipped stack), 85 ms
 Paired change -3.1%, on linux-v6.12."/><text class="row-label" x="186" y="162" text-anchor="end">exp-201</text><text class="row-sub" x="186" y="177" text-anchor="end">linux-v6.12</text><rect class="bar-before" x="200" y="152" width="156.4" height="14"/><rect class="bar-after" x="200" y="170" width="150.6" height="14"/><text class="value-label" x="892" y="172" text-anchor="end"><tspan class="value-before">89 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>85 ms<tspan class="value-before"> -3.1%</tspan></text><rect class="hit" x="200.0" y="204.0" width="530.0" height="48.0" data-tip="exp-202: Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees
 Older: c1644575 probe (v0.2.1), 209 ms
 Newer: b82f26e1 probe (the 0.3.0 release head), 110 ms
-Paired change -48.0%, on linux-v6.12."/><text class="row-label" x="186" y="220" text-anchor="end">exp-202</text><text class="row-sub" x="186" y="235" text-anchor="end">linux-v6.12</text><rect class="bar-before" x="200" y="210" width="368.6" height="14"/><rect class="bar-after" x="200" y="228" width="194.1" height="14"/><text class="value-label" x="892" y="230" text-anchor="end"><tspan class="value-before">209 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>110 ms<tspan class="value-before"> -48.0%</tspan></text></svg><p class="legend"><span class="legend-item"><span class="key key-before"></span>the older engine, in the same cell</span><span class="legend-item"><span class="key key-after"></span>the newer engine</span></p><figcaption>Every Linux cell that measured one engine against a later one end to end on the default tree. The percentage is the paired change. Rows are separate sessions on a virtualized host whose absolute speed drifted between them, so each row compares only its own two bars.<ol class="checkpoints"><li><span class="mono">exp-194</span> Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12</li><li><span class="mono">exp-195</span> Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense</li><li><span class="mono">exp-201</span> Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees</li><li><span class="mono">exp-202</span> Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees</li></ol></figcaption></figure>
+Paired change -48.0%, on linux-v6.12."/><text class="row-label" x="186" y="220" text-anchor="end">exp-202</text><text class="row-sub" x="186" y="235" text-anchor="end">linux-v6.12</text><rect class="bar-before" x="200" y="210" width="368.6" height="14"/><rect class="bar-after" x="200" y="228" width="194.1" height="14"/><text class="value-label" x="892" y="230" text-anchor="end"><tspan class="value-before">209 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>110 ms<tspan class="value-before"> -48.0%</tspan></text><rect class="hit" x="200.0" y="262.0" width="530.0" height="48.0" data-tip="exp-223: Linux: H198, the 0.5.0 candidate against v0.4.0, default tree +7.9% dense, summaries non-inferior
+Older: c041ed1c probe (v0.4.0), 95 ms
+Newer: 1c42c91f probe (the 0.5.0 candidate, #202&#x27;s head when measured), 103 ms
+Paired change +7.9%, on node-modules-dense."/><text class="row-label" x="186" y="278" text-anchor="end">exp-223</text><text class="row-sub" x="186" y="293" text-anchor="end">node-modules-dense</text><rect class="bar-before" x="200" y="268" width="168.4" height="14"/><rect class="bar-after" x="200" y="286" width="181.3" height="14"/><text class="value-label" x="892" y="288" text-anchor="end"><tspan class="value-before">95 ms</tspan><tspan class="value-arrow"> &#8594; </tspan>103 ms<tspan class="value-before"> +7.9%</tspan></text></svg><p class="legend"><span class="legend-item"><span class="key key-before"></span>the older engine, in the same cell</span><span class="legend-item"><span class="key key-after"></span>the newer engine</span></p><figcaption>Every Linux cell that measured one engine against a later one end to end on the default tree. The percentage is the paired change. Rows are separate sessions on a virtualized host whose absolute speed drifted between them, so each row compares only its own two bars.<ol class="checkpoints"><li><span class="mono">exp-194</span> Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12</li><li><span class="mono">exp-195</span> Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense</li><li><span class="mono">exp-201</span> Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees</li><li><span class="mono">exp-202</span> Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees</li><li><span class="mono">exp-223</span> Linux: H198, the 0.5.0 candidate against v0.4.0, default tree +7.9% dense, summaries non-inferior</li></ol></figcaption></figure>
 
 
 <h2 id="relative">Relative</h2>
@@ -2093,7 +2100,7 @@ paired.</p>
 </table></div>
 
 <footer>
-<p>Prepared 2026-10-08 by <span class="mono">make perf-report</span> from
+<p>Prepared 2026-11-22 by <span class="mono">make perf-report</span> from
 215 validated experiment records in
 <span class="mono">docs/project/experiments/</span>. Every number is read from those
 records, never retyped, and <span class="mono">make perf-report-check</span> fails when the
