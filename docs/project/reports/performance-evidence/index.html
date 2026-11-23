@@ -131,6 +131,7 @@ a:hover { text-decoration: underline; }
 }
 .headline .good { color: var(--good); }
 .headline .bad { color: var(--bad); }
+.headline .flat { color: var(--muted); }
 
 figure.fig { margin: 24px 0 8px; }
 .chart { width: 100%; height: auto; display: block; overflow: visible; }
@@ -312,7 +313,7 @@ one change against the code it came from, and a change is kept only if it passes
 <a href="#loop">the accept rule</a>. The record holds 215 experiments,
 including 75 rejected changes.</p>
 <div class="headline">
-  <div><span class="n good">1.71&times; better</span><span class="k">macOS score, 12 of 12 components, 0.2.0 to 0.3.0 [1.68&times;, 1.74&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n good">4.73&times; better</span><span class="k">partial: macOS score, 4 of 12 components (40% of the weight), start to 0.3.0 [4.60&times;, 4.87&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n">95 ms <span class="muted">&rarr;</span> <span class="bad">103 ms</span></span><span class="k">Linux default tree, 0.4.0 to 0.5.0, node-modules-dense</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
+  <div><span class="n good">1.71&times; better</span><span class="k">macOS score, 12 of 12 components, 0.2.0 to 0.3.0 [1.68&times;, 1.74&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n good">4.73&times; better</span><span class="k">partial: macOS score, 4 of 12 components (40% of the weight), start to 0.3.0 [4.60&times;, 4.87&times;]; exploratory, uncontrolled host, 12 <a href="#loop">rounds</a> (3% to 99% of each cell's sample boundaries above the <a href="#loop">quiet gate</a>); Linux not yet measured (50% of the full index)</span></div><div><span class="n">95 ms <span class="muted">&rarr;</span> <span class="bad">103 ms</span></span><span class="k">Linux default tree, 0.4.0 to 0.5.0, node-modules-dense; +7.9% paired</span></div><div><span class="n">628 ms <span class="muted">&rarr;</span> <span class="good">290 ms</span></span><span class="k">macOS cold scan, campaign 1</span></div>
   <div><span class="n tnum">215</span>
     <span class="k">experiments</span></div>
   <div><span class="n tnum good">51</span>
@@ -332,13 +333,12 @@ against other tools is in the comparisons
 (<a href="../../specs/active/plan-2026-10-05-fdu-performance-index.md">the index
 spec</a>): a weighted combination of benchmark components, including a run with
 fdu&rsquo;s caches empty, warm content analysis, an opened root, a million-entry tree, and
-peak memory. Every milestone build was timed against the reference build,
-0.3.0, in one interleaved session per benchmark job,
-so each step is measured directly rather than compounded from the experiment effects
-below. Those sessions ran on a desktop in use, so differences of about 10% between
-adjacent builds are within the noise. The latest build they time is
-0.3.0; a release after it is not on this chart until
-the cells are timed again.</p>
+peak memory. Every milestone build was timed against the reference build, 0.3.0, in
+one interleaved session per benchmark job, so each step is measured directly
+rather than compounded from the experiment effects below. The latest build those
+sessions time is 0.3.0; a release after it is not on this chart until the
+cells are timed again. Those sessions ran on a desktop in use, so
+differences of about 10% between adjacent builds are within the noise.</p>
 <p>The solid line is the platform&rsquo;s score over every component, from the first build
 that has them all; the dashed line is the partial score, over only the components every
 build has. A platform&rsquo;s score is not the full index, which weights every platform.

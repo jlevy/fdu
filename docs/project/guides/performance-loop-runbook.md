@@ -1006,8 +1006,11 @@ The performance index’s history cells still end at 0.3.0; timing the three lat
 releases (`fdu-9lxg`) belongs in the same quiet 20-round pass as `fdu-bkj2`, on the
 internal SSD with nothing else running.
 The charted page’s header now states exp-223, 0.4.0 to 0.5.0, as the release standing.
-H197 (exp-219) is the one accepted speed change not in the product: it is unmerged on
-`claude/h197-relative-opens`, and merging it needs a re-screen on 0.6.0’s engine.
+Two accepted speed changes are not in the product: H197 (exp-219), on
+`claude/h197-relative-opens`, and the PGO screen (exp-154, `fdu-pdne`). H197 lands only
+through the reviewed pull request that owes its complexity judgment (`fdu-tzv3`), and
+since 0.6.0 changed the walker (`scan.rs`, `05029aac`) it needs a re-screen on 0.6.0’s
+engine first.
 
 **Since then (2026-10-13).** H198 (exp-222, exp-223) timed the 0.5.0 candidate on a 2.8
 GHz 4-vCPU guest: quiet, two arms, 100 pairs a cell.

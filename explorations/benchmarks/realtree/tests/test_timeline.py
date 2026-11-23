@@ -22,8 +22,10 @@ from benchmarks.realtree.report_html import (
     decision_label,
     STANDING_EXPERIMENT,
     STANDING_LABEL,
+    RELEASE_CELLS,
     _release,
-    _timed_builds,
+    _section_iterations,
+    _timed_builds_prose,
     end_to_end_cells,
     figure_absolute,
     figure_effects,
@@ -603,34 +605,92 @@ class RenderTests(unittest.TestCase):
         # A projection without the release record still renders, without the figure.
         self.assertNotIn(STANDING_LABEL, render(project([experiment("exp-001")])))
 
-    def test_a_slower_release_is_drawn_and_coloured_as_a_slowdown(self) -> None:
-        # The release cell is recorded as a rejected speed claim, not a baseline, and the
-        # newer release took longer. It is still the standing, and the header must not
-        # colour it as a gain.
+    def _rejected_two_build_cell(self, identifier: str, wall: Dict[str, Any]) -> Dict[str, Any]:
+        """A two-build default-tree cell recorded as a rejected speed claim."""
         record = experiment(
-            STANDING_EXPERIMENT,
-            decision="rejected",
-            system="Linux 6.18.44-fc-v114",
-            wall=metric(95.3e6, 102.6e6, 7.9, 5.5, 13.0),
+            identifier, decision="rejected", system="Linux 6.18.44-fc-v114", wall=wall
         )
         record["results"][0]["job"] = "default-tree"
         record["verdict"]["primary_job"] = "default-tree"
         record["method"]["control_binary"] = {"name": "old", "sha256": "c" * 64, "args": []}
         record["method"]["candidate_binary"] = {"name": "new", "sha256": "d" * 64, "args": []}
-        dataset = project([record])
+        return record
+
+    def _header(self, dataset: Dict[str, Any]) -> str:
+        return render(dataset).split('<h2 id="iterations">')[0]
+
+    def test_a_slower_release_is_drawn_and_coloured_as_a_slowdown(self) -> None:
+        # The release cell is recorded as a rejected speed claim, not a baseline, and the
+        # newer release took longer. It is still the standing, and the header must not
+        # colour it as a gain.
+        dataset = project(
+            [
+                self._rejected_two_build_cell(
+                    STANDING_EXPERIMENT, metric(95.3e6, 102.6e6, 7.9, 5.5, 13.0)
+                )
+            ]
+        )
         self.assertEqual(
             [item["id"] for item in end_to_end_cells(dataset, "Linux")], [STANDING_EXPERIMENT]
         )
-        header = render(dataset).split('<h2 id="iterations">')[0]
+        header = self._header(dataset)
         self.assertIn('<span class="bad">103 ms</span>', header)
-        self.assertNotIn('<span class="good">103 ms</span>', header)
+        self.assertIn("+7.9% paired", header)
+
+    def test_an_unresolved_standing_is_neither_a_gain_nor_a_loss(self) -> None:
+        # Its candidate median is higher, but the paired interval includes zero: the
+        # colour follows the paired figure, not the medians.
+        dataset = project(
+            [
+                self._rejected_two_build_cell(
+                    STANDING_EXPERIMENT, metric(107.7e6, 111.3e6, 3.8, -1.6, 8.5)
+                )
+            ]
+        )
+        header = self._header(dataset)
+        self.assertIn('<span class="flat">111 ms</span>', header)
+        self.assertNotIn('<span class="bad">111 ms</span>', header)
+
+    def test_a_rejected_two_build_cell_that_is_not_a_release_is_not_drawn(self) -> None:
+        # exp-217 has the release cell's shape but measured a development head; only the
+        # hand-kept release list admits a non-baseline cell.
+        dataset = project(
+            [self._rejected_two_build_cell("exp-217", metric(95.0e6, 100.4e6, 5.7, 3.5, 10.5))]
+        )
+        self.assertEqual(end_to_end_cells(dataset, "Linux"), [])
+
+    def test_every_release_cell_names_a_two_build_default_tree_record(self) -> None:
+        # The list is hand-kept and the standing is its last row; an id with no record,
+        # or a record that is not an end-to-end cell, means the two have drifted apart.
+        import json
+        from pathlib import Path
+
+        committed = Path("docs/project/reports/performance-evidence/timeline.json")
+        dataset = json.loads(committed.read_text(encoding="utf-8"))
+        records = {record["id"]: record for record in dataset["experiments"]}
+        drawn = {record["id"] for record in end_to_end_cells(dataset, "Linux")}
+        self.assertEqual(STANDING_EXPERIMENT, list(RELEASE_CELLS)[-1])
+        for identifier in RELEASE_CELLS:
+            self.assertIn(identifier, records)
+            self.assertIn(identifier, drawn)
 
     def test_the_over_time_prose_names_the_latest_build_the_cells_time(self) -> None:
-        dataset = {"index": [{"reference_build": "v0.3.0", "builds": [{"label": "exp001"}, {"label": "v0.3.0"}]}]}
-        self.assertEqual(_timed_builds(dataset), ("v0.3.0", "v0.3.0"))
-        self.assertEqual(_release("v0.3.0"), "0.3.0")
+        dataset = {
+            "index": [
+                {"reference_build": "v0.3.0", "builds": [{"label": "exp001"}, {"label": "v0.3.0"}]}
+            ]
+        }
+        prose = " ".join(_timed_builds_prose(dataset).split())
+        self.assertIn("against the reference build, 0.3.0, in one interleaved", prose)
+        self.assertIn("The latest build those sessions time is 0.3.0;", prose)
         self.assertEqual(_release("exp201"), "exp201")
-        self.assertEqual(_timed_builds({}), ("the reference build", "the reference build"))
+        # The page renders the sentences: a real projection's section carries them.
+        rendered = " ".join(_section_iterations(project([experiment("exp-001")])).split())
+        self.assertIn("timed against one reference build", rendered)
+        # With no timed builds the prose names none, rather than a placeholder twice.
+        bare = " ".join(_timed_builds_prose({"index": []}).split())
+        self.assertIn("timed against one reference build", bare)
+        self.assertNotIn("The latest build", bare)
 
     def test_every_remeasurement_names_a_record_that_would_otherwise_count(self) -> None:
         # The list is hand-maintained; an id with no record, or a record that would not
