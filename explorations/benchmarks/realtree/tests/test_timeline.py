@@ -21,6 +21,9 @@ from benchmarks.realtree.report_html import (
     axis_ticks,
     decision_label,
     STANDING_EXPERIMENT,
+    STANDING_LABEL,
+    _release,
+    _timed_builds,
     end_to_end_cells,
     figure_absolute,
     figure_effects,
@@ -596,9 +599,38 @@ class RenderTests(unittest.TestCase):
 
     def test_the_header_states_the_release_standing_when_it_is_recorded(self) -> None:
         with_release = render(project([self._end_to_end(STANDING_EXPERIMENT)]))
-        self.assertIn("0.2.1 to 0.3.0", with_release)
+        self.assertIn(f"{STANDING_LABEL}, subject", with_release)
         # A projection without the release record still renders, without the figure.
-        self.assertNotIn("0.2.1 to 0.3.0", render(project([experiment("exp-001")])))
+        self.assertNotIn(STANDING_LABEL, render(project([experiment("exp-001")])))
+
+    def test_a_slower_release_is_drawn_and_coloured_as_a_slowdown(self) -> None:
+        # The release cell is recorded as a rejected speed claim, not a baseline, and the
+        # newer release took longer. It is still the standing, and the header must not
+        # colour it as a gain.
+        record = experiment(
+            STANDING_EXPERIMENT,
+            decision="rejected",
+            system="Linux 6.18.44-fc-v114",
+            wall=metric(95.3e6, 102.6e6, 7.9, 5.5, 13.0),
+        )
+        record["results"][0]["job"] = "default-tree"
+        record["verdict"]["primary_job"] = "default-tree"
+        record["method"]["control_binary"] = {"name": "old", "sha256": "c" * 64, "args": []}
+        record["method"]["candidate_binary"] = {"name": "new", "sha256": "d" * 64, "args": []}
+        dataset = project([record])
+        self.assertEqual(
+            [item["id"] for item in end_to_end_cells(dataset, "Linux")], [STANDING_EXPERIMENT]
+        )
+        header = render(dataset).split('<h2 id="iterations">')[0]
+        self.assertIn('<span class="bad">103 ms</span>', header)
+        self.assertNotIn('<span class="good">103 ms</span>', header)
+
+    def test_the_over_time_prose_names_the_latest_build_the_cells_time(self) -> None:
+        dataset = {"index": [{"reference_build": "v0.3.0", "builds": [{"label": "exp001"}, {"label": "v0.3.0"}]}]}
+        self.assertEqual(_timed_builds(dataset), ("v0.3.0", "v0.3.0"))
+        self.assertEqual(_release("v0.3.0"), "0.3.0")
+        self.assertEqual(_release("exp201"), "exp201")
+        self.assertEqual(_timed_builds({}), ("the reference build", "the reference build"))
 
     def test_every_remeasurement_names_a_record_that_would_otherwise_count(self) -> None:
         # The list is hand-maintained; an id with no record, or a record that would not

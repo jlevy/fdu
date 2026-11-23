@@ -355,9 +355,12 @@ def _flagship(dataset: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
 #: The record the header states as the current standing: the latest release measured
 #: end to end against the release before it, both builds in one interleaved cell. Move
 #: it when a later release cell is recorded; the header leaves the figure out while the
-#: record is absent, so a projection without it still renders.
-STANDING_EXPERIMENT = "exp-202"
-STANDING_LABEL = "Linux default tree, 0.2.1 to 0.3.0"
+#: record is absent, so a projection without it still renders. A release cell is drawn
+#: whatever its recorded decision: exp-223 is recorded `rejected` as a speed claim, not
+#: as a baseline, because the release it measured is slower on its primary tree.
+STANDING_EXPERIMENT = "exp-223"
+STANDING_RELEASES = "0.4.0 to 0.5.0"
+STANDING_LABEL = f"Linux default tree, {STANDING_RELEASES}"
 
 
 def _record(dataset: Mapping[str, Any], experiment_id: str) -> Optional[Mapping[str, Any]]:
@@ -386,13 +389,14 @@ def end_to_end_cells(dataset: Mapping[str, Any], platform: str) -> List[Mapping[
     Each one measured an older engine against a newer one in a single interleaved cell,
     which is what lets its two arms be drawn as absolute milliseconds. Cells from
     different sessions are not drawn as one track: on one virtualized host an unchanged
-    binary drifted by up to 70% between cells over a night.
+    binary drifted by up to 70% between cells over a night. The release standing is one
+    of them whatever decision it records.
     """
     return [
         record
         for record in dataset["experiments"]
         if record["platform"] == platform
-        and record["decision"] == "baseline"
+        and (record["decision"] == "baseline" or record["id"] == STANDING_EXPERIMENT)
         and compares(record)
         and record.get("primary_job") == "default-tree"
         and _wall_arms(record)
@@ -2431,16 +2435,22 @@ def _headline_figure(series: Optional[Mapping[str, Any]], job_id: str, label: st
 
 
 def _standing_figure(dataset: Mapping[str, Any]) -> str:
-    """The release standing's two arms, or nothing if that record is absent."""
+    """The release standing's two arms, or nothing if that record is absent.
+
+    The newer release's time is coloured by its direction: a release can be slower, and
+    the header says so rather than colouring every standing as a gain.
+    """
     record = _record(dataset, STANDING_EXPERIMENT)
     arms = _wall_arms(record) if record else None
     if not arms:
         return ""
     control, candidate = arms
+    tone = "good" if candidate < control else "bad"
+    subject = _subject_label(dataset, record.get("subject"))
     return (
         f'<div><span class="n">{fmt_ms(control)} <span class="muted">&rarr;</span> '
-        f'<span class="good">{fmt_ms(candidate)}</span></span>'
-        f'<span class="k">{esc(STANDING_LABEL)}</span></div>'
+        f'<span class="{tone}">{fmt_ms(candidate)}</span></span>'
+        f'<span class="k">{esc(STANDING_LABEL)}, {esc(subject)}</span></div>'
     )
 
 
@@ -2566,6 +2576,24 @@ against other tools is in the comparisons
 """
 
 
+def _timed_builds(dataset: Mapping[str, Any]) -> tuple:
+    """The reference build and the latest build the history cells time, as labels.
+
+    Read from the projection rather than written into the prose, so the page says where
+    its chart ends and a reader does not take the last build drawn for the latest release.
+    """
+    projected = (dataset.get("index") or [{}])[0]
+    builds = projected.get("builds") or []
+    reference = projected.get("reference_build") or "the reference build"
+    latest = builds[-1].get("label") if builds else reference
+    return reference, latest or reference
+
+
+def _release(label: str) -> str:
+    """A build label as prose: ``v0.3.0`` reads as 0.3.0, a milestone label as itself."""
+    return label[1:] if label.startswith("v") and label[1:2].isdigit() else label
+
+
 def _section_iterations(dataset: Mapping[str, Any]) -> str:
     return f"""
 <h2 id="iterations">Over Time</h2>
@@ -2574,10 +2602,13 @@ def _section_iterations(dataset: Mapping[str, Any]) -> str:
 (<a href="../../specs/active/plan-2026-10-05-fdu-performance-index.md">the index
 spec</a>): a weighted combination of benchmark components, including a run with
 fdu&rsquo;s caches empty, warm content analysis, an opened root, a million-entry tree, and
-peak memory. Every milestone build was timed against the reference build, 0.3.0, in one
-interleaved session per benchmark job, so each step is measured directly rather than
-compounded from the experiment effects below. Those sessions ran on a desktop in use, so
-differences of about 10% between adjacent builds are within the noise.</p>
+peak memory. Every milestone build was timed against the reference build,
+{esc(_release(_timed_builds(dataset)[0]))}, in one interleaved session per benchmark job,
+so each step is measured directly rather than compounded from the experiment effects
+below. Those sessions ran on a desktop in use, so differences of about 10% between
+adjacent builds are within the noise. The latest build they time is
+{esc(_release(_timed_builds(dataset)[1]))}; a release after it is not on this chart until
+the cells are timed again.</p>
 <p>The solid line is the platform&rsquo;s score over every component, from the first build
 that has them all; the dashed line is the partial score, over only the components every
 build has. A platform&rsquo;s score is not the full index, which weights every platform.
@@ -2619,8 +2650,9 @@ def _section_absolute(dataset: Mapping[str, Any]) -> str:
         linux = f"""
 <h4>Linux, end to end</h4>
 <p>Later Linux work was measured the same way at its milestones: an older engine against a
-newer one in a single interleaved cell. The 0.3.0 release cell is the comparison to
-quote.</p>
+newer one in a single interleaved cell. Each cell is its own session, so compare the two
+bars within a row, not across rows. The latest release cell, {esc(STANDING_RELEASES)}, is
+the comparison to quote.</p>
 {end_to_end}
 """
     return f"""

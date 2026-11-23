@@ -998,6 +998,17 @@ command writes none; compare `default-tree` runs across this change with that in
 
 ## Current Pickup (2026-09-30)
 
+**Since then (2026-11-22).** 0.5.0 shipped on 2026-10-14 and 0.6.0 on 2026-11-12, with
+no experiment after exp-223. 0.6.0 has no timing on any platform: it keeps each
+directory’s newest time on both clocks in the index and adds the ages and volumes views,
+and its `perf` commits were not measured.
+The performance index’s history cells still end at 0.3.0; timing the three later
+releases (`fdu-9lxg`) belongs in the same quiet 20-round pass as `fdu-bkj2`, on the
+internal SSD with nothing else running.
+The charted page’s header now states exp-223, 0.4.0 to 0.5.0, as the release standing.
+H197 (exp-219) is the one accepted speed change not in the product: it is unmerged on
+`claude/h197-relative-opens`, and merging it needs a re-screen on 0.6.0’s engine.
+
 **Since then (2026-10-13).** H198 (exp-222, exp-223) timed the 0.5.0 candidate on a 2.8
 GHz 4-vCPU guest: quiet, two arms, 100 pairs a cell.
 One root’s dense summary is level with the age column’s base: −0.22% [−3.50%, +3.89%],
