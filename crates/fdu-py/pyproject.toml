@@ -58,6 +58,8 @@ exclude = ["python/**/__pycache__/**", "python/**/*.pyc"]
 [tool.pytest.ini_options]
 addopts = ["--strict-config", "--strict-markers"]
 testpaths = ["tests"]
+# Delete passing tests' temp files when they finish; keep failing tests' for debugging.
+tmp_path_retention_policy = "failed"
 
 [tool.ruff]
 line-length = 100
